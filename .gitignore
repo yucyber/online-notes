@@ -1,0 +1,51 @@
+# Node & Monorepo
+**/node_modules/
+**/.pnp.cjs
+**/.pnp/**
+**/npm-debug.log*
+**/yarn-error.log*
+**/pnpm-debug.log*
+**/.turbo/**
+
+# OS & Editor
+.DS_Store
+Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Env files (keep examples)
+.env
+.env.*
+!.env.example
+**/.env
+**/.env.*
+!**/.env.example
+
+# TypeScript
+**/*.tsbuildinfo
+
+# Coverage
+coverage/
+**/.nyc_output/
+
+# Build outputs
+dist/
+build/
+out/
+**/dist/
+**/build/
+**/out/
+
+# Next.js
+.next/
+**/.next/
+next-env.d.ts
+
+# NestJS (backend)
+notes-backend/dist/
+notes-backend/tsconfig.tsbuildinfo
+
+# Tooling and IDE state
+.trae/
+

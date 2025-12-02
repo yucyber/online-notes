@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "@tailwindcss/postcss": "^4.1.17"
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2"
+  }
+}

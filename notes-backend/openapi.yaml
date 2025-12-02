@@ -1,0 +1,527 @@
+openapi: 3.0.3
+info:
+  title: 在线笔记平台 - 离线自动保存/草稿同步/网络状态/网络诊断 API
+  version: 1.0.0
+  description: |
+    统一响应格式、3s超时、Token 鉴权与错误码标准的 API 文档。
+    - 统一响应包：`{ code, message, data, requestId, timestamp }`
+    - 全接口默认服务端超时：3s（网关/服务/客户端需一致）
+    - 鉴权：`Authorization: Bearer <JWT>`，网关统一校验并注入 UID
+    - 幂等：写入类接口支持 `Idempotency-Key` 请求头
+servers:
+  - url: https://api.example.com
+    description: 生产环境
+  - url: https://staging-api.example.com
+    description: 预发布环境
+  - url: http://localhost:3001
+    description: 本地开发
+tags:
+  - name: Drafts
+    description: 离线自动保存与草稿同步
+  - name: Network
+    description: 网络状态与诊断
+paths:
+  /api/health:
+    get:
+      tags: [Network]
+      summary: 健康检查（免鉴权）
+      description: 返回服务健康最小信息（不包含内网细节）。
+      security: []
+      x-timeout-ms: 1000
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      status: 'up'
+                      service_name: 'notes'
+                      timestamp: '2025-12-02T12:00:00Z'
+                    requestId: 'health-req'
+                    timestamp: '2025-12-02T12:00:00Z'
+  /api/v1/drafts/auto-save:
+    post:
+      tags: [Drafts]
+      summary: 离线自动保存草稿
+      description: 将客户端离线编辑内容按序提交到服务端，保证幂等与版本一致性。
+      operationId: postDraftAutoSave
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ClientRegion'
+        - $ref: '#/components/parameters/NetworkType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftAutoSaveInput'
+            examples:
+              ok:
+                summary: 基本自动保存
+                value:
+                  noteId: 'n_123'
+                  content: '本地编辑内容...'
+                  cursor:
+                    line: 10
+                    column: 3
+                  clientId: 'c_abc'
+                  offlineSequence: 42
+                  version: 7
+                  updatedAt: '2025-12-02T12:00:00Z'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      draft:
+                        noteId: 'n_123'
+                        version: 8
+                        contentHash: 'sha256:abcd...'
+                        savedAt: '2025-12-02T12:00:01Z'
+                      applied: true
+                    requestId: 'req_001'
+                    timestamp: '2025-12-02T12:00:01Z'
+        '409':
+          description: 版本冲突（需客户端拉取最新并重试）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                conflict:
+                  value:
+                    code: 40901
+                    message: 'Version conflict'
+                    data:
+                      serverVersion: 10
+                    requestId: 'req_002'
+                    timestamp: '2025-12-02T12:00:01Z'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/drafts/sync:
+    post:
+      tags: [Drafts]
+      summary: 草稿增量同步
+      description: 客户端批量提交离线增量变更，服务端返回合并后的版本与冲突列表。
+      operationId: postDraftSync
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+        - $ref: '#/components/parameters/ClientRegion'
+        - $ref: '#/components/parameters/NetworkType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DraftSyncInput'
+            examples:
+              sync:
+                value:
+                  noteId: 'n_123'
+                  clientId: 'c_abc'
+                  baseVersion: 7
+                  changes:
+                    - op: 'insert'
+                      ts: '2025-12-02T12:00:00Z'
+                      payload: { position: 120, text: '新增内容' }
+                    - op: 'delete'
+                      ts: '2025-12-02T12:00:00Z'
+                      payload: { position: 30, length: 5 }
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                merged:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      noteId: 'n_123'
+                      serverVersion: 9
+                      applied: 2
+                      conflicts:
+                        - type: 'range-overlap'
+                          clientChangeIndex: 1
+                          serverHint: '请拉取最新版本进行三方合并'
+                    requestId: 'req_003'
+                    timestamp: '2025-12-02T12:00:02Z'
+        '409':
+          description: 基线版本过旧或存在冲突
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                conflict:
+                  value:
+                    code: 40902
+                    message: 'Base version outdated'
+                    data:
+                      serverVersion: 12
+                    requestId: 'req_004'
+                    timestamp: '2025-12-02T12:00:02Z'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/network/status:
+    get:
+      tags: [Network]
+      summary: 网络状态探针
+      description: 返回服务端与依赖的健康状态与基本时延信息。
+      operationId: getNetworkStatus
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientRegion'
+        - $ref: '#/components/parameters/NetworkType'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      online: true
+                      region: 'ap-sg-1'
+                      serverTime: '2025-12-02T12:00:00Z'
+                      latencyMs: 85
+                      deps:
+                        db: 'healthy'
+                        redis: 'healthy'
+                        mq: 'degraded'
+                    requestId: 'req_005'
+                    timestamp: '2025-12-02T12:00:00Z'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/network/diagnostics:
+    post:
+      tags: [Network]
+      summary: 网络诊断
+      description: 服务端执行网络相关诊断并返回结果，支持指定测试项。
+      operationId: postNetworkDiagnostics
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/ClientRegion'
+        - $ref: '#/components/parameters/NetworkType'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/NetworkDiagnosticsInput'
+            examples:
+              run:
+                value:
+                  tests: ['dns', 'tls', 'gateway', 'latency']
+                  targetHost: 'api.example.com'
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      results:
+                        - test: 'dns'
+                          status: 'ok'
+                          details:
+                            resolver: '8.8.8.8'
+                            resolveMs: 20
+                        - test: 'tls'
+                          status: 'ok'
+                          details:
+                            protocol: 'TLSv1.3'
+                            handshakeMs: 35
+                        - test: 'gateway'
+                          status: 'ok'
+                          details:
+                            hops: 6
+                        - test: 'latency'
+                          status: 'ok'
+                          details:
+                            rttMs: 82
+                    requestId: 'req_006'
+                    timestamp: '2025-12-02T12:00:01Z'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    RequestId:
+      name: X-Request-Id
+      in: header
+      required: false
+      description: 客户端生成的请求唯一 ID，用于链路追踪与幂等对账
+      schema:
+        type: string
+        maxLength: 64
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      required: false
+      description: 幂等键，同一键在 24h 内的重复提交只执行一次
+      schema:
+        type: string
+        maxLength: 64
+    ClientRegion:
+      name: X-Client-Region
+      in: header
+      required: false
+      description: 客户端所在区域代码，用于就近路由与延迟分析
+      schema:
+        type: string
+        example: ap-sg-1
+    NetworkType:
+      name: X-Network-Type
+      in: header
+      required: false
+      description: 客户端网络类型
+      schema:
+        type: string
+        enum: [wifi, cellular, ethernet, unknown]
+  responses:
+    Unauthorized:
+      description: 未授权或 Token 失效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+          examples:
+            unauthorized:
+              value:
+                code: 40100
+                message: 'Unauthorized'
+                data: null
+                requestId: 'req_xxx'
+                timestamp: '2025-12-02T12:00:00Z'
+    TooManyRequests:
+      description: 触发限流（令牌桶、网关限流）
+      headers:
+        Retry-After:
+          description: 秒级重试等待时间
+          schema:
+            type: integer
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+          examples:
+            rate_limited:
+              value:
+                code: 42900
+                message: 'Too Many Requests'
+                data: null
+                requestId: 'req_xxx'
+                timestamp: '2025-12-02T12:00:00Z'
+    ServiceUnavailable:
+      description: 服务降级或依赖不可用
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+          examples:
+            unavailable:
+              value:
+                code: 50300
+                message: 'Service Unavailable'
+                data: null
+                requestId: 'req_xxx'
+                timestamp: '2025-12-02T12:00:00Z'
+    InternalError:
+      description: 服务内部错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+          examples:
+            error:
+              value:
+                code: 50000
+                message: 'Internal Server Error'
+                data: null
+                requestId: 'req_xxx'
+                timestamp: '2025-12-02T12:00:00Z'
+  schemas:
+    ApiEnvelope:
+      type: object
+      description: 统一响应包
+      properties:
+        code:
+          type: integer
+          format: int32
+          description: 业务码（0=成功；非0为错误码）
+          example: 0
+        message:
+          type: string
+          description: 文本描述
+          example: OK
+        data:
+          nullable: true
+          description: 业务数据
+        requestId:
+          type: string
+          description: 请求ID（来自 `X-Request-Id` 或服务端生成）
+          example: req_001
+        timestamp:
+          type: string
+          format: date-time
+          description: 服务端响应时间
+      required: [code, message, requestId, timestamp]
+      x-error-codes:
+        - code: 40000
+          meaning: 参数错误
+        - code: 40100
+          meaning: 未授权/Token失效
+        - code: 40300
+          meaning: 禁止访问
+        - code: 40901
+          meaning: 自动保存版本冲突
+        - code: 40902
+          meaning: 同步基线版本过旧
+        - code: 42900
+          meaning: 触发限流
+        - code: 50000
+          meaning: 服务内部错误
+        - code: 50300
+          meaning: 服务不可用/降级
+    DraftAutoSaveInput:
+      type: object
+      properties:
+        noteId:
+          type: string
+        content:
+          type: string
+        cursor:
+          type: object
+          properties:
+            line:
+              type: integer
+            column:
+              type: integer
+        clientId:
+          type: string
+        offlineSequence:
+          type: integer
+          description: 客户端离线序号，单调递增用于去重与排序
+        version:
+          type: integer
+          description: 客户端当前版本（乐观锁）
+        updatedAt:
+          type: string
+          format: date-time
+      required: [noteId, content, clientId, offlineSequence, version]
+    DraftSyncInput:
+      type: object
+      properties:
+        noteId:
+          type: string
+        clientId:
+          type: string
+        baseVersion:
+          type: integer
+        changes:
+          type: array
+          items:
+            type: object
+            properties:
+              op:
+                type: string
+                enum: [insert, delete, replace, format]
+              ts:
+                type: string
+                format: date-time
+              payload:
+                type: object
+            required: [op, ts]
+      required: [noteId, clientId, baseVersion, changes]
+    NetworkDiagnosticsInput:
+      type: object
+      properties:
+        tests:
+          type: array
+          items:
+            type: string
+            enum: [dns, tls, gateway, latency, throughput]
+        targetHost:
+          type: string
+          description: 可选指定目标主机
+      required: [tests]
+
+externalDocs:
+  description: 错误码与测试基线说明
+  url: https://docs.example.com/api-baseline
