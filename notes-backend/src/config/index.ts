@@ -3,7 +3,7 @@ export const getMongoConfig = async () => ({
 });
 
 export const getJwtConfig = () => ({
-  secret: process.env.JWT_SECRET || 'super-secret-jwt-key',
+  secret: process.env.JWT_SECRET,
   signOptions: {
     expiresIn: '7d',
   },

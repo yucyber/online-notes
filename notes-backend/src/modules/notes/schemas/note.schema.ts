@@ -35,6 +35,24 @@ export class Note {
 
   @Prop({ required: true, enum: ['published', 'draft'], default: 'published' })
   status: string;
+
+  @Prop({ required: true, enum: ['private', 'org', 'public'], default: 'private' })
+  visibility: string;
+
+  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['owner', 'editor', 'viewer', 'commenter'] }, addedBy: { type: Types.ObjectId, ref: 'User' }, addedAt: { type: Date, default: Date.now } }])
+  acl?: { userId: Types.ObjectId; role: string; addedBy?: Types.ObjectId; addedAt?: Date }[];
+
+  @Prop({ type: Types.ObjectId })
+  currentVersionId?: Types.ObjectId;
+
+  @Prop({ type: Number, default: 0 })
+  versionCount?: number;
+
+  @Prop({ type: Types.ObjectId, ref: 'User' })
+  editingBy?: Types.ObjectId;
+
+  @Prop({ type: Date })
+  lockedAt?: Date;
 }
 
 export const NoteSchema = SchemaFactory.createForClass(Note);

@@ -63,4 +63,36 @@ export class NotesController {
   async updateAll(@Param('id') id: string, @Body() updateNoteDto: UpdateNoteDto, @Request() req) {
     return this.notesService.update(id, updateNoteDto, req.user.id);
   }
+
+  @Get(':id/acl')
+  async getAcl(@Param('id') id: string, @Request() req) {
+    return this.notesService.getAcl(id, req.user.id)
+  }
+
+  @Post(':id/acl')
+  async addCollaborator(@Param('id') id: string, @Body() body: any, @Request() req) {
+    const { userId, role } = body
+    return this.notesService.addCollaborator(id, req.user.id, userId, role)
+  }
+
+  @Patch(':id/acl/:userId')
+  async updateCollaboratorRole(@Param('id') id: string, @Param('userId') userId: string, @Body() body: any, @Request() req) {
+    const { role } = body
+    return this.notesService.updateCollaboratorRole(id, req.user.id, userId, role)
+  }
+
+  @Delete(':id/acl/:userId')
+  async removeCollaborator(@Param('id') id: string, @Param('userId') userId: string, @Request() req) {
+    return this.notesService.removeCollaborator(id, req.user.id, userId)
+  }
+
+  @Post(':id/lock')
+  async lock(@Param('id') id: string, @Request() req) {
+    return this.notesService.lockNote(id, req.user.id)
+  }
+
+  @Delete(':id/lock')
+  async unlock(@Param('id') id: string, @Request() req) {
+    return this.notesService.unlockNote(id, req.user.id)
+  }
 }

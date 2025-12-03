@@ -1,6 +1,10 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
+import { JwtService } from '@nestjs/jwt';
+import Redis from 'ioredis';
+import { RateLimiterRedis } from 'rate-limiter-flexible';
+import { JwtWsAdapter } from './ws/jwt-ws.adapter';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -11,12 +15,9 @@ async function bootstrap() {
   
   // Enable CORS
   app.enableCors({
-  origin: [
-    'http://localhost:3000',
-    'http://10.34.145.130:3000',
-  ],
-  credentials: true,
-})
+    origin: (process.env.CLIENT_URL || 'http://localhost:3000').split(',').map(x => x.trim()),
+    credentials: true,
+  })
   
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({
@@ -27,6 +28,11 @@ async function bootstrap() {
   // const port = process.env.PORT || 3001;
   // await app.listen(port);
   // console.log(`Application is running on: http://localhost:${port}`);
+  const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
+  const msgLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:msg:user', points: 300, duration: 60 })
+  const connLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:conn:ip', points: 100, duration: 60 })
+  app.useWebSocketAdapter(new JwtWsAdapter(app, app.get(JwtService), msgLimiter, connLimiter, redis))
+
   const port = Number(process.env.PORT) || 3001
   const host = process.env.HOST || '0.0.0.0'
   await app.listen(port, host)

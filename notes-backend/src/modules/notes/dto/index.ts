@@ -6,6 +6,12 @@ export enum NoteStatus {
   DRAFT = 'draft',
 }
 
+export enum NoteVisibility {
+  PRIVATE = 'private',
+  ORG = 'org',
+  PUBLIC = 'public',
+}
+
 export enum TagsMode {
   ANY = 'any',
   ALL = 'all',
@@ -39,6 +45,10 @@ export class CreateNoteDto {
   @IsOptional()
   @IsEnum(NoteStatus, { message: '状态必须是 published 或 draft' })
   status?: NoteStatus;
+
+  @IsOptional()
+  @IsEnum(NoteVisibility, { message: '可见性必须是 private/org/public' })
+  visibility?: NoteVisibility;
 }
 
 export class UpdateNoteDto {
@@ -69,6 +79,10 @@ export class UpdateNoteDto {
   @IsOptional()
   @IsEnum(NoteStatus, { message: '状态必须是 published 或 draft' })
   status?: NoteStatus;
+
+  @IsOptional()
+  @IsEnum(NoteVisibility, { message: '可见性必须是 private/org/public' })
+  visibility?: NoteVisibility;
 }
 
 export class NoteFilterDto {

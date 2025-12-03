@@ -49,8 +49,16 @@ export class NotesService {
     // Use $and to safely combine multiple conditions including $or clauses
     const andConditions: any[] = [];
 
-    // 1. Base condition: User ID
-    andConditions.push({ userId: new Types.ObjectId(userId) });
+    // 1. Base condition: Access scope
+    const u = new Types.ObjectId(userId)
+    const accessScope = {
+      $or: [
+        { userId: u },
+        { acl: { $elemMatch: { userId: u } } },
+        { visibility: 'public' },
+      ],
+    }
+    andConditions.push(accessScope)
 
     // 2. Keyword Search (Title or Content)
     if (keyword) {
@@ -132,10 +140,15 @@ export class NotesService {
   }
 
   async findOne(id: string, userId: string): Promise<Note> {
+    const u = new Types.ObjectId(userId)
     const note = await this.noteModel
       .findOne({
         _id: new Types.ObjectId(id),
-        userId: new Types.ObjectId(userId),
+        $or: [
+          { userId: u },
+          { acl: { $elemMatch: { userId: u } } },
+          { visibility: 'public' },
+        ],
       })
       .populate('categoryId', 'name')
       .populate('tags', 'name')
@@ -149,10 +162,13 @@ export class NotesService {
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
-    // Get the original note first
+    const u = new Types.ObjectId(userId)
     const originalNote = await this.noteModel.findOne({
       _id: new Types.ObjectId(id),
-      userId: new Types.ObjectId(userId),
+      $or: [
+        { userId: u },
+        { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } },
+      ],
     }).exec();
 
     if (!originalNote) {
@@ -161,7 +177,7 @@ export class NotesService {
 
     const updatedNote = await this.noteModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) },
+        { _id: new Types.ObjectId(id) },
         updateNoteDto,
         { new: true, runValidators: true },
       )
@@ -196,10 +212,13 @@ export class NotesService {
   }
 
   async remove(id: string, userId: string): Promise<void> {
-    // Get the note first to update category and tag counts
+    const u = new Types.ObjectId(userId)
     const note = await this.noteModel.findOne({
       _id: new Types.ObjectId(id),
-      userId: new Types.ObjectId(userId),
+      $or: [
+        { userId: u },
+        { acl: { $elemMatch: { userId: u, role: 'owner' } } },
+      ],
     }).exec();
 
     if (!note) {
@@ -208,7 +227,7 @@ export class NotesService {
 
     const result = await this.noteModel.deleteOne({
       _id: new Types.ObjectId(id),
-      userId: new Types.ObjectId(userId),
+      userId: u,
     }).exec();
 
     if (result.deletedCount === 0) {
@@ -231,6 +250,89 @@ export class NotesService {
         await this.tagsService.decrementNoteCount(tagId.toString());
       }
     }
+  }
+
+  async getAcl(id: string, userId: string): Promise<{ visibility: string; acl: any[] }> {
+    const u = new Types.ObjectId(userId)
+    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }] }).exec()
+    if (!note) {
+      throw new NotFoundException('笔记不存在')
+    }
+    return { visibility: (note as any).visibility, acl: (note as any).acl || [] }
+  }
+
+  async addCollaborator(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer'): Promise<any> {
+    const actor = new Types.ObjectId(actorId)
+    const target = new Types.ObjectId(targetUserId)
+    const note = await this.noteModel.findById(id).exec()
+    if (!note) throw new NotFoundException('笔记不存在')
+    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
+    if (!isOwner) throw new NotFoundException('无权限')
+    const acl = ((note as any).acl || []) as any[]
+    const exists = acl.find((a: any) => a.userId?.equals(target))
+    if (exists) {
+      exists.role = role
+    } else {
+      acl.push({ userId: target, role, addedBy: actor, addedAt: new Date() })
+    }
+    ; (note as any).acl = acl
+    await note.save()
+    // audit
+    try { const { AuditService } = require('../audit/audit.service'); } catch { }
+    return { ok: true }
+  }
+
+  async updateCollaboratorRole(id: string, actorId: string, targetUserId: string, role: 'owner' | 'editor' | 'viewer') {
+    const actor = new Types.ObjectId(actorId)
+    const target = new Types.ObjectId(targetUserId)
+    const note = await this.noteModel.findById(id).exec()
+    if (!note) throw new NotFoundException('笔记不存在')
+    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
+    if (!isOwner) throw new NotFoundException('无权限')
+    const acl = ((note as any).acl || []) as any[]
+    const entry = acl.find((a: any) => a.userId?.equals(target))
+    if (!entry) throw new NotFoundException('协作者不存在')
+    entry.role = role
+      ; (note as any).acl = acl
+    await note.save()
+    return { ok: true }
+  }
+
+  async removeCollaborator(id: string, actorId: string, targetUserId: string) {
+    const actor = new Types.ObjectId(actorId)
+    const target = new Types.ObjectId(targetUserId)
+    const note = await this.noteModel.findById(id).exec()
+    if (!note) throw new NotFoundException('笔记不存在')
+    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
+    if (!isOwner) throw new NotFoundException('无权限')
+    const acl = ((note as any).acl || []) as any[]
+    const next = acl.filter((a: any) => !a.userId?.equals(target))
+      ; (note as any).acl = next
+    await note.save()
+    return { ok: true }
+  }
+
+  async lockNote(id: string, userId: string) {
+    const u = new Types.ObjectId(userId)
+    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
+    if (!note) throw new NotFoundException('无权限')
+      ; (note as any).editingBy = u
+      ; (note as any).lockedAt = new Date()
+    await note.save()
+    return { ok: true }
+  }
+
+  async unlockNote(id: string, userId: string) {
+    const u = new Types.ObjectId(userId)
+    const note = await this.noteModel.findById(id).exec()
+    if (!note) throw new NotFoundException('笔记不存在')
+    if (note.userId.equals(u) || ((note as any).editingBy && (note as any).editingBy.equals(u))) {
+      ; (note as any).editingBy = undefined
+        ; (note as any).lockedAt = undefined
+      await note.save()
+      return { ok: true }
+    }
+    throw new NotFoundException('无权限')
   }
 
   async getRecommendations(userId: string, currentNoteId?: string, limit: number = 5, context?: NoteFilterDto): Promise<Note[]> {

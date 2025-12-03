@@ -9,6 +9,11 @@ import { TagsModule } from './modules/tags/tags.module';
 import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { SavedFiltersModule } from './modules/saved-filters/saved-filters.module';
 import { HealthModule } from './modules/health/health.module';
+import { InvitationsModule } from './modules/invitations/invitations.module';
+import { AuditModule } from './modules/audit/audit.module';
+import { VersionsModule } from './modules/versions/versions.module';
+import { CommentsModule } from './modules/comments/comments.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -31,6 +36,11 @@ import { HealthModule } from './modules/health/health.module';
     DashboardModule,
     SavedFiltersModule,
     HealthModule,
+    InvitationsModule,
+    AuditModule,
+    VersionsModule,
+    CommentsModule,
+    NotificationsModule,
   ],
 })
-export class AppModule {}
+export class AppModule { }
