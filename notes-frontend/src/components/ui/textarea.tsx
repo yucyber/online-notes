@@ -12,20 +12,20 @@ const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
       width: '100%',
       borderRadius: '12px',
       border: '1px solid',
-      borderColor: isFocused ? '#3b82f6' : '#e5e7eb',
+      borderColor: isFocused ? '#2468F2' : '#e5e7eb',
       backgroundColor: '#ffffff',
       padding: '12px 16px',
       fontSize: '14px',
       outline: 'none',
       transition: 'all 0.2s ease',
       boxShadow: isFocused 
-        ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
+        ? '0 0 0 2px rgba(36,104,242,0.25)'
         : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
       WebkitBoxShadow: isFocused 
-        ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
+        ? '0 0 0 2px rgba(36,104,242,0.25)'
         : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
       MozBoxShadow: isFocused 
-        ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
+        ? '0 0 0 2px rgba(36,104,242,0.25)'
         : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
       resize: 'none',
     };

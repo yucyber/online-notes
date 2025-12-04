@@ -3,7 +3,11 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createNote, fetchCategories, fetchTags, createTag } from '@/lib/api'
-import MarkdownEditor from '@/components/editor/MarkdownEditor'
+import dynamic from 'next/dynamic'
+const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
+  ssr: false,
+  loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
+})
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import type { Category, Tag } from '@/types'
@@ -19,6 +23,7 @@ export default function NewNotePage() {
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
+  const [visibility, setVisibility] = useState<'private' | 'org' | 'public'>('private')
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -154,6 +159,7 @@ export default function NewNotePage() {
         categoryId: selectedCategory || undefined,
         categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
         tags: selectedTags,
+        visibility: visibility as any,
       })
       router.push(`/dashboard/notes/${newNote.id}`)
     } catch (error) {
@@ -180,6 +186,7 @@ export default function NewNotePage() {
         categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
         tags: selectedTags,
         status: 'draft'
+        , visibility: visibility as any,
       })
       router.push(`/dashboard/notes/${newNote.id}`)
     } catch (error) {
@@ -261,6 +268,20 @@ export default function NewNotePage() {
           </div>
 
           <div>
+            <div className="mb-4">
+              <div className="mb-2 flex items-center justify-between">
+                <span className="text-sm font-medium text-gray-700">可见性</span>
+              </div>
+              <select
+                className="w-full rounded-lg border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                value={visibility}
+                onChange={(e) => setVisibility(e.target.value as any)}
+              >
+                <option value="private">仅自己</option>
+                <option value="org">组织内</option>
+                <option value="public">公开只读</option>
+              </select>
+            </div>
             <div className="mb-2 flex items-center justify-between">
               <span className="text-sm font-medium text-gray-700">标签（可多选）</span>
               {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}

@@ -3,6 +3,16 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
 import { AuditEntry, AuditEntryDocument } from './schemas/audit-entry.schema'
 
+// 统一 Audit.record 参数：允许携带 requestId/before/after/message，并容忍额外键以避免 TS2353
+// 仅持久化受控字段（before/after/message/requestId），其他键忽略
+export interface AuditRecordPayload {
+  requestId?: string
+  before?: any
+  after?: any
+  message?: string
+  [key: string]: any
+}
+
 @Injectable()
 export class AuditService {
   constructor(@InjectModel(AuditEntry.name) private model: Model<AuditEntryDocument>) {}
@@ -23,11 +33,12 @@ export class AuditService {
     const message = payload.message && String(payload.message).slice(0, 512)
     return { before: filter(payload.before), after: filter(payload.after), message }
   }
-  async record(eventType: string, actorId: string | null, resourceType: string, resourceId: string, payload: { requestId?: string; before?: any; after?: any; message?: string } = {}) {
+  async record(eventType: string, actorId: string | null, resourceType: string, resourceId: string, payload: AuditRecordPayload = {}) {
     const { before, after, message } = this.sanitize(resourceType, payload)
     const entry = new this.model({ eventType, actorId: actorId ? actorId : undefined, resourceType, resourceId, requestId: payload.requestId, before, after, message })
     await entry.save()
-    return { ok: true }
+    // 规范响应包：{code,message,data,requestId,timestamp}
+    return { code: 0, message: 'OK', data: { id: String(entry._id) }, requestId: payload.requestId, timestamp: Date.now() }
   }
   async list(params: { resourceType?: string; resourceId?: string; eventType?: string; page?: number; size?: number }) {
     const page = params.page || 1

@@ -23,7 +23,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     ref
   ) => {
     const [isHovered, setIsHovered] = React.useState(false);
-    
+
     // 基础样式
     const baseStyles: React.CSSProperties = {
       display: 'inline-flex',
@@ -38,7 +38,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       cursor: 'pointer',
       transition: 'all 0.2s ease',
     };
-    
+
     // 尺寸样式（符合可触达区域 ≥44px 标准）
     const sizeStyles: Record<string, React.CSSProperties> = {
       default: { height: '44px', padding: '0 16px' },
@@ -46,66 +46,62 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       lg: { height: '48px', padding: '0 32px' },
       icon: { height: '44px', width: '44px', padding: 0 },
     };
-    
+
     // 变体样式
     const variantStyles: Record<string, React.CSSProperties> = {
       default: {
-        background: isHovered 
-          ? 'linear-gradient(to right, #1d4ed8, #1e40af)' 
-          : 'linear-gradient(to right, #2563eb, #1d4ed8)',
+        background: 'linear-gradient(to right, var(--primary-500), var(--primary-600))',
         color: '#ffffff',
-        boxShadow: isHovered 
+        opacity: isHovered ? 0.8 : 1,
+        boxShadow: isHovered
           ? '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)'
           : '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
-        transform: isHovered ? 'translateY(-2px)' : 'none',
       },
       destructive: {
-        background: isHovered 
-          ? 'linear-gradient(to right, #dc2626, #b91c1c)' 
+        background: isHovered
+          ? 'linear-gradient(to right, #dc2626, #b91c1c)'
           : 'linear-gradient(to right, #ef4444, #dc2626)',
         color: '#ffffff',
-        boxShadow: isHovered 
+        boxShadow: isHovered
           ? '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)'
           : '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
         transform: isHovered ? 'translateY(-2px)' : 'none',
       },
       outline: {
-        background: isHovered ? '#f9fafb' : '#ffffff',
-        color: isHovered ? '#2563eb' : '#374151',
+        background: isHovered ? 'var(--gray-50)' : '#ffffff',
+        color: isHovered ? 'var(--primary-600)' : '#374151',
         border: '2px solid',
-        borderColor: isHovered ? '#2563eb' : '#e5e7eb',
-        boxShadow: isHovered 
+        borderColor: isHovered ? 'var(--primary-600)' : '#e5e7eb',
+        boxShadow: isHovered
           ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
           : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-        transform: isHovered ? 'translateY(-2px)' : 'none',
       },
       secondary: {
-        background: isHovered ? '#e5e7eb' : '#f3f4f6',
-        color: '#111827',
-        boxShadow: isHovered 
+        background: isHovered ? '#e5e7eb' : '#f7f8fa',
+        color: '#1F2329',
+        boxShadow: isHovered
           ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
           : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-        transform: isHovered ? 'translateY(-2px)' : 'none',
       },
       ghost: {
         background: isHovered ? '#f3f4f6' : 'transparent',
-        color: isHovered ? '#111827' : '#4b5563',
+        color: isHovered ? '#1F2329' : '#4E5969',
       },
       link: {
         background: 'transparent',
-        color: '#2563eb',
+        color: 'var(--primary-600)',
         textDecoration: isHovered ? 'underline' : 'none',
         textUnderlineOffset: '4px',
       },
     };
-    
+
     const combinedStyles: React.CSSProperties = {
       ...baseStyles,
       ...sizeStyles[size],
       ...variantStyles[variant],
       ...(customStyle || {}),
     };
-    
+
     // 禁用状态
     if (props.disabled) {
       combinedStyles.opacity = 0.5;
@@ -131,15 +127,16 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     }
 
     if (isActive) {
-      combinedStyles.transform = 'scale(0.98)'
+      combinedStyles.transform = 'scale(0.95)'
+      combinedStyles.transitionTimingFunction = 'ease-out'
       combinedStyles.boxShadow = '0 12px 18px -6px rgba(0,0,0,0.2), 0 8px 12px -8px rgba(0,0,0,0.15)'
     }
 
     // 焦点可见性
     const [isFocused, setIsFocused] = React.useState(false)
     if (isFocused) {
-      combinedStyles.outline = '2px solid rgba(59,130,246,0.35)'
-      combinedStyles.boxShadow = '0 0 0 2px rgba(59,130,246,0.25)'
+      combinedStyles.outline = '2px solid var(--primary-600)'
+      combinedStyles.boxShadow = '0 0 0 2px rgba(0,0,0,0.05)'
     }
 
     return (

@@ -20,17 +20,17 @@ export class CommentsService {
     return this.commentModel.find({ noteId: note._id }).sort({ createdAt: -1 }).exec()
   }
 
-  async create(noteId: string, userId: string, start: number, end: number, text: string) {
+  async create(noteId: string, userId: string, start: number, end: number, text: string, requestId?: string) {
     const u = new Types.ObjectId(userId)
     const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }] }).exec()
     if (!note) throw new NotFoundException('无权限')
     const c = new this.commentModel({ noteId: note._id, authorId: u, start, end, text })
     await c.save()
-    await this.audit.record('comment_added', userId, 'note', note._id.toString(), {})
+    await this.audit.record('comment_added', userId, 'note', note._id.toString(), { requestId, message: 'comment_added' })
     return c
   }
 
-  async reply(commentId: string, userId: string, text: string) {
+  async reply(commentId: string, userId: string, text: string, requestId?: string) {
     const c = await this.commentModel.findById(commentId).exec()
     if (!c) throw new NotFoundException('评论不存在')
     const u = new Types.ObjectId(userId)
@@ -38,7 +38,21 @@ export class CommentsService {
     replies.push({ authorId: u, text, createdAt: new Date() })
     ;(c as any).replies = replies
     await c.save()
-    await this.audit.record('comment_replied', userId, 'note', c.noteId.toString(), {})
+    await this.audit.record('comment_replied', userId, 'note', c.noteId.toString(), { requestId, message: 'comment_replied' })
+    return { ok: true }
+  }
+
+  async remove(commentId: string, userId: string, requestId?: string) {
+    const c = await this.commentModel.findById(commentId).exec()
+    if (!c) throw new NotFoundException('评论不存在')
+    const note = await this.noteModel.findById(c.noteId).exec()
+    if (!note) throw new NotFoundException('笔记不存在')
+    const uid = new Types.ObjectId(userId)
+    const isAuthor = String((c.authorId || '').toString()) === String(uid.toString())
+    const isOwner = String((note.userId || '').toString()) === String(uid.toString())
+    if (!isAuthor && !isOwner) throw new BadRequestException('无权限删除')
+    await this.commentModel.deleteOne({ _id: c._id }).exec()
+    await this.audit.record('comment_deleted', userId, 'note', c.noteId.toString(), { requestId, message: 'comment_deleted' })
     return { ok: true }
   }
 }

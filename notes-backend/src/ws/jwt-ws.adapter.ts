@@ -42,7 +42,7 @@ export class JwtWsAdapter extends WsAdapter {
         let msg: any
         try { msg = JSON.parse(raw.toString()) } catch { return socket.send(JSON.stringify({ code: 500, message: 'invalid_json', data: null, traceId: crypto.randomUUID(), ts })) }
         const idemKey = `ws:req:${user?.id}:${msg.requestId}`
-        const nx = await this.redis.set(idemKey, '1', { NX: true, EX: 300 })
+        const nx = await this.redis.set(idemKey, '1', 'EX', 300, 'NX')
         if (nx === null) {
           return socket.send(JSON.stringify({ code: 0, message: 'duplicate', data: null, traceId: crypto.randomUUID(), ts, requestId: msg.requestId }))
         }

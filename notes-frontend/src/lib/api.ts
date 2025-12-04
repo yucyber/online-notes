@@ -34,12 +34,12 @@ api.interceptors.request.use(
       config.headers.Authorization = `Bearer ${token}`
     }
     ; (config as any).__startTime = Date.now()
-    if (typeof config.url === 'string' && config.url.includes('/notes')) {
+    const enableLogs = (process.env.NEXT_PUBLIC_ENABLE_API_LOGS ?? '').toString() !== 'false' && process.env.NODE_ENV !== 'production'
+    if (enableLogs && typeof config.url === 'string' && config.url.includes('/notes')) {
       console.log('API Request /notes', {
         url: config.url,
         method: config.method,
         params: config.params,
-        headers: config.headers,
         time: new Date().toISOString(),
       })
     }
@@ -53,7 +53,8 @@ api.interceptors.response.use(
   (response) => {
     const cfg: any = response.config || {}
     const duration = cfg.__startTime ? Date.now() - cfg.__startTime : undefined
-    if (typeof response.config.url === 'string' && response.config.url.includes('/notes')) {
+    const enableLogs = (process.env.NEXT_PUBLIC_ENABLE_API_LOGS ?? '').toString() !== 'false' && process.env.NODE_ENV !== 'production'
+    if (enableLogs && typeof response.config.url === 'string' && response.config.url.includes('/notes')) {
       console.log('API Response /notes', {
         url: response.config.url,
         status: response.status,
@@ -61,14 +62,24 @@ api.interceptors.response.use(
         time: new Date().toISOString(),
       })
     }
-    return response.data
+    const payload = response.data
+    if (payload && typeof payload === 'object' && 'code' in payload && 'message' in payload && 'timestamp' in payload) {
+      if (payload.code === 0) {
+        return payload.data
+      }
+      const err = new Error(payload.message || 'API Error') as any
+      err.__api = { code: payload.code, requestId: payload.requestId, timestamp: payload.timestamp }
+      throw err
+    }
+    return payload
   },
   (error) => {
     const cfg: any = error.config || {}
     const duration = cfg.__startTime ? Date.now() - cfg.__startTime : undefined
     const status = error.response?.status
     const url: string = error.config?.url || ''
-    if (typeof url === 'string' && url.includes('/notes')) {
+    const enableLogs = (process.env.NEXT_PUBLIC_ENABLE_API_LOGS ?? '').toString() !== 'false' && process.env.NODE_ENV !== 'production'
+    if (enableLogs && typeof url === 'string' && url.includes('/notes')) {
       console.log('API Error /notes', {
         url,
         status,
@@ -77,10 +88,18 @@ api.interceptors.response.use(
         time: new Date().toISOString(),
       })
     }
+    // 401统一处理：避免在登录/注册请求上拦截跳转，保留页面内错误处理逻辑
     if (status === 401) {
-      removeToken()
-      if (typeof window !== 'undefined') {
-        window.location.href = '/login'
+      const reqUrl = String(error.config?.url || '')
+      const path = reqUrl.replace(/^https?:\/\/[^/]+/, '').replace(/\?.*$/, '')
+      const whitelist = [/^\/auth\/(login|register)/, /^\/health$/, /^\/invitations\//]
+      const skip = Boolean((error.config as any)?.meta?.skipAuthRedirect) || String(error.config?.headers?.['X-Skip-Auth-Redirect'] || '') === '1'
+      const whitelisted = whitelist.some(r => r.test(path)) || skip
+      if (!whitelisted) {
+        removeToken()
+        if (typeof window !== 'undefined') {
+          window.location.href = '/login'
+        }
       }
     }
     // 简单只读请求重试（网络错误/5xx），最多2次，指数退避
@@ -160,6 +179,49 @@ export const notesAPI = {
     }
     return api.get<Note[]>('/notes/recommendations', { params: sp }).then(res => res as unknown as Note[])
   },
+}
+
+export const aclAPI = {
+  get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as { visibility: string; acl: { userId: string; role: string }[] }),
+  add: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.post(`/notes/${noteId}/acl`, { userId, role }).then(res => res as unknown as any),
+  update: (noteId: string, userId: string, role: 'owner' | 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
+  remove: (noteId: string, userId: string) => api.delete(`/notes/${noteId}/acl/${userId}`).then(res => res as unknown as any),
+}
+
+export const invitationsAPI = {
+  create: (noteId: string, role: 'editor' | 'viewer', inviteeEmail?: string, ttlHours?: number) => api.post(`/invitations/notes/${noteId}`, { role, inviteeEmail, ttlHours }).then(res => res as unknown as { token: string; expiresAt: string }),
+  list: (noteId: string) => api.get(`/invitations/notes/${noteId}`).then(res => res as unknown as any[]),
+  preview: (token: string) => api.get(`/invitations/${token}`).then(res => res as unknown as { noteId: string; role: string; expiresAt: string }),
+  accept: (token: string) => api.post(`/invitations/${token}/accept`, {}).then(res => res as unknown as any),
+  revoke: (token: string) => api.delete(`/invitations/${token}`).then(res => res as unknown as any),
+  mine: (status: 'pending' | 'accepted' | 'revoked' | 'expired' = 'pending') => api.get(`/invitations/mine`, { params: { status } }).then(res => res as unknown as any[]),
+}
+
+export const versionsAPI = {
+  list: (noteId: string) => api.get(`/notes/${noteId}/versions`).then(res => res as unknown as any[]),
+  snapshot: (noteId: string) => api.post(`/notes/${noteId}/versions`, {}).then(res => res as unknown as any),
+  restore: (noteId: string, versionNo: number) => api.post(`/notes/${noteId}/versions/${versionNo}/restore`, {}).then(res => res as unknown as any),
+}
+
+export const auditAPI = {
+  list: (resourceType?: string, resourceId?: string, eventType?: string, page: number = 1, size: number = 20) => api.get('/audit/logs', { params: { resourceType, resourceId, eventType, page, size } }).then(res => res as unknown as { items: any[]; page: number; size: number; total: number }),
+}
+
+export const notificationsAPI = {
+  list: (page: number = 1, size: number = 20, type?: string, status?: string) => api.get('/notifications', { params: { page, size, type, status } }).then(res => res as unknown as { items: any[]; page: number; size: number; total: number }),
+  markRead: (id: string) => api.patch(`/notifications/${id}/read`, {}).then(res => res as unknown as any),
+}
+
+export const commentsAPI = {
+  list: (noteId: string) => api.get(`/notes/${noteId}/comments`).then(res => res as unknown as any[]),
+  create: (noteId: string, start: number, end: number, text: string) => api.post(`/notes/${noteId}/comments`, { start, end, text }).then(res => res as unknown as any),
+  reply: (commentId: string, text: string) => api.post(`/comments/${commentId}/replies`, { text }).then(res => res as unknown as any),
+  delete: (commentId: string) => api.delete(`/comments/${commentId}`).then(res => res as unknown as { ok: boolean }),
+}
+
+export const noteLockAPI = {
+  lock: (noteId: string) => api.post(`/notes/${noteId}/lock`, {}).then(res => res as unknown as any),
+  unlock: (noteId: string) => api.delete(`/notes/${noteId}/lock`).then(res => res as unknown as any),
 }
 
 // 保存筛选相关API
@@ -287,3 +349,21 @@ export const fetchTags = tagsAPI.getAll
 export const createTag = tagsAPI.create
 export const deleteTag = tagsAPI.delete
 export const fetchDashboardOverview = dashboardAPI.getOverview
+export const fetchAcl = aclAPI.get
+export const createInvitation = invitationsAPI.create
+export const listInvitations = invitationsAPI.list
+export const previewInvitation = invitationsAPI.preview
+export const acceptInvitation = invitationsAPI.accept
+export const revokeInvitation = invitationsAPI.revoke
+export const listMyInvitations = invitationsAPI.mine
+export const listNotifications = notificationsAPI.list
+export const markNotificationRead = notificationsAPI.markRead
+export const listVersions = versionsAPI.list
+export const snapshotVersion = versionsAPI.snapshot
+export const restoreVersion = versionsAPI.restore
+export const listAuditLogs = auditAPI.list
+export const listComments = commentsAPI.list
+export const createComment = commentsAPI.create
+export const replyComment = commentsAPI.reply
+export const lockNote = noteLockAPI.lock
+export const unlockNote = noteLockAPI.unlock

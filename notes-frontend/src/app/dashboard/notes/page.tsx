@@ -11,8 +11,10 @@ import type { Note, Category, Tag, NoteFilterParams } from '@/types'
 import { fetchNotes, deleteNote, fetchCategories, fetchTags } from '@/lib/api'
 import { formatDate, truncateText } from '@/utils'
 import { Trash2, Plus, Edit, FileText } from 'lucide-react'
-import SearchFilterBar from '@/components/SearchFilterBar'
-import SmartRecommendations from '@/components/SmartRecommendations'
+import dynamic from 'next/dynamic'
+// 延迟加载重组件，减少初始 JS 体积与阻塞，提升 FCP/LCP
+const SearchFilterBar = dynamic(() => import('@/components/SearchFilterBar'), { ssr: false })
+const SmartRecommendations = dynamic(() => import('@/components/SmartRecommendations'), { ssr: false })
 
 const extractId = <T extends { id?: string; _id?: string }>(entity?: T | null) =>
   entity?.id || (entity as { _id?: string })?._id || ''
@@ -56,7 +58,7 @@ export default function NotesPage() {
     const controller = new AbortController()
     let aborted = false
     controller.signal.addEventListener('abort', () => { aborted = true })
-    const loadNotes = async () => {
+    const loadNotesFast = async () => {
       try {
         setLoading(true)
         const params: NoteFilterParams = {
@@ -70,33 +72,36 @@ export default function NotesPage() {
           endDate: searchParams.get('endDate') || undefined,
           status: (searchParams.get('status') as 'published' | 'draft') || undefined,
         }
-
-        const [notesData, categoriesData, tagsData] = await Promise.all([
-          fetchNotes(params, controller.signal),
-          fetchCategories(controller.signal).catch(() => [] as Category[]),
-          fetchTags(controller.signal).catch(() => [] as Tag[]),
-        ])
-
-        const mappedCategories = categoriesData.reduce<Record<string, string>>((acc, category) => {
-          const categoryId = extractId(category)
-          if (categoryId) {
-            acc[categoryId] = category.name
-          }
-          return acc
-        }, {})
-
-        const mappedTags = tagsData.reduce<Record<string, string>>((acc, tag) => {
-          const tagId = extractId(tag)
-          if (tagId) {
-            acc[tagId] = tag.name
-          }
-          return acc
-        }, {})
-
+        // 先渲染核心列表，不阻塞首屏
+        const notesData = await fetchNotes(params, controller.signal)
         setNotes(notesData)
-        setCategoryMap(mappedCategories)
-        setTagMap(mappedTags)
         setError('')
+        setLoading(false)
+        // 辅助数据异步加载，不影响首屏
+        fetchCategories(controller.signal)
+          .then((categoriesData) => {
+            const mappedCategories = (categoriesData || []).reduce<Record<string, string>>((acc, category) => {
+              const categoryId = extractId(category)
+              if (categoryId) {
+                acc[categoryId] = category.name
+              }
+              return acc
+            }, {})
+            setCategoryMap(mappedCategories)
+          })
+          .catch(() => void 0)
+        fetchTags(controller.signal)
+          .then((tagsData) => {
+            const mappedTags = (tagsData || []).reduce<Record<string, string>>((acc, tag) => {
+              const tagId = extractId(tag)
+              if (tagId) {
+                acc[tagId] = tag.name
+              }
+              return acc
+            }, {})
+            setTagMap(mappedTags)
+          })
+          .catch(() => void 0)
       } catch (err: any) {
         if (aborted || controller.signal.aborted) {
           return
@@ -126,11 +131,10 @@ export default function NotesPage() {
         }
         setError('加载笔记失败，请重试')
         console.error('Failed to load notes:', err)
-      } finally {
         setLoading(false)
       }
     }
-    loadNotes()
+    loadNotesFast()
     return () => {
       controller.abort()
     }

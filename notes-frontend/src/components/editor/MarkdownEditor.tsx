@@ -15,8 +15,9 @@ interface MarkdownEditorProps {
   onSave: (title: string, content: string) => Promise<void>
   onSaveDraft?: (title: string, content: string) => Promise<void>
   isNew?: boolean
-  // 本地草稿标识（建议传入笔记 id 或 'new'）
+  // 本地草稿标识（建议传入笔记 id 或 'new')
   draftKey?: string
+  onSelectionChange?: (start: number, end: number) => void
 }
 
 export default function MarkdownEditor({
@@ -329,6 +330,30 @@ export default function MarkdownEditor({
             value={content}
             onChange={(e) => setContent(e.target.value)}
             onKeyDown={handleKeyDown}
+            onSelect={(e: any) => {
+              try {
+                const target = e.target as HTMLTextAreaElement
+                const start = target.selectionStart || 0
+                const end = target.selectionEnd || 0
+                if (typeof onSelectionChange === 'function') onSelectionChange(start, end)
+              } catch { }
+            }}
+            onMouseUp={(e: any) => {
+              try {
+                const target = e.target as HTMLTextAreaElement
+                const start = target.selectionStart || 0
+                const end = target.selectionEnd || 0
+                if (typeof onSelectionChange === 'function') onSelectionChange(start, end)
+              } catch { }
+            }}
+            onKeyUp={(e: any) => {
+              try {
+                const target = e.target as HTMLTextAreaElement
+                const start = target.selectionStart || 0
+                const end = target.selectionEnd || 0
+                if (typeof onSelectionChange === 'function') onSelectionChange(start, end)
+              } catch { }
+            }}
             placeholder="使用Markdown格式编写笔记...\n\n支持以下语法:\n# 标题\n**粗体**\n*斜体*\n`代码`\n```代码块```\n- 列表项\n[链接](url)\n> 引用"
             className="min-h-[500px] font-mono text-sm resize-none border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />

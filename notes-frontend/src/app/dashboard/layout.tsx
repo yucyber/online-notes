@@ -3,19 +3,10 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import {
-  LayoutDashboard,
-  FileText,
-  Bookmark,
-  Settings,
-  LogOut,
-  Menu,
-  X,
-  Bell,
-  Settings2
-} from 'lucide-react'
+import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Search } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import { getCurrentUser, isAuthenticated, removeToken } from '@/lib/auth'
+import { globalHotkeys } from '@/lib/hotkeys'
 import type { User } from '@/types'
 
 export default function DashboardLayout({
@@ -29,52 +20,45 @@ export default function DashboardLayout({
   const [user, setUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [hoveredNav, setHoveredNav] = useState<string | null>(null)
-  // 导航按钮统一样式，根据激活/悬停状态返回不同的渐变与阴影
+  // 简化导航样式：白底、轻边框、激活态使用品牌色
   const getNavButtonStyle = (isActive: boolean, isHovered: boolean) => {
-    const base = {
-      borderRadius: '18px',
-      padding: '0 18px',
-      border: '1px solid rgba(255,255,255,0.15)',
-      backgroundColor: 'rgba(255,255,255,0.08)',
-      color: '#e2e8f0',
-      boxShadow: '0 8px 20px -18px rgba(15,23,42,0.9)',
-      transform: 'translateX(0)',
+    const base: React.CSSProperties = {
+      borderRadius: '10px',
+      padding: '10px 12px',
+      border: '1px solid #e5e7eb',
+      backgroundColor: '#ffffff',
+      color: '#374151',
+      boxShadow: 'none',
+      transform: 'none',
     }
     if (isHovered && !isActive) {
       return {
         ...base,
-        backgroundColor: 'rgba(255,255,255,0.14)',
-        border: '1px solid rgba(255,255,255,0.25)',
-        transform: 'translateX(4px)',
+        backgroundColor: '#f9fafb',
+        border: '1px solid #e5e7eb',
       }
     }
     if (isActive) {
       return {
         ...base,
-        background: 'linear-gradient(120deg, rgba(59,130,246,0.7), rgba(14,165,233,0.65))',
-        border: '1px solid rgba(125,211,252,0.8)',
-        boxShadow: '0 18px 35px -20px rgba(6,182,212,0.9)',
-        transform: 'translateX(6px)',
+        backgroundColor: 'var(--primary-50)',
+        border: '1px solid var(--primary-100)',
+        color: 'var(--primary-600)',
       }
     }
     return base
   }
 
-  // 导航图标外层容器样式，提供玻璃拟态高光
   const getNavIconStyle = (isActive: boolean) => ({
-    background: isActive
-      ? 'radial-gradient(circle at 20% 20%, rgba(255,255,255,0.65), rgba(255,255,255,0.15))'
-      : 'rgba(255,255,255,0.12)',
-    boxShadow: isActive
-      ? 'inset 0 0 0 1px rgba(255,255,255,0.4)'
-      : 'inset 0 0 0 1px rgba(255,255,255,0.2)',
-    borderRadius: '12px',
-    width: '40px',
-    height: '40px',
+    backgroundColor: isActive ? '#d1fae5' : '#f3f4f6',
+    border: '1px solid #e5e7eb',
+    borderRadius: '8px',
+    width: '32px',
+    height: '32px',
     display: 'inline-flex',
     alignItems: 'center',
     justifyContent: 'center',
-    transition: 'all 0.25s ease',
+    transition: 'background-color 0.2s ease',
   })
 
 
@@ -85,6 +69,23 @@ export default function DashboardLayout({
     }
     setUser(getCurrentUser())
     setIsReady(true)
+    const detach = globalHotkeys.attach()
+    globalHotkeys.register('Ctrl+K', () => {
+      const input = document.getElementById('global-search') as HTMLInputElement | null
+      input?.focus()
+    })
+    globalHotkeys.register('Ctrl+N', () => {
+      router.push('/dashboard/notes/new')
+    })
+    globalHotkeys.register('Ctrl+P', () => {
+      const el = document.getElementById('preview-toggle')
+      (el as HTMLButtonElement | null)?.click()
+    })
+    globalHotkeys.register('Ctrl+S', () => {
+      const el = document.getElementById('save-button')
+      (el as HTMLButtonElement | null)?.click()
+    })
+    return () => { detach() }
   }, [router])
 
   const handleLogout = () => {
@@ -114,6 +115,12 @@ export default function DashboardLayout({
       hint: '全部记录'
     },
     {
+      label: '活动日志',
+      icon: <Clock className="h-5 w-5" />,
+      href: '/dashboard/activity',
+      hint: '变更记录'
+    },
+    {
       label: '分类管理',
       icon: <Bookmark className="h-5 w-5" />,
       href: '/dashboard/categories',
@@ -134,21 +141,16 @@ export default function DashboardLayout({
   ]
 
   return (
-    <div className="flex min-h-screen bg-gradient-to-br from-gray-50 via-white to-gray-50">
+    <div className="flex min-h-screen bg-white">
       {/* 桌面端侧边栏 */}
       {/* 桌面端侧边栏整体容器：使用深色渐变与玻璃质感 */}
       <aside
         className="relative hidden flex-col overflow-hidden md:flex"
         style={{
-          width: '260px',
-          borderTopRightRadius: '28px',
-          borderBottomRightRadius: '32px',
-          margin: '14px',
-          marginRight: '0',
-          background:
-            'linear-gradient(180deg, rgba(15,23,42,0.95) 0%, rgba(30,64,175,0.92) 55%, rgba(14,165,233,0.9) 120%)',
-          boxShadow: '12px 20px 45px rgba(15, 23, 42, 0.25)',
-          border: '1px solid rgba(255, 255, 255, 0.08)',
+          width: '240px',
+          margin: '0',
+          backgroundColor: '#ffffff',
+          borderRight: '1px solid #e5e7eb',
         }}
       >
         {/* 顶部品牌区背景高光 */}
@@ -162,23 +164,23 @@ export default function DashboardLayout({
             opacity: 0.8,
           }}
         />
-        <div className="relative flex h-20 items-center gap-3 px-6 border-b border-white/10">
+        <div className="relative flex h-16 items-center gap-3 px-4 border-b border-gray-200">
           <div
             className="flex h-12 w-12 items-center justify-center rounded-2xl"
             style={{
-              background: 'linear-gradient(135deg, rgba(59,130,246,0.9), rgba(147,51,234,0.8))',
-              boxShadow: '0 15px 30px rgba(37, 99, 235, 0.45)',
+              backgroundColor: '#10b981',
+              color: '#fff',
             }}
           >
             <span className="text-2xl font-black text-white">N</span>
           </div>
           <div>
-            <p className="text-lg font-semibold text-white">笔记平台</p>
-            <p className="text-xs uppercase tracking-[0.4em] text-white/70">Workspace</p>
+            <p className="text-sm font-medium text-gray-900">笔记平台</p>
+            <p className="text-xs text-gray-500">Workspace</p>
           </div>
         </div>
         {/* 导航按钮列表 */}
-        <nav className="relative flex-1 overflow-auto px-4 py-6 space-y-2">
+        <nav className="relative flex-1 overflow-auto px-3 py-4 space-y-1">
           {navItems.map((item) => {
             const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname?.startsWith(item.href))
             const isHovered = hoveredNav === item.href
@@ -186,7 +188,7 @@ export default function DashboardLayout({
               <Button
                 key={item.href}
                 variant="ghost"
-                className="w-full justify-start text-white/85 backdrop-blur-sm"
+                className="w-full justify-start"
                 style={getNavButtonStyle(isActive, isHovered)}
                 onMouseEnter={() => setHoveredNav(item.href)}
                 onMouseLeave={() => setHoveredNav(null)}
@@ -194,12 +196,10 @@ export default function DashboardLayout({
               >
                 <div className="flex items-center gap-3">
                   <span
-                    className="h-9 w-1 rounded-full"
+                    className="h-6 w-1 rounded-full"
                     style={{
-                      background: isActive
-                        ? 'linear-gradient(to bottom, #5eead4, #2563eb)'
-                        : 'rgba(255,255,255,0.2)',
-                      transition: 'all 0.2s ease',
+                      backgroundColor: isActive ? 'var(--primary-600)' : '#e5e7eb',
+                      transition: 'background-color 0.2s ease',
                     }}
                   />
                   <span className="mr-2" style={getNavIconStyle(isActive)}>
@@ -207,7 +207,7 @@ export default function DashboardLayout({
                   </span>
                   <div className="flex flex-col text-left leading-tight">
                     <span>{item.label}</span>
-                    <span className="text-[11px] text-white/70">{item.hint}</span>
+                    <span className="text-[11px] text-gray-500">{item.hint}</span>
                   </div>
                 </div>
               </Button>
@@ -240,15 +240,15 @@ export default function DashboardLayout({
           onClick={() => setIsMobileMenuOpen(false)}
         >
           <div
-            className="fixed left-0 top-0 h-full w-64 bg-white/95 backdrop-blur-md shadow-xl animate-slide-up"
+            className="fixed left-0 top-0 h-full w-64 bg-white shadow-xl animate-slide-up"
             onClick={(e) => e.stopPropagation()}
           >
-            <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4 bg-gradient-to-r from-primary-600 to-primary-700">
-              <h1 className="text-xl font-bold text-white">笔记平台</h1>
+            <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
+              <h1 className="text-base font-semibold text-gray-900">笔记平台</h1>
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-white hover:bg-white/20 transition-colors duration-200"
+                className="text-gray-700 hover:bg-gray-100 transition-colors duration-200"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 <X className="h-6 w-6" />
@@ -262,8 +262,8 @@ export default function DashboardLayout({
                     key={item.href}
                     variant="ghost"
                     className={`w-full justify-start transition-all duration-200 ${isActive
-                        ? 'bg-primary-50 text-primary-700 hover:bg-primary-100 font-medium shadow-sm'
-                        : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-primary-50 text-primary-700 hover:bg-primary-100 font-medium shadow-sm'
+                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
                       }`}
                     onClick={() => {
                       router.push(item.href)
@@ -297,91 +297,62 @@ export default function DashboardLayout({
 
       {/* 主内容区 */}
       {/* 主内容区采用浅色渐变背景 */}
-      <main className="flex-1 overflow-auto bg-[#f7f9fc]">
+      <main className="flex-1 overflow-auto bg-gray-50">
         {/* 顶部吸附导航条，添加柔和渐变和模糊效果 */}
-        <div
-          className="sticky top-0 z-10 px-4 pt-4 pb-3 md:px-6 md:pt-6 md:pb-4"
-          style={{
-            background: 'linear-gradient(120deg, rgba(248,250,252,0.95), rgba(219,234,254,0.92))',
-            boxShadow: '0 15px 30px -24px rgba(30,64,175,0.5)',
-            borderBottom: '1px solid rgba(148,163,184,0.2)',
-            backdropFilter: 'blur(8px)',
-          }}
-        >
+        <div className="sticky top-0 z-10 px-4 pt-3 pb-3 md:px-6 md:pt-3 md:pb-3 bg-white border-b border-gray-200">
           {/* 顶部卡片容器：承载菜单按钮与用户信息 */}
-          <header className="flex h-16 items-center justify-between rounded-2xl px-4 gap-4"
-            style={{
-              background: 'linear-gradient(120deg, rgba(255,255,255,0.95), rgba(255,255,255,0.75))',
-              border: '1px solid rgba(226,232,240,0.7)',
-              boxShadow: '0 15px 45px -30px rgba(15,23,42,0.45)',
-            }}
-          >
+          <header className="flex h-14 items-center justify-between px-0 gap-4">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden"
-                style={{
-                  borderRadius: '14px',
-                  border: '1px solid rgba(148,163,184,0.4)',
-                  backgroundColor: 'rgba(226,232,240,0.45)',
-                  color: '#0f172a',
-                }}
+                className="md:hidden text-gray-700 hover:bg-gray-100"
                 onClick={() => setIsMobileMenuOpen(true)}
               >
                 <Menu className="h-6 w-6" />
               </Button>
-              <div className="hidden md:flex flex-col">
-                <span className="text-xs uppercase tracking-[0.3em] text-gray-400">Workspace</span>
-                <span className="text-base font-semibold text-gray-900">每日知识面板</span>
+              <div className="hidden md:flex items-center gap-2">
+                <div className="h-6 w-6 rounded-md bg-primary-600/90 flex items-center justify-center text-white font-semibold">N</div>
+                <span className="text-title text-text-secondary">笔记平台</span>
               </div>
             </div>
             <div className="flex items-center gap-3">
+              <div className="hidden md:flex items-center justify-center w-[400px]">
+                <div className="relative w-full">
+                  <label htmlFor="global-search" className="sr-only">搜索</label>
+                  <input id="global-search" aria-label="搜索" className="w-full h-11 rounded-xl border border-gray-200 pl-10 pr-3 text-body input-enhanced" placeholder="搜索" />
+                  <Search aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
+                </div>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
-                style={{
-                  borderRadius: '12px',
-                  border: '1px solid rgba(148,163,184,0.5)',
-                  backgroundColor: 'rgba(226,232,240,0.6)',
-                  color: '#0f172a',
-                }}
+                className="text-gray-700 hover:bg-gray-100"
+                onClick={() => router.push('/dashboard/notifications')}
               >
                 <Bell className="h-5 w-5" />
               </Button>
               <Button
                 variant="ghost"
                 size="icon"
-                style={{
-                  borderRadius: '12px',
-                  border: '1px solid rgba(148,163,184,0.5)',
-                  backgroundColor: 'rgba(226,232,240,0.6)',
-                  color: '#0f172a',
-                }}
+                className="text-gray-700 hover:bg-gray-100"
               >
                 <Settings2 className="h-5 w-5" />
               </Button>
               <div
-                className="flex items-center gap-3 rounded-2xl px-3 py-2"
-                style={{
-                  border: '1px solid rgba(148,163,184,0.4)',
-                  backgroundColor: 'rgba(241,245,249,0.8)',
-                }}
+                className="flex items-center gap-3 rounded-xl px-3 py-2 border border-gray-200 bg-gray-50"
               >
                 <div
-                  className="h-10 w-10 rounded-2xl flex items-center justify-center font-semibold"
-                  style={{
-                    background: 'linear-gradient(135deg, rgba(59,130,246,0.9), rgba(147,51,234,0.85))',
-                    color: '#fff',
-                  }}
+                  className="h-8 w-8 rounded-full flex items-center justify-center font-semibold text-white"
+                  style={{ backgroundColor: '#2468F2' }}
                 >
                   {(user?.email || 'U')[0]?.toUpperCase()}
                 </div>
                 <div className="text-right">
-                  <p className="text-sm font-medium text-gray-900">
+                  <p className="text-sm font-medium text-text-default">
                     {user?.email || '用户'}
                   </p>
-                  <p className="text-xs text-gray-500 flex items-center gap-1 justify-end">
+                  <p className="text-xs text-text-muted flex items-center gap-1 justify-end">
                     <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
                     在线
                   </p>
@@ -393,26 +364,8 @@ export default function DashboardLayout({
             </div>
           </header>
         </div>
-        {/* 主内容背景区域，叠加径向渐变以提升层次 */}
-        <div
-          className="p-4 md:p-6 lg:p-8"
-          style={{
-            minHeight: 'calc(100vh - 140px)',
-            background:
-              'radial-gradient(circle at 20% 20%, rgba(59,130,246,0.08), transparent 35%), radial-gradient(circle at 80% 0%, rgba(14,165,233,0.08), transparent 40%)',
-          }}
-        >
-          {/* 内容白色卡片容器，提供统一内边距与阴影 */}
-          <div
-            className="mx-auto w-full max-w-8xl animate-fade-in"
-            style={{
-              borderRadius: '28px',
-              padding: '24px',
-              backgroundColor: '#ffffff',
-              border: '1px solid rgba(226,232,240,0.7)',
-              boxShadow: '0 40px 80px -45px rgba(15,23,42,0.5)',
-            }}
-          >
+        <div className="p-4 md:p-6 lg:p-8">
+          <div className="mx-auto w-full max-w-7xl animate-fade-in rounded-xl p-4 md:p-6 bg-white border border-gray-200 shadow-sm">
             {children}
           </div>
         </div>

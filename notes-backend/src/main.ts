@@ -13,10 +13,15 @@ async function bootstrap() {
   // can rely on a predictable baseURL (see src/lib/api.ts).
   app.setGlobalPrefix('api');
   
-  // Enable CORS
+  // Enable CORS（修复：统一读取 FRONTEND_URL/CLIENT_URL，显式允许 Authorization 等头部，适配 3003 前端端口）
   app.enableCors({
-    origin: (process.env.CLIENT_URL || 'http://localhost:3000').split(',').map(x => x.trim()),
+    origin: (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3003')
+      .split(',')
+      .map((x) => x.trim()),
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-ID'],
+    exposedHeaders: ['X-Request-ID', 'X-Trace-Id'],
   })
   
   // Global validation pipe

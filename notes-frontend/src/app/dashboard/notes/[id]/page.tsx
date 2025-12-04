@@ -2,9 +2,16 @@
 
 import { useState, useEffect } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { deleteNote, fetchNoteById, updateNote } from '@/lib/api'
-import MarkdownEditor from '@/components/editor/MarkdownEditor'
+import { deleteNote, fetchNoteById, updateNote, lockNote, unlockNote } from '@/lib/api'
+import dynamic from 'next/dynamic'
+const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
+  ssr: false,
+  loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
+})
+const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 import SmartRecommendations from '@/components/SmartRecommendations'
+import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
+import { CommentsPanel } from '@/components/collab/CommentsPanel'
 import { Button } from '@/components/ui/button'
 import { ArrowLeft, Trash2 } from 'lucide-react'
 import type { Note } from '@/types'
@@ -17,6 +24,8 @@ export default function NoteDetailPage() {
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
 
   useEffect(() => {
     if (id) {
@@ -38,6 +47,12 @@ export default function NoteDetailPage() {
       setLoading(false)
     }
   }
+
+  useEffect(() => {
+    if (!id) return
+    lockNote(id).catch(() => { })
+    return () => { unlockNote(id).catch(() => { }) }
+  }, [id])
 
   const handleSave = async (title: string, content: string) => {
     try {
@@ -154,6 +169,7 @@ export default function NoteDetailPage() {
         </div>
       )}
 
+      {/* 协作区块确保在首屏右侧可见 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div
           className="bg-white lg:col-span-2"
@@ -162,17 +178,54 @@ export default function NoteDetailPage() {
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
           }}
         >
-          <MarkdownEditor
-            initialContent={note.content || ''}
-            initialTitle={note.title || ''}
-            onSave={handleSave}
-            onSaveDraft={handleSaveDraft}
-            isNew={false}
-            draftKey={`note:${id}`}
-          />
+          <div className="px-6 pt-4">
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">编辑器</span>
+              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+                <option value="rich">富文本（协同）</option>
+                <option value="markdown">Markdown</option>
+              </select>
+            </div>
+          </div>
+          {editorMode === 'rich' ? (
+            <TiptapEditor
+              noteId={id}
+              initialHTML={note.content || '<p></p>'}
+              onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+              user={{ id: 'me', name: '我' }}
+              readOnly={(note as any)?.visibility === 'public'}
+              onSelectionChange={(start, end) => setSelection({ start, end })}
+            />
+          ) : (
+            <MarkdownEditor
+              initialContent={note.content || ''}
+              initialTitle={note.title || ''}
+              onSave={handleSave}
+              onSaveDraft={handleSaveDraft}
+              isNew={false}
+              draftKey={`note:${id}`}
+              onSelectionChange={(start, end) => setSelection({ start, end })}
+            />
+          )}
         </div>
-        <div>
-          <SmartRecommendations currentNoteId={id} />
+        <div className="space-y-6">
+          <div className="bg-white" style={{ borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)' }}>
+            <div className="p-4">
+              <div className="flex items-center justify-between mb-2">
+                <div className="text-sm font-medium">协作</div>
+                <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">查看版本</a>
+              </div>
+              <CollaboratorsPanel noteId={id} />
+            </div>
+          </div>
+          <div className="bg-white" style={{ borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)' }}>
+            <div className="p-4">
+              <CommentsPanel noteId={id} selection={selection} />
+            </div>
+          </div>
+          <div>
+            <SmartRecommendations currentNoteId={id} />
+          </div>
         </div>
       </div>
 

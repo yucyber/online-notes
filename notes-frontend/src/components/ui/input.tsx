@@ -12,14 +12,14 @@ const Input = React.forwardRef<HTMLInputElement, InputProps>(
       width: '100%',
       borderRadius: '12px',
       border: '1px solid',
-      borderColor: isFocused ? '#3b82f6' : '#e5e7eb',
+      borderColor: isFocused ? 'var(--primary-600)' : '#e5e7eb',
       backgroundColor: '#ffffff',
       padding: '0 16px',
       fontSize: '14px',
-      outline: isFocused ? '2px solid rgba(59,130,246,0.35)' : 'none',
+      outline: isFocused ? '2px solid var(--primary-600)' : 'none',
       transition: 'all 0.2s ease',
       boxShadow: isFocused 
-        ? '0 0 0 2px rgba(59,130,246,0.25)'
+        ? '0 0 0 2px rgba(0,0,0,0.05)'
         : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
     };
     

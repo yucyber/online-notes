@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common'
+import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { CommentsService } from './comments.service'
 
@@ -9,13 +9,17 @@ export class CommentsController {
 
   @Get()
   async list(@Param('id') id: string, @Request() req) {
-    return this.service.list(id, req.user.id)
+    const data = await this.service.list(id, req.user.id)
+    const rid = (req.headers['x-request-id'] as string) || undefined
+    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
   }
 
   @Post()
   async create(@Param('id') id: string, @Body() body: any, @Request() req) {
     const { start, end, text } = body
-    return this.service.create(id, req.user.id, Number(start), Number(end), String(text || ''))
+    const rid = (req.headers['x-request-id'] as string) || undefined
+    const data = await this.service.create(id, req.user.id, Number(start), Number(end), String(text || ''), rid)
+    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
   }
 }
 
@@ -26,6 +30,15 @@ export class CommentRepliesController {
   @Post(':id/replies')
   async reply(@Param('id') id: string, @Body() body: any, @Request() req) {
     const { text } = body
-    return this.service.reply(id, req.user.id, String(text || ''))
+    const rid = (req.headers['x-request-id'] as string) || undefined
+    const data = await this.service.reply(id, req.user.id, String(text || ''), rid)
+    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+  }
+
+  @Delete(':id')
+  async remove(@Param('id') id: string, @Request() req) {
+    const rid = (req.headers['x-request-id'] as string) || undefined
+    const data = await this.service.remove(id, req.user.id, rid)
+    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
   }
 }

@@ -42,20 +42,23 @@ export default function DashboardPage() {
     try {
       setLoading(true)
       setError('')
-      const [data, tags] = await Promise.all([
-        fetchDashboardOverview(),
-        fetchTags().catch(() => [] as Tag[]),
-      ])
+      // 优先加载核心概览，尽快结束首屏阻塞，提高 FCP/LCP
+      const data = await fetchDashboardOverview()
       setOverview(data)
-      const map = (tags || []).reduce<Record<string, string>>((acc, t) => {
-        if (t?.id) acc[t.id] = t.name
-        return acc
-      }, {})
-      setTagMap(map)
+      setLoading(false)
+      // 标签映射异步加载，不阻塞首屏
+      fetchTags()
+        .then((tags) => {
+          const map = (tags || []).reduce<Record<string, string>>((acc, t) => {
+            if (t?.id) acc[t.id] = t.name
+            return acc
+          }, {})
+          setTagMap(map)
+        })
+        .catch(() => void 0)
     } catch (err) {
       console.error('Failed to load dashboard overview', err)
       setError('获取仪表盘数据失败，请稍后重试')
-    } finally {
       setLoading(false)
     }
   }

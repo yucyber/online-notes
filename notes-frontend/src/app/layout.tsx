@@ -20,9 +20,16 @@ export default function RootLayout({
 }: {
   children: React.ReactNode
 }) {
+  const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+  const apiOrigin = apiUrl.replace(/\/(api|v\d+).*/, '')
   return (
     <html lang="zh-CN">
-      <body className="min-h-screen antialiased" style={{ background: 'linear-gradient(to bottom right, #f9fafb, #ffffff, #f9fafb)', backgroundColor: '#f9fafb' }}>
+      <head>
+        {/* 预连接后端 API，降低首包请求握手与 DNS 延迟 */}
+        <link rel="preconnect" href={apiOrigin} />
+        <link rel="dns-prefetch" href={apiOrigin} />
+      </head>
+      <body className="min-h-screen antialiased bg-white">
         {children}
       </body>
     </html>

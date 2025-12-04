@@ -2,11 +2,18 @@
 
 import { useState, useEffect, useCallback } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag } from '@/lib/api'
-import MarkdownEditor from '@/components/editor/MarkdownEditor'
+import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag, lockNote, unlockNote } from '@/lib/api'
+import dynamic from 'next/dynamic'
+const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
+  ssr: false,
+  loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
+})
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
+import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
+import { CommentsPanel } from '@/components/collab/CommentsPanel'
+const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export default function EditNotePage() {
   const router = useRouter()
@@ -24,6 +31,8 @@ export default function EditNotePage() {
   const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
 
   const loadNote = useCallback(async () => {
     try {
@@ -42,6 +51,12 @@ export default function EditNotePage() {
   useEffect(() => {
     loadNote()
   }, [loadNote])
+
+  useEffect(() => {
+    if (!id) return
+    lockNote(id).catch(() => { })
+    return () => { unlockNote(id).catch(() => { }) }
+  }, [id])
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -295,7 +310,6 @@ export default function EditNotePage() {
           </h1>
         </div>
       </div>
-
       {error && (
         <div
           className="p-4 text-sm text-red-600"
@@ -309,6 +323,45 @@ export default function EditNotePage() {
           {error}
         </div>
       )}
+
+      {/* 协作区块：放在编辑器上方，保证可见 */}
+      <div
+        className="bg-white"
+        style={{
+          borderRadius: '12px',
+          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+        }}
+      >
+        <div className="grid gap-6 p-6 md:grid-cols-2">
+          <div className="space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-medium">协作</div>
+              <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">查看版本</a>
+            </div>
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-500">可见性</span>
+              <select
+                className="rounded border px-2 py-1 text-xs"
+                value={(note as any)?.visibility || 'private'}
+                onChange={async (e) => {
+                  try {
+                    await updateNote(id, { visibility: e.target.value as any })
+                    await loadNote()
+                  } catch { }
+                }}
+              >
+                <option value="private">仅自己</option>
+                <option value="org">组织内</option>
+                <option value="public">公开只读</option>
+              </select>
+            </div>
+            <CollaboratorsPanel noteId={id} />
+          </div>
+          <div className="space-y-3">
+            <CommentsPanel noteId={id} selection={selection} />
+          </div>
+        </div>
+      </div>
 
       <div
         className="bg-white"
@@ -430,14 +483,35 @@ export default function EditNotePage() {
           )}
         </div>
 
-        <MarkdownEditor
-          initialContent={note.content || ''}
-          initialTitle={note.title || ''}
-          onSave={handleSave}
-          onSaveDraft={handleSaveDraft}
-          isNew={false}
-          draftKey={`note:${id}`}
-        />
+        <div className="px-6 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">编辑器</span>
+            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+              <option value="rich">富文本（协同）</option>
+              <option value="markdown">Markdown</option>
+            </select>
+          </div>
+        </div>
+        {editorMode === 'rich' ? (
+          <TiptapEditor
+            noteId={id}
+            initialHTML={note.content || '<p></p>'}
+            onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+            user={{ id: 'me', name: '我' }}
+            readOnly={false}
+            onSelectionChange={(start, end) => setSelection({ start, end })}
+          />
+        ) : (
+          <MarkdownEditor
+            initialContent={note.content || ''}
+            initialTitle={note.title || ''}
+            onSave={handleSave}
+            onSaveDraft={handleSaveDraft}
+            isNew={false}
+            draftKey={`note:${id}`}
+            onSelectionChange={(start, end) => setSelection({ start, end })}
+          />
+        )}
       </div>
     </div>
   )

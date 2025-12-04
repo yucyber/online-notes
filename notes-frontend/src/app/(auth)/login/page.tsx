@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
-import { useRouter } from 'next/navigation'
-import { login } from '@/lib/api'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { login, register } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { isValidEmail } from '@/utils'
@@ -26,8 +26,11 @@ type LoginFormValues = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  // 保证自动登录只执行一次
+  const autoAttemptedRef = useRef(false)
 
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginSchema),
@@ -46,11 +49,45 @@ export default function LoginPage() {
       router.push('/dashboard/notes')
       router.refresh()
     } catch (err: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-      setError(err.response?.data?.message || '登录失败，请检查邮箱和密码')
+      const msg = String(err?.response?.data?.message || '')
+      const status = Number(err?.response?.status || 0)
+      // 仅在自动模式下进行注册回退，避免误注册
+      const isAuto = searchParams.get('auto') === '1'
+      if (isAuto && (status === 401 || /invalid|not ?found|不存在/i.test(msg))) {
+        try {
+          const reg = await register({ email: values.email, password: values.password })
+          persistAuthSession(reg.token, reg.user)
+          router.push('/dashboard/notes')
+          router.refresh()
+          return
+        } catch (e: any) {
+          setError(e?.response?.data?.message || '登录失败，请检查邮箱和密码')
+        }
+      } else {
+        setError(msg || '登录失败，请检查邮箱和密码')
+      }
     } finally {
       setIsLoading(false)
     }
   }
+
+  // 开发便捷：支持通过查询参数自动登录（仅在客户端首次渲染后执行）
+  // URL示例：/login?auto=1&email=user@example.com&password=password123
+  useEffect(() => {
+    if (autoAttemptedRef.current) return
+    const auto = searchParams.get('auto')
+    if (auto === '1') {
+      const email = searchParams.get('email') || 'user@example.com'
+      const password = searchParams.get('password') || 'password123'
+      // 预填表单值，便于用户观察
+      form.setValue('email', email)
+      form.setValue('password', password)
+      autoAttemptedRef.current = true
+      // 异步提交，避免同步渲染冲突
+      Promise.resolve().then(() => onSubmit({ email, password }))
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-50 via-white to-gray-50 py-12 px-4 sm:px-6 lg:px-8">
