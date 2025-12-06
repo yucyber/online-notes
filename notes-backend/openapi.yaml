@@ -20,6 +20,10 @@ tags:
     description: 离线自动保存与草稿同步
   - name: Network
     description: 网络状态与诊断
+  - name: Semantic
+    description: 语义检索与混合搜索（关键词+向量）
+  - name: Vector
+    description: 向量索引与嵌入管理（批量/幂等）
 paths:
   /api/health:
     get:
@@ -31,6 +35,9 @@ paths:
       responses:
         '200':
           description: 成功
+          headers:
+            X-Idempotency-Applied:
+              $ref: '#/components/headers/X-Idempotency-Applied'
           content:
             application/json:
               schema:
@@ -46,6 +53,122 @@ paths:
                       timestamp: '2025-12-02T12:00:00Z'
                     requestId: 'health-req'
                     timestamp: '2025-12-02T12:00:00Z'
+  /api/notes:
+    get:
+      tags: [Notes]
+      summary: 笔记列表（分页/过滤）
+      description: 返回当前用户可访问范围内的笔记分页列表，支持关键词、分类、标签与时间范围过滤，包含排序参数。
+      operationId: getNotesList
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/SearchId'
+        - in: query
+          name: searchMode
+          schema: { type: string, enum: ['keyword','vector','hybrid'], default: 'keyword' }
+          description: 搜索模式（keyword=关键词；vector=向量；hybrid=混合；仅在提供 `keyword` 时有效）
+        - in: query
+          name: page
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: 页码（从1开始）
+        - in: query
+          name: size
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+          description: 每页条数（与 `limit` 等价；推荐使用 `size`）
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100 }
+          description: 每页条数别名（为兼容历史参数，等价于 `size`）
+        - in: query
+          name: sortBy
+          schema: { type: string, default: 'createdAt' }
+          description: 排序字段（默认按创建时间降序）
+        - in: query
+          name: sortOrder
+          schema: { type: string, enum: ['asc','desc'], default: 'desc' }
+          description: 排序方向
+        - $ref: '#/components/parameters/Cursor'
+        - in: query
+          name: keyword
+          schema: { type: string }
+          description: 关键词（标题/内容模糊匹配）
+        - in: query
+          name: categoryId
+          schema: { type: string }
+          description: 单一分类过滤（ID）
+        - in: query
+          name: categoryIds
+          schema:
+            type: array
+            items: { type: string }
+            uniqueItems: true
+          style: form
+          explode: true
+          description: 多分类过滤（可重复）
+        - in: query
+          name: categoriesMode
+          schema: { type: string, enum: ['any','all'] }
+          description: 多分类匹配模式（any=任意匹配；all=全部命中）
+        - in: query
+          name: tagIds
+          schema:
+            type: array
+            items: { type: string }
+            uniqueItems: true
+          style: form
+          explode: true
+          description: 标签过滤（可重复）
+        - in: query
+          name: tagsMode
+          schema: { type: string, enum: ['any','all'] }
+          description: 标签匹配模式（any=任意匹配；all=全部命中）
+        - in: query
+          name: startDate
+          schema: { type: string, format: date-time }
+          description: 更新时间起始（ISO 8601）
+        - in: query
+          name: endDate
+          schema: { type: string, format: date-time }
+          description: 更新时间截止（ISO 8601）
+        - in: query
+          name: status
+          schema: { type: string, enum: ['published','draft'] }
+          description: 状态过滤
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      page: 1
+                      size: 20
+                      total: 123
+                      totalPages: 7
+                      hasNext: true
+                      items:
+                        - { id: 'n_1', title: '示例笔记', updatedAt: '2025-12-05T12:00:00Z' }
+                        - { id: 'n_2', title: '另一条笔记', updatedAt: '2025-12-05T11:50:00Z' }
+                    requestId: 'req_notes'
+                    timestamp: '2025-12-05T12:00:00Z'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
   /api/v1/drafts/auto-save:
     post:
       tags: [Drafts]
@@ -119,6 +242,250 @@ paths:
           $ref: '#/components/responses/TooManyRequests'
         '401':
           $ref: '#/components/responses/Unauthorized'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/semantic/search:
+    get:
+      tags: [Semantic]
+      summary: 语义检索（支持关键词/向量/混合）
+      description: 根据查询词与可选过滤条件进行语义检索，统一分页与排序，返回打分结果。
+      operationId: getSemanticSearch
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - in: query
+          name: q
+          schema: { type: string, minLength: 1 }
+          required: true
+          description: 查询文本（将用于关键词与向量检索）
+        - in: query
+          name: mode
+          schema: { type: string, enum: ['keyword','vector','hybrid'], default: 'hybrid' }
+          description: 检索模式（默认混合）
+        - in: query
+          name: page
+          schema: { type: integer, default: 1, minimum: 1 }
+          description: 页码（从1开始）
+        - in: query
+          name: limit
+          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
+          description: 每页条数
+        - in: query
+          name: threshold
+          schema: { type: number, format: float, minimum: 0, maximum: 1 }
+          description: 最小相似度阈值（向量/混合）
+        - in: query
+          name: categoryId
+          schema: { type: string }
+          description: 分类过滤（可选）
+        - in: query
+          name: tagIds
+          schema:
+            type: array
+            items: { type: string }
+            uniqueItems: true
+          style: form
+          explode: true
+          description: 标签过滤（可选，可重复）
+        - in: query
+          name: sortBy
+          schema: { type: string, enum: ['score','updatedAt'], default: 'score' }
+          description: 排序字段（默认按相关性分数）
+        - in: query
+          name: sortOrder
+          schema: { type: string, enum: ['asc','desc'], default: 'desc' }
+          description: 排序方向
+      responses:
+        '200':
+          description: 成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      page: 1
+                      limit: 20
+                      total: 42
+                      totalPages: 3
+                      hasNext: true
+                      data:
+                        - id: 'n_123'
+                          title: '向量检索示例'
+                          preview: '这是一段与查询语义相关的内容...'
+                          score: 0.82
+                          updatedAt: '2025-12-05T12:00:00Z'
+                          matchedSegments:
+                            - text: '相关段落片段'
+                              start: 100
+                              end: 140
+                    requestId: 'req_semantic_001'
+                    timestamp: '2025-12-05T12:00:00Z'
+        '400':
+          description: 参数错误（query 为空或非法）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                bad_request:
+                  value:
+                    code: 40010
+                    message: 'Invalid query'
+                    data: null
+                    requestId: 'req_semantic_002'
+                    timestamp: '2025-12-05T12:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          description: 向量服务不可用或索引降级
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                unavailable:
+                  value:
+                    code: 50310
+                    message: 'Vector service unavailable'
+                    data: null
+                    requestId: 'req_semantic_003'
+                    timestamp: '2025-12-05T12:00:00Z'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/vector/upsert:
+    post:
+      tags: [Vector]
+      summary: 向量嵌入写入/更新（幂等）
+      description: 为笔记内容生成或更新向量嵌入，支持批次与版本控制；需要 `Idempotency-Key`。
+      operationId: postVectorUpsert
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VectorUpsertInput'
+            examples:
+              one:
+                value:
+                  noteId: 'n_123'
+                  content: '需要计算向量的纯文本内容'
+                  version: 8
+                  embeddingModel: 'text-embedding-3-large'
+      responses:
+        '200':
+          description: 成功（重复幂等键返回同一结果）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                ok:
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      noteId: 'n_123'
+                      version: 9
+                      embeddingId: 'emb_abc'
+                      dimensions: 1536
+                      model: 'text-embedding-3-large'
+                      updatedAt: '2025-12-05T12:00:01Z'
+                    requestId: 'req_vector_001'
+                    timestamp: '2025-12-05T12:00:01Z'
+        '409':
+          description: 版本冲突（客户端版本落后）
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                conflict:
+                  value:
+                    code: 40910
+                    message: 'Embedding version conflict'
+                    data:
+                      serverVersion: 10
+                    requestId: 'req_vector_002'
+                    timestamp: '2025-12-05T12:00:01Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+
+  /api/v1/vector/batch-upsert:
+    post:
+      tags: [Vector]
+      summary: 批量向量嵌入写入（异步受理）
+      description: 批量提交多条笔记内容进行向量计算与入库，超过阈值时返回受理状态与任务ID。
+      operationId: postVectorBatchUpsert
+      security:
+        - BearerAuth: []
+      x-timeout-ms: 3000
+      parameters:
+        - $ref: '#/components/parameters/RequestId'
+        - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VectorUpsertBatchInput'
+            examples:
+              batch:
+                value:
+                  items:
+                    - { noteId: 'n_1', content: '...', version: 3 }
+                    - { noteId: 'n_2', content: '...', version: 5 }
+                  embeddingModel: 'text-embedding-3-large'
+      responses:
+        '202':
+          description: 已受理（异步任务）
+          headers:
+            X-Idempotency-Applied:
+              $ref: '#/components/headers/X-Idempotency-Applied'
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiEnvelope'
+              examples:
+                accepted:
+                  value:
+                    code: 0
+                    message: 'Accepted'
+                    data:
+                      jobId: 'job_vec_001'
+                      accepted: 2
+                      skipped: 0
+                      estimatedSeconds: 25
+                    requestId: 'req_vector_003'
+                    timestamp: '2025-12-05T12:00:02Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
         '503':
           $ref: '#/components/responses/ServiceUnavailable'
         '500':
@@ -334,10 +701,17 @@ components:
       name: Idempotency-Key
       in: header
       required: false
-      description: 幂等键，同一键在 24h 内的重复提交只执行一次
+      description: |
+        幂等键（写入类接口必填），用于防止重复提交并保证一次且仅一次执行：
+        - 键作用域：`tenantId + actorId + endpoint`（同一作用域 24h 内重放返回首个结果）。
+        - 建议格式：`UUIDv4/ULID` 或匹配正则 `^[A-Za-z0-9._-]{8,64}$`。
+        - 服务返回可包含 `X-Idempotency-Applied: true/false` 以指示是否命中历史结果。
+        - 误用/格式不合法返回 `40020`，跨作用域冲突返回 `40920`。
       schema:
         type: string
         maxLength: 64
+        pattern: '^[A-Za-z0-9._-]{1,64}$'
+      x-required-methods: ['POST','PUT','PATCH','DELETE']
     ClientRegion:
       name: X-Client-Region
       in: header
@@ -354,6 +728,25 @@ components:
       schema:
         type: string
         enum: [wifi, cellular, ethernet, unknown]
+    SearchId:
+      name: X-Search-ID
+      in: header
+      required: false
+      description: 检索会话ID（用于日志关联、缓存命中与去重；与 `X-Request-Id` 区分，建议使用 UUIDv4）。
+      schema:
+        type: string
+        maxLength: 64
+    Cursor:
+      name: cursor
+      in: query
+      required: false
+      description: |
+        游标分页的游标参数。不透明字符串；当 `sortBy=createdAt` 时可接受 ISO8601 时间游标。
+        - 无效游标返回 `400`（子码 `40030`）。
+        - 游标仅与稳定排序字段组合使用（如 `createdAt`）。
+      schema:
+        type: string
+        maxLength: 256
   responses:
     Unauthorized:
       description: 未授权或 Token 失效
@@ -416,8 +809,14 @@ components:
                 data: null
                 requestId: 'req_xxx'
                 timestamp: '2025-12-02T12:00:00Z'
+  headers:
+    X-Idempotency-Applied:
+      description: 是否命中幂等历史结果
+      schema:
+        type: boolean
+      example: true
   schemas:
-    ApiEnvelope:
+      ApiEnvelope:
       type: object
       description: 统一响应包
       properties:
@@ -445,6 +844,12 @@ components:
       x-error-codes:
         - code: 40000
           meaning: 参数错误
+        - code: 40010
+          meaning: 语义检索参数错误（q 为空/过短）
+        - code: 40020
+          meaning: 幂等键格式不合法/缺失（写入接口）
+        - code: 40030
+          meaning: 游标无效/过期（分页游标校验失败）
         - code: 40100
           meaning: 未授权/Token失效
         - code: 40300
@@ -453,12 +858,18 @@ components:
           meaning: 自动保存版本冲突
         - code: 40902
           meaning: 同步基线版本过旧
+        - code: 40910
+          meaning: 向量嵌入版本冲突
+        - code: 40920
+          meaning: 幂等键作用域冲突/重复提交（返回首个结果）
         - code: 42900
           meaning: 触发限流
         - code: 50000
           meaning: 服务内部错误
         - code: 50300
           meaning: 服务不可用/降级
+        - code: 50310
+          meaning: 向量服务不可用/索引降级
     DraftAutoSaveInput:
       type: object
       properties:
@@ -471,8 +882,10 @@ components:
           properties:
             line:
               type: integer
+              minimum: 1
             column:
               type: integer
+              minimum: 1
         clientId:
           type: string
         offlineSequence:
@@ -509,6 +922,70 @@ components:
                 type: object
             required: [op, ts]
       required: [noteId, clientId, baseVersion, changes]
+    SemanticResultItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        preview:
+          type: string
+        score:
+          type: number
+          format: float
+        updatedAt:
+          type: string
+          format: date-time
+        matchedSegments:
+          type: array
+          items:
+            type: object
+            properties:
+              text: { type: string }
+              start: { type: integer }
+              end: { type: integer }
+    SemanticSearchList:
+      allOf:
+        - $ref: '#/components/schemas/PaginatedList'
+        - type: object
+          properties:
+            data:
+              type: array
+              items:
+                $ref: '#/components/schemas/SemanticResultItem'
+    VectorUpsertInput:
+      type: object
+      properties:
+        noteId:
+          type: string
+        content:
+          type: string
+          description: 参与嵌入计算的纯文本内容
+        version:
+          type: integer
+          description: 客户端当前内容版本（用于冲突检测）
+        embeddingModel:
+          type: string
+          description: 嵌入模型名称
+      required: [noteId, content, version]
+    VectorUpsertBatchInput:
+      type: object
+      properties:
+        items:
+          type: array
+          minItems: 1
+          maxItems: 100
+          items:
+            type: object
+            properties:
+              noteId: { type: string }
+              content: { type: string }
+              version: { type: integer }
+            required: [noteId, content, version]
+        embeddingModel:
+          type: string
+      required: [items]
     NetworkDiagnosticsInput:
       type: object
       properties:
@@ -525,3 +1002,87 @@ components:
 externalDocs:
   description: 错误码与测试基线说明
   url: https://docs.example.com/api-baseline
+                  value:
+                    code: 0
+                    message: 'OK'
+                    data:
+                      page: 1
+                      limit: 20
+                      total: 123
+                      totalPages: 7
+                      hasNext: true
+                      data:
+                        - { id: 'n_1', title: '示例笔记', updatedAt: '2025-12-05T12:00:00Z' }
+                    requestId: 'req_notes'
+                    timestamp: '2025-12-05T12:00:00Z'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '429':
+          $ref: '#/components/responses/TooManyRequests'
+        '503':
+          $ref: '#/components/responses/ServiceUnavailable'
+        '500':
+          $ref: '#/components/responses/InternalError'
+  PaginatedList:
+      type: object
+      properties:
+        data:
+          type: array
+          items:
+            type: object
+        page:
+          type: integer
+          minimum: 1
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        total:
+          type: integer
+          minimum: 0
+        totalPages:
+          type: integer
+          minimum: 0
+        hasNext:
+          type: boolean
+    CursorPaginatedList:
+      type: object
+      description: 基于游标的分页结果（推荐用于日志/版本等时间序列集合）
+      properties:
+        items:
+          type: array
+          items:
+            type: object
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        nextCursor:
+          type: string
+          description: 下一页游标（客户端透传即可，服务端生成的不透明值）
+        hasNext:
+          type: boolean
+      required: [items, limit]
+    
+  
+    BadRequest:
+      description: 请求参数错误或格式校验失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+          examples:
+            invalid_cursor:
+              value:
+                code: 40030
+                message: 'Invalid cursor'
+                data: null
+                requestId: 'req_xxx'
+                timestamp: '2025-12-02T12:00:00Z'
+            invalid_idempotency_key:
+              value:
+                code: 40020
+                message: 'Invalid Idempotency-Key'
+                data: null
+                requestId: 'req_xxx'
+                timestamp: '2025-12-02T12:00:00Z'

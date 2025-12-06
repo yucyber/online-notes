@@ -27,3 +27,6 @@ export class Category {
 }
 
 export const CategorySchema = SchemaFactory.createForClass(Category);
+// 用户分类列表与热门分类查询优化：按用户过滤与创建/更新/计数排序
+CategorySchema.index({ userId: 1, createdAt: -1 }, { name: 'idx_user_created' })
+CategorySchema.index({ userId: 1, noteCount: -1, updatedAt: -1 }, { name: 'idx_user_noteCount_updated' })

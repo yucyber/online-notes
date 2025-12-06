@@ -14,6 +14,9 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { NotesService } from './notes.service';
 import { CreateNoteDto, UpdateNoteDto, NoteFilterDto } from './dto';
+import { Headers, Res } from '@nestjs/common';
+import type { Response } from 'express'
+import { createHash } from 'crypto'
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('notes')
@@ -41,8 +44,17 @@ export class NotesController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @Request() req) {
-    return this.notesService.findOne(id, req.user.id);
+  async findOne(@Param('id') id: string, @Request() req, @Res({ passthrough: true }) res: Response) {
+    const note = await this.notesService.findOne(id, req.user.id);
+    const etag = this.computeETag(note)
+    res.setHeader('ETag', etag)
+    const inm = (req.headers?.['if-none-match'] as string) || undefined
+    if (inm && inm === etag) {
+      // 条件GET命中，返回304（由异常过滤器/包拦截器跳过）
+      res.status(304)
+      return undefined
+    }
+    return note
   }
 
   @Patch(':id')
@@ -50,8 +62,19 @@ export class NotesController {
     @Param('id') id: string,
     @Body() updateNoteDto: UpdateNoteDto,
     @Request() req,
+    @Headers('If-Match') ifMatch?: string,
   ) {
-    return this.notesService.update(id, updateNoteDto, req.user.id);
+    // 条件更新：校验 If-Match 与当前资源 ETag
+    if (ifMatch) {
+      const current = await this.notesService.findOne(id, req.user.id)
+      const currentEtag = this.computeETag(current)
+      if (ifMatch !== currentEtag) {
+        const { HttpException, HttpStatus } = require('@nestjs/common')
+        throw new HttpException('ETag mismatch', HttpStatus.PRECONDITION_FAILED)
+      }
+    }
+    const updated = await this.notesService.update(id, updateNoteDto, req.user.id);
+    return updated
   }
 
   @Delete(':id')
@@ -60,7 +83,15 @@ export class NotesController {
     return { message: '笔记删除成功' };
   }
   @Put(':id')
-  async updateAll(@Param('id') id: string, @Body() updateNoteDto: UpdateNoteDto, @Request() req) {
+  async updateAll(@Param('id') id: string, @Body() updateNoteDto: UpdateNoteDto, @Request() req, @Headers('If-Match') ifMatch?: string) {
+    if (ifMatch) {
+      const current = await this.notesService.findOne(id, req.user.id)
+      const currentEtag = this.computeETag(current)
+      if (ifMatch !== currentEtag) {
+        const { HttpException, HttpStatus } = require('@nestjs/common')
+        throw new HttpException('ETag mismatch', HttpStatus.PRECONDITION_FAILED)
+      }
+    }
     return this.notesService.update(id, updateNoteDto, req.user.id);
   }
 
@@ -94,5 +125,11 @@ export class NotesController {
   @Delete(':id/lock')
   async unlock(@Param('id') id: string, @Request() req) {
     return this.notesService.unlockNote(id, req.user.id)
+  }
+
+  private computeETag(note: any): string {
+    const basis = `${note?.id || note?._id || ''}:${new Date(note?.updatedAt || Date.now()).getTime()}`
+    const hash = createHash('sha1').update(basis).digest('hex')
+    return `W/"${hash}"`
   }
 }

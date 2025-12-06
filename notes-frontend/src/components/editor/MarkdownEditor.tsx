@@ -18,6 +18,7 @@ interface MarkdownEditorProps {
   // 本地草稿标识（建议传入笔记 id 或 'new')
   draftKey?: string
   onSelectionChange?: (start: number, end: number) => void
+  onContentChange?: (content: string, title: string) => void
 }
 
 export default function MarkdownEditor({
@@ -27,6 +28,7 @@ export default function MarkdownEditor({
   onSaveDraft,
   isNew = false,
   draftKey,
+  onContentChange,
 }: MarkdownEditorProps) {
   const [content, setContent] = useState(initialContent)
   const [title, setTitle] = useState(initialTitle)
@@ -45,6 +47,11 @@ export default function MarkdownEditor({
     const words = content.trim().split(/\s+/).filter(word => word.length > 0)
     setWordCount(words.length)
   }, [content])
+
+  // 通知外层内容变化（用于大纲）
+  useEffect(() => {
+    try { onContentChange?.(content, title) } catch { }
+  }, [content, title, onContentChange])
 
   // 使用 useCallback 稳定 handleSave 函数
   const handleSave = useCallback(async (isAutoSave = false) => {
@@ -210,7 +217,7 @@ export default function MarkdownEditor({
   return (
     <div className="space-y-4">
       {/* 标题和工具栏 */}
-      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between">
+      <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 py-2">
         <div className="flex-1 min-w-0">
           <input
             type="text"
@@ -250,6 +257,7 @@ export default function MarkdownEditor({
 
           <div className="flex items-center gap-2">
             <Button
+              id="save-button"
               onClick={() => handleSave().then(() => clearLocalDraftAfterSave())}
               disabled={isSaving || !title.trim()}
               className="flex items-center gap-2"
@@ -301,6 +309,7 @@ export default function MarkdownEditor({
       <div className="border-b border-gray-200">
         <nav className="-mb-px flex space-x-8">
           <button
+            id="edit-toggle"
             onClick={() => setActiveTab('edit')}
             className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab === 'edit'
               ? 'border-blue-500 text-blue-600'
@@ -311,6 +320,7 @@ export default function MarkdownEditor({
             编辑
           </button>
           <button
+            id="preview-toggle"
             onClick={() => setActiveTab('preview')}
             className={`py-2 px-1 border-b-2 font-medium text-sm flex items-center gap-2 ${activeTab === 'preview'
               ? 'border-blue-500 text-blue-600'
@@ -355,7 +365,7 @@ export default function MarkdownEditor({
               } catch { }
             }}
             placeholder="使用Markdown格式编写笔记...\n\n支持以下语法:\n# 标题\n**粗体**\n*斜体*\n`代码`\n```代码块```\n- 列表项\n[链接](url)\n> 引用"
-            className="min-h-[500px] font-mono text-sm resize-none border-gray-200 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="min-h-[500px] font-mono text-sm resize-none border border-[#e8e8e8] rounded-[2px] p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <div className="flex justify-between items-center text-xs text-gray-500">
             <div>

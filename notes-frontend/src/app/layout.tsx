@@ -1,4 +1,6 @@
 import './globals.css'
+import '@/styles/editor-tokens.css'
+import dynamic from 'next/dynamic'
 
 export const metadata = {
   title: '在线知识笔记平台',
@@ -22,15 +24,24 @@ export default function RootLayout({
 }) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
   const apiOrigin = apiUrl.replace(/\/(api|v\d+).*/, '')
+  const RUMClient = dynamic(() => import('@/components/rum/RUMClient'), { ssr: false })
   return (
-    <html lang="zh-CN">
+    <html lang="zh-CN" data-theme="editor-light">
       <head>
         {/* 预连接后端 API，降低首包请求握手与 DNS 延迟 */}
         <link rel="preconnect" href={apiOrigin} />
         <link rel="dns-prefetch" href={apiOrigin} />
+        {/* 主题预置：在水合前应用，避免闪烁 */}
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(()=>{try{var t=localStorage.getItem('theme');var prefers=window.matchMedia&&window.matchMedia('(prefers-color-scheme: dark)').matches;var dark=(t? t==='dark' : prefers);var el=document.documentElement; if(dark){el.classList.add('dark'); el.setAttribute('data-theme','dark');} else {el.classList.remove('dark'); el.setAttribute('data-theme','editor-light');}}catch(e){}})();`
+          }}
+        />
       </head>
       <body className="min-h-screen antialiased bg-white">
         {children}
+        {/* RUM 注入：在全局布局挂载轻量 Web Vitals 采集 */}
+        <RUMClient />
       </body>
     </html>
   )

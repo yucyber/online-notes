@@ -15,13 +15,69 @@ import {
 } from '@/types'
 
 // 创建axios实例
+// 统一默认后端地址到 3001，与 `src/app/layout.tsx` 的预连接目标一致，避免首包握手到错误端口导致的 10–30ms 额外延迟
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api',
   headers: {
     'Content-Type': 'application/json',
   },
   timeout: 3000,
+  withCredentials: false,
 })
+
+const RUM_ENDPOINT = process.env.NEXT_PUBLIC_RUM_ENDPOINT || ''
+const emitRum = (detail: any) => {
+  try { if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('rum', { detail })) } catch { }
+  try {
+    if (!RUM_ENDPOINT) return
+    const payload = JSON.stringify(detail || {})
+    if (typeof navigator !== 'undefined' && (navigator as any).sendBeacon) {
+      const blob = new Blob([payload], { type: 'application/json' })
+        ; (navigator as any).sendBeacon(RUM_ENDPOINT, blob)
+    } else {
+      fetch(RUM_ENDPOINT, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: payload, keepalive: true })
+    }
+  } catch { }
+}
+
+// 只读列表缓存（SWR风格）：L1内存10s，L2会话存储30s
+const NOTES_CACHE_TTL_MS = 10_000
+const NOTES_SESSION_TTL_MS = 30_000
+type NotesListPayload = { items: any[]; page: number; size: number; total: number }
+const notesCache = new Map<string, { ts: number; payload: NotesListPayload }>()
+const buildNotesKey = (params?: any) => {
+  const sp = new URLSearchParams()
+  if (params) {
+    if (params.keyword) sp.set('keyword', params.keyword)
+    if (params.categoryId) sp.set('categoryId', params.categoryId)
+    if (Array.isArray(params.categoryIds)) params.categoryIds.filter(Boolean).forEach((id: string) => sp.append('categoryIds', id))
+    if (params.categoriesMode) sp.set('categoriesMode', params.categoriesMode)
+    if (Array.isArray(params.tagIds)) params.tagIds.filter(Boolean).forEach((id: string) => sp.append('tagIds', id))
+    if (params.tagsMode) sp.set('tagsMode', params.tagsMode)
+    if (params.startDate) sp.set('startDate', params.startDate)
+    if (params.endDate) sp.set('endDate', params.endDate)
+    if (params.status) sp.set('status', params.status)
+    const page = (params as any).page
+    const size = (params as any).size ?? (params as any).limit
+    if (page) sp.set('page', String(page))
+    if (size) sp.set('size', String(size))
+  }
+  return `notes:${sp.toString()}`
+}
+const readSessionCache = (key: string): NotesListPayload | null => {
+  try {
+    const raw = sessionStorage.getItem(`cache:${key}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    const age = Date.now() - Number(parsed.ts || 0)
+    if (age > NOTES_SESSION_TTL_MS) return null
+    return parsed.payload as NotesListPayload
+  } catch { return null }
+}
+const writeSessionCache = (key: string, payload: NotesListPayload) => {
+  try { sessionStorage.setItem(`cache:${key}`, JSON.stringify({ ts: Date.now(), payload })) } catch { }
+}
 
 // 请求拦截器添加token
 api.interceptors.request.use(
@@ -29,6 +85,13 @@ api.interceptors.request.use(
     const rid = (globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`)
       ; (config as any).__rid = rid
     config.headers['X-Request-ID'] = rid
+    try {
+      const sid = sessionStorage.getItem('lastSearchId')
+      if (sid) {
+        config.headers['X-Search-ID'] = sid
+          ; (config as any).__searchId = sid
+      }
+    } catch { }
     const token = getToken()
     if (token) {
       config.headers.Authorization = `Bearer ${token}`
@@ -62,6 +125,8 @@ api.interceptors.response.use(
         time: new Date().toISOString(),
       })
     }
+    // RUM: 成功请求指标采集（duration/状态码/路径）
+    emitRum({ type: 'network', name: 'api:ok', value: duration, meta: { url: response.config?.url, method: response.config?.method, status: response.status, searchId: (response.config as any)?.__searchId } })
     const payload = response.data
     if (payload && typeof payload === 'object' && 'code' in payload && 'message' in payload && 'timestamp' in payload) {
       if (payload.code === 0) {
@@ -88,6 +153,8 @@ api.interceptors.response.use(
         time: new Date().toISOString(),
       })
     }
+    // RUM: 错误请求指标采集（duration/状态码/路径/错误信息）
+    emitRum({ type: 'network', name: 'api:error', value: duration, meta: { url, method: (error.config?.method || 'get'), status, message: error.message, searchId: (error.config as any)?.__searchId } })
     // 401统一处理：避免在登录/注册请求上拦截跳转，保留页面内错误处理逻辑
     if (status === 401) {
       const reqUrl = String(error.config?.url || '')
@@ -113,6 +180,22 @@ api.interceptors.response.use(
         return api.request(error.config)
       })
     }
+    // 超时事件上报
+    const isTimeout = (error?.code === 'ECONNABORTED') || String(error?.message || '').toLowerCase().includes('timeout')
+    if (isTimeout) {
+      try {
+        const evt = new CustomEvent('search:timeout', {
+          detail: {
+            searchId: (error.config as any)?.__searchId,
+            url: error.config?.url,
+            method: (error.config?.method || 'get'),
+            timeout: error.config?.timeout ?? 3000,
+            time: new Date().toISOString(),
+          }
+        })
+        if (typeof document !== 'undefined') document.dispatchEvent(evt)
+      } catch { }
+    }
     return Promise.reject(error)
   }
 )
@@ -131,7 +214,7 @@ export const authAPI = {
 
 // 笔记相关API
 export const notesAPI = {
-  getAll: (params?: NoteFilterParams, signal?: AbortSignal) => {
+  getAll: (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
     const sp = new URLSearchParams()
     if (params) {
       if (params.keyword) sp.set('keyword', params.keyword)
@@ -145,9 +228,50 @@ export const notesAPI = {
       if (params.startDate) sp.set('startDate', params.startDate)
       if (params.endDate) sp.set('endDate', params.endDate)
       if (params.status) sp.set('status', params.status)
+      const page = (params as any).page
+      const size = (params as any).size ?? (params as any).limit
+      if (page) sp.set('page', String(page))
+      if (size) sp.set('size', String(size))
     }
-    console.log('Requesting /notes with params:', Object.fromEntries(sp.entries()))
-    return api.get<Note[]>('/notes', { params: sp, signal }).then(res => res as unknown as Note[])
+    const enableLogs = (process.env.NEXT_PUBLIC_ENABLE_API_LOGS ?? '').toString() === '1' && process.env.NODE_ENV === 'development'
+    if (enableLogs) {
+      console.debug('API Request /notes', Object.fromEntries(sp.entries()))
+    }
+    return api
+      .get<{ items: any[]; page: number; size: number; total: number }>('/notes', { params: sp, signal })
+      .then((res) => {
+        const payload = res as unknown as { items: any[]; page: number; size: number; total: number }
+        const items = (payload.items || []).map((raw: any) => {
+          // 统一前端 Note 的稳定 id：优先使用后端提供的 id，其次 _id；两者都缺失时构造可读但稳定的占位符
+          const id = raw.id || raw._id || `${String(raw.title || 'note')}-${String(raw.updatedAt || raw.createdAt || '')}`
+          // 归一化分类与标签引用形态，减少 UI 分支判断
+          const categoryId = raw.categoryId?.id || raw.categoryId?._id || raw.categoryId || undefined
+          const category = raw.categoryId && typeof raw.categoryId === 'object' && (raw.categoryId.name || raw.categoryId.id || raw.categoryId._id)
+            ? { id: String(raw.categoryId.id || raw.categoryId._id || categoryId), name: String(raw.categoryId.name || '') }
+            : undefined
+          const tags = Array.isArray(raw.tags)
+            ? raw.tags.map((t: any) => {
+              if (typeof t === 'string') return String(t)
+              const tid = t?.id || t?._id
+              return String(tid ?? '')
+            })
+            : []
+          return {
+            id: String(id),
+            title: String(raw.title || ''),
+            content: String(raw.content || ''),
+            categoryId: categoryId ? String(categoryId) : undefined,
+            categoryIds: Array.isArray(raw.categoryIds) ? raw.categoryIds.map((c: any) => String(c?.id || c?._id || c)) : undefined,
+            category: category ?? null,
+            tags,
+            createdAt: String(raw.createdAt || new Date().toISOString()),
+            updatedAt: String(raw.updatedAt || raw.createdAt || new Date().toISOString()),
+            userId: String(raw.userId || ''),
+            status: raw.status || 'published',
+          } as Note
+        })
+        return { ...payload, items } as { items: Note[]; page: number; size: number; total: number }
+      })
   },
 
   getById: (id: string) =>
@@ -179,6 +303,113 @@ export const notesAPI = {
     }
     return api.get<Note[]>('/notes/recommendations', { params: sp }).then(res => res as unknown as Note[])
   },
+  // 带缓存与后台重验证
+  getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
+    const key = buildNotesKey(params)
+    const now = Date.now()
+    const mem = notesCache.get(key)
+    const sid = (() => { try { return sessionStorage.getItem('lastSearchId') || undefined } catch { return undefined } })()
+    if (mem && (now - mem.ts) <= NOTES_CACHE_TTL_MS) {
+      try {
+        const evt = new CustomEvent('search:cache_hit', { detail: { key, searchId: sid, ageMs: now - mem.ts, count: (mem.payload?.items?.length || 0) } })
+        if (typeof document !== 'undefined') document.dispatchEvent(evt)
+      } catch { }
+      // 后台重验证
+      ; (async () => {
+        try {
+          const latest = await notesAPI.getAll(params)
+          notesCache.set(key, { ts: Date.now(), payload: latest as any })
+          writeSessionCache(key, latest as any)
+          try {
+            const revEvt = new CustomEvent('search:revalidated', { detail: { key, searchId: sid, payload: latest } })
+            if (typeof document !== 'undefined') document.dispatchEvent(revEvt)
+          } catch { }
+        } catch { }
+      })()
+      return mem.payload as unknown as { items: Note[]; page: number; size: number; total: number }
+    }
+    const ses = readSessionCache(key)
+    if (ses) {
+      ; (async () => {
+        try {
+          const latest = await notesAPI.getAll(params)
+          notesCache.set(key, { ts: Date.now(), payload: latest as any })
+          writeSessionCache(key, latest as any)
+          try {
+            const revEvt = new CustomEvent('search:revalidated', { detail: { key, searchId: sid, payload: latest } })
+            if (typeof document !== 'undefined') document.dispatchEvent(revEvt)
+          } catch { }
+        } catch { }
+      })()
+      return ses as unknown as { items: Note[]; page: number; size: number; total: number }
+    }
+    const data = await notesAPI.getAll(params, signal)
+    notesCache.set(key, { ts: Date.now(), payload: data as any })
+    writeSessionCache(key, data as any)
+    return data as unknown as { items: Note[]; page: number; size: number; total: number }
+  },
+}
+
+// 语义检索（NLQ）相关 API
+export type SemanticSearchItem = {
+  id: string
+  title: string
+  preview: string
+  score: number
+  updatedAt: string
+  matchedSegments?: Array<{ text: string; start?: number; end?: number }>
+}
+export type SemanticSearchPage = {
+  page: number
+  limit: number
+  total: number
+  totalPages: number
+  hasNext: boolean
+  data: SemanticSearchItem[]
+}
+export const semanticAPI = {
+  search: (q: string, opts?: { mode?: 'keyword' | 'vector' | 'hybrid'; page?: number; limit?: number; threshold?: number; categoryId?: string; tagIds?: string[] }) => {
+    const sp = new URLSearchParams()
+    sp.set('q', q)
+    if (opts?.mode) sp.set('mode', opts.mode)
+    if (opts?.page) sp.set('page', String(opts.page))
+    if (opts?.limit) sp.set('limit', String(opts.limit))
+    if (opts?.threshold != null) sp.set('threshold', String(opts.threshold))
+    if (opts?.categoryId) sp.set('categoryId', opts.categoryId)
+    if (opts?.tagIds && opts.tagIds.length > 0) opts.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
+    const isVectorLike = (opts?.mode === 'vector' || opts?.mode === 'hybrid')
+    return api
+      .get<SemanticSearchPage>('/v1/semantic/search', { params: sp, timeout: isVectorLike ? 5000 : 3000 })
+      .then(res => res as unknown as SemanticSearchPage)
+      .catch(async (error) => {
+        const status = error?.response?.status
+        if (status === 404 || status === 503) {
+          try {
+            document.dispatchEvent(new CustomEvent('rum', { detail: { type: 'ui:search_fallback', name: 'SearchFallback', value: 1, meta: { mode: opts?.mode || 'hybrid', status } } }))
+            document.dispatchEvent(new CustomEvent('search:fallback', { detail: { mode: opts?.mode || 'hybrid', reason: status, q } }))
+          } catch { }
+          const page = Number(opts?.page || 1)
+          const limit = Number(opts?.limit || 10)
+          const list = await notesAPI.getAll({ keyword: q, page, size: limit, categoryId: opts?.categoryId, tagIds: opts?.tagIds })
+          const items = (list.items || []).map((n: any) => ({
+            id: String(n.id || n._id || ''),
+            title: String(n.title || ''),
+            preview: String(n.content || '').slice(0, 220),
+            score: 0,
+            updatedAt: String(n.updatedAt || ''),
+          }))
+          return {
+            page: list.page,
+            limit: list.size,
+            total: list.total,
+            totalPages: Math.max(1, Math.ceil(Number(list.total || 0) / Number(list.size || limit))),
+            hasNext: (Number(list.page || page) * Number(list.size || limit)) < Number(list.total || 0),
+            data: items,
+          } as SemanticSearchPage
+        }
+        throw error
+      })
+  },
 }
 
 export const aclAPI = {
@@ -208,13 +439,33 @@ export const auditAPI = {
 }
 
 export const notificationsAPI = {
-  list: (page: number = 1, size: number = 20, type?: string, status?: string) => api.get('/notifications', { params: { page, size, type, status } }).then(res => res as unknown as { items: any[]; page: number; size: number; total: number }),
-  markRead: (id: string) => api.patch(`/notifications/${id}/read`, {}).then(res => res as unknown as any),
+  list: (page: number = 1, size: number = 20, type?: string, status?: string) => {
+    const token = getToken()
+    if (!token) {
+      return Promise.resolve({ items: [], page, size, total: 0 }) as Promise<{ items: any[]; page: number; size: number; total: number }>
+    }
+    return api
+      .get('/notifications', { params: { page, size, type, status }, headers: { 'X-Skip-Auth-Redirect': '1' } })
+      .then(res => res as unknown as { items: any[]; page: number; size: number; total: number })
+  },
+  markRead: (id: string) =>
+    api
+      .patch(`/notifications/${id}/read`, {})
+      .then(res => {
+        // 通知全局刷新未读计数（用于顶部铃铛角标）
+        try {
+          const evt = new CustomEvent('notify:refresh', { detail: { source: 'markRead', id } })
+          if (typeof document !== 'undefined') document.dispatchEvent(evt)
+        } catch { }
+        return res as unknown as any
+      }),
 }
 
 export const commentsAPI = {
-  list: (noteId: string) => api.get(`/notes/${noteId}/comments`).then(res => res as unknown as any[]),
-  create: (noteId: string, start: number, end: number, text: string) => api.post(`/notes/${noteId}/comments`, { start, end, text }).then(res => res as unknown as any),
+  list: (noteId: string, params?: { start?: number; end?: number; intersects?: boolean; blockId?: string; versionId?: string; limit?: number; cursor?: string }) =>
+    api.get(`/notes/${noteId}/comments`, { params }).then(res => res as unknown as any[]),
+  create: (noteId: string, start?: number, end?: number, text?: string, options?: { anchor?: any; blockId?: string; idempotencyKey?: string }) =>
+    api.post(`/notes/${noteId}/comments`, { start, end, text, anchor: options?.anchor, blockId: options?.blockId }, { headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined }).then(res => res as unknown as any),
   reply: (commentId: string, text: string) => api.post(`/comments/${commentId}/replies`, { text }).then(res => res as unknown as any),
   delete: (commentId: string) => api.delete(`/comments/${commentId}`).then(res => res as unknown as { ok: boolean }),
 }
@@ -336,7 +587,8 @@ export const networkAPI = {
 // 导出常用API简化调用
 export const login = authAPI.login
 export const register = authAPI.register
-export const fetchNotes = notesAPI.getAll
+export const fetchNotes = notesAPI.getAllCached
+export const semanticSearch = semanticAPI.search
 export const fetchNoteById = notesAPI.getById
 export const createNote = notesAPI.create
 export const updateNote = notesAPI.update

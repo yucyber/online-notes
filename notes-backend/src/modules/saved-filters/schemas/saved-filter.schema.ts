@@ -16,3 +16,5 @@ export class SavedFilter {
 }
 
 export const SavedFilterSchema = SchemaFactory.createForClass(SavedFilter);
+// 用户级查询与排序优化：保障 saved filters 列表的 p95
+SavedFilterSchema.index({ userId: 1, createdAt: -1 }, { name: 'idx_user_created' })

@@ -101,8 +101,8 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
             <h3 className="font-medium">猜你想看</h3>
           </div>
           <div className="space-y-3 mb-4">
-            {published.map(note => (
-              <Link key={note.id} href={`/dashboard/notes/${note.id}`} className="block group">
+            {published.map((note, i) => (
+              <Link key={`${note.id}:${i}`} href={`/dashboard/notes/${note.id}`} className="block group">
                 <div className="p-3 rounded-md hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200">
                   <div className="flex items-start justify-between">
                     <h4 className="font-medium text-gray-800 group-hover:text-blue-600 text-sm line-clamp-1">
@@ -130,8 +130,8 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
         </div>
         {drafts.length > 0 ? (
           <div className="space-y-3">
-            {drafts.map(note => (
-              <Link key={note.id} href={`/dashboard/notes/${note.id}`} className="block group">
+            {drafts.map((note, i) => (
+              <Link key={`${note.id}:${i}`} href={`/dashboard/notes/${note.id}`} className="block group">
                 <div className="p-3 rounded-md hover:bg-yellow-50 transition-colors border border-transparent hover:border-yellow-200">
                   <div className="flex items-start justify-between">
                     <h4 className="font-medium text-gray-800 group-hover:text-yellow-700 text-sm line-clamp-1">

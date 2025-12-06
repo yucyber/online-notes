@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { createNote, fetchCategories, fetchTags, createTag } from '@/lib/api'
 import dynamic from 'next/dynamic'
@@ -8,6 +8,8 @@ const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'
   ssr: false,
   loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
 })
+import TiptapToolbar from '@/components/editor/TiptapToolbar'
+const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 import { Button } from '@/components/ui/button'
 import { ArrowLeft } from 'lucide-react'
 import type { Category, Tag } from '@/types'
@@ -24,6 +26,11 @@ export default function NewNotePage() {
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'org' | 'public'>('private')
+  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('markdown')
+  const [newTitle, setNewTitle] = useState('')
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -46,6 +53,66 @@ export default function NewNotePage() {
 
     loadMeta()
   }, [])
+
+  useEffect(() => {
+    const onFsChange = () => {
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreen(active)
+      if (active) {
+        document.body.style.overflow = 'hidden'
+        const btn = document.getElementById('fullscreen-button') as HTMLButtonElement | null
+        btn?.focus()
+      } else {
+        document.body.style.overflow = ''
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          e.stopPropagation()
+          try { document.exitFullscreen() } catch { }
+        } else if (isFullscreen) {
+          setIsFullscreen(false)
+          document.body.style.overflow = ''
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        handleToggleFullscreen()
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    const onToggle = () => { handleToggleFullscreen() }
+    document.addEventListener('editor:toggleFullscreen', onToggle as any)
+    document.addEventListener('keydown', onKey)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange)
+      document.removeEventListener('editor:toggleFullscreen', onToggle as any)
+      document.removeEventListener('keydown', onKey)
+    }
+  }, [])
+
+  const handleToggleFullscreen = () => {
+    const target = editorContainerRef.current || document.documentElement
+    if (document.fullscreenElement) {
+      try { (document as any).exitFullscreen?.() } catch { }
+      setIsFullscreen(false)
+      document.body.style.overflow = ''
+      return
+    }
+    try {
+      const fn = (target as any).requestFullscreen || (document.documentElement as any).requestFullscreen || (document as any).webkitRequestFullscreen
+      if (typeof fn === 'function') {
+        Promise.resolve(fn.call(target)).catch(() => { })
+      }
+    } catch { }
+    setTimeout(() => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(true)
+        document.body.style.overflow = 'hidden'
+      }
+    }, 200)
+  }
 
   const toggleTag = (tagId: string) => {
     setSelectedTags((prev) =>
@@ -357,14 +424,49 @@ export default function NewNotePage() {
           )}
         </div>
 
-        <MarkdownEditor
-          initialContent=""
-          initialTitle=""
-          onSave={handleSave}
-          onSaveDraft={handleSaveDraft}
-          isNew={true}
-          draftKey={'note:new'}
-        />
+        <div className="px-6 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">编辑器</span>
+            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+              <option value="rich">富文本（协同）</option>
+              <option value="markdown">Markdown</option>
+            </select>
+          </div>
+        </div>
+        {editorMode === 'rich' ? (
+          <div ref={editorContainerRef} className="space-y-3 p-6" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
+            <input
+              type="text"
+              value={newTitle}
+              onChange={(e) => setNewTitle(e.target.value)}
+              placeholder="标题"
+              className="w-full rounded-lg border border-gray-200 p-3 text-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+            />
+            <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+              if (cmd === 'comments') { return }
+              if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
+              const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
+              document.dispatchEvent(ev)
+            }} />
+            <TiptapEditor
+              noteId={'new'}
+              initialHTML={'<p></p>'}
+              onSave={async (html: string) => { await handleSave(newTitle, html) }}
+              user={{ id: 'me', name: '我' }}
+              readOnly={false}
+              onSelectionChange={(start, end) => setSelection({ start, end })}
+            />
+          </div>
+        ) : (
+          <MarkdownEditor
+            initialContent=""
+            initialTitle=""
+            onSave={handleSave}
+            onSaveDraft={handleSaveDraft}
+            isNew={true}
+            draftKey={'note:new'}
+          />
+        )}
       </div>
     </div>
   )

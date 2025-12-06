@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
 import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag, lockNote, unlockNote } from '@/lib/api'
 import dynamic from 'next/dynamic'
@@ -9,10 +9,12 @@ const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'
   loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
 })
 import { Button } from '@/components/ui/button'
-import { ArrowLeft } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Users } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import { CommentsPanel } from '@/components/collab/CommentsPanel'
+import { getCurrentUser } from '@/lib/auth'
+import TiptapToolbar from '@/components/editor/TiptapToolbar'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export default function EditNotePage() {
@@ -33,6 +35,242 @@ export default function EditNotePage() {
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
   const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
+  const [uiDegraded, setUiDegraded] = useState<boolean>(false)
+  const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
+  const [showCollabDrawer, setShowCollabDrawer] = useState(false)
+  const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
+  const [showCommentsModal, setShowCommentsModal] = useState(false)
+  const commentsDialogRef = useRef<HTMLDivElement>(null)
+  const commentsDrawerRef = useRef<HTMLDivElement>(null)
+  const lastFocusRef = useRef<HTMLElement | null>(null)
+  const [toc, setToc] = useState<Array<{ id: string; text: string; level: number }>>([])
+  const [currentHeadingId, setCurrentHeadingId] = useState<string>('')
+  const [showSidebar, setShowSidebar] = useState(true)
+  const [isFullscreen, setIsFullscreen] = useState(false)
+  const editorContainerRef = useRef<HTMLDivElement>(null)
+
+  // 生成 Markdown 大纲
+  const extractHeadingsFromMarkdown = useCallback((md: string) => {
+    const lines = md.split(/\n+/)
+    const result: Array<{ id: string; text: string; level: number }> = []
+    for (const line of lines) {
+      const m = /^(#{1,6})\s+(.+)$/.exec(line.trim())
+      if (m) {
+        const level = m[1].length
+        const text = m[2].trim()
+        const id = text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + result.length
+        result.push({ id, text, level })
+      }
+    }
+    setToc(result)
+  }, [])
+
+  // 生成 HTML 大纲（用于 TipTap）
+  const extractHeadingsFromHTML = useCallback((html: string) => {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      const hs = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      const result = hs.map((h, i) => {
+        const level = Number(h.tagName.substring(1))
+        const text = (h.textContent || '').trim()
+        const id = (h.id && h.id.trim()) || text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + i
+        return { id, text, level }
+      })
+      setToc(result)
+    } catch {
+      setToc([])
+    }
+  }, [])
+
+  // 读取当前用户信息用于协作指示
+  useEffect(() => {
+    const u = getCurrentUser()
+    if (u) setMe({ id: u.id, name: u.email })
+  }, [])
+
+  // UI 降级：依据设备/网络/可及性偏好自动选择轻量模式，并上报 RUM 事件
+  useEffect(() => {
+    try {
+      const nav: any = navigator
+      const conn: any = nav?.connection || nav?.mozConnection || nav?.webkitConnection
+      const saveData: boolean = Boolean(conn?.saveData)
+      const downlink: number | undefined = typeof conn?.downlink === 'number' ? conn.downlink : undefined
+      const deviceMemory: number | undefined = typeof nav?.deviceMemory === 'number' ? nav.deviceMemory : undefined
+      const hw: number | undefined = typeof nav?.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : undefined
+      const prefersReducedMotion = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const isOffline = typeof nav?.onLine === 'boolean' ? !nav.onLine : false
+      const lowSpec = (
+        saveData || isOffline || (downlink != null && downlink < 1.5) || (deviceMemory != null && deviceMemory < 4) || (hw != null && hw <= 4) || prefersReducedMotion
+      )
+      if (lowSpec) {
+        setEditorMode('markdown')
+        setUiDegraded(true)
+        try {
+          const evt = new CustomEvent('rum', {
+            detail: {
+              type: 'network',
+              name: 'ui_degrade',
+              meta: { saveData, downlink, deviceMemory, hardwareConcurrency: hw, prefersReducedMotion, offline: isOffline, page: 'edit' },
+              ts: Date.now(),
+            },
+          })
+          document.dispatchEvent(evt)
+        } catch { }
+      }
+    } catch { }
+  }, [])
+
+  // RUM：编辑器模式切换事件
+  useEffect(() => {
+    try {
+      const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'editor_mode_change', meta: { mode: editorMode, noteId: id } } })
+      document.dispatchEvent(evt)
+    } catch { }
+  }, [editorMode, id])
+
+  // 评论弹窗可访问性：聚焦管理与键盘陷阱
+  useEffect(() => {
+    if (!showCommentsModal) return
+    const dialog = commentsDialogRef.current
+    if (!dialog) return
+    const focusable = dialog.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
+    )
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    first?.focus()
+
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.stopPropagation()
+        setShowCommentsModal(false)
+      }
+      if (e.key === 'Tab') {
+        if (focusable.length === 0) return
+        if (e.shiftKey && document.activeElement === first) {
+          e.preventDefault(); last?.focus()
+        } else if (!e.shiftKey && document.activeElement === last) {
+          e.preventDefault(); first?.focus()
+        }
+      }
+    }
+    dialog.addEventListener('keydown', handleKey)
+    return () => { dialog.removeEventListener('keydown', handleKey) }
+  }, [showCommentsModal])
+
+  useEffect(() => {
+    if (!showCommentsDrawer) return
+    const dialog = commentsDrawerRef.current
+    if (!dialog) return
+    const focusable = dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])')
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    first?.focus()
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setShowCommentsDrawer(false) }
+      if (e.key === 'Tab') {
+        if (focusable.length === 0) return
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
+      }
+    }
+    dialog.addEventListener('keydown', handleKey)
+    return () => { dialog.removeEventListener('keydown', handleKey) }
+  }, [showCommentsDrawer])
+
+  // 全屏切换：事件监听与状态同步
+  useEffect(() => {
+    const onFsChange = () => {
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreen(active)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'ui', name: 'fullscreen_change', meta: { active }, ts: Date.now() } })
+        document.dispatchEvent(evt)
+      } catch { }
+      if (active) {
+        // 进入全屏时隐藏侧栏，禁用页面滚动，聚焦工具栏按钮以保可达性
+        document.body.style.overflow = 'hidden'
+        setShowSidebar(false)
+        const btn = document.getElementById('fullscreen-button') as HTMLButtonElement | null
+        // 防止聚焦导致工具栏容器发生横向滚动
+        try {
+          btn?.focus({ preventScroll: true } as any)
+        } catch {
+          btn?.focus()
+        }
+        // 兜底：若浏览器仍产生滚动，强制将工具栏滚动位置复位
+        try {
+          const toolbar = document.querySelector('[role="toolbar"]') as HTMLElement | null
+          if (toolbar && (toolbar as any).scrollLeft > 0) (toolbar as any).scrollLeft = 0
+        } catch { }
+      } else {
+        // 退出全屏恢复滚动
+        document.body.style.overflow = ''
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          e.stopPropagation()
+          try { document.exitFullscreen() } catch { }
+        } else if (isFullscreen) {
+          setIsFullscreen(false)
+          document.body.style.overflow = ''
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        handleToggleFullscreen()
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    const onToggle = () => { handleToggleFullscreen() }
+    document.addEventListener('editor:toggleFullscreen', onToggle as any)
+    document.addEventListener('keydown', onKey)
+    const onCommentsHover = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50) }
+    const onCommentsOpen = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50); try { document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: id, strategy: 'context' } })) } catch { } }
+    document.addEventListener('comments:hover', onCommentsHover as any)
+    document.addEventListener('comments:open', onCommentsOpen as any)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange)
+      document.removeEventListener('editor:toggleFullscreen', onToggle as any)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('comments:hover', onCommentsHover as any)
+      document.removeEventListener('comments:open', onCommentsOpen as any)
+    }
+  }, [])
+
+  const handleToggleFullscreen = () => {
+    const target = editorContainerRef.current || document.documentElement
+    if (document.fullscreenElement) {
+      try { (document as any).exitFullscreen?.() } catch { }
+      setIsFullscreen(false)
+      document.body.style.overflow = ''
+      return
+    }
+    try {
+      const fn = (target as any).requestFullscreen || (document.documentElement as any).requestFullscreen || (document as any).webkitRequestFullscreen
+      if (typeof fn === 'function') {
+        Promise.resolve(fn.call(target)).catch(() => { })
+      }
+    } catch { }
+    // 若原生全屏未成功，200ms 后启用 CSS 回退
+    setTimeout(() => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(true)
+        document.body.style.overflow = 'hidden'
+      }
+    }, 200)
+  }
+
+  const openCommentsModal = () => {
+    lastFocusRef.current = document.activeElement as HTMLElement
+    setShowCommentsModal(true)
+  }
+  const closeCommentsModal = () => {
+    setShowCommentsModal(false)
+    setTimeout(() => { lastFocusRef.current?.focus() }, 0)
+  }
 
   const loadNote = useCallback(async () => {
     try {
@@ -93,7 +331,7 @@ export default function EditNotePage() {
         (value as { id?: string }).id ||
         (value as { _id?: string })._id ||
         ''
-      )
+      );
     }
     return ''
   }
@@ -227,8 +465,16 @@ export default function EditNotePage() {
         tags: selectedTags,
       })
       setNote(updatedNote)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_ok', meta: { noteId: id, size: (content || '').length, mode: editorMode } } })
+        document.dispatchEvent(evt)
+      } catch { }
     } catch (error) {
       console.error('Failed to update note:', error)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_error', meta: { noteId: id, message: String((error as any)?.message || error), mode: editorMode } } })
+        document.dispatchEvent(evt)
+      } catch { }
       throw new Error('保存失败，请重试')
     }
   }
@@ -250,8 +496,16 @@ export default function EditNotePage() {
         status: 'draft',
       })
       setNote(updatedNote)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_draft_ok', meta: { noteId: id, size: (content || '').length, mode: editorMode } } })
+        document.dispatchEvent(evt)
+      } catch { }
     } catch (error) {
       console.error('Failed to update draft note:', error)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_draft_error', meta: { noteId: id, message: String((error as any)?.message || error), mode: editorMode } } })
+        document.dispatchEvent(evt)
+      } catch { }
       throw new Error('保存草稿失败，请重试')
     }
   }
@@ -287,58 +541,26 @@ export default function EditNotePage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleBack}
-            className="text-gray-500 hover:text-gray-700"
-          >
-            <ArrowLeft className="h-4 w-4" />
-          </Button>
-          <h1
-            className="text-2xl font-bold"
-            style={{
-              background: 'linear-gradient(to right, #111827, #2563eb, #111827)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
-            编辑笔记
-          </h1>
-        </div>
-      </div>
-      {error && (
-        <div
-          className="p-4 text-sm text-red-600"
-          style={{
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '8px',
-            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          }}
-        >
-          {error}
-        </div>
-      )}
 
-      {/* 协作区块：放在编辑器上方，保证可见 */}
-      <div
-        className="bg-white"
-        style={{
-          borderRadius: '12px',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
-        }}
-      >
-        <div className="grid gap-6 p-6 md:grid-cols-2">
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="text-sm font-medium">协作</div>
-              <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">查看版本</a>
-            </div>
-            <div className="flex items-center gap-2">
+      {/* 顶部固定工具栏（语雀风格） */}
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-200">
+        <div className="flex items-center justify-between px-4 py-2">
+          <div className="flex items-center gap-4">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={handleBack}
+              className="text-gray-500 hover:text-gray-700"
+            >
+              <ArrowLeft className="h-4 w-4" />
+            </Button>
+            <span className="text-sm text-gray-700">编辑笔记</span>
+            <div className="hidden md:flex items-center gap-3 ml-2">
+              <span className="text-xs text-gray-500">编辑器</span>
+              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+                <option value="rich">富文本（协同）</option>
+                <option value="markdown">Markdown</option>
+              </select>
               <span className="text-xs text-gray-500">可见性</span>
               <select
                 className="rounded border px-2 py-1 text-xs"
@@ -355,14 +577,50 @@ export default function EditNotePage() {
                 <option value="public">公开只读</option>
               </select>
             </div>
-            <CollaboratorsPanel noteId={id} />
           </div>
-          <div className="space-y-3">
-            <CommentsPanel noteId={id} selection={selection} />
+          <div className="flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="sm"
+              aria-pressed={!showSidebar}
+              onClick={() => setShowSidebar(s => !s)}
+              className="text-gray-600 hover:text-gray-800"
+            >
+              {showSidebar ? (
+                <span className="inline-flex items-center gap-1"><ChevronRight className="h-4 w-4" /> 隐藏侧栏</span>
+              ) : (
+                <span className="inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> 显示侧栏</span>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="协作"
+              title="协作"
+              onClick={() => setShowCollabDrawer(true)}
+              className="text-gray-600 hover:text-gray-800"
+            >
+              <Users className="h-5 w-5" />
+              <span className="sr-only">协作</span>
+            </Button>
           </div>
         </div>
       </div>
+      {error && (
+        <div
+          className="p-4 text-sm text-red-600"
+          style={{
+            backgroundColor: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          }}
+        >
+          {error}
+        </div>
+      )}
 
+      {/* 分类/标签等元信息 */}
       <div
         className="bg-white"
         style={{
@@ -370,149 +628,290 @@ export default function EditNotePage() {
           boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
         }}
       >
-        <div className="grid gap-6 border-b border-gray-100 p-6 md:grid-cols-2">
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">选择分类</span>
-              {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
-            </div>
-            <select
-              className="w-full rounded-lg border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
-              value={selectedCategory}
-              onChange={(e) => setSelectedCategory(e.target.value)}
-              disabled={metaLoading || !!metaError}
-            >
-              <option value="">未分类</option>
-              {categories.map((category) => {
-                const value = resolveCategoryId(category)
-                return (
-                  <option key={value || category.name} value={value}>
-                    {category.name}
-                  </option>
-                )
-              })}
-            </select>
+        <div className="grid gap-6 border-b border-gray-100 p-6 lg:grid-cols-12">
 
-            <div className="mt-4">
-              <div className="mb-2 flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700">附属分类（仅用于标签）</span>
-              </div>
-              <div className="max-h-56 overflow-auto rounded-lg border border-gray-200 p-3">
-                {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div className="mb-2 flex items-center justify-between">
-              <span className="text-sm font-medium text-gray-700">标签（可多选）</span>
-              {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
-            </div>
-            <div className="mb-2 flex items-center gap-2">
-              <input
-                type="text"
-                value={tagInput}
-                onChange={(e) => setTagInput(e.target.value)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') {
-                    const parts = tagInput.split(/[,\s]+/)
-                    setTagInput('')
-                    addTagsByNames(parts)
-                  }
-                }}
-                placeholder="输入标签，Enter 添加，支持逗号分隔"
-                className="flex-1 rounded-lg border border-gray-200 p-2 text-sm"
-              />
-              <button
-                className="px-3 py-1 rounded border text-sm text-gray-700 hover:bg-gray-50"
-                onClick={() => setSelectedTags([])}
-              >清空标签</button>
-            </div>
-            {tagInput && (
-              <div className="mb-2 rounded-lg border border-gray-200 p-2 bg-white shadow-sm">
-                <div className="text-xs text-gray-500 mb-1">建议</div>
-                <div className="flex flex-wrap gap-2">
-                  {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
-                    const id = (t.id || (t as unknown as { _id?: string })?._id || '')
+          <div
+            className="bg-white"
+            style={{
+              borderRadius: '12px',
+              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+            }}
+          >
+            <div className="grid gap-6 border-b border-gray-100 p-6 md:grid-cols-2">
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">选择分类</span>
+                  {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
+                </div>
+                <select
+                  className="w-full rounded-lg border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  value={selectedCategory}
+                  onChange={(e) => setSelectedCategory(e.target.value)}
+                  disabled={metaLoading || !!metaError}
+                >
+                  <option value="">未分类</option>
+                  {categories.map((category) => {
+                    const value = resolveCategoryId(category)
                     return (
-                      <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs hover:border-blue-300 hover:text-blue-600">
-                        {t.name}
-                      </button>
+                      <option key={value || category.name} value={value}>
+                        {category.name}
+                      </option>
                     )
                   })}
-                  <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
-                    创建标签 “{tagInput}”
-                  </button>
+                </select>
+
+                <div className="mt-4">
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium text-gray-700">附属分类（仅用于标签）</span>
+                  </div>
+                  <div className="max-h-56 overflow-auto rounded-lg border border-gray-200 p-3">
+                    {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
+                  </div>
                 </div>
               </div>
-            )}
-            {tags.length === 0 ? (
-              <p className="text-sm text-gray-400">
-                {metaError || '暂无可用标签'}
-              </p>
-            ) : (
-              <div className="flex flex-wrap gap-2">
-                {tags.map((tag) => {
-                  const tagId =
-                    tag.id ||
-                    (tag as unknown as { _id?: string })?._id ||
-                    ''
-                  const isActive = tagId ? selectedTags.includes(tagId) : false
-                  return (
-                    <button
-                      key={tagId || tag.name}
-                      type="button"
-                      onClick={() => tagId && toggleTag(tagId)}
-                      disabled={!tagId}
-                      className={`rounded-full border px-3 py-1 text-sm transition ${isActive
-                        ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm'
-                        : 'border-gray-200 text-gray-600 hover:border-blue-200 hover:text-blue-500'
-                        }`}
-                      style={{ minHeight: 44 }}
-                    >
-                      {tag.name}
-                    </button>
-                  )
-                })}
+
+              <div>
+                <div className="mb-2 flex items-center justify-between">
+                  <span className="text-sm font-medium text-gray-700">标签（可多选）</span>
+                  {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
+                </div>
+                <div className="mb-2 flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={tagInput}
+                    onChange={(e) => setTagInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        const parts = tagInput.split(/[,\s]+/)
+                        setTagInput('')
+                        addTagsByNames(parts)
+                      }
+                    }}
+                    placeholder="输入标签，Enter 添加，支持逗号分隔"
+                    className="flex-1 rounded-lg border border-gray-200 p-2 text-sm"
+                  />
+                  <button
+                    className="px-3 py-1 rounded border text-sm text-gray-700 hover:bg-gray-50"
+                    onClick={() => setSelectedTags([])}
+                  >清空标签</button>
+                </div>
+                {tagInput && (
+                  <div className="mb-2 rounded-lg border border-gray-200 p-2 bg-white shadow-sm">
+                    <div className="text-xs text-gray-500 mb-1">建议</div>
+                    <div className="flex flex-wrap gap-2">
+                      {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
+                        const id = (t.id || (t as unknown as { _id?: string })?._id || '')
+                        return (
+                          <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs hover:border-blue-300 hover:text-blue-600">
+                            {t.name}
+                          </button>
+                        )
+                      })}
+                      <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
+                        创建标签 “{tagInput}”
+                      </button>
+                    </div>
+                  </div>
+                )}
+                {tags.length === 0 ? (
+                  <p className="text-sm text-gray-400">
+                    {metaError || '暂无可用标签'}
+                  </p>
+                ) : (
+                  <div className="flex flex-wrap gap-2">
+                    {tags.map((tag) => {
+                      const tagId =
+                        tag.id ||
+                        (tag as unknown as { _id?: string })?._id ||
+                        ''
+                      const isActive = tagId ? selectedTags.includes(tagId) : false
+                      return (
+                        <button
+                          key={tagId || tag.name}
+                          type="button"
+                          onClick={() => tagId && toggleTag(tagId)}
+                          disabled={!tagId}
+                          className={`rounded-full border px-3 py-1 text-sm transition ${isActive
+                            ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm'
+                            : 'border-gray-200 text-gray-600 hover:border-blue-200 hover:text-blue-500'
+                            }`}
+                          style={{ minHeight: 44 }}
+                        >
+                          {tag.name}
+                        </button>
+                      )
+                    })}
+                  </div>
+                )}
               </div>
-            )}
+
+              {metaError && (
+                <p className="md:col-span-2 text-sm text-red-500">{metaError}</p>
+              )}
+            </div>
+
+            <div className="px-6 pb-2">
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-gray-500">编辑器</span>
+                <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+                  <option value="rich">富文本（协同）</option>
+                  <option value="markdown">Markdown</option>
+                </select>
+                {uiDegraded && (
+                  <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
+                )}
+              </div>
+            </div>
+            <div className="grid gap-6 p-6 lg:grid-cols-12">
+              <div className={showSidebar ? 'lg:col-span-10' : 'lg:col-span-12'}>
+                {editorMode === 'rich' ? (
+                  <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
+                    <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+                      if (cmd === 'comments') {
+                        try {
+                          setShowCommentsDrawer(true)
+                          const openEvt = new CustomEvent('comments:open')
+                          document.dispatchEvent(openEvt)
+                          if (selection && typeof selection.start === 'number' && typeof selection.end === 'number' && selection.start !== selection.end) {
+                            const markEvt = new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId: `local-${Date.now()}` } })
+                            document.dispatchEvent(markEvt)
+                          }
+                          setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50)
+                        } catch { }
+                        return
+                      }
+                      if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
+                      const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
+                      document.dispatchEvent(ev)
+                    }} />
+                    <TiptapEditor
+                      noteId={id}
+                      initialHTML={note.content || '<p></p>'}
+                      onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+                      user={me}
+                      readOnly={false}
+                      onSelectionChange={(start, end) => setSelection({ start, end })}
+                      onContentChange={(html) => extractHeadingsFromHTML(html)}
+                    />
+                  </div>
+                ) : (
+                  <MarkdownEditor
+                    initialContent={note.content || ''}
+                    initialTitle={note.title || ''}
+                    onSave={handleSave}
+                    onSaveDraft={handleSaveDraft}
+                    isNew={false}
+                    draftKey={`note:${id}`}
+                    onSelectionChange={(start, end) => setSelection({ start, end })}
+                    onContentChange={(content) => extractHeadingsFromMarkdown(content)}
+                  />
+                )}
+              </div>
+              {showSidebar && !isFullscreen && (
+                <div className="lg:col-span-2">
+                  <div className="sticky top-20 space-y-3">
+                    <div className="rounded-lg border bg-white">
+                      <div className="px-4 py-2 border-b text-sm font-medium">大纲</div>
+                      <div className="p-3">
+                        {toc.length === 0 ? (
+                          <div className="text-xs text-gray-400">暂无标题</div>
+                        ) : (
+                          <div className="space-y-1">
+                            {toc.map((h) => (
+                              <button
+                                key={h.id}
+                                onClick={() => {
+                                  const el = document.getElementById(h.id)
+                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                                }}
+                                className={`w-full text-left text-xs rounded px-3 py-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 ${currentHeadingId === h.id ? 'text-blue-600' : 'text-gray-700'}`}
+                                style={{ paddingLeft: `${(h.level - 1) * 12}px` }}
+                              >
+                                {h.text}
+                              </button>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    <div className="rounded-lg border bg-white">
+                      <div className="px-4 py-2 border-b text-sm font-medium flex items-center justify-between">
+                        <span>快速操作</span>
+                        <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">版本</a>
+                      </div>
+                      <div className="p-3 text-xs text-gray-500">
+                        在上方工具栏打开“协作抽屉”查看评论与协作者。
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
-          {metaError && (
-            <p className="md:col-span-2 text-sm text-red-500">{metaError}</p>
+          {/* 右侧协作抽屉（不包含评论内容） */}
+          {showCollabDrawer && (
+            <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
+              <div className="absolute inset-0 bg-black/20" onClick={() => setShowCollabDrawer(false)} />
+              <div className="absolute right-0 top-0 h-full w-[360px] bg-white border-l shadow-xl">
+                <div className="flex items-center justify-between px-4 py-2 border-b">
+                  <div className="text-sm font-medium">协作</div>
+                  <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCollabDrawer(false)}>关闭</button>
+                </div>
+                <div className="p-4 space-y-4 overflow-auto h-full">
+                  <div className="rounded-lg border">
+                    <div className="px-3 py-2 border-b text-xs font-medium">协作者</div>
+                    <div className="p-3">
+                      <CollaboratorsPanel noteId={id} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           )}
+          {/* 右侧评论抽屉（独立） */}
+          {showCommentsDrawer && (
+            <div className="fixed inset-0 z-50" aria-modal="true" role="dialog" aria-labelledby="comments-drawer-title">
+              <div className="absolute inset-0 bg-black/20" onClick={() => setShowCommentsDrawer(false)} />
+              <div
+                ref={commentsDrawerRef}
+                id="comments-drawer"
+                className="absolute right-0 top-0 h-full w-[380px] bg-white border-l shadow-xl"
+                style={{
+                  borderRadius: 0,
+                  transform: 'translateX(0)',
+                  transition: 'transform 300ms ease-in-out',
+                }}
+              >
+                <div className="flex items-center justify-between px-4 py-2 border-b">
+                  <div id="comments-drawer-title" className="text-sm font-medium">划词评论</div>
+                  <div className="text-xs text-gray-500">选区：{selection.start}–{selection.end}（长度 {Math.max(0, selection.end - selection.start)}）</div>
+                  <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCommentsDrawer(false)}>关闭</button>
+                </div>
+                <div className="p-4 overflow-auto h-full">
+                  <div className="rounded-lg border" style={{ borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)' }}>
+                    <div className="p-3">
+                      <CommentsPanel noteId={id} selection={selection} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+          {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
+          <button
+            aria-label="打开协作抽屉"
+            className="fixed right-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+            onClick={() => setShowCollabDrawer(true)}
+            style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
+          >
+            <span className="sr-only">打开协作抽屉</span>
+            •
+          </button>
+          {/* 旧的顶部弹窗已改为右侧抽屉，保留变量但不再渲染 */}
         </div>
-
-        <div className="px-6 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">编辑器</span>
-            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
-              <option value="rich">富文本（协同）</option>
-              <option value="markdown">Markdown</option>
-            </select>
-          </div>
-        </div>
-        {editorMode === 'rich' ? (
-          <TiptapEditor
-            noteId={id}
-            initialHTML={note.content || '<p></p>'}
-            onSave={async (html: string) => { await handleSave(note.title || '', html) }}
-            user={{ id: 'me', name: '我' }}
-            readOnly={false}
-            onSelectionChange={(start, end) => setSelection({ start, end })}
-          />
-        ) : (
-          <MarkdownEditor
-            initialContent={note.content || ''}
-            initialTitle={note.title || ''}
-            onSave={handleSave}
-            onSaveDraft={handleSaveDraft}
-            isNew={false}
-            draftKey={`note:${id}`}
-            onSelectionChange={(start, end) => setSelection({ start, end })}
-          />
-        )}
       </div>
     </div>
-  )
+  );
+
 }

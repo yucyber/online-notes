@@ -31,8 +31,6 @@ export class DashboardService {
         .sort({ updatedAt: -1 })
         .limit(5)
         .select('title content updatedAt createdAt categoryId tags')
-        .populate('categoryId', '_id name color')
-        .populate('tags', '_id name color')
         .lean(),
       this.categoryModel
         .find({ userId: userObjectId })

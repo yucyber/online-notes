@@ -2,21 +2,24 @@
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { listMyInvitations, listNotifications, markNotificationRead, previewInvitation, acceptInvitation } from '@/lib/api'
+import { usePaginationSync } from '@/hooks/usePaginationSync'
+import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
 import { Button } from '@/components/ui/button'
 
 export default function NotificationsPage() {
   const router = useRouter()
   const [invites, setInvites] = useState<any[]>([])
   const [notes, setNotes] = useState<{ items: any[]; page: number; size: number; total: number } | null>(null)
+  const { page, size, setPage, setSize } = usePaginationSync({ page: 1, size: 20 })
   const load = async () => {
     try {
       const iv = await listMyInvitations('pending')
       setInvites(iv || [])
-      const ns = await listNotifications(1, 50, undefined, 'unread')
+      const ns = await listNotifications(page, size, undefined, 'unread')
       setNotes(ns)
     } catch {}
   }
-  useEffect(() => { load() }, [])
+  useEffect(() => { load() }, [page, size])
 
   const accept = async (tokenHashOrToken: string) => {
     try {
@@ -47,6 +50,10 @@ export default function NotificationsPage() {
       </div>
       <div className="space-y-3">
         <div className="text-sm font-medium">未读通知</div>
+        <div className="flex items-center justify-between">
+          <PageSizeSelect size={size} onSizeChange={setSize} />
+          <Pagination page={page} size={size} total={Number(notes?.total || 0)} onPageChange={setPage} />
+        </div>
         <ul className="space-y-2">
           {(notes?.items || []).map((n: any) => (
             <li key={n.id || n._id} className="flex items-center justify-between border rounded px-3 py-2">

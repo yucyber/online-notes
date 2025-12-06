@@ -8,7 +8,15 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "ci:lint": "next lint",
+    "ci:type-check": "tsc --noEmit",
+    "ci:i18n": "node scripts/check-i18n.mjs",
+    "ci:test-cases": "node scripts/check-test-cases.mjs",
+    "ci:test": "jest --coverage --runInBand",
+    "ci:serve": "next start -p 3000",
+    "ci:axe": "npx @axe-core/cli http://localhost:3000/dashboard --timeout 60000",
+    "ci:lhci": "npx @lhci/cli autorun"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.3.4",
@@ -16,6 +24,24 @@
     "@tiptap/core": "^2.27.1",
     "@tiptap/extension-collaboration": "^2.27.1",
     "@tiptap/extension-collaboration-cursor": "^2.26.2",
+    "@tiptap/extension-color": "^2.27.1",
+    "@tiptap/extension-heading": "^2.27.1",
+    "@tiptap/extension-highlight": "^2.27.1",
+    "@tiptap/extension-horizontal-rule": "^2.27.1",
+    "@tiptap/extension-image": "^2.27.1",
+    "@tiptap/extension-link": "^2.27.1",
+    "@tiptap/extension-list-item": "^2.27.1",
+    "@tiptap/extension-placeholder": "^2.27.1",
+    "@tiptap/extension-subscript": "^2.27.1",
+    "@tiptap/extension-superscript": "^2.27.1",
+    "@tiptap/extension-table": "^2.27.1",
+    "@tiptap/extension-table-cell": "^2.27.1",
+    "@tiptap/extension-table-header": "^2.27.1",
+    "@tiptap/extension-table-row": "^2.27.1",
+    "@tiptap/extension-task-item": "^2.27.1",
+    "@tiptap/extension-task-list": "^2.27.1",
+    "@tiptap/extension-text-align": "^2.27.1",
+    "@tiptap/extension-text-style": "^2.27.1",
     "@tiptap/extension-underline": "^2.27.1",
     "@tiptap/react": "^2.27.1",
     "@tiptap/starter-kit": "^2.27.1",
@@ -42,7 +68,16 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@axe-core/cli": "^4.7.2",
+    "@lhci/cli": "^0.12.0",
+    "@testing-library/jest-dom": "^6.4.2",
+    "@testing-library/react": "^14.2.1",
+    "@types/jest": "^29.5.12",
+    "chromedriver": "^142.0.3",
     "eslint": "^8.56.0",
-    "eslint-config-next": "^14.0.4"
+    "eslint-config-next": "^14.0.4",
+    "jest": "^29.7.0",
+    "jest-environment-jsdom": "^29.7.0",
+    "ts-jest": "^29.1.2"
   }
 }

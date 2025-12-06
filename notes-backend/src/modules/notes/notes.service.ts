@@ -5,6 +5,8 @@ import { Note, NoteDocument } from './schemas/note.schema';
 import { CreateNoteDto, UpdateNoteDto, NoteFilterDto } from './dto';
 import { CategoriesService } from '../categories/categories.service';
 import { TagsService } from '../tags/tags.service';
+import Redis from 'ioredis'
+import { createHash } from 'crypto'
 
 @Injectable()
 export class NotesService {
@@ -13,6 +15,8 @@ export class NotesService {
     private readonly categoriesService: CategoriesService,
     private readonly tagsService: TagsService,
   ) { }
+
+  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
 
   async create(createNoteDto: CreateNoteDto, userId: string): Promise<Note> {
     const createdNote = new this.noteModel({
@@ -43,8 +47,22 @@ export class NotesService {
     return savedNote;
   }
 
-  async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<Note[]> {
-    const { keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode } = filterDto;
+  async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
+    const { keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor } = filterDto;
+    const page = Math.max(1, Number(filterDto.page || 1))
+    const size = Math.max(1, Math.min(100, Number(filterDto.limit ?? filterDto.size ?? 20)))
+    const sortBy = (filterDto.sortBy || 'createdAt')
+    const sortOrder = (filterDto.sortOrder || 'desc')
+
+    // Read-only cache (TTL 10s)
+    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder }
+    const cacheKey = `notes:list:${userId}:${createHash('sha1').update(JSON.stringify(keyPayload)).digest('hex')}`
+    try {
+      const cached = await this.redis.get(cacheKey)
+      if (cached) {
+        return JSON.parse(cached)
+      }
+    } catch { /* ignore */ }
 
     // Use $and to safely combine multiple conditions including $or clauses
     const andConditions: any[] = [];
@@ -60,14 +78,18 @@ export class NotesService {
     }
     andConditions.push(accessScope)
 
-    // 2. Keyword Search (Title or Content)
+    // 2. Keyword Search：新增 `$text` 分支（默认正则）
     if (keyword) {
-      andConditions.push({
-        $or: [
-          { title: { $regex: keyword, $options: 'i' } },
-          { content: { $regex: keyword, $options: 'i' } },
-        ],
-      });
+      if (searchMode === 'text') {
+        andConditions.push({ $text: { $search: keyword } })
+      } else {
+        andConditions.push({
+          $or: [
+            { title: { $regex: keyword, $options: 'i' } },
+            { content: { $regex: keyword, $options: 'i' } },
+          ],
+        });
+      }
     }
 
     // 3. Category Filter (Handle both ObjectId and String storage)
@@ -120,7 +142,8 @@ export class NotesService {
       if (endDate) {
         dateQuery.$lte = new Date(endDate);
       }
-      andConditions.push({ updatedAt: dateQuery });
+      // 与排序字段对齐：当 sortBy=createdAt 时使用 createdAt；否则沿用 updatedAt
+      andConditions.push({ [sortBy === 'createdAt' ? 'createdAt' : 'updatedAt']: dateQuery });
     }
 
     // 6. Status Filter
@@ -128,15 +151,44 @@ export class NotesService {
       andConditions.push({ status });
     }
 
+    // 7. Cursor（基于 createdAt 的时间游标；当提供 cursor 时优先游标分页）
+    if (cursor) {
+      const c = new Date(cursor)
+      if (isNaN(c.getTime())) {
+        const { HttpException, HttpStatus } = require('@nestjs/common')
+        throw new HttpException('invalid cursor', HttpStatus.BAD_REQUEST)
+      }
+      if (sortBy === 'createdAt') {
+        andConditions.push({ createdAt: sortOrder === 'desc' ? { $lt: c } : { $gt: c } })
+      } else {
+        // 非默认字段的游标暂不支持；返回400以避免误用
+        const { HttpException, HttpStatus } = require('@nestjs/common')
+        throw new HttpException('cursor only supports sortBy=createdAt', HttpStatus.BAD_REQUEST)
+      }
+    }
+
     // Construct final query
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
-    return this.noteModel
-      .find(query)
-      .populate('categoryId', 'name')
-      .populate('tags', 'name')
-      .sort({ updatedAt: -1 })
-      .exec();
+    const [items, total] = await Promise.all([
+      this.noteModel
+        .find(query)
+        .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+        .skip((page - 1) * size)
+        .limit(size)
+        .maxTimeMS(300)
+        .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+        .lean()
+        .exec(),
+      this.noteModel.countDocuments(query),
+    ])
+    // 提供游标信息以便前端在深分页场景改用基于时间的 seek 分页，降低跳页成本
+    const nextCursor = (sortBy === 'createdAt' && items.length > 0)
+      ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
+      : undefined
+    const resp: any = { items, page, size, total, ...(nextCursor ? { nextCursor } : {}) }
+    try { await this.redis.set(cacheKey, JSON.stringify(resp), 'EX', 10) } catch { /* ignore */ }
+    return resp
   }
 
   async findOne(id: string, userId: string): Promise<Note> {
@@ -343,15 +395,19 @@ export class NotesService {
     const ctx = context || {}
 
     const andConditions: any[] = [{ userId: userObjectId }]
-    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode } = ctx
+    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode } = ctx
 
     if (keyword) {
-      andConditions.push({
-        $or: [
-          { title: { $regex: keyword, $options: 'i' } },
-          { content: { $regex: keyword, $options: 'i' } },
-        ],
-      })
+      if (searchMode === 'text') {
+        andConditions.push({ $text: { $search: keyword } })
+      } else {
+        andConditions.push({
+          $or: [
+            { title: { $regex: keyword, $options: 'i' } },
+            { content: { $regex: keyword, $options: 'i' } },
+          ],
+        })
+      }
     }
 
     if (categoryId) {
@@ -403,8 +459,8 @@ export class NotesService {
             tags: { $in: currentNote.tags },
           })
             .limit(limit)
-            .populate('categoryId', 'name')
-            .populate('tags', 'name')
+            .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+            .lean()
             .exec();
 
           recommendations.push(...relatedNotes);
@@ -421,10 +477,10 @@ export class NotesService {
         ...base,
         _id: { $nin: excludeIds },
       })
-        .sort({ updatedAt: -1 })
+        .sort({ createdAt: -1 })
         .limit(limit - recommendations.length)
-        .populate('categoryId', 'name')
-        .populate('tags', 'name')
+        .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+        .lean()
         .exec();
 
       recommendations.push(...recentNotes);
@@ -436,10 +492,10 @@ export class NotesService {
       status: 'draft',
       _id: { $nin: excludeIds }
     })
-      .sort({ updatedAt: -1 })
+      .sort({ createdAt: -1 })
       .limit(2)
-      .populate('categoryId', 'name')
-      .populate('tags', 'name')
+      .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+      .lean()
       .exec();
 
     const result = [...recommendations, ...drafts]

@@ -3,11 +3,12 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Search } from 'lucide-react'
+import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Search, Sun, Moon } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import { getCurrentUser, isAuthenticated, removeToken } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
 import type { User } from '@/types'
+import { listNotifications } from '@/lib/api'
 
 export default function DashboardLayout({
   children,
@@ -20,6 +21,13 @@ export default function DashboardLayout({
   const [user, setUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [hoveredNav, setHoveredNav] = useState<string | null>(null)
+  const [unreadCount, setUnreadCount] = useState(0)
+  const [isDark, setIsDark] = useState<boolean>(typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false)
+  // 详情/编辑/新建路由判定：在这些路由隐藏左侧导航
+  // 匹配：/dashboard/notes/new、/dashboard/notes/[id]、/dashboard/notes/[id]/edit
+  const isNotesFocusedRoute = Boolean(
+    pathname && /^\/dashboard\/notes\/(new|[^/]+(?:\/edit)?)/.test(pathname)
+  )
   // 简化导航样式：白底、轻边框、激活态使用品牌色
   const getNavButtonStyle = (isActive: boolean, isHovered: boolean) => {
     const base: React.CSSProperties = {
@@ -79,18 +87,60 @@ export default function DashboardLayout({
     })
     globalHotkeys.register('Ctrl+P', () => {
       const el = document.getElementById('preview-toggle')
-      (el as HTMLButtonElement | null)?.click()
+        (el as HTMLButtonElement | null)?.click()
     })
     globalHotkeys.register('Ctrl+S', () => {
       const el = document.getElementById('save-button')
-      (el as HTMLButtonElement | null)?.click()
+        (el as HTMLButtonElement | null)?.click()
+    })
+    globalHotkeys.register('Ctrl+Shift+F', () => {
+      try {
+        const ev = new CustomEvent('editor:toggleFullscreen')
+        document.dispatchEvent(ev)
+      } catch { }
     })
     return () => { detach() }
   }, [router])
 
+  // 未读铃铛角标：初始化与事件驱动刷新
+  useEffect(() => {
+    const loadUnread = async () => {
+      try {
+        const r = await listNotifications(1, 1, undefined, 'unread')
+        setUnreadCount(Math.max(0, Number(r?.total || 0)))
+      } catch { setUnreadCount(0) }
+    }
+    loadUnread()
+    const handler = () => loadUnread()
+    // 来自 API 层的刷新事件
+    document.addEventListener('notify:refresh', handler as any)
+    // 标签页激活时刷新，避免误差
+    const vis = () => { if (document.visibilityState === 'visible') loadUnread() }
+    document.addEventListener('visibilitychange', vis)
+    return () => {
+      document.removeEventListener('notify:refresh', handler as any)
+      document.removeEventListener('visibilitychange', vis)
+    }
+  }, [])
+
   const handleLogout = () => {
     removeToken()
     router.replace('/login')
+  }
+
+  const toggleTheme = () => {
+    const el = document.documentElement
+    const next = !el.classList.contains('dark')
+    if (next) {
+      el.classList.add('dark')
+      el.setAttribute('data-theme', 'dark')
+      localStorage.setItem('theme', 'dark')
+    } else {
+      el.classList.remove('dark')
+      el.setAttribute('data-theme', 'editor-light')
+      localStorage.setItem('theme', 'light')
+    }
+    setIsDark(next)
   }
 
   if (!isReady) {
@@ -144,94 +194,96 @@ export default function DashboardLayout({
     <div className="flex min-h-screen bg-white">
       {/* 桌面端侧边栏 */}
       {/* 桌面端侧边栏整体容器：使用深色渐变与玻璃质感 */}
-      <aside
-        className="relative hidden flex-col overflow-hidden md:flex"
-        style={{
-          width: '240px',
-          margin: '0',
-          backgroundColor: '#ffffff',
-          borderRight: '1px solid #e5e7eb',
-        }}
-      >
-        {/* 顶部品牌区背景高光 */}
-        <div
-          aria-hidden
+      {!isNotesFocusedRoute && (
+        <aside
+          className="relative hidden flex-col overflow-hidden md:flex"
           style={{
-            position: 'absolute',
-            inset: 0,
-            background:
-              'radial-gradient(circle at top left, rgba(59,130,246,0.45), transparent 45%)',
-            opacity: 0.8,
+            width: '240px',
+            margin: '0',
+            backgroundColor: '#ffffff',
+            borderRight: '1px solid #e5e7eb',
           }}
-        />
-        <div className="relative flex h-16 items-center gap-3 px-4 border-b border-gray-200">
+        >
+          {/* 顶部品牌区背景高光 */}
           <div
-            className="flex h-12 w-12 items-center justify-center rounded-2xl"
+            aria-hidden
             style={{
-              backgroundColor: '#10b981',
-              color: '#fff',
+              position: 'absolute',
+              inset: 0,
+              background:
+                'radial-gradient(circle at top left, rgba(59,130,246,0.45), transparent 45%)',
+              opacity: 0.8,
             }}
-          >
-            <span className="text-2xl font-black text-white">N</span>
+          />
+          <div className="relative flex h-16 items-center gap-3 px-4 border-b border-gray-200">
+            <div
+              className="flex h-12 w-12 items-center justify-center rounded-2xl"
+              style={{
+                backgroundColor: '#10b981',
+                color: '#fff',
+              }}
+            >
+              <span className="text-2xl font-black text-white">N</span>
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-900">笔记平台</p>
+              <p className="text-xs text-gray-500">Workspace</p>
+            </div>
           </div>
-          <div>
-            <p className="text-sm font-medium text-gray-900">笔记平台</p>
-            <p className="text-xs text-gray-500">Workspace</p>
-          </div>
-        </div>
-        {/* 导航按钮列表 */}
-        <nav className="relative flex-1 overflow-auto px-3 py-4 space-y-1">
-          {navItems.map((item) => {
-            const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname?.startsWith(item.href))
-            const isHovered = hoveredNav === item.href
-            return (
-              <Button
-                key={item.href}
-                variant="ghost"
-                className="w-full justify-start"
-                style={getNavButtonStyle(isActive, isHovered)}
-                onMouseEnter={() => setHoveredNav(item.href)}
-                onMouseLeave={() => setHoveredNav(null)}
-                onClick={() => router.push(item.href)}
-              >
-                <div className="flex items-center gap-3">
-                  <span
-                    className="h-6 w-1 rounded-full"
-                    style={{
-                      backgroundColor: isActive ? 'var(--primary-600)' : '#e5e7eb',
-                      transition: 'background-color 0.2s ease',
-                    }}
-                  />
-                  <span className="mr-2" style={getNavIconStyle(isActive)}>
-                    {item.icon}
-                  </span>
-                  <div className="flex flex-col text-left leading-tight">
-                    <span>{item.label}</span>
-                    <span className="text-[11px] text-gray-500">{item.hint}</span>
+          {/* 导航按钮列表 */}
+          <nav className="relative flex-1 overflow-auto px-3 py-4 space-y-1">
+            {navItems.map((item) => {
+              const isActive = pathname === item.href || (item.href !== '/dashboard' && pathname?.startsWith(item.href))
+              const isHovered = hoveredNav === item.href
+              return (
+                <Button
+                  key={item.href}
+                  variant="ghost"
+                  className="w-full justify-start"
+                  style={getNavButtonStyle(isActive, isHovered)}
+                  onMouseEnter={() => setHoveredNav(item.href)}
+                  onMouseLeave={() => setHoveredNav(null)}
+                  onClick={() => router.push(item.href)}
+                >
+                  <div className="flex items-center gap-3">
+                    <span
+                      className="h-6 w-1 rounded-full"
+                      style={{
+                        backgroundColor: isActive ? 'var(--primary-600)' : '#e5e7eb',
+                        transition: 'background-color 0.2s ease',
+                      }}
+                    />
+                    <span className="mr-2" style={getNavIconStyle(isActive)}>
+                      {item.icon}
+                    </span>
+                    <div className="flex flex-col text-left leading-tight">
+                      <span>{item.label}</span>
+                      <span className="text-[11px] text-gray-500">{item.hint}</span>
+                    </div>
                   </div>
-                </div>
-              </Button>
-            )
-          })}
-        </nav>
-        {/* 退出登录按钮区域 */}
-        <div className="relative p-4 border-t border-white/10">
-          <Button
-            variant="ghost"
-            className="w-full justify-start text-white/80 backdrop-blur-sm"
-            style={{
-              borderRadius: '16px',
-              border: '1px solid rgba(239,68,68,0.4)',
-              backgroundColor: 'rgba(239,68,68,0.12)',
-              color: '#fecaca',
-            }}
-            onClick={handleLogout}
-          >
-            <LogOut className="mr-3 h-5 w-5" />
-            退出登录
-          </Button>
-        </div>
-      </aside>
+                </Button>
+              )
+            })}
+          </nav>
+          {/* 退出登录按钮区域 */}
+          <div className="relative p-4 border-t border-white/10">
+            <Button
+              variant="ghost"
+              className="w-full justify-start text-white/80 backdrop-blur-sm"
+              style={{
+                borderRadius: '16px',
+                border: '1px solid rgba(239,68,68,0.4)',
+                backgroundColor: 'rgba(239,68,68,0.12)',
+                color: '#fecaca',
+              }}
+              onClick={handleLogout}
+            >
+              <LogOut className="mr-3 h-5 w-5" />
+              退出登录
+            </Button>
+          </div>
+        </aside>
+      )}
 
       {/* 移动端菜单 */}
       {isMobileMenuOpen && (
@@ -296,8 +348,8 @@ export default function DashboardLayout({
       )}
 
       {/* 主内容区 */}
-      {/* 主内容区采用浅色渐变背景 */}
-      <main className="flex-1 overflow-auto bg-gray-50">
+      {/* 主内容区采用浅色渐变背景，并在深色模式下增强对比 */}
+      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-neutral-900 dark:text-neutral-100">
         {/* 顶部吸附导航条，添加柔和渐变和模糊效果 */}
         <div className="sticky top-0 z-10 px-4 pt-3 pb-3 md:px-6 md:pt-3 md:pb-3 bg-white border-b border-gray-200">
           {/* 顶部卡片容器：承载菜单按钮与用户信息 */}
@@ -324,14 +376,44 @@ export default function DashboardLayout({
                   <Search aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
                 </div>
               </div>
+              {/* 主题切换：基于 CSS 令牌 */}
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-gray-700 hover:bg-gray-100"
-                onClick={() => router.push('/dashboard/notifications')}
+                className={`text-gray-700 hover:bg-gray-100 ${isDark ? 'bg-gray-800 text-white' : 'bg-yellow-50 text-yellow-700'}`}
+                aria-label={isDark ? '切换到浅色主题' : '切换到深色主题'}
+                aria-pressed={isDark}
+                onClick={toggleTheme}
+                title={isDark ? '浅色主题' : '深色主题'}
               >
-                <Bell className="h-5 w-5" />
+                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
+              <span className="hidden md:inline text-xs text-gray-500" aria-live="polite">{isDark ? '深色' : '浅色'}</span>
+              {/* 消息铃铛，显示未读角标 */}
+              <div className="relative">
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="text-gray-700 hover:bg-gray-100"
+                  onClick={() => router.push('/dashboard/notifications')}
+                  aria-label={unreadCount > 0 ? `消息中心，未读 ${unreadCount} 条` : '打开消息中心'}
+                  aria-describedby="notify-unread-status"
+                >
+                  <Bell className="h-5 w-5" />
+                </Button>
+                {unreadCount > 0 && (
+                  <span
+                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] leading-[18px] text-center"
+                    title={`${unreadCount} 条未读`}
+                  >
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+                {/* 屏幕阅读器动态公告未读数 */}
+                <div id="notify-unread-status" role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+                  未读 {unreadCount} 条
+                </div>
+              </div>
               <Button
                 variant="ghost"
                 size="icon"
@@ -365,7 +447,7 @@ export default function DashboardLayout({
           </header>
         </div>
         <div className="p-4 md:p-6 lg:p-8">
-          <div className="mx-auto w-full max-w-7xl animate-fade-in rounded-xl p-4 md:p-6 bg-white border border-gray-200 shadow-sm">
+          <div className={`mx-auto w-full ${isNotesFocusedRoute ? '' : 'max-w-7xl'} animate-fade-in rounded-xl p-4 md:p-6 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 shadow-sm`}>
             {children}
           </div>
         </div>

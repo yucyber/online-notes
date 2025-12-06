@@ -25,6 +25,9 @@ export default function SearchFilterBar() {
   const [startDate, setStartDate] = useState(searchParams.get('startDate') || '');
   const [endDate, setEndDate] = useState(searchParams.get('endDate') || '');
   const [status, setStatus] = useState(searchParams.get('status') || '');
+  // NLQ 开关与模式
+  const [nlqEnabled, setNlqEnabled] = useState((searchParams.get('nlq') || '') === '1')
+  const [nlqMode, setNlqMode] = useState<'keyword' | 'vector' | 'hybrid'>((searchParams.get('mode') as any) || 'hybrid')
 
   // Save filter state
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -69,15 +72,6 @@ export default function SearchFilterBar() {
     if (tagsMode !== next) setTagsMode(next)
   }, [selectedTagIds])
 
-  // Debounce search for keyword
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      if (keyword !== (searchParams.get('keyword') || '')) {
-        handleSearch();
-      }
-    }, 500);
-    return () => clearTimeout(timer);
-  }, [keyword]);
 
   const loadCategories = async () => {
     try {
@@ -107,7 +101,7 @@ export default function SearchFilterBar() {
     }
   };
 
-  const handleSearch = () => {
+  const handleSearch = (source?: 'button' | 'debounce' | 'enter') => {
     const params = new URLSearchParams();
     if (keyword) params.set('keyword', keyword);
     if (categoryId) params.set('categoryId', categoryId);
@@ -118,9 +112,42 @@ export default function SearchFilterBar() {
     if (startDate) params.set('startDate', startDate);
     if (endDate) params.set('endDate', endDate);
     if (status) params.set('status', status);
+    if (nlqEnabled) {
+      params.set('nlq', '1')
+      params.set('mode', nlqMode)
+    }
 
     const nextQuery = params.toString();
     const currentQuery = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : '';
+    const searchId = `s_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
+    try {
+      sessionStorage.setItem('lastSearchId', searchId)
+    } catch { }
+    document.dispatchEvent(new CustomEvent('search:trigger', {
+      detail: {
+        searchId,
+        source: source || 'button',
+        keyword,
+        categoryId,
+        tagIds: Array.from(new Set(selectedTagIds.filter(Boolean))),
+        tagsMode,
+        startDate,
+        endDate,
+        status,
+        nlqEnabled,
+        nlqMode,
+        nextQuery,
+        time: new Date().toISOString(),
+      }
+    }))
+    document.dispatchEvent(new CustomEvent('rum', {
+      detail: {
+        type: 'ui:search_trigger',
+        name: 'Search',
+        value: 1,
+        meta: { searchId, source: source || 'button' }
+      }
+    }))
     console.log('Trigger search with:', {
       keyword,
       categoryId,
@@ -147,6 +174,8 @@ export default function SearchFilterBar() {
     setEndDate('');
     setStatus('');
     setTagsMode('any');
+    setNlqEnabled(false)
+    setNlqMode('hybrid')
     router.push('/dashboard/notes');
   };
 
@@ -232,7 +261,7 @@ export default function SearchFilterBar() {
             className="w-full pl-10 pr-4 py-2 border rounded-md"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSearch()}
+            onKeyDown={(e) => e.key === 'Enter' && handleSearch('enter')}
           />
         </div>
         <button
@@ -243,11 +272,22 @@ export default function SearchFilterBar() {
           筛选
         </button>
         <button
-          onClick={handleSearch}
+          onClick={() => handleSearch('button')}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
         >
           搜索
         </button>
+        <label className="inline-flex items-center gap-2 text-sm ml-2">
+          <input type="checkbox" checked={nlqEnabled} onChange={(e) => setNlqEnabled(e.target.checked)} />
+          语义搜索
+        </label>
+        {nlqEnabled && (
+          <select className="border rounded-md p-2 text-sm" value={nlqMode} onChange={(e) => setNlqMode(e.target.value as any)}>
+            <option value="hybrid">混合</option>
+            <option value="keyword">关键词</option>
+            <option value="vector">向量</option>
+          </select>
+        )}
       </div>
 
       {isOpen && (

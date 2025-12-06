@@ -14,6 +14,8 @@ import { AuditModule } from './modules/audit/audit.module';
 import { VersionsModule } from './modules/versions/versions.module';
 import { CommentsModule } from './modules/comments/comments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { SemanticModule } from './modules/semantic/semantic.module';
+import { RumModule } from './modules/rum/rum.module';
 
 @Module({
   imports: [
@@ -41,6 +43,8 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     VersionsModule,
     CommentsModule,
     NotificationsModule,
+    SemanticModule,
+    RumModule,
   ],
 })
 export class AppModule { }

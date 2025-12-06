@@ -15,9 +15,8 @@ const CommentMark = Mark.create({
     return [{ tag: 'span[data-comment-id]' }]
   },
   renderHTML({ HTMLAttributes }) {
-    return ['span', mergeAttributes(HTMLAttributes, { class: 'comment-mark' }), 0]
+    return ['span', mergeAttributes(HTMLAttributes, { class: 'comment-mark', title: '已添加评论' }), 0]
   }
 })
 
 export default CommentMark
-

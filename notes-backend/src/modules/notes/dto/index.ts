@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsMongoId, IsEnum, IsDateString } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsMongoId, IsEnum, IsDateString, IsInt, Min, Max, IsIn } from 'class-validator';
 import { Transform } from 'class-transformer'
 
 export enum NoteStatus {
@@ -20,6 +20,12 @@ export enum TagsMode {
 export enum CategoriesMode {
   ANY = 'any',
   ALL = 'all',
+}
+
+// 搜索模式：支持文本索引与正则
+export enum SearchMode {
+  TEXT = 'text',
+  REGEX = 'regex',
 }
 
 export class CreateNoteDto {
@@ -90,6 +96,11 @@ export class NoteFilterDto {
   @IsString()
   keyword?: string;
 
+  // 搜索模式（默认 regex）；当为 text 时，使用 `$text` 查询以利用文本索引
+  @IsOptional()
+  @IsEnum(SearchMode)
+  searchMode?: SearchMode;
+
   @IsOptional()
   @IsMongoId()
   categoryId?: string;
@@ -129,4 +140,39 @@ export class NoteFilterDto {
   @IsOptional()
   @IsEnum(NoteStatus)
   status?: NoteStatus;
+
+  // Pagination & Sorting
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  page?: number;
+
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
+
+  // 兼容 size 别名
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  size?: number;
+
+  @IsOptional()
+  @IsString()
+  sortBy?: string;
+
+  @IsOptional()
+  @IsIn(['asc', 'desc'])
+  sortOrder?: 'asc' | 'desc';
+
+  // Cursor-based pagination：基于 `createdAt` 的时间游标
+  @IsOptional()
+  @IsDateString()
+  cursor?: string;
 }

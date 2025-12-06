@@ -1,0 +1,53 @@
+:root {
+  --radius-card: 12px; --radius-button: 8px; --radius-input: 8px;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
+  --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+  --focus-ring-color: #1d4ed8;
+  --icon-size: 20px;
+}
+
+html[data-theme="editor-light"] {
+  --bg: #ffffff; --bg-elev: #fafafa;
+  --text: #111827; --text-muted: #6b7280;
+  --border: #e5e7eb;
+  --primary: #2563eb; --primary-hover: #1d4ed8;
+  --success: #10b981; --warning: #f59e0b; --danger: #ef4444;
+  --icon-primary: #374151; --icon-disabled: #9ca3af;
+  /* 兼容现有组件用色（映射到 editor-* 变量） */
+  --primary-50: #eff6ff; --primary-100: #dbeafe; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1e40af;
+  --text-default: var(--text); --text-secondary: var(--text-muted);
+}
+
+html[data-theme="editor-duotone"] {
+  --bg: #f8faff; --bg-elev: #ffffff;
+  --text: #0f172a; --text-muted: #64748b;
+  --border: #e2e8f0;
+  --primary: #2563eb; --primary-hover: #1d4ed8; --accent: #60a5fa;
+  --success: #10b981; --warning: #f59e0b; --danger: #ef4444;
+  --icon-primary: #1f2937; --icon-disabled: #94a3b8;
+  --primary-50: #eef2ff; --primary-100: #e0e7ff; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1e3a8a;
+  --text-default: var(--text); --text-secondary: var(--text-muted);
+}
+
+html[data-theme="editor-dark"] {
+  --bg: #0b1220; --bg-elev: #0f172a;
+  --text: #e5e7eb; --text-muted: #94a3b8;
+  --border: #334155;
+  --primary: #60a5fa; --primary-hover: #93c5fd;
+  --success: #86efac; --warning: #fcd34d; --danger: #fca5a5;
+  --icon-primary: #e5e7eb; --icon-disabled: #475569;
+  --primary-50: #0b1220; --primary-100: #111827; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1f2937;
+  --text-default: var(--text); --text-secondary: var(--text-muted);
+}
+
+/* 评论标记样式：黄色下划线，兼容浅/深色，平滑过渡 */
+.comment-mark {
+  text-decoration-line: underline;
+  text-decoration-color: rgb(255, 235, 59);
+  text-decoration-thickness: 2px;
+  text-decoration-skip-ink: auto;
+  transition: background-color 300ms ease-in-out, box-shadow 300ms ease-in-out;
+}
+.comment-mark:hover {
+  box-shadow: inset 0 -8px 0 rgba(255, 235, 59, 0.25);
+}

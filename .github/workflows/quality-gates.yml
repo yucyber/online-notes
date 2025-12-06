@@ -1,0 +1,57 @@
+name: Quality Gates
+on:
+  pull_request:
+    paths:
+      - 'notes-frontend/**'
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notes-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+  unit_tests:
+    needs: install
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: notes-frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      # 断言关键用例是否存在（片段过滤、权限）
+      - run: npm run ci:test-cases
+      # 执行单测并强制覆盖率≥90%，否则阻断
+      - run: npm run ci:test
+  static:
+    needs: install
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: notes-frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - run: npm run ci:type-check
+      - run: npm run ci:lint
+      - run: npm run ci:i18n
+  a11y_perf:
+    needs: install
+    runs-on: ubuntu-latest
+    defaults: { run: { working-directory: notes-frontend } }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: '20' }
+      - run: npm ci
+      - run: npm run build
+      - run: npm run ci:serve & sleep 3
+      - run: npx wait-on http://localhost:3000
+      - run: npm run ci:axe
+      - run: npm run ci:lhci

@@ -36,7 +36,10 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       overflow: 'hidden',
       border: 'none',
       cursor: 'pointer',
-      transition: 'all 0.2s ease',
+      // 使用长写，避免与按下态的 transitionTimingFunction 冲突
+      transitionProperty: 'opacity, transform, box-shadow, background-color, color, border-color, text-decoration-color',
+      transitionDuration: '200ms',
+      transitionTimingFunction: 'cubic-bezier(0.4, 0, 0.2, 1)',
     };
 
     // 尺寸样式（符合可触达区域 ≥44px 标准）
@@ -128,6 +131,8 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
 
     if (isActive) {
       combinedStyles.transform = 'scale(0.95)'
+      combinedStyles.transitionProperty = 'transform, box-shadow'
+      combinedStyles.transitionDuration = '150ms'
       combinedStyles.transitionTimingFunction = 'ease-out'
       combinedStyles.boxShadow = '0 12px 18px -6px rgba(0,0,0,0.2), 0 8px 12px -8px rgba(0,0,0,0.15)'
     }

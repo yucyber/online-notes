@@ -31,3 +31,6 @@ export class NoteVersion {
 }
 
 export const NoteVersionSchema = SchemaFactory.createForClass(NoteVersion)
+// 版本索引：加速按版本倒序列出与唯一性约束
+NoteVersionSchema.index({ noteId: 1, versionNo: -1, createdAt: -1 }, { name: 'idx_note_version_desc' })
+NoteVersionSchema.index({ noteId: 1, versionNo: 1 }, { name: 'uniq_note_version', unique: true })

@@ -1,14 +1,15 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import axios from 'axios'
 import Link from 'next/link'
-import { useSearchParams } from 'next/navigation'
+// 移除 useSearchParams，避免 Hook 上下文错误，改为从 window.location 解析
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Note, Category, Tag, NoteFilterParams } from '@/types'
 import { fetchNotes, deleteNote, fetchCategories, fetchTags } from '@/lib/api'
+import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
 import { formatDate, truncateText } from '@/utils'
 import { Trash2, Plus, Edit, FileText } from 'lucide-react'
 import dynamic from 'next/dynamic'
@@ -44,15 +45,24 @@ const getCategoryLabel = (note: Note, categoryMap: Record<string, string>) => {
 }
 
 export default function NotesPage() {
-  const searchParams = useSearchParams()
+  const getSearchParams = () => {
+    try { return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '') } catch { return new URLSearchParams() }
+  }
   const router = useRouter()
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const [fallbackMsg, setFallbackMsg] = useState('')
   const [isCreateHovered, setIsCreateHovered] = useState(false)
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({})
   const [tagMap, setTagMap] = useState<Record<string, string>>({})
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [page, setPage] = useState(1)
+  const [size, setSize] = useState(10)
+  const [total, setTotal] = useState(0)
+  const [queryKey, setQueryKey] = useState<string>(() => {
+    try { return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').toString() } catch { return '' }
+  })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -61,22 +71,72 @@ export default function NotesPage() {
     const loadNotesFast = async () => {
       try {
         setLoading(true)
+        try { performance.mark('ConsoleListLoad:start') } catch { }
+        const sp = (() => { try { return new URLSearchParams(queryKey || getSearchParams().toString()) } catch { return getSearchParams() } })()
+        const isNlq = sp.get('nlq') === '1'
         const params: NoteFilterParams = {
-          keyword: searchParams.get('keyword') || undefined,
-          categoryId: searchParams.get('categoryId') || undefined,
-          categoryIds: searchParams.getAll('categoryIds').length > 0 ? searchParams.getAll('categoryIds') : undefined,
-          categoriesMode: (searchParams.get('categoriesMode') as 'any' | 'all') || undefined,
-          tagIds: searchParams.getAll('tagIds').length > 0 ? searchParams.getAll('tagIds') : undefined,
-          tagsMode: (searchParams.get('tagsMode') as 'any' | 'all') || undefined,
-          startDate: searchParams.get('startDate') || undefined,
-          endDate: searchParams.get('endDate') || undefined,
-          status: (searchParams.get('status') as 'published' | 'draft') || undefined,
+          keyword: sp.get('keyword') || undefined,
+          categoryId: sp.get('categoryId') || undefined,
+          categoryIds: sp.getAll('categoryIds').length > 0 ? sp.getAll('categoryIds') : undefined,
+          categoriesMode: (sp.get('categoriesMode') as 'any' | 'all') || undefined,
+          tagIds: sp.getAll('tagIds').length > 0 ? sp.getAll('tagIds') : undefined,
+          tagsMode: (sp.get('tagsMode') as 'any' | 'all') || undefined,
+          startDate: sp.get('startDate') || undefined,
+          endDate: sp.get('endDate') || undefined,
+          status: (sp.get('status') as 'published' | 'draft') || undefined,
         }
-        // 先渲染核心列表，不阻塞首屏
-        const notesData = await fetchNotes(params, controller.signal)
-        setNotes(notesData)
+        if (isNlq && (params.keyword || '')) {
+          const mode = (sp.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid'
+          const nlqResp = await (await import('@/lib/api')).semanticSearch(params.keyword!, { mode, page, limit: size, categoryId: params.categoryId, tagIds: params.tagIds })
+          const items = nlqResp.data || []
+          const mapped = items.map((it: any, i: number) => ({
+            id: it.id || it._id || `nlq-${String(it.title || '')}-${String(it.updatedAt || '')}`,
+            title: it.title,
+            content: it.preview,
+            updatedAt: it.updatedAt,
+            tags: [],
+            status: 'published',
+          })) as any
+          const seen = new Set<string>()
+          const unique = mapped.filter((n: any) => {
+            const k = String(n.id || `nlq-${String(n.title || '')}-${String(n.updatedAt || '')}`)
+            if (seen.has(k)) return false
+            seen.add(k)
+            return true
+          })
+          setNotes(unique)
+          setTotal(Number(nlqResp.total || 0))
+        } else {
+          // 从后端获取分页后的数据（不在前端二次切片）
+          const notesResp = await fetchNotes({ ...params, page, size }, controller.signal)
+          const items = Array.isArray(notesResp.items) ? notesResp.items : []
+          setNotes(items)
+          setTotal(Number(notesResp.total || items.length || 0))
+        }
         setError('')
+        setFallbackMsg('')
         setLoading(false)
+        try {
+          performance.mark('ConsoleListLoad:end')
+          performance.measure('ConsoleListLoad', 'ConsoleListLoad:start', 'ConsoleListLoad:end')
+          const entry = performance.getEntriesByName('ConsoleListLoad').pop()
+          const duration = entry?.duration
+          const sid = (() => { try { return sessionStorage.getItem('lastSearchId') || undefined } catch { return undefined } })()
+          const nextQuery = sp.toString()
+          document.dispatchEvent(new CustomEvent('search:result', {
+            detail: {
+              searchId: sid,
+              ok: true,
+              count: (isNlq ? Number(total || 0) : Number(total || 0)),
+              duration,
+              query: nextQuery,
+              time: new Date().toISOString(),
+            }
+          }))
+          document.dispatchEvent(new CustomEvent('rum', {
+            detail: { type: 'ui:search_results', name: 'SearchResults', value: duration, meta: { searchId: sid, count: Number(total || 0) } }
+          }))
+        } catch { }
         // 辅助数据异步加载，不影响首屏
         fetchCategories(controller.signal)
           .then((categoriesData) => {
@@ -132,13 +192,103 @@ export default function NotesPage() {
         setError('加载笔记失败，请重试')
         console.error('Failed to load notes:', err)
         setLoading(false)
+        try {
+          performance.mark('ConsoleListLoad:end')
+          performance.measure('ConsoleListLoad', 'ConsoleListLoad:start', 'ConsoleListLoad:end')
+          const entry = performance.getEntriesByName('ConsoleListLoad').pop()
+          const duration = entry?.duration
+          const sid = (() => { try { return sessionStorage.getItem('lastSearchId') || undefined } catch { return undefined } })()
+          const sp = getSearchParams()
+          const nextQuery = sp.toString()
+          document.dispatchEvent(new CustomEvent('search:result', {
+            detail: {
+              searchId: sid,
+              ok: false,
+              error: String(err?.message || 'error'),
+              duration,
+              query: nextQuery,
+              time: new Date().toISOString(),
+            }
+          }))
+          document.dispatchEvent(new CustomEvent('rum', {
+            detail: { type: 'ui:search_results', name: 'SearchResultsError', value: duration, meta: { searchId: sid } }
+          }))
+        } catch { }
       }
     }
     loadNotesFast()
     return () => {
       controller.abort()
     }
-  }, [searchParams])
+  }, [page, size, queryKey])
+
+  // 自动刷新与后台重验证联动：可见/聚焦/网络恢复触发；后台重验证事件直达更新
+  useEffect(() => {
+    let last = 0
+    const tryRefresh = (reason: string) => {
+      const now = Date.now()
+      // 15s节流，避免频繁刷新
+      if (now - last < 15_000) return
+      last = now
+      try {
+        document.dispatchEvent(new CustomEvent('rum', { detail: { type: 'ui:auto_refresh', name: 'AutoRefresh', value: 1, meta: { reason } } }))
+      } catch { }
+      // 通过路由 refresh 触发数据重新加载
+      router.refresh()
+    }
+    const onVisibility = () => { if (typeof document !== 'undefined' && document.visibilityState === 'visible') tryRefresh('visibility') }
+    const onFocus = () => tryRefresh('focus')
+    const onOnline = () => tryRefresh('online')
+    const onRevalidated = (e: any) => {
+      try {
+        const detail = e?.detail || {}
+        const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+        const currentKey = `notes:${sp.toString()}`
+        if (detail.key === currentKey && detail.payload) {
+          const items = Array.isArray(detail.payload.items) ? detail.payload.items : []
+          setNotes(items as any)
+          setTotal(Number(detail.payload.total || items.length || 0))
+        }
+      } catch { }
+    }
+    const onFallback = (e: any) => {
+      try {
+        setFallbackMsg('语义检索接口不可用，已回退关键词模式')
+      } catch { }
+    }
+    const onSearchTrigger = (e: any) => {
+      try {
+        const next = String(e?.detail?.nextQuery || '')
+        setQueryKey(next)
+      } catch { }
+    }
+    const onPopState = () => {
+      try {
+        const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+        setQueryKey(sp.toString())
+      } catch { }
+    }
+    document.addEventListener('visibilitychange', onVisibility)
+    if (typeof window !== 'undefined') {
+      window.addEventListener('focus', onFocus)
+      window.addEventListener('online', onOnline)
+      window.addEventListener('popstate', onPopState)
+    }
+    document.addEventListener('search:revalidated', onRevalidated as any)
+    document.addEventListener('search:trigger', onSearchTrigger as any)
+    document.addEventListener('search:fallback', onFallback as any)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisibility)
+      if (typeof window !== 'undefined') {
+        window.removeEventListener('focus', onFocus)
+        window.removeEventListener('online', onOnline)
+        window.removeEventListener('popstate', onPopState)
+      }
+      document.removeEventListener('search:revalidated', onRevalidated as any)
+      document.removeEventListener('search:trigger', onSearchTrigger as any)
+      document.removeEventListener('search:fallback', onFallback as any)
+    }
+  }, [router])
 
   const handleDelete = async (id: string) => {
     try {
@@ -188,6 +338,11 @@ export default function NotesPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
+      {fallbackMsg && (
+        <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
+          {fallbackMsg}
+        </div>
+      )}
       {error && notes.length === 0 && (
         <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-center justify-between">
           <span>{error}</span>
@@ -301,6 +456,35 @@ export default function NotesPage() {
             </div>
           )}
 
+          <div className="flex items-center justify-between mb-2">
+            <PageSizeSelect size={size} onSizeChange={(next) => {
+              const nextSize = Math.max(1, next)
+              setSize(nextSize)
+              setPage(1)
+              try {
+                const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+                sp.set('size', String(nextSize))
+                sp.set('page', '1')
+                if (typeof window !== 'undefined') {
+                  window.history.replaceState(null, '', `${window.location.pathname}?${sp.toString()}`)
+                }
+                setQueryKey(sp.toString())
+              } catch { }
+            }} />
+            <Pagination page={page} size={size} total={total} onPageChange={(next) => {
+              const nextPage = Math.max(1, next)
+              setPage(nextPage)
+              try {
+                const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+                sp.set('page', String(nextPage))
+                sp.set('size', String(size))
+                if (typeof window !== 'undefined') {
+                  window.history.replaceState(null, '', `${window.location.pathname}?${sp.toString()}`)
+                }
+                setQueryKey(sp.toString())
+              } catch { }
+            }} />
+          </div>
           {notes.length === 0 ? (
             <Card
               className="border-2 border-dashed"
@@ -323,9 +507,17 @@ export default function NotesPage() {
                 <h3 className="text-2xl font-bold text-gray-900 mb-3">
                   没有找到笔记
                 </h3>
-                <p className="text-gray-600 mb-6 text-lg">
+                <p className="text-gray-600 mb-2 text-lg">
                   尝试调整筛选条件或创建新笔记
                 </p>
+                {(() => {
+                  const sp = getSearchParams()
+                  const isNlq = sp.get('nlq') === '1'
+                  if (isNlq) {
+                    return <p className="text-gray-500 mb-6">语义检索未命中（可能受阈值或过滤条件影响），可切换到“关键词”模式或降低阈值</p>
+                  }
+                  return null
+                })()}
                 <Link href="/dashboard/notes/new">
                   <Button>
                     <Plus className="mr-2 h-5 w-5" />
@@ -336,11 +528,11 @@ export default function NotesPage() {
             </Card>
           ) : (
             <div className="grid gap-6 md:grid-cols-2">
-              {notes.map((note) => {
+              {notes.map((note, i) => {
                 const categoryLabel = getCategoryLabel(note, categoryMap)
                 return (
                   <Card
-                    key={note.id}
+                    key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${i}`}
                     className="card-hover relative overflow-hidden group border-none"
                     style={{
                       borderRadius: '22px',
@@ -420,13 +612,14 @@ export default function NotesPage() {
                       </div>
                       {note.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2">
-                          {note.tags.map((tag) => {
+                          {note.tags.map((tag, idx) => {
+                            const id = resolveTagId(tag)
                             const label = resolveTagLabel(tag)
-                            const key = resolveTagId(tag) || label
                             if (!label) return null
+                            const keySafe = id ? id : `${note.id}:${label}:${idx}`
                             return (
                               <span
-                                key={key}
+                                key={keySafe}
                                 className="px-3 py-1.5 text-xs font-medium rounded-full shadow-sm"
                                 style={{
                                   background: 'rgba(59,130,246,0.12)',
@@ -457,15 +650,15 @@ export default function NotesPage() {
 
         <div className="lg:col-span-1">
           <SmartRecommendations context={{
-            keyword: searchParams.get('keyword') || undefined,
-            categoryId: searchParams.get('categoryId') || undefined,
-            categoryIds: searchParams.getAll('categoryIds').length > 0 ? searchParams.getAll('categoryIds') : undefined,
-            categoriesMode: (searchParams.get('categoriesMode') as 'any' | 'all') || undefined,
-            tagIds: searchParams.getAll('tagIds').length > 0 ? searchParams.getAll('tagIds') : undefined,
-            tagsMode: (searchParams.get('tagsMode') as 'any' | 'all') || undefined,
-            startDate: searchParams.get('startDate') || undefined,
-            endDate: searchParams.get('endDate') || undefined,
-            status: (searchParams.get('status') as 'published' | 'draft') || undefined,
+            keyword: getSearchParams().get('keyword') || undefined,
+            categoryId: getSearchParams().get('categoryId') || undefined,
+            categoryIds: getSearchParams().getAll('categoryIds').length > 0 ? getSearchParams().getAll('categoryIds') : undefined,
+            categoriesMode: (getSearchParams().get('categoriesMode') as 'any' | 'all') || undefined,
+            tagIds: getSearchParams().getAll('tagIds').length > 0 ? getSearchParams().getAll('tagIds') : undefined,
+            tagsMode: (getSearchParams().get('tagsMode') as 'any' | 'all') || undefined,
+            startDate: getSearchParams().get('startDate') || undefined,
+            endDate: getSearchParams().get('endDate') || undefined,
+            status: (getSearchParams().get('status') as 'published' | 'draft') || undefined,
           }} />
         </div>
       </div>

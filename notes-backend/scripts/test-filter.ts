@@ -16,14 +16,14 @@ async function main() {
       { tags: { $in: [tagC] } },
       { tags: { $in: ['6925652c2eae2ec502e4f144'] } },
     ],
-  }).sort({ updatedAt: -1 })
+  }).sort({ createdAt: -1 })
 
   const multiAll = await NoteModel.find({
     $or: [
       { tags: { $all: [tagC, tagA] } },
       { tags: { $all: ['6925652c2eae2ec502e4f144', '6925652c2eae2ec502e4f140'] } },
     ],
-  }).sort({ updatedAt: -1 })
+  }).sort({ createdAt: -1 })
 
   console.log('单标签(任意) 返回数量:', singleAny.length)
   console.log('多标签(全部) 返回数量:', multiAll.length)
@@ -35,4 +35,3 @@ main().catch(e => {
   console.error(e)
   process.exit(1)
 })
-

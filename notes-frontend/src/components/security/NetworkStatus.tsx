@@ -20,19 +20,27 @@ export default function NetworkStatus({ onReconnect }: Props) {
    const [apiReachable, setApiReachable] = useState<boolean | null>(null)
    const [loading, setLoading] = useState(false)
 
-   const runPing = async () => {
-     setLoading(true)
-     try {
-       const res = await networkAPI.ping()
-       setLatency(res.latency)
-       setApiReachable(res.ok)
-     } catch (e) {
-       setLatency(null)
-       setApiReachable(false)
-     } finally {
-       setLoading(false)
-     }
-   }
+  const runPing = async () => {
+    setLoading(true)
+    try {
+      const res = await networkAPI.ping()
+      setLatency(res.latency)
+      setApiReachable(res.ok)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'api_ping', value: res.latency, meta: { ok: res.ok, status: res.status }, ts: Date.now() } })
+        document.dispatchEvent(evt)
+      } catch {}
+    } catch (e) {
+      setLatency(null)
+      setApiReachable(false)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'api_ping_error', meta: { error: String(e) }, ts: Date.now() } })
+        document.dispatchEvent(evt)
+      } catch {}
+    } finally {
+      setLoading(false)
+    }
+  }
 
    useEffect(() => {
      runPing()
