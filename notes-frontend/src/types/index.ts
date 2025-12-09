@@ -40,6 +40,7 @@ export interface Note {
   updatedAt: string
   userId: string
   status?: 'published' | 'draft'
+  visibility?: 'private' | 'org' | 'public'
 }
 
 export interface CreateNoteDto {
@@ -49,6 +50,7 @@ export interface CreateNoteDto {
   categoryIds?: string[]
   tags: string[]
   status?: 'published' | 'draft'
+  visibility?: 'private' | 'org' | 'public'
 }
 
 export type UpdateNoteDto = Partial<CreateNoteDto>
