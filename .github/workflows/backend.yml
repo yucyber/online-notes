@@ -1,0 +1,42 @@
+name: backend
+on:
+  push:
+    branches: [ master ]
+  workflow_dispatch:
+jobs:
+  backend-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+        working-directory: notes-backend
+      - run: npm run build
+        working-directory: notes-backend
+  backend-type-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+        working-directory: notes-backend
+      - run: npx tsc --noEmit
+        working-directory: notes-backend
+  backend-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci --omit=dev
+        working-directory: notes-backend
+      - run: npm audit --production
+        working-directory: notes-backend
