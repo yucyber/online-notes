@@ -15,10 +15,7 @@ const nextConfig = {
       },
     ],
   },
-  // 构建输出目录调整，规避 Windows/OneDrive 对 `.next` 目录的文件锁导致的 EPERM
-  // 说明：Desktop 目录常被 OneDrive 同步，Next 在构建阶段频繁对缓存进行 rename/unlink 操作，容易触发 EPERM。
-  // 将默认 `.next` 改为 `build` 可显著降低被系统或杀毒软件锁定的概率。
-  distDir: 'build',
+  // 使用 Next.js 默认输出目录 `.next`，以兼容 Vercel 的构建产物探测
 
   // 生产构建临时放宽校验，避免 ESLint/TypeScript 在缓存目录写入时触发文件系统权限问题（EPERM）
   // 后续在 CI 中执行 `next lint` 和 `tsc --noEmit`，保障质量门禁
