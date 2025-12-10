@@ -1,4 +1,5 @@
 import { Metadata } from 'next'
+import { Suspense } from 'react'
 
 export const metadata: Metadata = {
   title: '登录 - 在线知识笔记平台',
@@ -10,5 +11,9 @@ export default function LoginLayout({
 }: {
   children: React.ReactNode
 }) {
-  return children
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">加载中...</div>}>
+      {children}
+    </Suspense>
+  )
 }

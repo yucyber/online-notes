@@ -1,5 +1,5 @@
 'use client'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useState, useRef } from 'react'
 import { EditorContent, useEditor, BubbleMenu } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
@@ -47,13 +47,13 @@ function colorFromString(s: string) {
   return '#' + '00000'.substring(0, 6 - c.length) + c
 }
 function hexToRgb(hex: string) {
-  const h = hex.replace('#','')
+  const h = hex.replace('#', '')
   const bigint = parseInt(h, 16)
   return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 }
 }
 function srgb(x: number) {
   x /= 255
-  return x <= 0.03928 ? x/12.92 : Math.pow((x+0.055)/1.055, 2.4)
+  return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
 }
 
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange }: Props) {
@@ -63,15 +63,31 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
   const [collabEnabled, setCollabEnabled] = useState(true)
   const [localMode, setLocalMode] = useState(false)
+  const [wsDebug, setWsDebug] = useState<{ connecting: boolean; connected: boolean; synced: boolean }>({ connecting: false, connected: false, synced: false })
   // 基于协同场景的撤销/重做管理器（仅协同启用时使用）
   const undoManager = useMemo(() => {
     try { return new (Y as any).UndoManager(ydoc) } catch { return null }
   }, [ydoc])
 
+  // 同步构建 Provider，确保 useEditor 初始化阶段即可加载协同扩展
+  const computedProvider = useMemo(() => {
+    try {
+      const yws = process.env.NEXT_PUBLIC_YWS_URL
+      if (!yws) return null
+      // 强化重连与服务端状态重同步，提升握手稳定性
+      return new WebsocketProvider(yws, `note:${noteId}`, ydoc, {
+        connect: true,
+        // 每 15s 主动向服务端请求一次状态，减少偶发“连接已关闭但未重连”的窗口
+        resyncInterval: 15000,
+        // 将指数退避的最大等待提升到 10s，避免频繁抖动
+        maxBackoffTime: 10000,
+      })
+    } catch { return null }
+  }, [noteId, ydoc])
+
   useEffect(() => {
-    let p: WebsocketProvider | null = null
-    const yws = process.env.NEXT_PUBLIC_YWS_URL
-    if (!yws) {
+    const p = computedProvider
+    if (!p) {
       setLocalMode(true)
       setCollabEnabled(false)
       setProvider(null)
@@ -79,42 +95,72 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       return
     }
     try {
-      p = new WebsocketProvider(yws, `note:${noteId}`, ydoc)
       setProvider(p)
       setConnStatus('connecting')
       const statusHandler = (e: any) => {
         const s = e.status as 'connected' | 'disconnected'
         setConnStatus(s)
+        setWsDebug((prev) => ({ ...prev, connected: s === 'connected', connecting: connStatus === 'connecting' }))
+        if (s === 'connected') {
+          setLocalMode(false)
+          setCollabEnabled(true)
+        }
         try {
           const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_status', meta: { status: s }, ts: Date.now() } })
           document.dispatchEvent(evt)
-        } catch {}
+        } catch { }
       }
       p.on('status', statusHandler)
+      // 监听同步事件，确认文档状态是否已完成一次完整同步
+      const syncHandler = (synced: boolean) => {
+        setWsDebug((prev) => ({ ...prev, synced }))
+        try {
+          const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_sync', meta: { synced }, ts: Date.now() } })
+          document.dispatchEvent(evt)
+        } catch { }
+      }
+      p.on('sync', syncHandler as any)
       const aw = p.awareness
       const updateAwareness = () => {
-        const states = Array.from(aw.getStates().values()) as any[]
-        const list = states.map(s => ({ id: s.user?.id || 'unknown', name: s.user?.name }))
-        setParticipants(list)
+        const remoteStates = Array.from(aw.getStates().values()) as any[]
+        const localState = (aw as any).getLocalState ? (aw as any).getLocalState() : null
+        const merged = [...remoteStates, ...(localState ? [localState] : [])]
+        const byId = new Map<string, { id: string; name?: string }>()
+        merged.forEach((s: any) => {
+          const id = String(s?.user?.id || 'unknown')
+          const name = s?.user?.name
+          if (!byId.has(id)) byId.set(id, { id, name })
+        })
+        setParticipants(Array.from(byId.values()))
       }
-      aw.setLocalStateField('user', { id: user.id, name: user.name })
+      try { (aw as any).setLocalState({ user: { id: user.id, name: user.name } }) } catch { aw.setLocalStateField('user', { id: user.id, name: user.name }) }
       aw.on('update', updateAwareness)
       updateAwareness()
+      let failCount = 0
       const degradeTimer = setInterval(() => {
-        if (p && p.wsconnected === false && p.wsconnecting === false) {
-          setLocalMode(true)
-          setCollabEnabled(false)
-          try {
-            const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'degrade_local', meta: { reason: 'ws_disconnected' }, ts: Date.now() } })
-            document.dispatchEvent(evt)
-          } catch {}
+        const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
+        setWsDebug({ connecting: Boolean((p as any).wsconnecting), connected: Boolean((p as any).wsconnected), synced: Boolean((p as any).synced) })
+        if (disconnected) {
+          failCount++
+          if (failCount >= 2) {
+            setLocalMode(true)
+            // 保持协同扩展加载，仅标记UI为本地模式，避免后续重连后游标缺失
+            setCollabEnabled(true)
+            try {
+              const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'degrade_local', meta: { reason: 'ws_disconnected' }, ts: Date.now() } })
+              document.dispatchEvent(evt)
+            } catch { }
+          }
+        } else {
+          failCount = 0
         }
       }, 5000)
       return () => {
-        try { p?.off('status', statusHandler) } catch {}
-        try { aw?.off('update', updateAwareness as any) } catch {}
+        try { p?.off('status', statusHandler) } catch { }
+        try { p?.off('sync', syncHandler as any) } catch { }
+        try { aw?.off('update', updateAwareness as any) } catch { }
         clearInterval(degradeTimer)
-        try { p?.destroy() } catch {}
+        try { p?.disconnect() } catch { }
       }
     } catch {
       setLocalMode(true)
@@ -122,12 +168,12 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       setProvider(null)
       setConnStatus('disconnected')
     }
-  }, [noteId, ydoc, user.id, user.name])
+  }, [computedProvider, user.id, user.name])
 
   const editor = useEditor({
     extensions: [
-      // 历史记录：启用；禁用与自定义扩展重复的项
-      StarterKit.configure({ history: true, heading: false, listItem: false, horizontalRule: false }),
+      // 协同模式下必须关闭默认 history，避免与 Collaboration 冲突
+      StarterKit.configure({ history: false, heading: false, listItem: false, horizontalRule: false }),
       Underline,
       Link.configure({ autolink: true, openOnClick: true, HTMLAttributes: { rel: 'noopener noreferrer' } }),
       Image.configure({ inline: false }),
@@ -149,49 +195,49 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       Heading,
       Placeholder.configure({ placeholder: '开始写作…' }),
       CommentMark,
-      ...(collabEnabled && provider
+      ...(collabEnabled && (provider || computedProvider)
         ? [
-            Collaboration.configure({ document: ydoc }),
-            CollaborationCursor.configure({
-              provider,
-              user,
-              render: (u) => {
-                const color = colorFromString(u.name || u.id || 'user')
-                const el = document.createElement('span')
-                el.className = 'rounded px-1 text-xs'
-                el.style.backgroundColor = color
-                const { r, g, b } = hexToRgb(color)
-                const lum = 0.2126*srgb(r)+0.7152*srgb(g)+0.0722*srgb(b)
-                el.style.color = lum > 0.5 ? '#111827' : '#FFFFFF'
-                el.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.15)'
-                el.textContent = u.name || '用户'
-                el.setAttribute('aria-hidden', 'true')
-                el.setAttribute('role', 'presentation')
-                return el
-              },
-            }),
-          ]
+          Collaboration.configure({ document: ydoc }),
+          CollaborationCursor.configure({
+            provider: (provider || computedProvider) as any,
+            user,
+            render: (u) => {
+              const color = colorFromString(u.name || u.id || 'user')
+              const el = document.createElement('span')
+              el.className = 'rounded px-1 text-xs'
+              el.style.backgroundColor = color
+              const { r, g, b } = hexToRgb(color)
+              const lum = 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b)
+              el.style.color = lum > 0.5 ? '#111827' : '#FFFFFF'
+              el.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.15)'
+              el.textContent = u.name || '用户'
+              el.setAttribute('aria-hidden', 'true')
+              el.setAttribute('role', 'presentation')
+              return el
+            },
+          }),
+        ]
         : []),
     ],
-    content: initialHTML || '<p></p>',
+    content: (collabEnabled && (provider || computedProvider)) ? undefined : (initialHTML || '<p></p>'),
     // 使 .ProseMirror 在容器内占满高度，消除底部空白不可点击/不可输入区
     editorProps: { attributes: { class: 'prose prose-sm max-w-none min-h-full outline-none' } },
     // 本地降级时仍保持可编辑（仅关闭协同），避免工具栏操作无效
     editable: !readOnly,
     // 禁用SSR立即渲染，避免hydration mismatch警告
     immediatelyRender: false,
-  })
+  }, [computedProvider, provider, collabEnabled])
 
   useEffect(() => {
     if (!editor) return
     const handler = () => {
       const { from, to } = editor.state.selection
       onSelectionChange?.(from, to)
-      try { document.dispatchEvent(new CustomEvent('comments:selection', { detail: { noteId, from, to } })) } catch {}
+      try { document.dispatchEvent(new CustomEvent('comments:selection', { detail: { noteId, from, to } })) } catch { }
       try {
         const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'selection_change', meta: { from, to }, ts: Date.now() } })
         document.dispatchEvent(evt)
-      } catch {}
+      } catch { }
     }
     editor.on('selectionUpdate', handler)
     return () => { editor.off('selectionUpdate', handler) }
@@ -201,10 +247,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   useEffect(() => {
     if (!editor) return
     const updateHandler = () => {
-      try { onContentChange?.(editor.getHTML()) } catch {}
+      try { onContentChange?.(editor.getHTML()) } catch { }
     }
     editor.on('update', updateHandler)
-    try { onContentChange?.(editor.getHTML()) } catch {}
+    try { onContentChange?.(editor.getHTML()) } catch { }
     return () => { editor.off('update', updateHandler) }
   }, [editor, onContentChange])
 
@@ -227,7 +273,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const id = mark.getAttribute('data-comment-id')
           const evt = new CustomEvent('comments:hover', { detail: { id } })
           document.dispatchEvent(evt)
-        } catch {}
+        } catch { }
       } else {
         tip.style.opacity = '0'
         tip.style.display = 'none'
@@ -279,8 +325,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
   useEffect(() => {
     return () => {
-      try { provider?.destroy() } catch {}
-      try { ydoc?.destroy() } catch {}
+      try {
+        if (process.env.NODE_ENV === 'production') {
+          provider?.destroy()
+          ydoc?.destroy()
+        } else {
+          ; (provider as any)?.disconnect?.()
+        }
+      } catch { }
     }
   }, [provider, ydoc])
 
@@ -293,7 +345,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         if (typeof start === 'number' && typeof end === 'number') {
           editor.chain().focus().setTextSelection({ from: start, to: end }).setMark('commentMark', { commentId: commentId || `local-${Date.now()}` }).run()
         }
-      } catch {}
+      } catch { }
     }
     document.addEventListener('comments:mark', handler as any)
     return () => { document.removeEventListener('comments:mark', handler as any) }
@@ -314,7 +366,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         editor.chain().focus().setTextSelection({ from: c.start, to: c.end }).setMark('commentMark', { commentId: cid }).run()
         applied.add(cid)
       }
-      try { document.dispatchEvent(new CustomEvent('comments:list:update', { detail: { noteId, comments: items } })) } catch {}
+      try { document.dispatchEvent(new CustomEvent('comments:list:update', { detail: { noteId, comments: items } })) } catch { }
     }
     document.addEventListener('comments:replay', replayHandler as any)
     return () => { document.removeEventListener('comments:replay', replayHandler as any) }
@@ -327,6 +379,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       <div className="flex items-center gap-2">
         <div className="text-xs" aria-live="polite" role="status">
           连接状态：<span className={connStatus === 'connected' ? 'text-green-600' : connStatus === 'connecting' ? 'text-yellow-600' : 'text-red-600'}>{connStatus}</span>
+          <span className="ml-2 text-[11px] text-gray-500">ws[{wsDebug.connected ? 'on' : wsDebug.connecting ? 'dial' : 'off'}] sync[{wsDebug.synced ? 'ok' : '…'}]</span>
           {localMode && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
           {readOnly && <span className="ml-2 text-xs text-gray-500">只读</span>}
         </div>
@@ -334,7 +387,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           {participants.map((p, i) => {
             const bg = colorFromString(p.name || p.id)
             const { r, g, b } = hexToRgb(bg)
-            const lum = 0.2126*srgb(r)+0.7152*srgb(g)+0.0722*srgb(b)
+            const lum = 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b)
             const textColor = lum > 0.5 ? '#111827' : '#FFFFFF'
             return (
               <span
@@ -350,7 +403,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           })}
           {participants.length === 0 && <span className="text-xs text-gray-400">无在线协作者</span>}
         </div>
-        <Button size="sm" variant="outline" onClick={() => { try { provider?.connect() } catch {}; setLocalMode(false); setCollabEnabled(true) }}>重连</Button>
+        <Button size="sm" variant="outline" onClick={() => { try { provider?.connect() } catch { }; setLocalMode(false); setCollabEnabled(true) }}>重连</Button>
         <Button size="sm" variant="outline" disabled={readOnly || localMode} onClick={async () => { if (readOnly || localMode) return; const html = editor.getHTML(); await onSave(html) }}>保存</Button>
       </div>
       <div
@@ -367,7 +420,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
               const endPos = editor.state.doc.content.size
               editor.chain().focus().setTextSelection(endPos).run()
             }
-          } catch {}
+          } catch { }
         }}
         style={{ display: 'flex', flexDirection: 'column' }}
       >
@@ -410,7 +463,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
                   const markEvt = new CustomEvent('comments:mark', { detail: { start: from, end: to, commentId: `local-${Date.now()}` } })
                   document.dispatchEvent(markEvt)
                 }
-              } catch {}
+              } catch { }
             }}>
               <MessageSquare className="w-4 h-4" aria-hidden />
             </Button>

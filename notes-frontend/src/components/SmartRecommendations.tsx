@@ -32,8 +32,9 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
             console.warn('Fallback recommendations failed', e)
             try {
               const all = await notesAPI.getAll()
-              const published = (all || []).filter(n => n.status === 'published').slice(0, 5)
-              const drafts = (all || []).filter(n => n.status === 'draft').slice(0, 2)
+              const list: Note[] = Array.isArray(all) ? all : (all?.items || [])
+              const published = list.filter((n: Note) => n.status === 'published').slice(0, 5)
+              const drafts = list.filter((n: Note) => n.status === 'draft').slice(0, 2)
               const merged = [...published, ...drafts]
               if (merged.length > 0) {
                 setRecommendations(merged)

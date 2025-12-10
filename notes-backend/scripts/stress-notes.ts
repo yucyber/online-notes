@@ -4,7 +4,7 @@ import { URL } from 'url'
 
 type Sample = { ms: number; status: number }
 
-const API = process.env.API_URL || 'http://localhost:3002/api'
+const API = process.env.API_URL || 'http://localhost:3001/api'
 const TOKEN = process.env.TOKEN || ''
 const CONCURRENCY = parseInt(process.env.CONCURRENCY || '50', 10)
 const REQUESTS = parseInt(process.env.REQUESTS || '500', 10)

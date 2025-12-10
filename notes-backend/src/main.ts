@@ -18,7 +18,7 @@ async function bootstrap() {
 
   // Enable CORS（修复：统一读取 FRONTEND_URL/CLIENT_URL，显式允许 Authorization 等头部，适配 3003 前端端口）
   app.enableCors({
-    origin: (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3003')
+    origin: (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000')
       .split(',')
       .map((x) => x.trim()),
     credentials: true,

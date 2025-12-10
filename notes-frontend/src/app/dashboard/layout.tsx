@@ -86,11 +86,11 @@ export default function DashboardLayout({
       router.push('/dashboard/notes/new')
     })
     globalHotkeys.register('Ctrl+P', () => {
-      const el: HTMLButtonElement | null = document.getElementById('preview-toggle') as HTMLButtonElement | null
+      const el = document.getElementById('preview-toggle') as HTMLButtonElement | null;
       el?.click()
     })
     globalHotkeys.register('Ctrl+S', () => {
-      const el: HTMLButtonElement | null = document.getElementById('save-button') as HTMLButtonElement | null
+      const el = document.getElementById('save-button') as HTMLButtonElement | null;
       el?.click()
     })
     globalHotkeys.register('Ctrl+Shift+F', () => {

@@ -28,6 +28,7 @@ export default function MarkdownEditor({
   onSaveDraft,
   isNew = false,
   draftKey,
+  onSelectionChange,
   onContentChange,
 }: MarkdownEditorProps) {
   const [content, setContent] = useState(initialContent)
