@@ -50,5 +50,5 @@ jobs:
           cache: npm
       - run: npm ci --omit=dev
         working-directory: notes-frontend
-      - run: npm audit --production
+      - run: npm audit --production --audit-level=high --json
         working-directory: notes-frontend

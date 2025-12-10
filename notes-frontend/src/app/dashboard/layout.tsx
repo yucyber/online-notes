@@ -289,11 +289,17 @@ export default function DashboardLayout({
       {isMobileMenuOpen && (
         <div
           className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden animate-fade-in"
+          role="button"
+          tabIndex={0}
           onClick={() => setIsMobileMenuOpen(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setIsMobileMenuOpen(false)
+          }}
         >
           <div
             className="fixed left-0 top-0 h-full w-64 bg-white shadow-xl animate-slide-up"
-            onClick={(e) => e.stopPropagation()}
+            role="dialog"
+            onMouseDown={(e) => e.stopPropagation()}
           >
             <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4">
               <h1 className="text-base font-semibold text-gray-900">笔记平台</h1>

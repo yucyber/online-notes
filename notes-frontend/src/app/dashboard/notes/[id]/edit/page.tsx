@@ -852,7 +852,15 @@ export default function EditNotePage() {
           {/* 右侧协作抽屉（不包含评论内容） */}
           {showCollabDrawer && (
             <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
-              <div className="absolute inset-0 bg-black/20" onClick={() => setShowCollabDrawer(false)} />
+              <div
+                className="absolute inset-0 bg-black/20"
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowCollabDrawer(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') setShowCollabDrawer(false)
+                }}
+              />
               <div className="absolute right-0 top-0 h-full w-[360px] bg-white border-l shadow-xl">
                 <div className="flex items-center justify-between px-4 py-2 border-b">
                   <div className="text-sm font-medium">协作</div>
@@ -872,7 +880,15 @@ export default function EditNotePage() {
           {/* 右侧评论抽屉（独立） */}
           {showCommentsDrawer && (
             <div className="fixed inset-0 z-50" aria-modal="true" role="dialog" aria-labelledby="comments-drawer-title">
-              <div className="absolute inset-0 bg-black/20" onClick={() => setShowCommentsDrawer(false)} />
+              <div
+                className="absolute inset-0 bg-black/20"
+                role="button"
+                tabIndex={0}
+                onClick={() => setShowCommentsDrawer(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') setShowCommentsDrawer(false)
+                }}
+              />
               <div
                 ref={commentsDrawerRef}
                 id="comments-drawer"

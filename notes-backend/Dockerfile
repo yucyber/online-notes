@@ -2,6 +2,8 @@
 FROM node:20-alpine AS build
 WORKDIR /app
 COPY package*.json ./
+# Ensure devDependencies are installed even if platform sets production flags
+ENV npm_config_production=false
 # Install full deps for build (includes TypeScript)
 RUN npm ci
 COPY . .

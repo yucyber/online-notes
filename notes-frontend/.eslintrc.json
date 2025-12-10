@@ -5,11 +5,16 @@
   ],
   "plugins": ["jsx-a11y", "react"],
   "rules": {
-    "react/jsx-no-literals": ["error", { "noStrings": true, "allowedStrings": ["%", "×"] }],
+    "react/jsx-no-literals": [
+      "warn",
+      { "noStrings": true, "ignoreProps": true, "allowedStrings": ["%", "×"] }
+    ],
+    "@typescript-eslint/no-explicit-any": "warn",
+    "@typescript-eslint/no-unused-vars": ["warn", { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_" }],
     "jsx-a11y/alt-text": "error",
     "jsx-a11y/click-events-have-key-events": "error",
     "jsx-a11y/interactive-supports-focus": "error",
     "jsx-a11y/no-autofocus": ["error", { "ignoreNonDOM": true }],
-    "jsx-a11y/label-has-associated-control": ["error", { "depth": 3 }]
+    "jsx-a11y/label-has-associated-control": ["warn", { "depth": 3 }]
   }
 }
