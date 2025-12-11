@@ -20,6 +20,28 @@ wss.on('connection', (conn, req) => {
     conn.isAlive = true
     conn.on('pong', () => { conn.isAlive = true })
 
+    // 拦截发送方法以添加日志
+    const originalSend = conn.send
+    conn.send = function (data, options, callback) {
+        try {
+            // data 可能是 Buffer, ArrayBuffer 或 string
+            let len = 0
+            let type = '?'
+            if (Buffer.isBuffer(data)) {
+                len = data.length
+                type = data[0]
+            } else if (data instanceof Uint8Array) {
+                len = data.byteLength
+                type = data[0]
+            }
+            // 过滤掉太频繁的心跳或小包日志，避免刷屏，但保留关键的 Sync(0) 和 Awareness(1)
+            if (type !== '?' && (type === 0 || type === 1)) {
+                console.log(`[Msg] Sending type=${type} len=${len} to ${req.socket.remoteAddress}`)
+            }
+        } catch (e) { }
+        return originalSend.call(this, data, options, callback)
+    }
+
     try {
         setupWSConnection(conn, req, { gc: true })
 
