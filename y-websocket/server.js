@@ -22,7 +22,7 @@ wss.on('connection', (conn, req) => {
 
     try {
         setupWSConnection(conn, req, { gc: true })
-        
+
         // 监听消息接收，确认数据流
         conn.on('message', (message) => {
             try {
@@ -31,7 +31,7 @@ wss.on('connection', (conn, req) => {
                 const msgType = arr[0] // 0: Sync, 1: Awareness, 2: Auth
                 const length = arr.length
                 console.log(`[Msg] Received type=${msgType} len=${length} from ${req.socket.remoteAddress}`)
-            } catch (e) {}
+            } catch (e) { }
         })
 
         // 延迟检查房间状态，确认是否正确加入
