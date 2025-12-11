@@ -88,8 +88,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [ydoc])
 
   useEffect(() => {
-    const yws = process.env.NEXT_PUBLIC_YWS_URL
-    // const yws = 'wss://demos.yjs.dev' // 备用测试服务器
+    // const yws = process.env.NEXT_PUBLIC_YWS_URL
+    // ⚠️ 临时切换到公共测试服务器，以排除后端部署问题
+    const yws = 'wss://demos.yjs.dev' 
     const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
 
     if (!yws) {
