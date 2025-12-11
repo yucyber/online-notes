@@ -106,7 +106,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       p = new WebsocketProvider(yws, room, ydoc, {
         connect: true,
         maxBackoffTime: 10000,
-        disableBc: true, // 再次强制禁用 BC，排除多窗口干扰
+        disableBc: true,
+        resyncInterval: 5000, // 强制每5秒同步一次，防止连接因空闲被切断
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
