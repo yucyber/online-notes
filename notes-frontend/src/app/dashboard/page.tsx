@@ -113,53 +113,41 @@ export default function DashboardPage() {
         >
           仪表盘
         </h1>
-        <p className="text-gray-600 text-lg">
+        <p className="text-lg" style={{ color: 'var(--text-muted)' }}>
           快速了解知识库概况，继续完成您的创作与整理工作
         </p>
       </div>
 
       {error && (
-        <Card className="border-red-200 bg-red-50 text-sm text-red-600">
+        <Card className="text-sm" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
           <CardContent className="py-4 flex items-center justify-between">
             <span>{error}</span>
-            <Button size="sm" variant="outline" onClick={loadOverview}>
-              重试
-            </Button>
+            <Button size="sm" variant="outline" onClick={loadOverview}>重试</Button>
           </CardContent>
         </Card>
       )}
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {statCards.map((card) => (
-          <Card
-            key={card.label}
-            className="card-hover bg-white border-gray-200 shadow-md hover:shadow-2xl"
-          >
+          <Card key={card.label} className="card-hover" style={{ borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }}>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
-              <CardTitle className="text-sm font-medium text-gray-500">
-                {card.label}
-              </CardTitle>
-              <div
-                className={`rounded-xl p-3 text-sm ${card.color} shadow-sm`}
-                aria-hidden="true"
-              >
+              <CardTitle className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{card.label}</CardTitle>
+              <div aria-hidden style={{ background: 'var(--surface-2)', color: 'var(--primary-600)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, boxShadow: 'var(--shadow-sm)' }}>
                 <card.icon className="h-6 w-6" />
               </div>
             </CardHeader>
             <CardContent>
-              <div className="text-4xl font-bold text-gray-900 mb-1">
-                {card.value}
-              </div>
+              <div className="text-4xl font-bold mb-1" style={{ color: 'var(--on-surface)' }}>{card.value}</div>
             </CardContent>
           </Card>
         ))}
       </div>
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="bg-white shadow-md hover:shadow-2xl card-hover">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-4">
+        <Card className="card-hover" style={{ boxShadow: 'var(--shadow-md)', borderColor: 'var(--border)' }}>
+          <CardHeader className="flex flex-row items-center justify-between border-b pb-4" style={{ borderColor: 'var(--border)' }}>
             <div>
-              <CardTitle className="text-xl font-bold text-gray-900">最近编辑</CardTitle>
+              <CardTitle className="text-xl font-bold" style={{ color: 'var(--on-surface)' }}>最近编辑</CardTitle>
               <CardDescription className="mt-1">按更新时间倒序展示最近 5 条笔记</CardDescription>
             </div>
             <Link href="/dashboard/notes/new">
@@ -171,29 +159,28 @@ export default function DashboardPage() {
           <CardContent className="space-y-4">
             {overview?.recentNotes.length ? (
               overview.recentNotes.map((note) => (
-                <div
-                  key={note.id}
-                  className="group rounded-xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 hover:border-primary-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out cursor-pointer"
-                >
+                <div key={note.id} className="group rounded-xl p-5 transition-all duration-300 ease-out cursor-pointer" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
                   <div className="flex items-center justify-between gap-2 mb-2">
                     <Link
                       href={`/dashboard/notes/${note.id}`}
-                      className="text-lg font-bold text-gray-900 hover:text-primary-600 transition-colors duration-200 group-hover:text-primary-600"
+                      className="text-lg font-bold transition-colors duration-200 group-hover:text-primary-600"
+                      style={{ color: 'var(--on-surface)' }}
                     >
                       {note.title || '无标题笔记'}
                     </Link>
-                    <span className="text-xs text-gray-500 whitespace-nowrap">
+                    <span className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>
                       {formatDate(note.updatedAt)}
                     </span>
                   </div>
-                  <p className="mt-3 text-sm text-gray-600 line-clamp-2 leading-relaxed">
+                  <p className="mt-3 text-sm line-clamp-2 leading-relaxed" style={{ color: 'var(--on-surface)' }}>
                     {truncateText(note.preview || '', 120)}
                   </p>
                   <div className="mt-4 flex flex-wrap gap-2 text-xs">
                     {note.category && note.category.id && note.category.name && (
                       <Link
                         href={`/dashboard/notes?categoryId=${note.category.id}`}
-                        className="rounded-full bg-white px-3 py-1.5 text-gray-700 font-medium shadow-sm border hover:bg-gray-50"
+                        className="rounded-full px-3 py-1.5 font-medium shadow-sm border"
+                        style={{ background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                         style={{
                           borderColor: `${note.category.color || '#e5e7eb'}40`,
                           backgroundColor: `${note.category.color || '#e5e7eb'}15`
@@ -210,14 +197,16 @@ export default function DashboardPage() {
                         <Link
                           key={id}
                           href={`/dashboard/notes?tagIds=${id}`}
-                          className="rounded-full bg-primary-50 px-3 py-1.5 text-primary-700 font-medium shadow-sm hover:bg-primary-100"
+                          className="rounded-full px-3 py-1.5 font-medium shadow-sm"
+                          style={{ background: 'var(--primary-50)', color: 'var(--primary-600)', border: '1px solid var(--primary-100)' }}
                         >
                           #{content}
                         </Link>
                       ) : (
                         <span
                           key={`${content}-${idx}`}
-                          className="rounded-full bg-primary-50 px-3 py-1.5 text-primary-700 font-medium shadow-sm opacity-80"
+                          className="rounded-full px-3 py-1.5 font-medium shadow-sm opacity-80"
+                          style={{ background: 'var(--primary-50)', color: 'var(--primary-600)', border: '1px solid var(--primary-100)' }}
                           title="该标签暂不可点击"
                         >
                           #{content}
@@ -228,7 +217,7 @@ export default function DashboardPage() {
                 </div>
               ))
             ) : (
-              <div className="text-center text-gray-500 py-6">
+              <div className="text-center py-6" style={{ color: 'var(--text-muted)' }}>
                 暂无笔记内容，点击右上角「新建笔记」开始创作
               </div>
             )}
@@ -250,25 +239,23 @@ export default function DashboardPage() {
           <CardContent className="space-y-4">
             {overview?.topCategories.length ? (
               overview.topCategories.map((category) => (
-                <div
-                  key={category.id}
-                  className="group flex items-center justify-between rounded-xl border border-gray-200 bg-gradient-to-r from-white to-gray-50 px-5 py-4 hover:border-primary-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out cursor-pointer"
-                >
+                <div key={category.id} className="group flex items-center justify-between rounded-xl px-5 py-4 transition-all duration-300 ease-out cursor-pointer" style={{ background: 'var(--surface-1)', border: '1px solid var(--border)', boxShadow: 'var(--shadow-sm)' }}>
                   <div className="flex items-center gap-4">
                     <div
-                      className="h-4 w-4 rounded-full shadow-sm ring-2 ring-white"
+                      className="h-4 w-4 rounded-full shadow-sm ring-2"
                       style={{ backgroundColor: category.color || '#CBD5F5' }}
                     />
                     <div>
-                      <p className="font-bold text-gray-900 text-base">{category.name}</p>
-                      <p className="text-xs text-gray-500 mt-0.5">
+                      <p className="font-bold text-base" style={{ color: 'var(--on-surface)' }}>{category.name}</p>
+                      <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                         {category.noteCount ?? 0} 条笔记
                       </p>
                     </div>
                   </div>
                   <Link
                     href={`/dashboard/notes?categoryId=${category.id}`}
-                    className="text-sm font-medium text-primary-600 hover:text-primary-700 inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:bg-primary-50 transition-all duration-200"
+                    className="text-sm font-medium inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all duration-200"
+                    style={{ color: 'var(--primary-600)' }}
                   >
                     查看
                     <ArrowRight className="h-4 w-4 group-hover:translate-x-0.5 transition-transform" />
@@ -276,7 +263,7 @@ export default function DashboardPage() {
                 </div>
               ))
             ) : (
-              <div className="text-center text-gray-500 py-6">
+              <div className="text-center py-6" style={{ color: 'var(--text-muted)' }}>
                 暂无分类数据，前往分类管理页面创建一个新的分类
               </div>
             )}

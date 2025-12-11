@@ -106,7 +106,7 @@ export default function TagsManagePage() {
           <p className="text-gray-600">创建、重命名、配色、删除与合并标签，支持批量创建与限制合并源数。</p>
         </div>
 
-        <Card className="bg-white shadow-md">
+        <Card className="shadow-md" style={{ borderColor: 'var(--border)' }}>
           <CardHeader>
             <CardTitle className="text-xl font-bold">快速操作</CardTitle>
             <CardDescription className="mt-1 text-sm">批量创建与搜索</CardDescription>
@@ -118,7 +118,8 @@ export default function TagsManagePage() {
                   value={search}
                   onChange={e => setSearch(e.target.value)}
                   placeholder="搜索标签..."
-                  className="flex-1 border rounded-md p-2 text-sm"
+                  className="flex-1 border rounded-md p-2 text-sm placeholder-muted"
+                  style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                 />
                 <Button variant="outline" size="sm" className="whitespace-nowrap" onClick={() => setSearch('')}>清空</Button>
               </div>
@@ -127,7 +128,8 @@ export default function TagsManagePage() {
                   value={bulkInput}
                   onChange={e => setBulkInput(e.target.value)}
                   placeholder="批量创建：输入多个名称，逗号/空格分隔"
-                  className="flex-1 border rounded-md p-2 text-sm"
+                  className="flex-1 border rounded-md p-2 text-sm placeholder-muted"
+                  style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                   onKeyDown={e => { if (e.key === 'Enter') handleBulkCreate() }}
                 />
                 <Button className="whitespace-nowrap" onClick={handleBulkCreate}><Plus className="h-4 w-4 mr-1" />创建</Button>
@@ -149,13 +151,13 @@ export default function TagsManagePage() {
                     const isSource = selected.includes(tag.id)
                     const isTarget = mergeTarget === tag.id
                     return (
-                      <div key={tag.id} className="border rounded-xl p-3 flex flex-col gap-2 bg-gradient-to-br from-white to-gray-50 hover:shadow-md transition">
+                      <div key={tag.id} className="border rounded-xl p-3 flex flex-col gap-2 transition" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', boxShadow: 'var(--shadow-sm)' }}>
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="inline-block h-4 w-4 rounded-full ring-2 ring-white" style={{ backgroundColor: tag.color || '#6B7280' }} />
-                            <input defaultValue={tag.name} className="bg-transparent border border-transparent rounded px-2 py-1 text-sm focus:border-gray-300 focus:outline-none" onBlur={e => handleRename(tag.id, e.target.value)} />
+                            <span className="inline-block h-4 w-4 rounded-full ring-2" style={{ backgroundColor: tag.color || '#6B7280' }} />
+                            <input defaultValue={tag.name} className="bg-transparent border border-transparent rounded px-2 py-1 text-sm focus:outline-none" style={{ color: 'var(--on-surface)' }} onBlur={e => handleRename(tag.id, e.target.value)} />
                           </div>
-                          <div className="text-xs text-gray-500 whitespace-nowrap">{tag.noteCount ?? 0} 条笔记</div>
+                          <div className="text-xs whitespace-nowrap" style={{ color: 'var(--text-muted)' }}>{tag.noteCount ?? 0} 条笔记</div>
                         </div>
                         <div className="flex items-center gap-2">
                           <input type="color" value={tag.color || '#6B7280'} onChange={e => handleUpdateColor(tag.id, e.target.value)} className="h-7 w-9 rounded" />
@@ -194,13 +196,13 @@ export default function TagsManagePage() {
         </Card>
       </div>
       {pendingDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40">
-          <div className="bg-white rounded-xl shadow-xl w-[92%] max-w-md p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--overlay)' }}>
+          <div className="rounded-xl shadow-xl w-[92%] max-w-md p-5 border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
             <h3 className="text-lg font-semibold mb-2">确认删除标签</h3>
-            <p className="text-sm text-gray-600 mb-5">删除后将从所有相关笔记中移除该标签，且不可恢复。</p>
+            <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>删除后将从所有相关笔记中移除该标签，且不可恢复。</p>
             <div className="flex justify-end gap-3">
-              <button className="px-4 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50" onClick={cancelDelete}>取消</button>
-              <button className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700" onClick={confirmDelete}>确认删除</button>
+              <button className="px-4 py-2 rounded border" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }} onClick={cancelDelete}>取消</button>
+              <button className="px-4 py-2 rounded" style={{ background: 'var(--primary-600)', color: '#fff' }} onClick={confirmDelete}>确认删除</button>
             </div>
           </div>
         </div>

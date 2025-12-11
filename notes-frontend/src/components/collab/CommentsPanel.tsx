@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { listComments, createComment, commentsAPI } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -13,6 +13,8 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
   const me = useMemo(() => ({ id: (typeof localStorage !== 'undefined' ? String(localStorage.getItem('notes_user_id') || '') : ''), name: '我' }), [])
+  const appliedRef = useRef<Set<string>>(new Set())
+  const selectDebounceRef = useRef<number | null>(null)
   const load = async () => {
     const hasRange = typeof selection.start === 'number' && typeof selection.end === 'number'
     const r = hasRange ? await commentsAPI.list(noteId, { start: selection.start, end: selection.end, intersects: true, limit: 50 }) : await listComments(noteId)
@@ -20,14 +22,23 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
     setItems(mapped)
     try {
       mapped.forEach((c) => {
+        const cid = String(c.id || c._id || '')
+        if (!cid) return
+        if (appliedRef.current.has(cid)) return
         if (typeof c.start === 'number' && typeof c.end === 'number' && c.start !== c.end) {
-          const evt = new CustomEvent('comments:mark', { detail: { start: c.start, end: c.end, commentId: String(c.id || c._id) } })
+          const evt = new CustomEvent('comments:mark', { detail: { start: c.start, end: c.end, commentId: cid } })
           document.dispatchEvent(evt)
+          appliedRef.current.add(cid)
         }
       })
     } catch {}
   }
-  useEffect(() => { load() }, [noteId, selection.start, selection.end])
+  useEffect(() => { appliedRef.current.clear(); load() }, [noteId])
+  useEffect(() => {
+    if (selection.start === selection.end) return
+    if (selectDebounceRef.current) clearTimeout(selectDebounceRef.current as any)
+    selectDebounceRef.current = window.setTimeout(() => { load() }, 250)
+  }, [selection.start, selection.end])
   const add = async () => {
     if (!text.trim()) return
     if (selection.start === selection.end) {

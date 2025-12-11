@@ -344,14 +344,15 @@ export default function NotesPage() {
         </div>
       )}
       {error && notes.length === 0 && (
-        <div className="rounded-md border border-red-200 bg-red-50 p-3 text-sm text-red-700 flex items-center justify-between">
+        <div className="rounded-md border p-3 text-sm flex items-center justify-between" style={{ color: 'var(--on-surface)', background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
           <span>{error}</span>
           <button
             onClick={() => {
               setError('')
               router.refresh()
             }}
-            className="px-3 py-1 rounded bg-red-600 text-white hover:bg-red-700"
+            className="px-3 py-1 rounded"
+            style={{ background: 'var(--primary-600)', color: '#fff' }}
           >
             重试
           </button>
@@ -370,7 +371,7 @@ export default function NotesPage() {
           >
             我的笔记
           </h1>
-          <p className="text-gray-600 mt-2">管理和组织您的所有笔记</p>
+          <p className="mt-2" style={{ color: 'var(--text-muted)' }}>管理和组织您的所有笔记</p>
         </div>
         <Link
           href="/dashboard/notes/new"
@@ -486,35 +487,25 @@ export default function NotesPage() {
             }} />
           </div>
           {notes.length === 0 ? (
-            <Card
-              className="border-2 border-dashed"
-              style={{
-                background: 'linear-gradient(to bottom right, #f9fafb, #ffffff)',
-                borderColor: '#d1d5db',
-                borderRadius: '16px',
-              }}
-            >
+            <Card className="border-2 border-dashed" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', borderRadius: '16px' }}>
               <CardContent className="text-center py-16">
                 <div
                   className="inline-flex p-4 mb-6"
-                  style={{
-                    borderRadius: '50%',
-                    backgroundColor: '#f3f4f6',
-                  }}
+                  style={{ borderRadius: '50%', backgroundColor: 'var(--surface-2)' }}
                 >
-                  <FileText className="h-12 w-12 text-gray-400" />
+                  <FileText className="h-12 w-12" style={{ color: 'var(--text-muted)' }} />
                 </div>
-                <h3 className="text-2xl font-bold text-gray-900 mb-3">
+                <h3 className="text-2xl font-bold mb-3" style={{ color: 'var(--on-surface)' }}>
                   没有找到笔记
                 </h3>
-                <p className="text-gray-600 mb-2 text-lg">
+                <p className="mb-2 text-lg" style={{ color: 'var(--text-muted)' }}>
                   尝试调整筛选条件或创建新笔记
                 </p>
                 {(() => {
                   const sp = getSearchParams()
                   const isNlq = sp.get('nlq') === '1'
                   if (isNlq) {
-                    return <p className="text-gray-500 mb-6">语义检索未命中（可能受阈值或过滤条件影响），可切换到“关键词”模式或降低阈值</p>
+                    return <p className="mb-6" style={{ color: 'var(--text-muted)' }}>语义检索未命中（可能受阈值或过滤条件影响），可切换到“关键词”模式或降低阈值</p>
                   }
                   return null
                 })()}
@@ -533,81 +524,51 @@ export default function NotesPage() {
                 return (
                   <Card
                     key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${i}`}
-                    className="card-hover relative overflow-hidden group border-none"
-                    style={{
-                      borderRadius: '22px',
-                      background: 'linear-gradient(145deg, rgba(248,250,252,0.95), rgba(226,232,240,0.9))',
-                      boxShadow: '0 25px 50px -30px rgba(15,23,42,0.6)',
-                      border: '1px solid rgba(148,163,184,0.2)',
-                      transition: 'all 0.3s ease',
-                    }}
+                    className="card-hover relative overflow-hidden group"
+                    style={{ borderRadius: '22px', background: 'var(--surface-1)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--border)', transition: 'all 0.3s ease' }}
                     onMouseEnter={(e) => {
-                      e.currentTarget.style.boxShadow = '0 35px 70px -35px rgba(37,99,235,0.6)'
+                      e.currentTarget.style.boxShadow = 'var(--shadow-lg)'
                       e.currentTarget.style.transform = 'translateY(-4px)'
                     }}
                     onMouseLeave={(e) => {
-                      e.currentTarget.style.boxShadow = '0 25px 50px -30px rgba(15,23,42,0.6)'
+                      e.currentTarget.style.boxShadow = 'var(--shadow-md)'
                       e.currentTarget.style.transform = 'none'
                     }}
                   >
                     <div
                       aria-hidden
                       className="absolute inset-x-10 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                      style={{
-                        background: 'linear-gradient(90deg, rgba(59,130,246,0.6), rgba(147,51,234,0.6))',
-                        filter: 'blur(1px)',
-                      }}
+                      style={{ background: 'var(--primary-600)', filter: 'blur(1px)' }}
                     />
-                    <CardHeader
-                      className="relative pb-4 border-b border-gray-100"
-                      style={{
-                        borderColor: 'rgba(226,232,240,0.7)',
-                      }}
-                    >
+                    <CardHeader className="relative pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
                       <div className="flex justify-between items-start gap-2">
-                        <CardTitle
-                          className="text-xl font-bold line-clamp-2 flex-1 group-hover:text-primary-600 transition-colors duration-200"
-                          style={{ color: '#0f172a' }}
-                        >
-                          <Link
-                            href={`/dashboard/notes/${note.id}`}
-                            className="hover:text-primary-600 transition-colors"
-                          >
+                        <CardTitle className="text-xl font-bold line-clamp-2 flex-1 group-hover:text-primary-600 transition-colors duration-200" style={{ color: 'var(--on-surface)' }}>
+                          <Link href={`/dashboard/notes/${note.id}`} className="hover:text-primary-600 transition-colors">
                             {note.title || '无标题'}
                           </Link>
                         </CardTitle>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
-                          <Link
-                            href={`/dashboard/notes/${note.id}/edit`}
-                            className="p-2 text-gray-400 hover:text-primary-600 rounded-lg transition-all duration-200"
-                            style={{ backgroundColor: 'rgba(226,232,240,0.6)' }}
-                            title="编辑"
-                          >
+                          <Link href={`/dashboard/notes/${note.id}/edit`} className="p-2 rounded-lg transition-all duration-200" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }} title="编辑">
                             <Edit className="h-4 w-4" />
                           </Link>
-                          <button
-                            onClick={() => setPendingDeleteId(note.id)}
-                            className="p-2 text-gray-400 hover:text-red-600 rounded-lg transition-all duration-200"
-                            style={{ backgroundColor: 'rgba(248,250,252,0.9)' }}
-                            title="删除"
-                          >
+                          <button onClick={() => setPendingDeleteId(note.id)} className="p-2 rounded-lg transition-all duration-200" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }} title="删除">
                             <Trash2 className="h-4 w-4" />
                           </button>
                         </div>
                       </div>
                     </CardHeader>
                     <CardContent className="pt-4" style={{ position: 'relative' }}>
-                      <div className="text-xs text-gray-500 mb-4 font-medium flex items-center gap-2">
+                      <div className="text-xs mb-4 font-medium flex items-center gap-2" style={{ color: 'var(--text-muted)' }}>
                         <span
                           className="inline-flex h-2 w-2 rounded-full"
                           style={{ backgroundColor: '#34d399', boxShadow: '0 0 0 4px rgba(52,211,153,0.15)' }}
                         />
                         更新时间: {formatDate(note.updatedAt)}
                         {note.status === 'draft' && (
-                          <span className="ml-auto text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">草稿</span>
+                          <span className="ml-auto text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)', border: '1px solid var(--border)' }}>草稿</span>
                         )}
                       </div>
-                      <div className="text-sm text-gray-600 line-clamp-3 mb-4 leading-relaxed">
+                      <div className="text-sm line-clamp-3 mb-4 leading-relaxed" style={{ color: 'var(--on-surface)' }}>
                         {truncateText(note.content.replace(/[#*`_~>\[\]()]/g, ''), 150)}
                       </div>
                       {note.tags.length > 0 && (
@@ -618,22 +579,14 @@ export default function NotesPage() {
                             if (!label) return null
                             const keySafe = id ? id : `${note.id}:${label}:${idx}`
                             return (
-                              <span
-                                key={keySafe}
-                                className="px-3 py-1.5 text-xs font-medium rounded-full shadow-sm"
-                                style={{
-                                  background: 'rgba(59,130,246,0.12)',
-                                  color: '#1d4ed8',
-                                  border: '1px solid rgba(59,130,246,0.2)',
-                                }}
-                              >
+                              <span key={keySafe} className="px-3 py-1.5 text-xs font-medium rounded-full shadow-sm" style={{ background: 'var(--primary-50)', color: 'var(--primary-600)', border: '1px solid var(--primary-100)' }}>
                                 {label}
                               </span>
                             )
                           })}
                         </div>
                       )}
-                      <div className="mt-4 flex items-center justify-between text-xs text-gray-500">
+                      <div className="mt-4 flex items-center justify-between text-xs" style={{ color: 'var(--text-muted)' }}>
                         <span className="flex items-center gap-1">
                           <span className="inline-flex h-2 w-2 rounded-full bg-blue-400/60" />
                           分类：{categoryLabel}
@@ -663,19 +616,21 @@ export default function NotesPage() {
         </div>
       </div>
       {pendingDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-          <div className="bg-white rounded-xl shadow-xl w-[92%] max-w-md p-5">
+        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--overlay)' }}>
+          <div className="rounded-xl shadow-xl w-[92%] max-w-md p-5 border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
             <h3 className="text-lg font-semibold mb-2">确认删除</h3>
-            <p className="text-sm text-gray-600 mb-5">确定要删除这条笔记吗？此操作无法撤销。</p>
+            <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>确定要删除这条笔记吗？此操作无法撤销。</p>
             <div className="flex justify-end gap-3">
               <button
-                className="px-4 py-2 rounded border border-gray-200 text-gray-700 hover:bg-gray-50"
+                className="px-4 py-2 rounded border"
+                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                 onClick={() => setPendingDeleteId(null)}
               >
                 取消
               </button>
               <button
-                className="px-4 py-2 rounded bg-red-600 text-white hover:bg-red-700"
+                className="px-4 py-2 rounded"
+                style={{ background: 'var(--primary-600)', color: '#fff' }}
                 onClick={() => handleDelete(pendingDeleteId)}
               >
                 确认删除

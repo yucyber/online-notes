@@ -251,38 +251,41 @@ export default function SearchFilterBar() {
   };
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow mb-6">
+    <div className="p-4 rounded-lg shadow mb-6 border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
       <div className="flex gap-2 mb-4">
         <div className="relative flex-1">
-          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
+          <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4" style={{ color: 'var(--text-muted)' }} />
           <input
             type="text"
             placeholder="搜索笔记..."
-            className="w-full pl-10 pr-4 py-2 border rounded-md"
+            className="w-full pl-10 pr-4 py-2 border rounded-md placeholder-muted"
             value={keyword}
             onChange={(e) => setKeyword(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSearch('enter')}
+            style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
           />
         </div>
         <button
           onClick={() => setIsOpen(!isOpen)}
-          className={`px-4 py-2 border rounded-md flex items-center gap-2 ${isOpen ? 'bg-blue-50 border-blue-200 text-blue-600' : 'hover:bg-gray-50'}`}
+          className={`px-4 py-2 border rounded-md flex items-center gap-2`}
+          style={isOpen ? { background: 'var(--primary-600)', borderColor: 'var(--primary-600)', color: '#fff', minHeight: 44 } : { borderColor: 'var(--interactive-border)', color: 'var(--on-surface)', minHeight: 44 }}
         >
           <Filter className="h-4 w-4" />
           筛选
         </button>
         <button
           onClick={() => handleSearch('button')}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+          className="px-4 py-2 rounded-md"
+          style={{ background: 'var(--primary-600)', color: '#fff', minHeight: 44 }}
         >
           搜索
         </button>
-        <label className="inline-flex items-center gap-2 text-sm ml-2">
+        <label className="inline-flex items-center gap-2 text-sm ml-2" style={{ color: 'var(--text-muted)' }}>
           <input type="checkbox" checked={nlqEnabled} onChange={(e) => setNlqEnabled(e.target.checked)} />
           语义搜索
         </label>
         {nlqEnabled && (
-          <select className="border rounded-md p-2 text-sm" value={nlqMode} onChange={(e) => setNlqMode(e.target.value as any)}>
+          <select className="border rounded-md p-2 text-sm" value={nlqMode} onChange={(e) => setNlqMode(e.target.value as any)} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
             <option value="hybrid">混合</option>
             <option value="keyword">关键词</option>
             <option value="vector">向量</option>
@@ -291,13 +294,14 @@ export default function SearchFilterBar() {
       </div>
 
       {isOpen && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">分类</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--on-surface)' }}>分类</label>
             <select
               className="w-full border rounded-md p-2"
               value={categoryId}
               onChange={(e) => setCategoryId(e.target.value)}
+              style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
             >
               <option value="">所有分类</option>
               {categories.map(cat => (
@@ -305,24 +309,24 @@ export default function SearchFilterBar() {
               ))}
             </select>
             <div className="mt-2">
-              <div className="text-xs text-gray-500 mb-1">多分类</div>
-              <div className="max-h-28 overflow-auto border rounded-md p-2">
+              <div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>多分类</div>
+              <div className="max-h-28 overflow-auto border rounded-md p-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
                 {categories.map(cat => {
                   const checked = selectedCategoryIds.includes(cat.id)
                   return (
-                    <label key={cat.id} className="flex items-center gap-2 py-1 text-sm">
+                    <label key={cat.id} className="flex items-center gap-2 py-1 text-sm" style={{ color: 'var(--on-surface)' }}>
                       <input type="checkbox" checked={checked} onChange={(e) => {
                         const next = e.target.checked ? Array.from(new Set([...selectedCategoryIds, cat.id])) : selectedCategoryIds.filter(id => id !== cat.id)
                         setSelectedCategoryIds(next)
-                      }} className="h-4 w-4 rounded border-gray-300" />
+                      }} className="h-4 w-4 rounded" style={{ borderColor: 'var(--border)' }} />
                       <span>{cat.name}</span>
                     </label>
                   )
                 })}
               </div>
               <div className="mt-2 flex items-center gap-2">
-                <label className="text-xs text-gray-600">匹配模式</label>
-                <select className="border rounded-md p-1 text-xs" value={categoriesMode} onChange={(e) => setCategoriesMode(e.target.value as 'any' | 'all')}>
+                <label className="text-xs" style={{ color: 'var(--text-muted)' }}>匹配模式</label>
+                <select className="border rounded-md p-1 text-xs" value={categoriesMode} onChange={(e) => setCategoriesMode(e.target.value as 'any' | 'all')} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
                   <option value="any">包含任意一个</option>
                   <option value="all">同时包含全部</option>
                 </select>
@@ -331,11 +335,12 @@ export default function SearchFilterBar() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">状态</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--on-surface)' }}>状态</label>
             <select
               className="w-full border rounded-md p-2"
               value={status}
               onChange={(e) => setStatus(e.target.value)}
+              style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
             >
               <option value="">所有状态</option>
               <option value="published">已发布</option>
@@ -344,10 +349,10 @@ export default function SearchFilterBar() {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">时间范围</label>
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--on-surface)' }}>时间范围</label>
             <div className="flex gap-2 mb-2">
-              <button onClick={setLastWeek} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">最近一周</button>
-              <button onClick={setLastMonth} className="text-xs px-2 py-1 bg-gray-100 rounded hover:bg-gray-200">最近一月</button>
+              <button onClick={setLastWeek} className="text-xs px-2 py-1 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)' }}>最近一周</button>
+              <button onClick={setLastMonth} className="text-xs px-2 py-1 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)' }}>最近一月</button>
             </div>
             <div className="flex gap-2">
               <input
@@ -355,6 +360,7 @@ export default function SearchFilterBar() {
                 className="w-full border rounded-md p-2"
                 value={startDate}
                 onChange={(e) => setStartDate(e.target.value)}
+                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
               />
               <span className="self-center">-</span>
               <input
@@ -362,13 +368,14 @@ export default function SearchFilterBar() {
                 className="w-full border rounded-md p-2"
                 value={endDate}
                 onChange={(e) => setEndDate(e.target.value)}
+                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
               />
             </div>
           </div>
 
           <div className="md:col-span-3">
-            <label className="block text-sm font-medium text-gray-700 mb-1">标签</label>
-            <div className="mb-2 text-xs text-gray-500">
+            <label className="block text-sm font-medium mb-1" style={{ color: 'var(--on-surface)' }}>标签</label>
+            <div className="mb-2 text-xs" style={{ color: 'var(--text-muted)' }}>
               {selectedTagIds.length <= 1
                 ? '当前为单标签搜索：返回所有包含该标签的笔记'
                 : '当前为多标签组合搜索：返回同时包含所有选定标签的笔记'}
@@ -378,38 +385,39 @@ export default function SearchFilterBar() {
                 <button
                   key={tag.id}
                   onClick={() => toggleTag(tag.id)}
-                  className={`px-3 py-1 rounded-full text-sm border transition-colors ${selectedTagIds.includes(tag.id)
-                    ? 'bg-blue-100 border-blue-300 text-blue-700'
-                    : 'hover:bg-gray-50 border-gray-200 text-gray-700'
-                    }`}
+                  className={`px-3 py-1 rounded-full text-sm border transition-colors`}
+                  style={selectedTagIds.includes(tag.id)
+                    ? { background: 'var(--primary-50)', borderColor: 'var(--primary-100)', color: 'var(--primary-600)' }
+                    : { borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}
                   style={{ minHeight: 44 }}
                 >
                   {tag.name}
                 </button>
               ))}
-              {tags.length === 0 && <span className="text-gray-400 text-sm">暂无标签</span>}
+              {tags.length === 0 && <span className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无标签</span>}
             </div>
           </div>
 
           <div className="md:col-span-3 flex justify-between items-center mt-2">
             <div className="flex gap-2">
-              <button onClick={handleClear} className="text-sm text-gray-500 hover:text-gray-700 flex items-center gap-1">
+              <button onClick={handleClear} className="text-sm flex items-center gap-1" style={{ color: 'var(--text-muted)' }}>
                 <X className="h-3 w-3" /> 清空条件
               </button>
-              <button onClick={() => setIsSaveModalOpen(true)} className="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1">
+              <button onClick={() => setIsSaveModalOpen(true)} className="text-sm flex items-center gap-1" style={{ color: 'var(--primary-600)' }}>
                 <Save className="h-3 w-3" /> 保存筛选
               </button>
             </div>
 
             {savedFilters.length > 0 && (
               <div className="flex gap-2 items-center">
-                <span className="text-sm text-gray-500">已保存:</span>
+                <span className="text-sm" style={{ color: 'var(--text-muted)' }}>已保存:</span>
                 <div className="flex gap-2 flex-wrap">
                   {savedFilters.map(filter => (
                     <button
                       key={filter.id}
                       onClick={() => applySavedFilter(filter)}
-                      className="text-xs bg-gray-100 hover:bg-gray-200 px-2 py-1 rounded-full border"
+                      className="text-xs px-2 py-1 rounded-full border"
+                      style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}
                     >
                       {filter.name}
                     </button>
@@ -422,8 +430,8 @@ export default function SearchFilterBar() {
       )}
 
       {isSaveModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
-          <div className="bg-white p-6 rounded-lg w-96">
+        <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'var(--overlay)' }}>
+          <div className="p-6 rounded-lg w-96 border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
             <h3 className="text-lg font-medium mb-4">保存筛选条件</h3>
             <input
               type="text"
@@ -431,17 +439,20 @@ export default function SearchFilterBar() {
               className="w-full border rounded-md p-2 mb-4"
               value={newFilterName}
               onChange={(e) => setNewFilterName(e.target.value)}
+              style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
             />
             <div className="flex justify-end gap-2">
               <button
                 onClick={() => setIsSaveModalOpen(false)}
-                className="px-4 py-2 border rounded-md hover:bg-gray-50"
+                className="px-4 py-2 border rounded-md"
+                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
               >
                 取消
               </button>
               <button
                 onClick={handleSaveFilter}
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700"
+                className="px-4 py-2 rounded-md"
+                style={{ background: 'var(--primary-600)', color: '#fff' }}
               >
                 保存
               </button>

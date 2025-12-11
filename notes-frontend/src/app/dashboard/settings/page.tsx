@@ -90,43 +90,43 @@ export default function SettingsPage() {
         >
           设置
         </h1>
-        <p className="text-gray-500">管理您的账户和偏好设置</p>
+        <p className="text-[var(--text-muted)]">管理您的账户和偏好设置</p>
       </div>
 
       {/* 账户信息 */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <UserIcon className="h-5 w-5 text-gray-600" />
+            <UserIcon className="h-5 w-5 text-[var(--text-muted)]" />
             <CardTitle>账户信息</CardTitle>
           </div>
           <CardDescription>查看和管理您的账户基本信息</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[var(--text-default)] mb-1">
               邮箱地址
             </label>
             <Input
               type="email"
               value={user?.email || ''}
               disabled
-              className="bg-gray-50"
+              className="bg-[var(--surface-2)]"
             />
-            <p className="mt-1 text-xs text-gray-500">
+            <p className="mt-1 text-xs text-[var(--text-muted)]">
               邮箱地址用于登录，无法修改
             </p>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
+            <label className="block text-sm font-medium text-[var(--text-default)] mb-1">
               账户创建时间
             </label>
             <Input
               type="text"
               value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('zh-CN') : ''}
               disabled
-              className="bg-gray-50"
+              className="bg-[var(--surface-2)]"
             />
           </div>
         </CardContent>
@@ -136,7 +136,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-gray-600" />
+            <Key className="h-5 w-5 text-[var(--text-muted)]" />
             <CardTitle>修改密码</CardTitle>
           </div>
           <CardDescription>定期更新密码以保护您的账户安全</CardDescription>
@@ -170,7 +170,7 @@ export default function SettingsPage() {
           )}
           <form onSubmit={handlePasswordChange} className="space-y-4">
             <div>
-              <label htmlFor="currentPassword" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="currentPassword" className="block text-sm font-medium text-[var(--text-default)] mb-1">
                 当前密码
               </label>
               <Input
@@ -184,7 +184,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <label htmlFor="newPassword" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="newPassword" className="block text-sm font-medium text-[var(--text-default)] mb-1">
                 新密码
               </label>
               <Input
@@ -199,7 +199,7 @@ export default function SettingsPage() {
             </div>
 
             <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-gray-700 mb-1">
+              <label htmlFor="confirmPassword" className="block text-sm font-medium text-[var(--text-default)] mb-1">
                 确认新密码
               </label>
               <Input
@@ -225,7 +225,7 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-gray-600" />
+            <Bell className="h-5 w-5 text-[var(--text-muted)]" />
             <CardTitle>偏好设置</CardTitle>
           </div>
           <CardDescription>自定义您的使用体验</CardDescription>
@@ -233,8 +233,8 @@ export default function SettingsPage() {
         <CardContent className="space-y-4">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-900">自动保存</p>
-              <p className="text-xs text-gray-500">编辑笔记时自动保存内容</p>
+              <p className="text-sm font-medium text-[var(--on-surface)]">自动保存</p>
+              <p className="text-xs text-[var(--text-muted)]">编辑笔记时自动保存内容</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer" style={{ minHeight: '44px' }} aria-label="自动保存开关">
               <input type="checkbox" className="sr-only peer" defaultChecked />
@@ -244,8 +244,8 @@ export default function SettingsPage() {
 
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-medium text-gray-900">邮件通知</p>
-              <p className="text-xs text-gray-500">接收重要更新和通知邮件</p>
+              <p className="text-sm font-medium text-[var(--on-surface)]">邮件通知</p>
+              <p className="text-xs text-[var(--text-muted)]">接收重要更新和通知邮件</p>
             </div>
             <label className="relative inline-flex items-center cursor-pointer" style={{ minHeight: '44px' }} aria-label="邮件通知开关">
               <input type="checkbox" className="sr-only peer" />
@@ -259,14 +259,14 @@ export default function SettingsPage() {
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-gray-600" />
+            <Settings className="h-5 w-5 text-[var(--text-muted)]" />
             <CardTitle>安全中心 · 网络访问状态</CardTitle>
           </div>
           <CardDescription>查看当前 API 地址、连通性与诊断入口</CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          <div className="text-sm">
-            <div className="mb-2"><span className="font-medium">当前 API 地址：</span><code className="bg-gray-100 px-2 py-1 rounded">{process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}</code></div>
+            <div className="text-sm">
+            <div className="mb-2"><span className="font-medium">当前 API 地址：</span><code className="bg-[var(--surface-2)] px-2 py-1 rounded">{process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}</code></div>
           </div>
           <NetworkStatus onReconnect={() => { /* 可在此触发全局数据刷新 */ }} />
         </CardContent>

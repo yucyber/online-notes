@@ -29,6 +29,8 @@ import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
 import { createComment, commentsAPI } from '@/lib/api'
 import CommentMark from './extensions/CommentMark'
+import FontSize from './extensions/FontSize'
+import StatusPill from './extensions/StatusPill'
 
 type Props = {
   noteId: string
@@ -38,6 +40,7 @@ type Props = {
   readOnly?: boolean
   onSelectionChange?: (start: number, end: number) => void
   onContentChange?: (html: string) => void
+  versionKey?: string
 }
 
 function colorFromString(s: string) {
@@ -56,7 +59,7 @@ function srgb(x: number) {
   return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
 }
 
-export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange }: Props) {
+export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey }: Props) {
   const ydoc = useMemo(() => new Y.Doc(), [])
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
@@ -64,6 +67,19 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const [collabEnabled, setCollabEnabled] = useState(true)
   const [localMode, setLocalMode] = useState(false)
   const [wsDebug, setWsDebug] = useState<{ connecting: boolean; connected: boolean; synced: boolean }>({ connecting: false, connected: false, synced: false })
+  const injectBusyRef = useRef(false)
+  const lastInjectedHTMLRef = useRef<string>('')
+  const migratedOnceRef = useRef(false)
+  const onSelectionChangeRef = useRef<typeof onSelectionChange | null>(onSelectionChange)
+  const onContentChangeRef = useRef<typeof onContentChange | null>(onContentChange)
+  const onSaveRef = useRef<typeof onSave | null>(onSave)
+
+  useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
+  useEffect(() => { onContentChangeRef.current = onContentChange }, [onContentChange])
+  useEffect(() => { onSaveRef.current = onSave }, [onSave])
+  const suppressSelectionRef = useRef(false)
+  const lastSelectionRef = useRef<{ from: number; to: number }>({ from: -1, to: -1 })
+  const selectionDebounceRef = useRef<number | null>(null)
   // 基于协同场景的撤销/重做管理器（仅协同启用时使用）
   const undoManager = useMemo(() => {
     try { return new (Y as any).UndoManager(ydoc) } catch { return null }
@@ -74,8 +90,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     try {
       const yws = process.env.NEXT_PUBLIC_YWS_URL
       if (!yws) return null
-      // 强化重连与服务端状态重同步，提升握手稳定性
-      return new WebsocketProvider(yws, `note:${noteId}`, ydoc, {
+      const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
+      return new WebsocketProvider(yws, room, ydoc, {
         connect: true,
         // 每 15s 主动向服务端请求一次状态，减少偶发“连接已关闭但未重连”的窗口
         resyncInterval: 15000,
@@ -83,7 +99,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         maxBackoffTime: 10000,
       })
     } catch { return null }
-  }, [noteId, ydoc])
+  }, [noteId, versionKey, ydoc])
 
   useEffect(() => {
     const p = computedProvider
@@ -122,18 +138,16 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       p.on('sync', syncHandler as any)
       const aw = p.awareness
       const updateAwareness = () => {
-        const remoteStates = Array.from(aw.getStates().values()) as any[]
-        const localState = (aw as any).getLocalState ? (aw as any).getLocalState() : null
-        const merged = [...remoteStates, ...(localState ? [localState] : [])]
+        const entries = Array.from(aw.getStates().entries()) as any[]
         const byId = new Map<string, { id: string; name?: string }>()
-        merged.forEach((s: any) => {
-          const id = String(s?.user?.id || 'unknown')
+        for (const [clientId, s] of entries) {
+          const uid = String(s?.user?.id || s?.user?.name || clientId)
           const name = s?.user?.name
-          if (!byId.has(id)) byId.set(id, { id, name })
-        })
+          if (!byId.has(uid)) byId.set(uid, { id: uid, name })
+        }
         setParticipants(Array.from(byId.values()))
       }
-      try { (aw as any).setLocalState({ user: { id: user.id, name: user.name } }) } catch { aw.setLocalStateField('user', { id: user.id, name: user.name }) }
+      aw.setLocalStateField('user', { id: user.id, name: user.name })
       aw.on('update', updateAwareness)
       updateAwareness()
       let failCount = 0
@@ -184,7 +198,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       HorizontalRule,
       // 对齐扩展：应用到标题与段落
       TextAlign.configure({ types: ['heading', 'paragraph'] }),
+      FontSize,
       TextStyle,
+      StatusPill,
       Color,
       Highlight,
       Subscript,
@@ -219,9 +235,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         ]
         : []),
     ],
-    content: (collabEnabled && (provider || computedProvider)) ? undefined : (initialHTML || '<p></p>'),
+    content: ((collabEnabled && (provider || computedProvider) && !versionKey) ? undefined : (initialHTML || '<p></p>')),
     // 使 .ProseMirror 在容器内占满高度，消除底部空白不可点击/不可输入区
-    editorProps: { attributes: { class: 'prose prose-sm max-w-none min-h-full outline-none' } },
+    editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
     // 本地降级时仍保持可编辑（仅关闭协同），避免工具栏操作无效
     editable: !readOnly,
     // 禁用SSR立即渲染，避免hydration mismatch警告
@@ -229,30 +245,125 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [computedProvider, provider, collabEnabled])
 
   useEffect(() => {
+    if (!editor || migratedOnceRef.current) return
+    try {
+      const ranges: Array<{ from: number; to: number; label: string }> = []
+      editor.state.doc.descendants((node: any, pos: number) => {
+        if (node && node.isText && typeof node.text === 'string') {
+          const text = node.text as string
+          const re = /<span class=\"status-pill\">([\s\S]*?)<\/span>/g
+          let m: RegExpExecArray | null
+          while ((m = re.exec(text)) != null) {
+            const from = pos + (m.index || 0)
+            const to = from + (m[0] || '').length
+            ranges.push({ from, to, label: String(m[1] || '状态：进行中') })
+          }
+        }
+      })
+      ranges.sort((a, b) => b.from - a.from).forEach(r => {
+        suppressSelectionRef.current = true
+        editor.chain().focus().setTextSelection({ from: r.from, to: r.to }).deleteSelection().insertStatusPill({ label: r.label, variant: 'inprogress' }).run()
+        setTimeout(() => { suppressSelectionRef.current = false }, 120)
+      })
+    } catch { }
+    migratedOnceRef.current = true
+  }, [editor])
+
+  useEffect(() => {
     if (!editor) return
     const handler = () => {
+      if (suppressSelectionRef.current) return
       const { from, to } = editor.state.selection
-      onSelectionChange?.(from, to)
-      try { document.dispatchEvent(new CustomEvent('comments:selection', { detail: { noteId, from, to } })) } catch { }
-      try {
-        const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'selection_change', meta: { from, to }, ts: Date.now() } })
-        document.dispatchEvent(evt)
-      } catch { }
+      if (from === lastSelectionRef.current.from && to === lastSelectionRef.current.to) return
+      lastSelectionRef.current = { from, to }
+      if (selectionDebounceRef.current) clearTimeout(selectionDebounceRef.current as any)
+      selectionDebounceRef.current = window.setTimeout(() => {
+        onSelectionChangeRef.current?.(from, to)
+        try { document.dispatchEvent(new CustomEvent('comments:selection', { detail: { noteId, from, to } })) } catch { }
+        try {
+          const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'selection_change', meta: { from, to }, ts: Date.now() } })
+          document.dispatchEvent(evt)
+        } catch { }
+      }, 150)
     }
     editor.on('selectionUpdate', handler)
     return () => { editor.off('selectionUpdate', handler) }
-  }, [editor, onSelectionChange])
+  }, [editor])
 
   // 内容变化回调，用于右侧大纲同步
   useEffect(() => {
     if (!editor) return
     const updateHandler = () => {
-      try { onContentChange?.(editor.getHTML()) } catch { }
+      try { onContentChangeRef.current?.(editor.getHTML()) } catch { }
     }
     editor.on('update', updateHandler)
-    try { onContentChange?.(editor.getHTML()) } catch { }
+    try { onContentChangeRef.current?.(editor.getHTML()) } catch { }
     return () => { editor.off('update', updateHandler) }
-  }, [editor, onContentChange])
+  }, [editor])
+
+  useEffect(() => {
+    if (!editor) return
+    const setHandler = (e: Event) => {
+      try {
+        const html = (e as CustomEvent).detail?.html as string
+        if (typeof html === 'string') {
+          if (injectBusyRef.current) return
+          const normalized = String(html || '').trim()
+          const current = String(editor.getHTML() || '').trim()
+          if (normalized === current || normalized === lastInjectedHTMLRef.current) return
+          const p = (provider || computedProvider)
+          const safe = sanitizeHTML(html || '<p></p>')
+          const apply = () => {
+            injectBusyRef.current = true
+            suppressSelectionRef.current = true
+            if (collabEnabled && p) {
+              try {
+                const frag = ydoc.getXmlFragment('prosemirror') as any
+                ydoc.transact(() => { if (frag && typeof frag.length === 'number') frag.delete(0, frag.length) })
+              } catch { }
+            }
+            editor.commands.setContent(safe || '<p></p>', false)
+            lastInjectedHTMLRef.current = String(safe || '')
+            try {
+              const ranges: Array<{ from: number; to: number; label: string }> = []
+              editor.state.doc.descendants((node: any, pos: number) => {
+                if (node && node.isText && typeof node.text === 'string') {
+                  const text = node.text as string
+                  const re = /<span class=\"status-pill\">([\s\S]*?)<\/span>/g
+                  let m: RegExpExecArray | null
+                  while ((m = re.exec(text)) != null) {
+                    const from = pos + (m.index || 0)
+                    const to = from + (m[0] || '').length
+                    ranges.push({ from, to, label: String(m[1] || '状态：进行中') })
+                  }
+                }
+              })
+              ranges.sort((a, b) => b.from - a.from).forEach(r => {
+                editor.chain().focus().setTextSelection({ from: r.from, to: r.to }).deleteSelection().insertStatusPill({ label: r.label, variant: 'inprogress' }).run()
+              })
+            } catch { }
+            setTimeout(() => { suppressSelectionRef.current = false; injectBusyRef.current = false }, 120)
+          }
+          if (p && !(p as any).synced) {
+            const once = (synced: boolean) => { if (synced) { try { apply() } finally { try { (p as any).off('sync', once) } catch { } } } }
+            try { (p as any).on('sync', once) } catch { /* ignore */ }
+            // 超时兜底：若 800ms 内仍未完成首次同步，则直接应用本地内容，避免编辑区空白
+            setTimeout(() => {
+              try {
+                const synced = Boolean((p as any).synced)
+                const wsconnected = Boolean((p as any).wsconnected)
+                if (!synced || !wsconnected) apply()
+              } catch { apply() }
+            }, 800)
+          } else {
+            apply()
+          }
+        }
+      } catch { }
+    }
+    document.addEventListener('editor:setContent', setHandler as any)
+    return () => { document.removeEventListener('editor:setContent', setHandler as any) }
+  }, [editor, provider, computedProvider, collabEnabled, ydoc])
 
   // 悬浮提示：鼠标移入评论标记时在编辑器内显示提示框
   useEffect(() => {
@@ -308,20 +419,47 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       else if (cmd === 'sup') chain.toggleSuperscript().run()
       else if (cmd === 'sub') chain.toggleSubscript().run()
       else if (cmd === 'task') chain.toggleTaskList().run()
-      else if (cmd === 'link') chain.extendMarkRange('link').setLink({ href: (payload && payload.href) || '#' }).run()
+      else if (cmd === 'link') {
+        const href = String((payload && payload.href) || '#')
+        const text = typeof payload?.text === 'string' ? payload.text : ''
+        const hasSelection = !editor.state.selection.empty
+        if (hasSelection) {
+          chain.extendMarkRange('link').setLink({ href }).run()
+        } else {
+          chain.insertContent({
+            type: 'text',
+            text: text || href,
+            marks: [{ type: 'link', attrs: { href } }],
+          }).run()
+        }
+      }
       else if (cmd === 'unlink') chain.extendMarkRange('link').unsetLink().run()
       else if (cmd === 'table') chain.insertTable({ rows: 3, cols: 3, withHeaderRow: true }).run()
       else if (cmd === 'image') {
         const src = (payload && payload.src) as string
         if (src) chain.setImage({ src }).run()
       }
+      else if (cmd === 'fontSize') {
+        const size = String((payload && payload.size) || '15px')
+        chain.setMark('textStyle', { fontSize: size }).run()
+      }
+      else if (cmd === 'paragraph') { chain.setParagraph().run() }
+      else if (cmd === 'embedPlaceholder') {
+        const type = String((payload && payload.type) || 'embed')
+        const label = String((payload && payload.label) || `占位：${type}`)
+        chain.insertContent(`<div class=\"embed-placeholder\" data-type=\"${type}\">${label}</div>`).run()
+      }
+      else if (cmd === 'status') {
+        const text = String((payload && payload.text) || '状态：进行中')
+        chain.insertStatusPill({ label: text, variant: 'inprogress' })
+      }
       else if (cmd === 'undo') { chain.undo().run() }
       else if (cmd === 'redo') { chain.redo().run() }
-      else if (cmd === 'save') { const html = editor.getHTML(); onSave(html) }
+      else if (cmd === 'save') { const html = editor.getHTML(); onSaveRef.current?.(html) }
     }
     document.addEventListener('tiptap:exec', execHandler as any)
     return () => { document.removeEventListener('tiptap:exec', execHandler as any) }
-  }, [editor, onSave])
+  }, [editor])
 
   useEffect(() => {
     return () => {
@@ -343,7 +481,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       try {
         const { start, end, commentId } = (e as CustomEvent).detail || {}
         if (typeof start === 'number' && typeof end === 'number') {
+          suppressSelectionRef.current = true
           editor.chain().focus().setTextSelection({ from: start, to: end }).setMark('commentMark', { commentId: commentId || `local-${Date.now()}` }).run()
+          setTimeout(() => { suppressSelectionRef.current = false }, 120)
         }
       } catch { }
     }
@@ -363,7 +503,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       for (const c of ranges) {
         const cid = String(c._id || c.id || c.commentId)
         if (applied.has(cid)) continue
+        suppressSelectionRef.current = true
         editor.chain().focus().setTextSelection({ from: c.start, to: c.end }).setMark('commentMark', { commentId: cid }).run()
+        setTimeout(() => { suppressSelectionRef.current = false }, 120)
         applied.add(cid)
       }
       try { document.dispatchEvent(new CustomEvent('comments:list:update', { detail: { noteId, comments: items } })) } catch { }
@@ -408,7 +550,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       </div>
       <div
         id="editor-card"
-        className="border border-[#e8e8e8] rounded-[2px] p-3 bg-white dark:bg-neutral-800 min-h-[560px] h-[60vh] md:min-h-[640px] md:h-[70vh] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
+        className="border rounded-[8px] p-3 min-h-[560px] h-[60vh] md:min-h-[640px] md:h-[70vh] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
         // 使容器点击空白区域也可将光标移动到文末，解决下半区域无法输入/无法聚焦的问题
         onMouseDown={(e) => {
           try {
@@ -422,7 +564,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             }
           } catch { }
         }}
-        style={{ display: 'flex', flexDirection: 'column' }}
+        style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface-1)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }}
       >
         <BubbleMenu
           editor={editor}
@@ -442,7 +584,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             className="flex items-center gap-2 justify-start"
             role="toolbar"
             aria-label="文本格式工具"
-            style={{ height: 44, paddingLeft: 8, paddingRight: 8, border: '1px solid #e5e7eb', borderRadius: 12, background: '#fff' }}
+            style={{ height: 44, paddingLeft: 8, paddingRight: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-1)' }}
           >
             <Button aria-label="粗体" title="粗体 (Ctrl+B)" size="icon" variant="ghost" disabled={readOnly} onClick={() => editor.chain().focus().toggleBold().run()}>
               <Bold className="w-4 h-4" aria-hidden />
@@ -453,7 +595,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             <Button aria-label="下划线" title="下划线 (Ctrl+U)" size="icon" variant="ghost" disabled={readOnly} onClick={() => editor.chain().focus().toggleUnderline().run()}>
               <UnderlineIcon className="w-4 h-4" aria-hidden />
             </Button>
-            <div aria-hidden className="w-px h-4 bg-gray-200 mx-1" />
+            <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
             <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={readOnly} onClick={() => {
               try {
                 const { from, to } = editor.state.selection
@@ -470,10 +612,34 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           </div>
         </BubbleMenu>
         {/* 让 ProseMirror 填满容器高度，点击任意空白处可聚焦 */}
-        <EditorContent editor={editor} className="h-full" style={{ flex: 1, minHeight: '100%', height: '100%', padding: 12 }} />
+        <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', height: '100%', padding: 12, background: 'var(--surface-1)', color: 'var(--on-surface)' }} />
         {/* 悬浮提示容器 */}
         <div id="comment-tooltip" style={{ position: 'absolute', pointerEvents: 'none', display: 'none', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.1)', transition: 'opacity 300ms ease-in-out' }}>已添加评论，打开右侧面板查看</div>
       </div>
     </div>
   )
+}
+const sanitizeHTML = (html: string) => {
+  try {
+    const parser = new DOMParser()
+    const doc = parser.parseFromString(html, 'text/html')
+    const dangerousTags = ['style', 'script', 'link', 'meta', 'title', 'iframe', 'object', 'embed']
+    dangerousTags.forEach(tag => Array.from(doc.getElementsByTagName(tag)).forEach(el => el.remove()))
+    const all = doc.body.querySelectorAll('*')
+    all.forEach(el => {
+      el.removeAttribute('style')
+      Array.from(el.attributes).forEach(attr => {
+        const name = attr.name.toLowerCase()
+        if (name.startsWith('on')) el.removeAttribute(attr.name)
+      })
+    })
+    const cleaned = doc.body.innerHTML || ''
+    const looksPlain = !/[<][a-zA-Z]/.test(cleaned)
+    if (looksPlain) {
+      const text = doc.body.textContent || ''
+      const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      return `<p>${escaped}</p>`
+    }
+    return cleaned
+  } catch { return html }
 }

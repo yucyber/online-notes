@@ -71,20 +71,20 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
   }, [currentNoteId, context?.keyword, context?.categoryId, JSON.stringify(context?.tagIds), context?.tagsMode, context?.startDate, context?.endDate, context?.status]);
 
   if (loading) {
-    return <div className="animate-pulse bg-gray-100 h-48 rounded-lg"></div>;
+    return <div className="animate-pulse h-48 rounded-lg" style={{ background: 'var(--surface-2)' }}></div>;
   }
 
   if (recommendations.length === 0) {
     return (
-      <div className="bg-white p-4 rounded-lg shadow h-fit">
-        <div className="flex items-center gap-2 mb-2 text-blue-600">
+      <div className="p-4 rounded-lg shadow h-fit border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
+        <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--primary-600)' }}>
           <Lightbulb className="h-5 w-5" />
           <h3 className="font-medium">猜你想看</h3>
         </div>
         {error ? (
-          <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded p-2">{error}</div>
+          <div className="text-xs rounded p-2 border" style={{ color: 'var(--on-surface)', background: 'var(--surface-2)', borderColor: 'var(--border)' }}>{error}</div>
         ) : (
-          <div className="text-xs text-gray-500">暂无推荐内容，稍后再试或新建笔记提升推荐效果。</div>
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>暂无推荐内容，稍后再试或新建笔记提升推荐效果。</div>
         )}
       </div>
     );
@@ -94,26 +94,26 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
   const drafts = recommendations.filter(n => n.status === 'draft')
 
   return (
-    <div className="bg-white p-4 rounded-lg shadow h-fit">
+    <div className="p-4 rounded-lg shadow h-fit border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
       {published.length > 0 && (
         <>
-          <div className="flex items-center gap-2 mb-3 text-blue-600">
+          <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--primary-600)' }}>
             <Lightbulb className="h-5 w-5" />
             <h3 className="font-medium">猜你想看</h3>
           </div>
           <div className="space-y-3 mb-4">
             {published.map((note, i) => (
               <Link key={`${note.id}:${i}`} href={`/dashboard/notes/${note.id}`} className="block group">
-                <div className="p-3 rounded-md hover:bg-gray-50 transition-colors border border-transparent hover:border-gray-200">
+                <div className="p-3 rounded-md transition-colors border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
                   <div className="flex items-start justify-between">
-                    <h4 className="font-medium text-gray-800 group-hover:text-blue-600 text-sm line-clamp-1">
+                    <h4 className="font-medium text-sm line-clamp-1" style={{ color: 'var(--on-surface)' }}>
                       {note.title || '无标题'}
                     </h4>
                   </div>
-                  <div className="mt-1 text-xs text-gray-500 line-clamp-2">
+                  <div className="mt-1 text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>
                     {truncateText(String(note.content || '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
                   </div>
-                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <Clock className="h-3 w-3" />
                     <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
                   </div>
@@ -125,7 +125,7 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
       )}
 
       <div className="mt-2">
-        <div className="flex items-center gap-2 mb-3 text-yellow-700">
+        <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--warning)' }}>
           <PencilLine className="h-5 w-5" />
           <h3 className="font-medium">继续写作</h3>
         </div>
@@ -133,17 +133,17 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
           <div className="space-y-3">
             {drafts.map((note, i) => (
               <Link key={`${note.id}:${i}`} href={`/dashboard/notes/${note.id}`} className="block group">
-                <div className="p-3 rounded-md hover:bg-yellow-50 transition-colors border border-transparent hover:border-yellow-200">
+                <div className="p-3 rounded-md transition-colors border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
                   <div className="flex items-start justify-between">
-                    <h4 className="font-medium text-gray-800 group-hover:text-yellow-700 text-sm line-clamp-1">
+                    <h4 className="font-medium text-sm line-clamp-1" style={{ color: 'var(--on-surface)' }}>
                       {note.title || '未命名草稿'}
                     </h4>
-                    <span className="text-xs bg-yellow-100 text-yellow-700 px-1.5 py-0.5 rounded">草稿</span>
+                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)', border: '1px solid var(--border)' }}>草稿</span>
                   </div>
-                  <div className="mt-1 text-xs text-gray-500 line-clamp-2">
+                  <div className="mt-1 text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>
                     {truncateText(String(note.content || '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
                   </div>
-                  <div className="flex items-center gap-2 mt-2 text-xs text-gray-500">
+                  <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <Clock className="h-3 w-3" />
                     <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
                   </div>
@@ -152,7 +152,7 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
             ))}
           </div>
         ) : (
-          <div className="text-xs text-gray-500 bg-yellow-50/40 border border-yellow-100 rounded p-3">
+          <div className="text-xs rounded p-3 border" style={{ color: 'var(--text-muted)', background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
             暂无草稿，点击上方“新建笔记”或将笔记保存为草稿后，这里会显示待继续的内容。
           </div>
         )}

@@ -64,28 +64,34 @@ export default function OutlinePanel({ html }: { html: string }) {
     }
   }
   const render = (nodes: TocItem[]) => nodes.map(n => (
-    <button
-      key={n.id}
-      role="treeitem"
-      aria-level={n.level}
-      aria-current={currentId === n.id ? 'true' : undefined}
-      onClick={() => scrollTo(n.id)}
-      onKeyDown={(e) => onKey(e, n.id)}
-      className="cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-blue-500"
-      style={{
-        paddingLeft: `${(n.level - 1) * 12}px`,
-        minHeight: 44,
-        display: 'flex',
-        alignItems: 'center',
-        borderRadius: 6,
-        background: currentId === n.id ? '#eef2ff' : 'transparent',
-        color: currentId === n.id ? '#111827' : '#374151',
-        paddingRight: 12,
-      }}
-    >
-      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</span>
-      {n.children?.length ? <div role="group" className="w-full">{render(n.children)}</div> : null}
-    </button>
+    <li key={n.id} style={{ listStyle: 'none' }}>
+      <button
+        role="treeitem"
+        aria-level={n.level}
+        aria-current={currentId === n.id ? 'true' : undefined}
+        onClick={() => scrollTo(n.id)}
+        onKeyDown={(e) => onKey(e, n.id)}
+        className="cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+        style={{
+          paddingLeft: `${(n.level - 1) * 12}px`,
+          minHeight: 44,
+          display: 'flex',
+          alignItems: 'center',
+          borderRadius: 6,
+          background: currentId === n.id ? '#eef2ff' : 'transparent',
+          color: currentId === n.id ? '#111827' : '#374151',
+          paddingRight: 12,
+          width: '100%'
+        }}
+      >
+        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</span>
+      </button>
+      {n.children?.length ? (
+        <ul role="group" style={{ marginTop: 4, paddingLeft: 0 }}>
+          {render(n.children)}
+        </ul>
+      ) : null}
+    </li>
   ))
 
   return (
@@ -96,9 +102,9 @@ export default function OutlinePanel({ html }: { html: string }) {
         <div className="text-sm font-medium">文档大纲</div>
         <input type="text" placeholder="搜索大纲…" value={filter} onChange={e => setFilter(e.target.value)} aria-label="搜索大纲" className="mt-2 w-full border rounded px-2 py-1 text-sm" />
       </div>
-      <div role="tree" aria-label="标题列表" style={{ padding: 8, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}>
+      <ul role="tree" aria-label="标题列表" style={{ padding: 8, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}>
         {render(filtered)}
-      </div>
+      </ul>
     </aside>
   )
 }

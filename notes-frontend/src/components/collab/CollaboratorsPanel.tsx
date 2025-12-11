@@ -51,7 +51,7 @@ export function CollaboratorsPanel({ noteId }: { noteId: string }) {
           {acl.map((a, i) => (
             <li key={i} className="flex items-center justify-between">
               <div className="flex items-center gap-3">
-                <span className="inline-flex h-8 w-8 rounded-full items-center justify-center text-white" style={{ backgroundColor: '#2468F2' }} aria-hidden>{(a.userId || 'U')[0].toUpperCase()}</span>
+                <span className="inline-flex h-8 w-8 rounded-full items-center justify-center text-white" style={{ backgroundColor: '#2468F2' }} aria-hidden>{String(a.userId || 'U').charAt(0).toUpperCase()}</span>
                 <span className="text-sm" aria-label={`用户 ${a.userId}，角色 ${a.role}`}>{a.userId} · {a.role}</span>
               </div>
               <div className="text-xs text-gray-500">已添加</div>

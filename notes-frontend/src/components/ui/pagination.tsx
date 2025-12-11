@@ -21,12 +21,13 @@ export function Pagination({ page, size, total, onPageChange }: { page: number; 
 export function PageSizeSelect({ size, onSizeChange, options = [10, 20, 50] }: { size: number; onSizeChange: (s: number) => void; options?: number[] }) {
   return (
     <label className="flex items-center gap-2">
-      <span className="text-sm">每页</span>
+      <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>每页</span>
       <select
-        className="border rounded px-2 py-1 text-sm"
+        className="rounded text-sm"
         value={size}
         onChange={(e) => onSizeChange(parseInt(e.target.value, 10))}
         aria-label="每页数量"
+        style={{ minHeight: 44, padding: '0 12px', backgroundColor: 'var(--surface-2)', color: 'var(--on-surface)', border: '1px solid var(--border)', outlineOffset: 2 }}
       >
         {options.map(opt => <option key={opt} value={opt}>{opt}</option>)}
       </select>

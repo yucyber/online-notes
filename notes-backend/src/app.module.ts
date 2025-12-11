@@ -16,6 +16,8 @@ import { CommentsModule } from './modules/comments/comments.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { SemanticModule } from './modules/semantic/semantic.module';
 import { RumModule } from './modules/rum/rum.module';
+import { BoardsModule } from './modules/boards/boards.module';
+import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
 
 @Module({
   imports: [
@@ -45,6 +47,8 @@ import { RumModule } from './modules/rum/rum.module';
     NotificationsModule,
     SemanticModule,
     RumModule,
+    BoardsModule,
+    MindmapsModule,
   ],
 })
 export class AppModule { }

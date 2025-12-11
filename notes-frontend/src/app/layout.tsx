@@ -1,4 +1,5 @@
 import './globals.css'
+import 'tippy.js/dist/tippy.css'
 import '@/styles/editor-tokens.css'
 import dynamic from 'next/dynamic'
 
@@ -26,7 +27,7 @@ export default function RootLayout({
   const apiOrigin = apiUrl.replace(/\/(api|v\d+).*/, '')
   const RUMClient = dynamic(() => import('@/components/rum/RUMClient'), { ssr: false })
   return (
-    <html lang="zh-CN" data-theme="editor-light">
+    <html lang="zh-CN" data-theme="editor-light" suppressHydrationWarning>
       <head>
         {/* 预连接后端 API，降低首包请求握手与 DNS 延迟 */}
         <link rel="preconnect" href={apiOrigin} />

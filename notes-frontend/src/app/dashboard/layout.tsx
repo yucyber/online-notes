@@ -18,6 +18,7 @@ export default function DashboardLayout({
   const router = useRouter()
   const pathname = usePathname()
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false)
+  const [isSidebarHidden, setIsSidebarHidden] = useState(false)
   const [user, setUser] = useState<User | null>(null)
   const [isReady, setIsReady] = useState(false)
   const [hoveredNav, setHoveredNav] = useState<string | null>(null)
@@ -33,17 +34,17 @@ export default function DashboardLayout({
     const base: React.CSSProperties = {
       borderRadius: '10px',
       padding: '10px 12px',
-      border: '1px solid #e5e7eb',
-      backgroundColor: '#ffffff',
-      color: '#374151',
+      border: '1px solid var(--border)',
+      backgroundColor: 'var(--surface-1)',
+      color: 'var(--on-surface)',
       boxShadow: 'none',
       transform: 'none',
     }
     if (isHovered && !isActive) {
       return {
         ...base,
-        backgroundColor: '#f9fafb',
-        border: '1px solid #e5e7eb',
+        backgroundColor: 'var(--surface-2)',
+        border: '1px solid var(--border)',
       }
     }
     if (isActive) {
@@ -58,8 +59,8 @@ export default function DashboardLayout({
   }
 
   const getNavIconStyle = (isActive: boolean) => ({
-    backgroundColor: isActive ? '#d1fae5' : '#f3f4f6',
-    border: '1px solid #e5e7eb',
+    backgroundColor: isActive ? 'var(--surface-2)' : 'var(--surface-3)',
+    border: '1px solid var(--border)',
     borderRadius: '8px',
     width: '32px',
     height: '32px',
@@ -101,6 +102,13 @@ export default function DashboardLayout({
     })
     return () => { detach() }
   }, [router])
+
+  useEffect(() => {
+    try {
+      const v = localStorage.getItem('sidebarHidden')
+      setIsSidebarHidden(v === 'true')
+    } catch { }
+  }, [])
 
   // 未读铃铛角标：初始化与事件驱动刷新
   useEffect(() => {
@@ -191,17 +199,16 @@ export default function DashboardLayout({
   ]
 
   return (
-    <div className="flex min-h-screen bg-white">
+    <div className="flex min-h-screen bg-[var(--surface-2)]">
       {/* 桌面端侧边栏 */}
       {/* 桌面端侧边栏整体容器：使用深色渐变与玻璃质感 */}
-      {!isNotesFocusedRoute && (
+      {!isNotesFocusedRoute && !isSidebarHidden && (
         <aside
-          className="relative hidden flex-col overflow-hidden md:flex"
+          className="relative hidden flex-col overflow-hidden md:flex bg-[var(--surface-1)]"
           style={{
             width: '240px',
             margin: '0',
-            backgroundColor: '#ffffff',
-            borderRight: '1px solid #e5e7eb',
+            borderRight: '1px solid var(--border)',
           }}
         >
           {/* 顶部品牌区背景高光 */}
@@ -288,7 +295,8 @@ export default function DashboardLayout({
       {/* 移动端菜单 */}
       {isMobileMenuOpen && (
         <div
-          className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm md:hidden animate-fade-in"
+          className="fixed inset-0 z-40 backdrop-blur-sm md:hidden animate-fade-in"
+          style={{ backgroundColor: 'var(--overlay)' }}
           role="button"
           tabIndex={0}
           onClick={() => setIsMobileMenuOpen(false)}
@@ -297,7 +305,7 @@ export default function DashboardLayout({
           }}
         >
           <div
-            className="fixed left-0 top-0 h-full w-64 bg-white shadow-xl animate-slide-up"
+            className="fixed left-0 top-0 h-full w-64 bg-[var(--surface-1)] shadow-xl animate-slide-up"
             role="dialog"
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -306,7 +314,7 @@ export default function DashboardLayout({
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-gray-700 hover:bg-gray-100 transition-colors duration-200"
+                className="text-[var(--on-surface)] hover:bg-[var(--surface-2)] transition-colors duration-200"
                 onClick={() => setIsMobileMenuOpen(false)}
               >
                 <X className="h-6 w-6" />
@@ -320,8 +328,8 @@ export default function DashboardLayout({
                     key={item.href}
                     variant="ghost"
                     className={`w-full justify-start transition-all duration-200 ${isActive
-                      ? 'bg-primary-50 text-primary-700 hover:bg-primary-100 font-medium shadow-sm'
-                      : 'text-gray-600 hover:text-gray-900 hover:bg-gray-50'
+                      ? 'bg-[var(--primary-50)] text-[var(--primary-700)] hover:bg-[var(--primary-100)] font-medium shadow-sm'
+                      : 'text-[var(--on-surface)] hover:text-[var(--on-surface)] hover:bg-[var(--surface-2)]'
                       }`}
                     onClick={() => {
                       router.push(item.href)
@@ -355,17 +363,31 @@ export default function DashboardLayout({
 
       {/* 主内容区 */}
       {/* 主内容区采用浅色渐变背景，并在深色模式下增强对比 */}
-      <main className="flex-1 overflow-auto bg-gray-50 dark:bg-neutral-900 dark:text-neutral-100">
+      <main className="flex-1 overflow-auto bg-[var(--surface-2)]">
         {/* 顶部吸附导航条，添加柔和渐变和模糊效果 */}
-        <div className="sticky top-0 z-10 px-4 pt-3 pb-3 md:px-6 md:pt-3 md:pb-3 bg-white border-b border-gray-200">
+        <div className="sticky top-0 z-10 px-4 pt-3 pb-3 md:px-6 md:pt-3 md:pb-3 bg-[var(--surface-1)] border-b" style={{ borderColor: 'var(--border)' }}>
           {/* 顶部卡片容器：承载菜单按钮与用户信息 */}
           <header className="flex h-14 items-center justify-between px-0 gap-4">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
-                className="md:hidden text-gray-700 hover:bg-gray-100"
-                onClick={() => setIsMobileMenuOpen(true)}
+                className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+                onClick={() => {
+                  try {
+                    const isDesktop = window.innerWidth >= 768
+                    if (isDesktop) {
+                      setIsSidebarHidden((prev) => {
+                        const next = !prev
+                        try { localStorage.setItem('sidebarHidden', String(next)) } catch { }
+                        return next
+                      })
+                    } else {
+                      setIsMobileMenuOpen(true)
+                    }
+                  } catch { setIsMobileMenuOpen(true) }
+                }}
+                aria-label={isSidebarHidden ? '显示侧边栏' : '隐藏侧边栏'}
               >
                 <Menu className="h-6 w-6" />
               </Button>
@@ -378,15 +400,15 @@ export default function DashboardLayout({
               <div className="hidden md:flex items-center justify-center w-[400px]">
                 <div className="relative w-full">
                   <label htmlFor="global-search" className="sr-only">搜索</label>
-                  <input id="global-search" aria-label="搜索" className="w-full h-11 rounded-xl border border-gray-200 pl-10 pr-3 text-body input-enhanced" placeholder="搜索" />
-                  <Search aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5 text-text-muted" />
+                  <input id="global-search" aria-label="搜索" className="w-full h-11 rounded-xl border pl-10 pr-3 text-body input-enhanced" placeholder="搜索" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-1)', color: 'var(--on-surface)' }} />
+                  <Search aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5" style={{ color: 'var(--text-muted)' }} />
                 </div>
               </div>
               {/* 主题切换：基于 CSS 令牌 */}
               <Button
                 variant="ghost"
                 size="icon"
-                className={`text-gray-700 hover:bg-gray-100 ${isDark ? 'bg-gray-800 text-white' : 'bg-yellow-50 text-yellow-700'}`}
+                className={`hover:bg-[var(--surface-2)]`}
                 aria-label={isDark ? '切换到浅色主题' : '切换到深色主题'}
                 aria-pressed={isDark}
                 onClick={toggleTheme}
@@ -394,13 +416,13 @@ export default function DashboardLayout({
               >
                 {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
               </Button>
-              <span className="hidden md:inline text-xs text-gray-500" aria-live="polite">{isDark ? '深色' : '浅色'}</span>
+              <span className="hidden md:inline text-xs" aria-live="polite" style={{ color: 'var(--text-muted)' }}>{isDark ? '深色' : '浅色'}</span>
               {/* 消息铃铛，显示未读角标 */}
               <div className="relative">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-gray-700 hover:bg-gray-100"
+                  className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
                   onClick={() => router.push('/dashboard/notifications')}
                   aria-label={unreadCount > 0 ? `消息中心，未读 ${unreadCount} 条` : '打开消息中心'}
                   aria-describedby="notify-unread-status"
@@ -423,7 +445,9 @@ export default function DashboardLayout({
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-gray-700 hover:bg-gray-100"
+                className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+                onClick={() => router.push('/dashboard/settings')}
+                aria-label="打开设置"
               >
                 <Settings2 className="h-5 w-5" />
               </Button>
@@ -434,7 +458,7 @@ export default function DashboardLayout({
                   className="h-8 w-8 rounded-full flex items-center justify-center font-semibold text-white"
                   style={{ backgroundColor: '#2468F2' }}
                 >
-                  {(user?.email || 'U')[0]?.toUpperCase()}
+                  {String(user?.email || 'U').charAt(0).toUpperCase()}
                 </div>
                 <div className="text-right">
                   <p className="text-sm font-medium text-text-default">
@@ -453,7 +477,7 @@ export default function DashboardLayout({
           </header>
         </div>
         <div className="p-4 md:p-6 lg:p-8">
-          <div className={`mx-auto w-full ${isNotesFocusedRoute ? '' : 'max-w-7xl'} animate-fade-in rounded-xl p-4 md:p-6 bg-white dark:bg-neutral-800 border border-gray-200 dark:border-neutral-700 shadow-sm`}>
+          <div className={`mx-auto w-full ${isNotesFocusedRoute ? '' : 'max-w-7xl'} animate-fade-in rounded-xl p-4 md:p-6 bg-[var(--surface-1)] border shadow-sm`} style={{ borderColor: 'var(--border)' }}>
             {children}
           </div>
         </div>

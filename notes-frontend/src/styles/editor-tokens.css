@@ -16,6 +16,11 @@ html[data-theme="editor-light"] {
   /* 兼容现有组件用色（映射到 editor-* 变量） */
   --primary-50: #eff6ff; --primary-100: #dbeafe; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1e40af;
   --text-default: var(--text); --text-secondary: var(--text-muted);
+  /* 桥接全局组件使用的 surface/on-surface 语义变量 */
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg);
+  --surface-3: #f8fafc;
+  --on-surface: var(--text);
 }
 
 html[data-theme="editor-duotone"] {
@@ -27,6 +32,11 @@ html[data-theme="editor-duotone"] {
   --icon-primary: #1f2937; --icon-disabled: #94a3b8;
   --primary-50: #eef2ff; --primary-100: #e0e7ff; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1e3a8a;
   --text-default: var(--text); --text-secondary: var(--text-muted);
+  /* 桥接 surface/on-surface 语义变量 */
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg);
+  --surface-3: #eef2f6;
+  --on-surface: var(--text);
 }
 
 html[data-theme="editor-dark"] {
@@ -38,6 +48,28 @@ html[data-theme="editor-dark"] {
   --icon-primary: #e5e7eb; --icon-disabled: #475569;
   --primary-50: #0b1220; --primary-100: #111827; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1f2937;
   --text-default: var(--text); --text-secondary: var(--text-muted);
+  /* 桥接 surface/on-surface 语义变量 */
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg);
+  --surface-3: #0b1119;
+  --on-surface: var(--text);
+}
+
+/* 兼容 html[data-theme="dark"] 的主题取值，以适配全局布局脚本 */
+html[data-theme="dark"] {
+  --bg: #0b1220; --bg-elev: #0f172a;
+  --text: #e5e7eb; --text-muted: #94a3b8;
+  --border: #334155;
+  --primary: #60a5fa; --primary-hover: #93c5fd;
+  --success: #86efac; --warning: #fcd34d; --danger: #fca5a5;
+  --icon-primary: #e5e7eb; --icon-disabled: #475569;
+  --primary-50: #0b1220; --primary-100: #111827; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1f2937;
+  --text-default: var(--text); --text-secondary: var(--text-muted);
+  /* 桥接 surface/on-surface 语义变量 */
+  --surface-1: var(--bg-elev);
+  --surface-2: var(--bg);
+  --surface-3: #0b1119;
+  --on-surface: var(--text);
 }
 
 /* 评论标记样式：黄色下划线，兼容浅/深色，平滑过渡 */

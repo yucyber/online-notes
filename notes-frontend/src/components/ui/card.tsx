@@ -5,7 +5,7 @@ export type CardProps = React.HTMLAttributes<HTMLDivElement>
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
   ({ className, ...props }, ref) => {
     const [isHovered, setIsHovered] = React.useState(false);
-    
+
     return (
       <div
         ref={ref}
@@ -13,16 +13,16 @@ const Card = React.forwardRef<HTMLDivElement, CardProps>(
           borderRadius: '12px',
           borderWidth: '1px',
           borderStyle: 'solid',
-          borderColor: isHovered ? 'var(--primary-600)' : '#e5e7eb',
-          backgroundColor: '#ffffff',
+          borderColor: isHovered ? 'var(--primary-600)' : 'var(--border)',
+          backgroundColor: 'var(--surface-1)',
           color: 'var(--text-default)',
-          boxShadow: isHovered 
+          boxShadow: isHovered
             ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
             : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          WebkitBoxShadow: isHovered 
+          WebkitBoxShadow: isHovered
             ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
             : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          MozBoxShadow: isHovered 
+          MozBoxShadow: isHovered
             ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
             : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
           transform: isHovered ? 'translateY(-4px) scale(1.02)' : 'none',
@@ -74,7 +74,8 @@ const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={`text-sm text-gray-500 ${className || ''}`}
+    className={`text-sm ${className || ''}`}
+    style={{ color: 'var(--text-muted)' }}
     {...props}
   />
 ))

@@ -1,8 +1,8 @@
 'use client'
 
 import { useState, useEffect, useCallback, useRef } from 'react'
-import { useRouter, useParams } from 'next/navigation'
-import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag, lockNote, unlockNote } from '@/lib/api'
+import { useRouter, useParams, useSearchParams } from 'next/navigation'
+import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag, lockNote, unlockNote, boardsAPI, mindmapsAPI, assetsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
   ssr: false,
@@ -20,6 +20,7 @@ const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), {
 export default function EditNotePage() {
   const router = useRouter()
   const params = useParams()
+  const searchParams = useSearchParams()
   const id = params?.id as string
   const [note, setNote] = useState<Note | null>(null)
   const [loading, setLoading] = useState(true)
@@ -48,6 +49,14 @@ export default function EditNotePage() {
   const [showSidebar, setShowSidebar] = useState(true)
   const [isFullscreen, setIsFullscreen] = useState(false)
   const editorContainerRef = useRef<HTMLDivElement>(null)
+  const [showInsertMenu, setShowInsertMenu] = useState(false)
+  const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const [linkHref, setLinkHref] = useState('https://')
+  useEffect(() => {
+    const open = () => setShowLinkDialog(true)
+    document.addEventListener('open:link-dialog', open as any)
+    return () => { document.removeEventListener('open:link-dialog', open as any) }
+  }, [])
 
   // 生成 Markdown 大纲
   const extractHeadingsFromMarkdown = useCallback((md: string) => {
@@ -277,6 +286,18 @@ export default function EditNotePage() {
       setLoading(true)
       const data = await fetchNoteById(id)
       setNote(data)
+      // 根据内容类型自动选择编辑器模式：Markdown 快照回退后避免富文本空白
+      try {
+        const raw = String(data?.content || '')
+        const isLikelyHTML = /<\/?[a-z][\s\S]*>/i.test(raw)
+        const isLikelyMarkdown = /(\n|^)\s{0,3}(#{1,6}\s+|[-*]\s+|\d+\.\s+|`{3,}|>|\[.+\]\(.+\))/m.test(raw)
+        // 若此前因 UI 降级已选择 markdown，则不强制改回
+        setEditorMode(prev => {
+          if (prev === 'markdown') return prev
+          return (!isLikelyHTML && isLikelyMarkdown) ? 'markdown' : 'rich'
+        })
+      } catch { }
+      try { document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: String(data?.content || '<p></p>') } })) } catch { }
       setError('')
     } catch (err) {
       setError('加载笔记失败')
@@ -540,10 +561,10 @@ export default function EditNotePage() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 mx-auto w-full max-w-[1400px] px-4">
 
       {/* 顶部固定工具栏（语雀风格） */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur border-b border-gray-200">
+      <div className="sticky top-0 z-40 backdrop-blur border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
         <div className="flex items-center justify-between px-4 py-2">
           <div className="flex items-center gap-4">
             <Button
@@ -554,16 +575,17 @@ export default function EditNotePage() {
             >
               <ArrowLeft className="h-4 w-4" />
             </Button>
-            <span className="text-sm text-gray-700">编辑笔记</span>
+            <span className="text-sm" style={{ color: 'var(--on-surface)' }}>编辑笔记</span>
             <div className="hidden md:flex items-center gap-3 ml-2">
-              <span className="text-xs text-gray-500">编辑器</span>
-              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>编辑器</span>
+              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
                 <option value="rich">富文本（协同）</option>
                 <option value="markdown">Markdown</option>
               </select>
-              <span className="text-xs text-gray-500">可见性</span>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>可见性</span>
               <select
                 className="rounded border px-2 py-1 text-xs"
+                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                 value={(note as any)?.visibility || 'private'}
                 onChange={async (e) => {
                   try {
@@ -584,7 +606,7 @@ export default function EditNotePage() {
               size="sm"
               aria-pressed={!showSidebar}
               onClick={() => setShowSidebar(s => !s)}
-              className="text-gray-600 hover:text-gray-800"
+              className="hover:bg-[var(--surface-2)]"
             >
               {showSidebar ? (
                 <span className="inline-flex items-center gap-1"><ChevronRight className="h-4 w-4" /> 隐藏侧栏</span>
@@ -598,7 +620,7 @@ export default function EditNotePage() {
               aria-label="协作"
               title="协作"
               onClick={() => setShowCollabDrawer(true)}
-              className="text-gray-600 hover:text-gray-800"
+              className="hover:bg-[var(--surface-2)]"
             >
               <Users className="h-5 w-5" />
               <span className="sr-only">协作</span>
@@ -622,29 +644,32 @@ export default function EditNotePage() {
 
       {/* 分类/标签等元信息 */}
       <div
-        className="bg-white"
+        className="col-span-12 w-full"
         style={{
           borderRadius: '12px',
-          boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+          boxShadow: 'var(--shadow-md)',
+          background: 'var(--surface-1)'
         }}
       >
-        <div className="grid gap-6 border-b border-gray-100 p-6 lg:grid-cols-12">
+        <div className="grid gap-6 border-b p-6 lg:grid-cols-12" style={{ borderColor: 'var(--border)' }}>
 
           <div
-            className="bg-white"
+            className="col-span-12 w-full"
             style={{
               borderRadius: '12px',
-              boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
+              boxShadow: 'var(--shadow-md)',
+              background: 'var(--surface-1)'
             }}
           >
-            <div className="grid gap-6 border-b border-gray-100 p-6 md:grid-cols-2">
+            <div className="grid gap-6 border-b p-6 md:grid-cols-2" style={{ borderColor: 'var(--border)' }}>
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">选择分类</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>选择分类</span>
                   {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
                 </div>
                 <select
-                  className="w-full rounded-lg border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200"
+                  className="w-full rounded-lg border p-3 text-sm"
+                  style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                   value={selectedCategory}
                   onChange={(e) => setSelectedCategory(e.target.value)}
                   disabled={metaLoading || !!metaError}
@@ -662,9 +687,9 @@ export default function EditNotePage() {
 
                 <div className="mt-4">
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium text-gray-700">附属分类（仅用于标签）</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>附属分类（仅用于标签）</span>
                   </div>
-                  <div className="max-h-56 overflow-auto rounded-lg border border-gray-200 p-3">
+                  <div className="max-h-56 overflow-auto rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
                     {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
                   </div>
                 </div>
@@ -672,7 +697,7 @@ export default function EditNotePage() {
 
               <div>
                 <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium text-gray-700">标签（可多选）</span>
+                  <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标签（可多选）</span>
                   {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
                 </div>
                 <div className="mb-2 flex items-center gap-2">
@@ -688,33 +713,35 @@ export default function EditNotePage() {
                       }
                     }}
                     placeholder="输入标签，Enter 添加，支持逗号分隔"
-                    className="flex-1 rounded-lg border border-gray-200 p-2 text-sm"
+                    className="flex-1 rounded-lg border p-2 text-sm placeholder-muted"
+                    style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                   />
                   <button
-                    className="px-3 py-1 rounded border text-sm text-gray-700 hover:bg-gray-50"
+                    className="px-3 py-1 rounded border text-sm"
+                    style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                     onClick={() => setSelectedTags([])}
                   >清空标签</button>
                 </div>
                 {tagInput && (
-                  <div className="mb-2 rounded-lg border border-gray-200 p-2 bg-white shadow-sm">
+                  <div className="mb-2 rounded-lg border p-2 shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
                     <div className="text-xs text-gray-500 mb-1">建议</div>
                     <div className="flex flex-wrap gap-2">
                       {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
                         const id = (t.id || (t as unknown as { _id?: string })?._id || '')
                         return (
-                          <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs hover:border-blue-300 hover:text-blue-600">
+                          <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
                             {t.name}
                           </button>
                         )
                       })}
-                      <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">
+                      <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
                         创建标签 “{tagInput}”
                       </button>
                     </div>
                   </div>
                 )}
                 {tags.length === 0 ? (
-                  <p className="text-sm text-gray-400">
+                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
                     {metaError || '暂无可用标签'}
                   </p>
                 ) : (
@@ -731,11 +758,13 @@ export default function EditNotePage() {
                           type="button"
                           onClick={() => tagId && toggleTag(tagId)}
                           disabled={!tagId}
-                          className={`rounded-full border px-3 py-1 text-sm transition ${isActive
-                            ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm'
-                            : 'border-gray-200 text-gray-600 hover:border-blue-200 hover:text-blue-500'
-                            }`}
-                          style={{ minHeight: 44 }}
+                          className="rounded-full border px-3 py-1 text-sm transition"
+                          style={{
+                            ...(isActive
+                              ? { borderColor: 'var(--primary-100)', background: 'var(--primary-50)', color: 'var(--primary-600)' }
+                              : { borderColor: 'var(--border)', color: 'var(--on-surface)' }),
+                            minHeight: 44,
+                          }}
                         >
                           {tag.name}
                         </button>
@@ -762,8 +791,8 @@ export default function EditNotePage() {
                 )}
               </div>
             </div>
-            <div className="grid gap-6 p-6 lg:grid-cols-12">
-              <div className={showSidebar ? 'lg:col-span-10' : 'lg:col-span-12'}>
+            <div className="grid gap-6 p-6 lg:grid-cols-12 xl:grid-cols-12">
+              <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
                 {editorMode === 'rich' ? (
                   <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
                     <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
@@ -792,6 +821,7 @@ export default function EditNotePage() {
                       readOnly={false}
                       onSelectionChange={(start, end) => setSelection({ start, end })}
                       onContentChange={(html) => extractHeadingsFromHTML(html)}
+                      versionKey={(searchParams?.get('restored') || '') || String(note.updatedAt || '')}
                     />
                   </div>
                 ) : (
@@ -808,7 +838,7 @@ export default function EditNotePage() {
                 )}
               </div>
               {showSidebar && !isFullscreen && (
-                <div className="lg:col-span-2">
+                <div className="lg:col-span-2 xl:col-span-3">
                   <div className="sticky top-20 space-y-3">
                     <div className="rounded-lg border bg-white">
                       <div className="px-4 py-2 border-b text-sm font-medium">大纲</div>
@@ -924,6 +954,83 @@ export default function EditNotePage() {
             <span className="sr-only">打开协作抽屉</span>
             •
           </button>
+          {/* 左侧浮动 “+” 插入菜单 */}
+          {!isFullscreen && (
+            <>
+              <button
+                aria-label="插入工具"
+                className="fixed left-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+                onClick={() => setShowInsertMenu(s => !s)}
+                style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
+              >
+                +
+              </button>
+              {showInsertMenu && (
+                <div className="fixed left-6 bottom-40 z-50 rounded-xl border bg-white shadow-xl"
+                  role="menu" aria-label="插入工具菜单"
+                  style={{ minWidth: 220 }}
+                >
+                  <div className="p-2 grid" style={{ rowGap: 6 }}>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                      setShowInsertMenu(false)
+                      try {
+                        const res = await boardsAPI.create('画板', id)
+                        const link = `/dashboard/boards/${res.id}`
+                        const label = String(res?.title || '画板')
+                        document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } }))
+                      } catch { }
+                    }}>画板</button>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                      setShowInsertMenu(false)
+                      try {
+                        const res = await mindmapsAPI.create('思维导图', id)
+                        const link = `/dashboard/mindmaps/${res.id}`
+                        const label = String(res?.title || '思维导图')
+                        document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } }))
+                      } catch { }
+                    }}>思维导图</button>
+                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                      setShowInsertMenu(false)
+                      try {
+                        const input = document.createElement('input')
+                        input.type = 'file'
+                        input.onchange = async () => {
+                          const f = input.files?.[0]
+                          if (!f) return
+                          const reader = new FileReader()
+                          reader.onload = async () => {
+                            const dataUri = String(reader.result || '')
+                            const r = await assetsAPI.uploadBase64(f.name, dataUri, id)
+                            const href = r?.url || dataUri
+                            document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } }))
+                          }
+                          reader.readAsDataURL(f)
+                        }
+                        input.click()
+                      } catch { }
+                    }}>附件</button>
+                  </div>
+                </div>
+              )}
+            </>
+          )}
+          {/* 插入链接对话框 */}
+          {showLinkDialog && (
+            <div className="fixed inset-0 z-50 bg-black/30" role="dialog" aria-modal="true" onClick={() => setShowLinkDialog(false)}>
+              <div className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]" onClick={(e) => e.stopPropagation()}>
+                <h3 className="text-base font-medium mb-3">插入链接</h3>
+                <input aria-label="链接地址" value={linkHref} onChange={(e) => setLinkHref(e.target.value)} className="w-full border rounded-md px-3 py-2" placeholder="https://example.com" />
+                <div className="mt-3 flex justify-end gap-2">
+                  <button className="px-3 py-2 rounded-md border" onClick={() => setShowLinkDialog(false)}>取消</button>
+                  <button className="px-3 py-2 rounded-md bg-blue-600 text-white" onClick={() => { const href = linkHref.trim(); if (href) document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } })); setShowLinkDialog(false) }}>插入</button>
+                </div>
+              </div>
+            </div>
+          )}
           {/* 旧的顶部弹窗已改为右侧抽屉，保留变量但不再渲染 */}
         </div>
       </div>

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { deleteNote, fetchNoteById, updateNote, lockNote, unlockNote } from '@/lib/api'
+import { deleteNote, fetchNoteById, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI, assetsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
   ssr: false,
@@ -36,6 +36,9 @@ export default function NoteDetailPage() {
   // 全屏相关状态与引用
   const [isFullscreen, setIsFullscreen] = useState(false)
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
+  const [showInsertMenu, setShowInsertMenu] = useState(false)
+  const [showLinkDialog, setShowLinkDialog] = useState(false)
+  const [linkHref, setLinkHref] = useState('https://')
 
   useEffect(() => {
     if (id) {
@@ -90,11 +93,14 @@ export default function NoteDetailPage() {
       setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50)
     }
     document.addEventListener('comments:open', onCommentsOpen as any)
+    const openLink = () => setShowLinkDialog(true)
+    document.addEventListener('open:link-dialog', openLink as any)
     return () => {
       document.removeEventListener('fullscreenchange', onFsChange)
       document.removeEventListener('editor:toggleFullscreen', onToggle as any)
       document.removeEventListener('keydown', onKey)
       document.removeEventListener('comments:open', onCommentsOpen as any)
+      document.removeEventListener('open:link-dialog', openLink as any)
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isFullscreen])
@@ -317,6 +323,49 @@ export default function NoteDetailPage() {
                 onSelectionChange={(start, end) => setSelection({ start, end })}
                 onContentChange={(h) => setHtml(h)}
               />
+              {/* 左侧浮动 “+” 插入菜单 */}
+              {!isFullscreen && (
+                <>
+                  <button
+                    aria-label="插入工具"
+                    className="fixed left-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+                    onClick={() => setShowInsertMenu(s => !s)}
+                    style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
+                  >
+                    +
+                  </button>
+                  {showInsertMenu && (
+                    <div className="fixed left-6 bottom-40 z-50 rounded-xl border bg-white shadow-xl" role="menu" aria-label="插入工具菜单" style={{ minWidth: 220 }}>
+                      <div className="p-2 grid" style={{ rowGap: 6 }}>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => { setShowInsertMenu(false); try { const res = await boardsAPI.create('画板', id); const link = `/dashboard/boards/${res.id}`; const label = String(res?.title || '画板'); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } })) } catch { } }}>画板</button>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => { setShowInsertMenu(false); try { const res = await mindmapsAPI.create('思维导图', id); const link = `/dashboard/mindmaps/${res.id}`; const label = String(res?.title || '思维导图'); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } })) } catch { } }}>思维导图</button>
+
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                          setShowInsertMenu(false)
+                          try {
+                            const input = document.createElement('input'); input.type = 'file'
+                            input.onchange = async () => {
+                              const f = input.files?.[0]; if (!f) return
+                              const reader = new FileReader(); reader.onload = async () => {
+                                const dataUri = String(reader.result || '')
+                                const r = await assetsAPI.uploadBase64(f.name, dataUri, id)
+                                const href = r?.url || dataUri
+                                document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } }))
+                              }
+                              reader.readAsDataURL(f)
+                            }
+                            input.click()
+                          } catch { }
+                        }}>附件</button>
+                      </div>
+                    </div>
+                  )}
+                </>
+              )}
             </div>
           ) : (
             <MarkdownEditor
@@ -339,6 +388,19 @@ export default function NoteDetailPage() {
                   <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">查看版本</a>
                 </div>
                 <OutlinePanel html={html || (note.content || '<p></p>')} />
+              </div>
+            </div>
+          </div>
+        )}
+        {/* 插入链接对话框 */}
+        {showLinkDialog && (
+          <div className="fixed inset-0 z-50 bg-black/30" role="dialog" aria-modal="true" onClick={() => setShowLinkDialog(false)}>
+            <div className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]" onClick={(e) => e.stopPropagation()}>
+              <h3 className="text-base font-medium mb-3">插入链接</h3>
+              <input aria-label="链接地址" value={linkHref} onChange={(e) => setLinkHref(e.target.value)} className="w-full border rounded-md px-3 py-2" placeholder="https://example.com" />
+              <div className="mt-3 flex justify-end gap-2">
+                <button className="px-3 py-2 rounded-md border" onClick={() => setShowLinkDialog(false)}>取消</button>
+                <button className="px-3 py-2 rounded-md bg-blue-600 text-white" onClick={() => { const href = linkHref.trim(); if (href) document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } })); setShowLinkDialog(false) }}>插入</button>
               </div>
             </div>
           </div>

@@ -395,7 +395,7 @@ export default function CategoriesPage() {
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col gap-3">
-        <h1 
+        <h1
           className="text-4xl font-bold"
           style={{
             background: 'linear-gradient(to right, #111827, #2563eb, #111827)',
@@ -418,31 +418,32 @@ export default function CategoriesPage() {
       )}
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="bg-gradient-to-br from-white to-gray-50 shadow-md border-gray-200">
-          <CardHeader className="border-b border-gray-100 pb-4">
-            <CardTitle className="text-xl font-bold text-gray-900">{editingId ? '编辑分类' : '新建分类'}</CardTitle>
+        <Card className="shadow-md" style={{ borderColor: 'var(--border)' }}>
+          <CardHeader className="border-b pb-4" style={{ borderColor: 'var(--border)' }}>
+            <CardTitle className="text-xl font-bold" style={{ color: 'var(--on-surface)' }}>{editingId ? '编辑分类' : '新建分类'}</CardTitle>
             <CardDescription className="mt-2 text-base">
               设置分类的名称、描述与颜色，帮助后续更快定位笔记
             </CardDescription>
           </CardHeader>
           <CardContent className="pt-6">
             <div>
-              <div className="flex items-center justify-between text-sm text-gray-700">
+              <div className="flex items-center justify-between text-sm" style={{ color: 'var(--on-surface)' }}>
                 <span>信息完整度</span>
                 <span>{progressMeta.percent}%</span>
               </div>
-              <div className="mt-2 h-2 w-full rounded-full bg-gray-200">
+              <div className="mt-2 h-2 w-full rounded-full" style={{ background: 'var(--surface-2)' }}>
                 <div
-                  className="h-2 rounded-full bg-gradient-to-r from-blue-500 via-indigo-500 to-cyan-400 transition-all"
+                  className="h-2 rounded-full transition-all"
                   style={{ width: `${progressMeta.percent}%` }}
+                  style={{ background: 'var(--primary-600)' }}
                 />
               </div>
-              <p className="mt-2 text-xs text-gray-500">{progressMeta.message}</p>
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>{progressMeta.message}</p>
             </div>
 
             <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">分类名称</label>
+                <label className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>分类名称</label>
                 <Input
                   placeholder="例如：项目管理、技术沉淀"
                   value={formState.name}
@@ -452,7 +453,7 @@ export default function CategoriesPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">描述</label>
+                <label className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>描述</label>
                 <Textarea
                   placeholder="补充说明分类用途，方便团队理解和协作"
                   rows={3}
@@ -465,28 +466,30 @@ export default function CategoriesPage() {
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">标识颜色</label>
+                <label className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标识颜色</label>
                 <div className="flex items-center gap-3">
                   <input
                     type="color"
                     value={formState.color}
                     disabled={saving}
                     onChange={(e) => setFormState((prev) => ({ ...prev, color: e.target.value }))}
-                    className="h-10 w-20 cursor-pointer rounded border border-gray-200 bg-white p-1"
+                    className="h-10 w-20 cursor-pointer rounded border p-1"
+                    style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}
                   />
-                  <span className="text-sm text-gray-500">{formState.color}</span>
+                  <span className="text-sm" style={{ color: 'var(--text-muted)' }}>{formState.color}</span>
                 </div>
               </div>
 
               <div className="space-y-2">
-                <label className="text-sm font-medium text-gray-700">父级分类</label>
+                <label className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>父级分类</label>
                 <select
                   value={formState.parentId}
                   disabled={saving}
                   onChange={(event) =>
                     setFormState((prev) => ({ ...prev, parentId: event.target.value }))
                   }
-                  className="w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm text-gray-700 focus:border-primary focus:outline-none focus:ring-2 focus:ring-primary/20 disabled:bg-gray-100"
+                  className="w-full rounded-lg border px-3 py-2 text-sm"
+                  style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                 >
                   <option value="">无需父级（顶层分类）</option>
                   {categories.map((category) => (
@@ -495,27 +498,28 @@ export default function CategoriesPage() {
                     </option>
                   ))}
                 </select>
-                <p className="text-xs text-gray-500">
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   为分类添加父级，可在列表中折叠展示，降低层级混乱。
                 </p>
               </div>
 
-              <div className="rounded-lg border border-dashed border-primary/30 bg-primary/5 p-3">
-                <div className="flex items-center gap-2 text-sm font-medium text-primary-900">
+              <div className="rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
+                <div className="flex items-center gap-2 text-sm font-medium">
                   <Sparkles className="h-4 w-4" />
                   智能模板推荐
                 </div>
-                <p className="mt-1 text-xs text-gray-500">根据最近使用和高频场景快速套用。</p>
+                <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>根据最近使用和高频场景快速套用。</p>
                 <div className="mt-3 flex flex-wrap gap-2">
                   {templateCandidates.map((template) => (
                     <button
                       key={`${template.name}-${template.color}`}
                       type="button"
                       onClick={() => applyTemplate(template)}
-                      className="group rounded-full border border-primary/30 bg-white px-3 py-1 text-xs font-medium text-primary transition hover:border-primary hover:bg-primary/10"
+                      className="group rounded-full border px-3 py-1 text-xs font-medium transition"
+                      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                     >
                       {template.name}
-                      <span className="ml-1 text-[10px] text-gray-500 group-hover:text-primary">
+                      <span className="ml-1 text-[10px]" style={{ color: 'var(--text-muted)' }}>
                         一键套用
                       </span>
                     </button>
@@ -545,10 +549,10 @@ export default function CategoriesPage() {
         </Card>
 
         <div className="space-y-6 lg:col-span-2">
-          <Card className="bg-white shadow-md border-gray-200">
-            <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-4">
+          <Card className="shadow-md" style={{ borderColor: 'var(--border)' }}>
+            <CardHeader className="flex flex-row items-center justify-between border-b pb-4" style={{ borderColor: 'var(--border)' }}>
               <div>
-                <CardTitle className="text-xl font-bold text-gray-900">分类健康度</CardTitle>
+                <CardTitle className="text-xl font-bold" style={{ color: 'var(--on-surface)' }}>分类健康度</CardTitle>
                 <CardDescription className="mt-1">
                   快速识别闲置分类、推荐合并与颜色治理建议
                 </CardDescription>
@@ -557,44 +561,44 @@ export default function CategoriesPage() {
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="grid gap-4 md:grid-cols-3">
-                <div className="rounded-lg border border-gray-100 bg-gray-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-gray-500">总分类</p>
-                  <p className="mt-2 text-2xl font-bold text-gray-900">{stats.total}</p>
-                  <p className="text-xs text-gray-500">{stats.active} 个正在被引用</p>
+                <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                  <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>总分类</p>
+                  <p className="mt-2 text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>{stats.total}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>{stats.active} 个正在被引用</p>
                 </div>
-                <div className="rounded-lg border border-green-100 bg-green-50 p-4">
-                  <p className="text-xs uppercase tracking-wide text-green-700">高频使用</p>
-                  <p className="mt-2 text-2xl font-bold text-green-700">{stats.active}</p>
-                  <p className="text-xs text-green-600">持续保持良好活跃度</p>
+                <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                  <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>高频使用</p>
+                  <p className="mt-2 text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>{stats.active}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>持续保持良好活跃度</p>
                 </div>
-                <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
-                  <p className="flex items-center gap-1 text-xs uppercase tracking-wide text-amber-700">
+                <div className="rounded-lg border p-4" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)' }}>
+                  <p className="flex items-center gap-1 text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
                     <AlertTriangle className="h-3.5 w-3.5" />
                     闲置提醒
                   </p>
-                  <p className="mt-2 text-2xl font-bold text-amber-700">{stats.idle}</p>
-                  <p className="text-xs text-amber-600">考虑合并或删除冗余分类</p>
+                  <p className="mt-2 text-2xl font-bold" style={{ color: 'var(--on-surface)' }}>{stats.idle}</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>考虑合并或删除冗余分类</p>
                 </div>
               </div>
 
               {stats.idle > 0 && (
-                <div className="rounded-lg border border-dashed border-amber-200 bg-white p-4 text-sm text-gray-700">
+                <div className="rounded-lg border p-4 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
                   <p className="font-medium">闲置分类建议合并/清理</p>
-                  <p className="mt-1 text-xs text-gray-500">
+                  <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                     {stats.idlePreview.map((category) => category.name).join('、 ') || '暂无待处理'}
                   </p>
                 </div>
               )}
 
               {stats.stalePreview.length > 0 && (
-                <div className="rounded-lg border border-indigo-100 bg-indigo-50/60 p-4 text-sm text-gray-700">
-                  <p className="font-medium text-indigo-900">长期未更新的分类</p>
-                  <ul className="mt-2 space-y-1 text-xs text-indigo-800">
+                <div className="rounded-lg border p-4 text-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-2)', color: 'var(--on-surface)' }}>
+                  <p className="font-medium">长期未更新的分类</p>
+                  <ul className="mt-2 space-y-1 text-xs" style={{ color: 'var(--text-muted)' }}>
                     {stats.stalePreview.map(({ category, days }) => (
                       <li key={category.id} className="flex items-center gap-2">
                         <Layers className="h-3.5 w-3.5" />
                         <span>{category.name}</span>
-                        <span className="text-indigo-500">已闲置 {days} 天</span>
+                        <span>已闲置 {days} 天</span>
                       </li>
                     ))}
                   </ul>
@@ -603,17 +607,11 @@ export default function CategoriesPage() {
 
               {stats.colorUsage.length > 0 && (
                 <div>
-                  <p className="text-xs uppercase tracking-wide text-gray-500">颜色使用情况</p>
+                  <p className="text-xs uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>颜色使用情况</p>
                   <div className="mt-3 flex flex-wrap gap-3">
                     {stats.colorUsage.map(([color, count]) => (
-                      <div
-                        key={color}
-                        className="flex items-center gap-2 rounded-full border border-gray-100 bg-white px-3 py-1 text-xs font-medium text-gray-700 shadow-sm"
-                      >
-                        <span
-                          className="h-3 w-3 rounded-full shadow-inner"
-                          style={{ backgroundColor: color }}
-                        />
+                      <div key={color} className="flex items-center gap-2 rounded-full border px-3 py-1 text-xs font-medium shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
+                        <span className="h-3 w-3 rounded-full shadow-inner" style={{ backgroundColor: color }} />
                         {color.toUpperCase()} · {count}
                       </div>
                     ))}
@@ -624,160 +622,160 @@ export default function CategoriesPage() {
           </Card>
 
           <Card className="bg-white shadow-md border-gray-200">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-4">
-            <div>
-              <CardTitle className="text-xl font-bold text-gray-900">分类列表</CardTitle>
-              <CardDescription className="mt-1">共 {categories.length} 条分类</CardDescription>
-            </div>
-            <div className="flex items-center gap-3">
-              {categories.length > 0 && (
-                <label className="flex items-center gap-2 text-sm text-gray-600">
-                  <input
-                    type="checkbox"
-                    checked={allSelected}
-                    onChange={handleSelectAll}
-                    className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-                  />
-                  全选
-                </label>
-              )}
-              <Button variant="outline" size="sm" onClick={loadCategories} disabled={loading} className="shadow-sm">
-                <RefreshCcw className="mr-2 h-4 w-4" />
-                刷新
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {selectedCategoryIds.length > 0 && (
-              <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm text-gray-700 shadow-sm">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-                  <p className="font-medium">
-                    已选中 {selectedCategoryIds.length} 个分类，可批量整理
-                  </p>
-                  <div className="flex flex-wrap items-center gap-3">
-                    <div className="flex items-center gap-2 text-xs">
-                      <span>颜色</span>
-                      <input
-                        type="color"
-                        value={batchColor}
-                        onChange={(event) => setBatchColor(event.target.value)}
-                        className="h-8 w-16 cursor-pointer rounded border border-gray-200 bg-white p-1"
-                      />
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={batchProcessing}
-                        onClick={handleBatchColorUpdate}
-                      >
-                        同步颜色
-                      </Button>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span>父级</span>
-                      <select
-                        value={batchParentId}
-                        onChange={(event) => setBatchParentId(event.target.value)}
-                        className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs focus:border-primary focus:outline-none"
-                        disabled={batchProcessing}
-                      >
-                        <option value="">清空父级</option>
-                        {categories.map((category) => (
-                          <option key={category.id} value={category.id}>
-                            {category.name}
-                          </option>
-                        ))}
-                      </select>
-                      <Button
-                        size="sm"
-                        variant="secondary"
-                        disabled={batchProcessing}
-                        onClick={handleBatchParentUpdate}
-                      >
-                        调整层级
-                      </Button>
-                    </div>
-                    <Button
-                      size="sm"
-                      variant="destructive"
-                      disabled={batchProcessing}
-                      onClick={handleBatchDelete}
-                    >
-                      批量删除
-                    </Button>
-                  </div>
-                </div>
+            <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-4">
+              <div>
+                <CardTitle className="text-xl font-bold text-gray-900">分类列表</CardTitle>
+                <CardDescription className="mt-1">共 {categories.length} 条分类</CardDescription>
               </div>
-            )}
-
-            {loading ? (
-              <div className="flex items-center justify-center py-10 text-gray-500">
-                正在加载分类...
-              </div>
-            ) : categories.length === 0 ? (
-              <div className="text-center py-10 text-gray-500">
-                暂无分类，请在左侧创建您的第一个分类
-              </div>
-            ) : (
-              categories.map((category) => (
-                <div
-                  key={category.id}
-                  className="group flex flex-col gap-4 rounded-xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 md:flex-row md:items-center md:justify-between hover:border-primary-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out cursor-pointer"
-                >
-                  <div className="flex flex-1 items-start gap-4">
+              <div className="flex items-center gap-3">
+                {categories.length > 0 && (
+                  <label className="flex items-center gap-2 text-sm text-gray-600">
                     <input
                       type="checkbox"
-                      checked={selectedCategoryIds.includes(category.id)}
-                      onChange={() => toggleSelection(category.id)}
-                      className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      checked={allSelected}
+                      onChange={handleSelectAll}
+                      className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
                     />
-                    <div
-                      className="mt-1 h-5 w-5 rounded-full shadow-md ring-2 ring-white"
-                      style={{ backgroundColor: category.color || DEFAULT_COLOR }}
-                    />
-                    <div className="flex-1">
-                      <div className="flex items-center gap-3 mb-2">
-                        <p className="text-lg font-bold text-gray-900">{category.name}</p>
-                        <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm">
-                          {category.noteCount ?? 0} 条笔记
-                        </span>
+                    全选
+                  </label>
+                )}
+                <Button variant="outline" size="sm" onClick={loadCategories} disabled={loading} className="shadow-sm">
+                  <RefreshCcw className="mr-2 h-4 w-4" />
+                  刷新
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              {selectedCategoryIds.length > 0 && (
+                <div className="rounded-xl border border-primary/30 bg-primary/5 p-4 text-sm text-gray-700 shadow-sm">
+                  <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+                    <p className="font-medium">
+                      已选中 {selectedCategoryIds.length} 个分类，可批量整理
+                    </p>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-2 text-xs">
+                        <span>颜色</span>
+                        <input
+                          type="color"
+                          value={batchColor}
+                          onChange={(event) => setBatchColor(event.target.value)}
+                          className="h-8 w-16 cursor-pointer rounded border border-gray-200 bg-white p-1"
+                        />
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={batchProcessing}
+                          onClick={handleBatchColorUpdate}
+                        >
+                          同步颜色
+                        </Button>
                       </div>
-                      {category.description && (
-                        <p className="mt-2 text-sm text-gray-600 leading-relaxed">{category.description}</p>
-                      )}
-                      {category.parentId && parentLookup[category.parentId]?.name && (
-                        <p className="mt-2 text-xs text-primary-700">
-                          隶属于：{parentLookup[category.parentId]?.name}
-                        </p>
-                      )}
-                      <p className="mt-3 text-xs text-gray-500">
-                        更新于 {formatDate(category.updatedAt)}
-                      </p>
+                      <div className="flex items-center gap-2 text-xs">
+                        <span>父级</span>
+                        <select
+                          value={batchParentId}
+                          onChange={(event) => setBatchParentId(event.target.value)}
+                          className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs focus:border-primary focus:outline-none"
+                          disabled={batchProcessing}
+                        >
+                          <option value="">清空父级</option>
+                          {categories.map((category) => (
+                            <option key={category.id} value={category.id}>
+                              {category.name}
+                            </option>
+                          ))}
+                        </select>
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled={batchProcessing}
+                          onClick={handleBatchParentUpdate}
+                        >
+                          调整层级
+                        </Button>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={batchProcessing}
+                        onClick={handleBatchDelete}
+                      >
+                        批量删除
+                      </Button>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      onClick={() => startEdit(category)}
-                      className="hover:bg-primary-50 hover:text-primary-700 transition-all duration-200"
-                    >
-                      <Pencil className="mr-1 h-4 w-4" />
-                      编辑
-                    </Button>
-                    <Button
-                      variant="ghost"
-                      size="sm"
-                      className="text-red-600 hover:text-red-700 hover:bg-red-50 transition-all duration-200"
-                      onClick={() => handleDelete(category.id)}
-                    >
-                      <Trash2 className="mr-1 h-4 w-4" />
-                      删除
-                    </Button>
-                  </div>
                 </div>
-              ))
-            )}
-          </CardContent>
+              )}
+
+              {loading ? (
+                <div className="flex items-center justify-center py-10 text-gray-500">
+                  正在加载分类...
+                </div>
+              ) : categories.length === 0 ? (
+                <div className="text-center py-10 text-gray-500">
+                  暂无分类，请在左侧创建您的第一个分类
+                </div>
+              ) : (
+                categories.map((category) => (
+                  <div
+                    key={category.id}
+                    className="group flex flex-col gap-4 rounded-xl border border-gray-200 bg-gradient-to-br from-white to-gray-50 p-5 md:flex-row md:items-center md:justify-between hover:border-primary-400 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 ease-out cursor-pointer"
+                  >
+                    <div className="flex flex-1 items-start gap-4">
+                      <input
+                        type="checkbox"
+                        checked={selectedCategoryIds.includes(category.id)}
+                        onChange={() => toggleSelection(category.id)}
+                        className="mt-1 h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+                      />
+                      <div
+                        className="mt-1 h-5 w-5 rounded-full shadow-md ring-2 ring-white"
+                        style={{ backgroundColor: category.color || DEFAULT_COLOR }}
+                      />
+                      <div className="flex-1">
+                        <div className="flex items-center gap-3 mb-2">
+                          <p className="text-lg font-bold text-gray-900">{category.name}</p>
+                          <span className="rounded-full bg-gray-100 px-3 py-1 text-xs font-medium text-gray-700 shadow-sm">
+                            {category.noteCount ?? 0} 条笔记
+                          </span>
+                        </div>
+                        {category.description && (
+                          <p className="mt-2 text-sm text-gray-600 leading-relaxed">{category.description}</p>
+                        )}
+                        {category.parentId && parentLookup[category.parentId]?.name && (
+                          <p className="mt-2 text-xs text-primary-700">
+                            隶属于：{parentLookup[category.parentId]?.name}
+                          </p>
+                        )}
+                        <p className="mt-3 text-xs text-gray-500">
+                          更新于 {formatDate(category.updatedAt)}
+                        </p>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        onClick={() => startEdit(category)}
+                        className="hover:bg-primary-50 hover:text-primary-700 transition-all duration-200"
+                      >
+                        <Pencil className="mr-1 h-4 w-4" />
+                        编辑
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="text-red-600 hover:text-red-700 hover:bg-red-50 transition-all duration-200"
+                        onClick={() => handleDelete(category.id)}
+                      >
+                        <Trash2 className="mr-1 h-4 w-4" />
+                        删除
+                      </Button>
+                    </div>
+                  </div>
+                ))
+              )}
+            </CardContent>
           </Card>
         </div>
       </div>

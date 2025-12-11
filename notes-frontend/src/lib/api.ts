@@ -559,6 +559,28 @@ export const dashboardAPI = {
     api.get<DashboardOverview>('/dashboard/overview').then(res => res as unknown as DashboardOverview),
 }
 
+// 资产/嵌入/画板/思维导图（轻量接口，后端 /api/v1 前缀）
+export const assetsAPI = {
+  uploadBase64: (filename: string, dataUri: string, noteId?: string) =>
+    api.post('/v1/assets/base64', { filename, dataUri, noteId }).then(res => res as unknown as { id: string; url: string; filename: string }),
+  getById: (id: string) => api.get(`/v1/assets/${id}`).then(res => res as unknown as { id: string; url: string; filename: string }),
+}
+
+export const boardsAPI = {
+  create: (title: string, noteId?: string) => api.post('/v1/boards', { title, noteId }).then(res => res as unknown as { id: string; title: string }),
+  get: (id: string) => api.get(`/v1/boards/${id}`).then(res => res as unknown as { id: string; title: string }),
+}
+
+export const mindmapsAPI = {
+  create: (title: string, noteId?: string) => api.post('/v1/mindmaps', { title, noteId }).then(res => res as unknown as { id: string; title: string }),
+  get: (id: string) => api.get(`/v1/mindmaps/${id}`).then(res => res as unknown as { id: string; title: string }),
+}
+
+export const embedsAPI = {
+  create: (noteId: string, type: 'asset' | 'board' | 'mindmap' | 'link', targetId?: string, sourceUrl?: string) =>
+    api.post('/v1/embeds', { noteId, type, targetId, sourceUrl }).then(res => res as unknown as { id: string; type: string; targetId?: string; sourceUrl?: string; html?: string }),
+}
+
 // 网络状态相关 API
 export const networkAPI = {
   // 尝试 ping 健康检查端点，失败则回退到轻量请求
@@ -619,3 +641,4 @@ export const createComment = commentsAPI.create
 export const replyComment = commentsAPI.reply
 export const lockNote = noteLockAPI.lock
 export const unlockNote = noteLockAPI.unlock
+

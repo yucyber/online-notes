@@ -25,6 +25,7 @@ const nextConfig = {
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api',
     // 可选：RUM 上报端点，若未配置则前端仅本地调试输出
     NEXT_PUBLIC_RUM_ENDPOINT: process.env.NEXT_PUBLIC_RUM_ENDPOINT || '',
+    NEXT_PUBLIC_YWS_URL: process.env.NEXT_PUBLIC_YWS_URL,
   },
   async rewrites() {
     // Next 重写：将前端域名下的 /api/* 代理到后端 3001，统一同源请求，减少 CORS/OPTIONS 负担

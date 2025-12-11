@@ -1,10 +1,12 @@
 'use client'
 import { listVersions, snapshotVersion, restoreVersion, fetchNoteById } from '@/lib/api'
+import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Suspense, useEffect, useState } from 'react'
 
 export default function VersionsPage({ params }: { params: { id: string } }) {
   const noteId = params.id
+  const router = useRouter()
   const [versions, setVersions] = useState<any[]>([])
   const [note, setNote] = useState<any>(null)
   const load = async () => {
@@ -15,7 +17,12 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
   }
   useEffect(() => { load() }, [noteId])
   const snapshot = async () => { await snapshotVersion(noteId); await load() }
-  const restore = async (no: number) => { await restoreVersion(noteId, no); await load() }
+  const restore = async (no: number) => {
+    await restoreVersion(noteId, no)
+    await load()
+    try { sessionStorage.setItem('restoredVersion', String(no)) } catch {}
+    router.push(`/dashboard/notes/${noteId}/edit?restored=${no}`)
+  }
   return (
     <Suspense>
       <div className="p-4 space-y-4">
