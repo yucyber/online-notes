@@ -104,8 +104,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       console.log('[Collab] Connecting:', { url: yws, room })
       p = new WebsocketProvider(yws, room, ydoc, {
         connect: true,
-        resyncInterval: 15000,
         maxBackoffTime: 10000,
+        // disableBc: true, // 强制禁用 BroadcastChannel，确保只通过 WebSocket 通信，避免本地假象干扰排查
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
@@ -155,6 +155,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     p.on('status', statusHandler)
 
     const syncHandler = (synced: boolean) => {
+      console.log('[Collab] Sync status changed:', synced)
       setWsDebug((prev) => ({ ...prev, synced }))
       try {
         const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_sync', meta: { synced }, ts: Date.now() } })
@@ -162,6 +163,16 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       } catch { }
     }
     p.on('sync', syncHandler as any)
+
+    // ✅ Debug: 监听 YDoc 更新，确认是否收到数据
+    const updateHandler = (update: Uint8Array, origin: any) => {
+      console.log('[Collab] YDoc update received:', {
+        byteLength: update.byteLength,
+        origin: origin?.constructor?.name || origin,
+        isLocal: origin === null || origin === p
+      })
+    }
+    ydoc.on('update', updateHandler)
 
     const aw = p.awareness
 
@@ -245,6 +256,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       p?.off('status', statusHandler)
       p?.off('sync', syncHandler as any)
       p?.off('destroy', destroyHandler)
+      ydoc.off('update', updateHandler)
       aw.off('update', updateAwareness)
       p?.destroy()
     }
