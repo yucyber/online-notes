@@ -134,6 +134,21 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           if (participantsCache.current.length > 0) {
             setParticipants([...participantsCache.current])
           }
+          // 🆕 兼容逻辑：监听普通 JSON 消息并更新 awareness
+          const ws = (p as any).ws
+          if (ws) {
+            const msgHandler = (event: MessageEvent) => {
+              try {
+                if (typeof event.data !== 'string') return
+                const msg = JSON.parse(event.data)
+                if (msg.type === 'awareness' && msg.clientId !== aw.clientID) {
+                  // 改用官方的setRemoteState方法，自动触发update事件
+                  (aw as any).setRemoteState(msg.clientId, msg.state)
+                }
+              } catch { }
+            }
+            ws.addEventListener('message', msgHandler)
+          }
         }
         try {
           const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_status', meta: { status: s }, ts: Date.now() } })
@@ -176,13 +191,29 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         timestamp: Date.now()
       })
       aw.on('update', updateAwareness)
+      // 🆕 兼容逻辑：将 awareness 变更转为普通 JSON 消息发送
+      const jsonAwarenessHandler = () => {
+        try {
+          const localState = aw.getLocalState()
+          const ws = (p as any).ws
+          // 增加：判断ws的readyState是否为1（OPEN）
+          if (localState && ws && ws.readyState === 1) {
+            ws.send(JSON.stringify({
+              type: 'awareness',
+              state: localState,
+              clientId: aw.clientID
+            }))
+          }
+        } catch { }
+      }
+      aw.on('update', jsonAwarenessHandler)
       updateAwareness()
       // 🆕 监听 provider 的 destroy 事件（重连时触发）
       const destroyHandler = () => {
         console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
         // 🆕 5秒后再清空缓存，避免重连时立即消失
         cacheTimeout.current = setTimeout(() => {
-          if ((p as any).wsconnected === false) {
+          if ((p as any).wsConnected === false) {
             console.log('⏰ Cache timeout - clearing collaborators')
             participantsCache.current = []
             setParticipants([])
@@ -219,6 +250,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         p.off('sync', syncHandler as any)
         p.off('destroy', destroyHandler)
         aw.off('update', updateAwareness)
+        aw.off('update', jsonAwarenessHandler)
       }
     } catch (err) {
       console.error('Provider setup error:', err)
@@ -259,9 +291,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           Collaboration.configure({ document: ydoc }),
           CollaborationCursor.configure({
             provider: (provider || computedProvider) as any,
-            user,
+            // 传递color字段
+            user: { ...user, color: colorFromString(user.name || user.id || 'user') },
             render: (u) => {
-              const color = colorFromString(u.name || u.id || 'user')
+              // 直接使用u.color，减少重复计算
+              const color = u.color || colorFromString(u.name || u.id || 'user')
               const el = document.createElement('span')
               el.className = 'rounded px-1 text-xs'
               el.style.backgroundColor = color
@@ -670,7 +704,11 @@ const sanitizeHTML = (html: string) => {
     dangerousTags.forEach(tag => Array.from(doc.getElementsByTagName(tag)).forEach(el => el.remove()))
     const all = doc.body.querySelectorAll('*')
     all.forEach(el => {
-      el.removeAttribute('style')
+      // 修复：只移除危险的style属性，保留协作光标（collaboration-cursor）的style
+      const className = el.getAttribute('class') || ''
+      if (!className.includes('collaboration-cursor') && !className.includes('rounded')) {
+        el.removeAttribute('style')
+      }
       Array.from(el.attributes).forEach(attr => {
         const name = attr.name.toLowerCase()
         if (name.startsWith('on')) el.removeAttribute(attr.name)
