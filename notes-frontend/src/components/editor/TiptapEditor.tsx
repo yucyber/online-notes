@@ -91,8 +91,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const computedProvider = useMemo(() => {
     try {
       const yws = process.env.NEXT_PUBLIC_YWS_URL
-      if (!yws) return null
       const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
+
+      console.log('[Collab] Connecting:', { url: yws, room })
+
+      if (!yws) return null
       return new WebsocketProvider(yws, room, ydoc, {
         connect: true,
         // 每 15s 主动向服务端请求一次状态，减少偶发“连接已关闭但未重连”的窗口
