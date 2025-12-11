@@ -386,10 +386,12 @@ export default function SearchFilterBar() {
                   key={tag.id}
                   onClick={() => toggleTag(tag.id)}
                   className={`px-3 py-1 rounded-full text-sm border transition-colors`}
-                  style={selectedTagIds.includes(tag.id)
-                    ? { background: 'var(--primary-50)', borderColor: 'var(--primary-100)', color: 'var(--primary-600)' }
-                    : { borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}
-                  style={{ minHeight: 44 }}
+                  style={{
+                    ...(selectedTagIds.includes(tag.id)
+                      ? { background: 'var(--primary-50)', borderColor: 'var(--primary-100)', color: 'var(--primary-600)' }
+                      : { borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }),
+                    minHeight: 44
+                  }}
                 >
                   {tag.name}
                 </button>

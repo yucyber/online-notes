@@ -394,8 +394,24 @@ export default function NoteDetailPage() {
         )}
         {/* 插入链接对话框 */}
         {showLinkDialog && (
-          <div className="fixed inset-0 z-50 bg-black/30" role="dialog" aria-modal="true" onClick={() => setShowLinkDialog(false)}>
-            <div className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]" onClick={(e) => e.stopPropagation()}>
+          <div
+            className="fixed inset-0 z-50 bg-black/30"
+            role="dialog"
+            aria-modal="true"
+            tabIndex={0}
+            onClick={() => setShowLinkDialog(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') setShowLinkDialog(false)
+              if (e.key === 'Escape') setShowLinkDialog(false)
+            }}
+          >
+            <div
+              className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]"
+              onClick={(e) => e.stopPropagation()}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
+              }}
+            >
               <h3 className="text-base font-medium mb-3">插入链接</h3>
               <input aria-label="链接地址" value={linkHref} onChange={(e) => setLinkHref(e.target.value)} className="w-full border rounded-md px-3 py-2" placeholder="https://example.com" />
               <div className="mt-3 flex justify-end gap-2">

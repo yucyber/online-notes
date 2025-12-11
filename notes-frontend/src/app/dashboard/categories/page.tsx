@@ -434,8 +434,7 @@ export default function CategoriesPage() {
               <div className="mt-2 h-2 w-full rounded-full" style={{ background: 'var(--surface-2)' }}>
                 <div
                   className="h-2 rounded-full transition-all"
-                  style={{ width: `${progressMeta.percent}%` }}
-                  style={{ background: 'var(--primary-600)' }}
+                  style={{ width: `${progressMeta.percent}%`, background: 'var(--primary-600)' }}
                 />
               </div>
               <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>{progressMeta.message}</p>

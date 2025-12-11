@@ -180,8 +180,9 @@ export default function DashboardPage() {
                       <Link
                         href={`/dashboard/notes?categoryId=${note.category.id}`}
                         className="rounded-full px-3 py-1.5 font-medium shadow-sm border"
-                        style={{ background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                         style={{
+                          background: 'var(--surface-1)',
+                          color: 'var(--on-surface)',
                           borderColor: `${note.category.color || '#e5e7eb'}40`,
                           backgroundColor: `${note.category.color || '#e5e7eb'}15`
                         }}
