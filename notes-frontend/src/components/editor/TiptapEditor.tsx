@@ -382,6 +382,18 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     return () => { editor.off('update', updateHandler) }
   }, [editor])
 
+  // ✅ 修复：当连接成功且服务器文档为空时，使用 initialHTML 初始化
+  useEffect(() => {
+    if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>') {
+      // 检查编辑器是否为空（只有默认段落）
+      if (editor.isEmpty) {
+        console.log('[Collab] Server document seems empty, seeding from initialHTML')
+        // 使用 setContent 初始化，这会触发 Yjs 更新并同步到服务器
+        editor.commands.setContent(initialHTML)
+      }
+    }
+  }, [wsDebug.synced, editor, initialHTML])
+
   useEffect(() => {
     if (!editor) return
     const setHandler = (e: Event) => {
