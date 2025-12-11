@@ -64,6 +64,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
+  const participantsCache = useRef<Array<{ id: string; name?: string }>>([])
+  const cacheTimeout = useRef<NodeJS.Timeout>()
   const [collabEnabled, setCollabEnabled] = useState(true)
   const [localMode, setLocalMode] = useState(false)
   const [wsDebug, setWsDebug] = useState<{ connecting: boolean; connected: boolean; synced: boolean }>({ connecting: false, connected: false, synced: false })
@@ -120,6 +122,18 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         if (s === 'connected') {
           setLocalMode(false)
           setCollabEnabled(true)
+          // 🆕 重连成功后，重新设置本地用户状态
+          const aw = p.awareness
+          aw.setLocalStateField('user', {
+            id: user.id,
+            name: user.name,
+            clientId: p.awareness.clientID, // 添加 clientId 避免去重
+            timestamp: Date.now() // 添加时间戳确保状态更新
+          })
+          // 🆕 恢复缓存的协作者列表
+          if (participantsCache.current.length > 0) {
+            setParticipants([...participantsCache.current])
+          }
         }
         try {
           const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_status', meta: { status: s }, ts: Date.now() } })
@@ -127,7 +141,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         } catch { }
       }
       p.on('status', statusHandler)
-      // 监听同步事件，确认文档状态是否已完成一次完整同步
       const syncHandler = (synced: boolean) => {
         setWsDebug((prev) => ({ ...prev, synced }))
         try {
@@ -137,6 +150,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }
       p.on('sync', syncHandler as any)
       const aw = p.awareness
+      // 🆕 优化的 awareness 更新处理
       const updateAwareness = () => {
         const entries = Array.from(aw.getStates().entries()) as any[]
         const byId = new Map<string, { id: string; name?: string }>()
@@ -145,44 +159,73 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const name = s?.user?.name
           if (!byId.has(uid)) byId.set(uid, { id: uid, name })
         }
-        setParticipants(Array.from(byId.values()))
+        const newParticipants = Array.from(byId.values())
+        // 🆕 更新缓存
+        participantsCache.current = newParticipants
+        setParticipants(newParticipants)
+        // 🆕 清除之前的延迟清空定时器
+        if (cacheTimeout.current) {
+          clearTimeout(cacheTimeout.current)
+        }
       }
-      aw.setLocalStateField('user', { id: user.id, name: user.name })
+      // 设置初始用户状态
+      aw.setLocalStateField('user', {
+        id: user.id,
+        name: user.name,
+        clientId: aw.clientID,
+        timestamp: Date.now()
+      })
       aw.on('update', updateAwareness)
       updateAwareness()
+      // 🆕 监听 provider 的 destroy 事件（重连时触发）
+      const destroyHandler = () => {
+        console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
+        // 🆕 5秒后再清空缓存，避免重连时立即消失
+        cacheTimeout.current = setTimeout(() => {
+          if ((p as any).wsconnected === false) {
+            console.log('⏰ Cache timeout - clearing collaborators')
+            participantsCache.current = []
+            setParticipants([])
+          } else {
+            console.log('✅ Reconnected - keeping collaborators')
+          }
+        }, 5000)
+      }
+      p.on('destroy', destroyHandler)
       let failCount = 0
       const degradeTimer = setInterval(() => {
         const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
-        setWsDebug({ connecting: Boolean((p as any).wsconnecting), connected: Boolean((p as any).wsconnected), synced: Boolean((p as any).synced) })
+        setWsDebug({
+          connecting: Boolean((p as any).wsconnecting),
+          connected: Boolean((p as any).wsconnected),
+          synced: Boolean((p as any).synced)
+        })
         if (disconnected) {
           failCount++
           if (failCount >= 2) {
             setLocalMode(true)
-            // 保持协同扩展加载，仅标记UI为本地模式，避免后续重连后游标缺失
-            setCollabEnabled(true)
-            try {
-              const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'degrade_local', meta: { reason: 'ws_disconnected' }, ts: Date.now() } })
-              document.dispatchEvent(evt)
-            } catch { }
+            setCollabEnabled(false)
           }
         } else {
           failCount = 0
         }
       }, 5000)
       return () => {
-        try { p?.off('status', statusHandler) } catch { }
-        try { p?.off('sync', syncHandler as any) } catch { }
-        try { aw?.off('update', updateAwareness as any) } catch { }
         clearInterval(degradeTimer)
-        try { p?.disconnect() } catch { }
+        if (cacheTimeout.current) {
+          clearTimeout(cacheTimeout.current)
+        }
+        p.off('status', statusHandler)
+        p.off('sync', syncHandler as any)
+        p.off('destroy', destroyHandler)
+        aw.off('update', updateAwareness)
       }
-    } catch {
+    } catch (err) {
+      console.error('Provider setup error:', err)
       setLocalMode(true)
       setCollabEnabled(false)
-      setProvider(null)
-      setConnStatus('disconnected')
     }
-  }, [computedProvider, user.id, user.name])
+  }, [computedProvider, user.id, user.name, connStatus])
 
   const editor = useEditor({
     extensions: [
