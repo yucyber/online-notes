@@ -107,7 +107,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         connect: true,
         maxBackoffTime: 10000,
         disableBc: true,
-        resyncInterval: 5000, // 强制每5秒同步一次，防止连接因空闲被切断
+        // resyncInterval: 5000, // 移除主动重同步，避免与服务器心跳冲突
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)

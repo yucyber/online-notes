@@ -22,6 +22,17 @@ wss.on('connection', (conn, req) => {
 
     try {
         setupWSConnection(conn, req, { gc: true })
+        
+        // 监听消息接收，确认数据流
+        conn.on('message', (message) => {
+            try {
+                // 简单的二进制消息解析日志
+                const arr = new Uint8Array(message)
+                const msgType = arr[0] // 0: Sync, 1: Awareness, 2: Auth
+                const length = arr.length
+                console.log(`[Msg] Received type=${msgType} len=${length} from ${req.socket.remoteAddress}`)
+            } catch (e) {}
+        })
 
         // 延迟检查房间状态，确认是否正确加入
         setTimeout(() => {
@@ -51,14 +62,14 @@ wss.on('connection', (conn, req) => {
     })
 })
 
-// 30秒心跳检测，清除死连接
+// 10秒心跳检测，清除死连接 (Zeabur 可能有较短的空闲超时)
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         if (ws.isAlive === false) return ws.terminate()
         ws.isAlive = false
         ws.ping()
     })
-}, 30000)
+}, 10000)
 
 wss.on('close', () => {
     clearInterval(interval)
