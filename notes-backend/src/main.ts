@@ -16,11 +16,34 @@ async function bootstrap() {
   // can rely on a predictable baseURL (see src/lib/api.ts).
   app.setGlobalPrefix('api');
 
-  // Enable CORS（修复：统一读取 FRONTEND_URL/CLIENT_URL，显式允许 Authorization 等头部，适配 3003 前端端口）
+  // Enable CORS with regex pattern support for Vercel preview deployments
+  const allowedOrigins = (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000')
+    .split(',')
+    .map((x) => x.trim());
+
+  // Support regex patterns for dynamic Vercel preview URLs
+  const allowedPatterns = process.env.CORS_ALLOWED_PATTERNS
+    ? process.env.CORS_ALLOWED_PATTERNS.split(',').map(p => new RegExp(p.trim()))
+    : [/^https:\/\/.*\.vercel\.app$/];
+
   app.enableCors({
-    origin: (process.env.CLIENT_URL || process.env.FRONTEND_URL || 'http://localhost:3000')
-      .split(',')
-      .map((x) => x.trim()),
+    origin: (origin, callback) => {
+      // Allow requests with no origin (like mobile apps or curl)
+      if (!origin) return callback(null, true);
+
+      // Check if origin is in the allowed list
+      if (allowedOrigins.includes(origin)) {
+        return callback(null, true);
+      }
+
+      // Check if origin matches any pattern
+      if (allowedPatterns.some(pattern => pattern.test(origin))) {
+        return callback(null, true);
+      }
+
+      // Reject the request
+      callback(new Error('Not allowed by CORS'));
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Request-ID', 'Idempotency-Key', 'If-Match', 'If-None-Match', 'X-Search-ID', 'x-search-id', 'X-Skip-Auth-Redirect', 'x-skip-auth-redirect'],
@@ -38,9 +61,7 @@ async function bootstrap() {
   app.useGlobalInterceptors(new IdempotencyInterceptor())
   app.useGlobalInterceptors(new ApiEnvelopeInterceptor())
   app.useGlobalFilters(new ApiExceptionFilter())
-  // const port = process.env.PORT || 3001;
-  // await app.listen(port);
-  // console.log(`Application is running on: http://localhost:${port}`);
+
   const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
   const msgLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:msg:user', points: 300, duration: 60 })
   const connLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:conn:ip', points: 100, duration: 60 })
