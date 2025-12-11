@@ -89,6 +89,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
   useEffect(() => {
     const yws = process.env.NEXT_PUBLIC_YWS_URL
+    // const yws = 'wss://demos.yjs.dev' // 备用测试服务器
     const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
 
     if (!yws) {
@@ -105,7 +106,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       p = new WebsocketProvider(yws, room, ydoc, {
         connect: true,
         maxBackoffTime: 10000,
-        // disableBc: true, // 恢复默认，允许跨 Tab 共享连接
+        disableBc: true, // 再次强制禁用 BC，排除多窗口干扰
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
