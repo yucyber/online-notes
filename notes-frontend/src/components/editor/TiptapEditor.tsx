@@ -273,7 +273,19 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       aw.off('update', updateAwareness)
       p?.destroy()
     }
-  }, [noteId, versionKey, ydoc, user.id, user.name])
+  }, [noteId, versionKey, ydoc]) // 移除 user.id 和 user.name，避免因用户信息变化导致重连
+
+  // 单独监听用户信息变化并更新 awareness，不触发重连
+  useEffect(() => {
+    if (provider && provider.awareness) {
+      provider.awareness.setLocalStateField('user', {
+        id: user.id,
+        name: user.name,
+        clientId: provider.awareness.clientID,
+        timestamp: Date.now()
+      })
+    }
+  }, [user.id, user.name, provider])
 
   const editor = useEditor({
     extensions: [
