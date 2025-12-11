@@ -105,7 +105,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       p = new WebsocketProvider(yws, room, ydoc, {
         connect: true,
         maxBackoffTime: 10000,
-        // disableBc: true, // 强制禁用 BroadcastChannel，确保只通过 WebSocket 通信，避免本地假象干扰排查
+        // disableBc: true, // 恢复默认，允许跨 Tab 共享连接
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
@@ -115,6 +115,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
     setProvider(p)
     setConnStatus('connecting')
+
+    // ✅ 增加连接错误和关闭的详细日志
+    p.on('connection-error', (e: any) => {
+      console.error('[Collab] Connection error:', e)
+    })
+    p.on('connection-close', (e: any) => {
+      console.warn('[Collab] Connection closed:', e.code, e.reason)
+    })
 
     // ✅ 修正：status 事件直接返回状态字符串，不是事件对象
     const statusHandler = (status: any) => {
@@ -216,8 +224,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
       // ✅ 5秒后再清空缓存，避免重连时立即消失
       cacheTimeout.current = setTimeout(() => {
-        // ✅ 修正：使用驼峰命名 wsConnected
-        if ((p as any).wsConnected === false) {
+        // ✅ 修正：使用全小写 wsconnected (y-websocket 内部属性)
+        if ((p as any).wsconnected === false) {
           console.log('⏰ Cache timeout - clearing collaborators')
           participantsCache.current = []
           setParticipants([])
@@ -230,18 +238,20 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
     let failCount = 0
     const degradeTimer = setInterval(() => {
-      // ✅ 修正：使用驼峰命名 wsConnected 和 wsConnecting
-      const disconnected = (p as any).wsConnected === false && (p as any).wsConnecting === false
+      // ✅ 修正：使用全小写 wsconnected 和 wsconnecting
+      const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
       setWsDebug({
-        connecting: Boolean((p as any).wsConnecting),
-        connected: Boolean((p as any).wsConnected),
+        connecting: Boolean((p as any).wsconnecting),
+        connected: Boolean((p as any).wsconnected),
         synced: Boolean((p as any).synced)
       })
       if (disconnected) {
         failCount++
         if (failCount >= 2) {
-          setLocalMode(true)
-          setCollabEnabled(false)
+          // 暂时注释掉降级逻辑，避免因误判导致断开
+          // setLocalMode(true)
+          // setCollabEnabled(false)
+          console.warn('[Collab] Connection unstable but keeping retry...')
         }
       } else {
         failCount = 0
