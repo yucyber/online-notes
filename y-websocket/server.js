@@ -90,7 +90,7 @@ const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
         // 即使 isAlive 为 false，也不再主动 terminate，避免因网络波动误杀
         // if (ws.isAlive === false) return ws.terminate()
-        
+
         ws.isAlive = false
         try {
             ws.ping()
