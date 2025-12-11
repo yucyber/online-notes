@@ -100,6 +100,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       return
     }
 
+    // 销毁旧的 provider
+    if (provider) {
+      provider.destroy()
+    }
+
     let p: WebsocketProvider | null = null
     try {
       console.log('[Collab] Connecting:', { url: yws, room })
