@@ -87,67 +87,62 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     try { return new (Y as any).UndoManager(ydoc) } catch { return null }
   }, [ydoc])
 
-  // 同步构建 Provider，确保 useEditor 初始化阶段即可加载协同扩展
-  const computedProvider = useMemo(() => {
-    try {
-      const yws = process.env.NEXT_PUBLIC_YWS_URL
-      const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
-
-      console.log('[Collab] Connecting:', { url: yws, room })
-
-      if (!yws) return null
-      return new WebsocketProvider(yws, room, ydoc, {
-        connect: true,
-        // 每 15s 主动向服务端请求一次状态，减少偶发“连接已关闭但未重连”的窗口
-        resyncInterval: 15000,
-        // 将指数退避的最大等待提升到 10s，避免频繁抖动
-        maxBackoffTime: 10000,
-      })
-    } catch { return null }
-  }, [noteId, versionKey, ydoc])
-
   useEffect(() => {
-    const p = computedProvider
-    if (!p) {
+    const yws = process.env.NEXT_PUBLIC_YWS_URL
+    const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
+
+    if (!yws) {
       setLocalMode(true)
       setCollabEnabled(false)
       setProvider(null)
       setConnStatus('disconnected')
       return
     }
+
+    let p: WebsocketProvider | null = null
     try {
-      setProvider(p)
-      setConnStatus('connecting')
+      console.log('[Collab] Connecting:', { url: yws, room })
+      p = new WebsocketProvider(yws, room, ydoc, {
+        connect: true,
+        resyncInterval: 15000,
+        maxBackoffTime: 10000,
+      })
+    } catch (e) {
+      console.error('[Collab] Failed to create provider:', e)
+      setLocalMode(true)
+      return
+    }
 
-      // ✅ 修正：status 事件直接返回状态字符串，不是事件对象
-      const statusHandler = (status: any) => {
-        // 兼容处理：y-websocket 有时返回对象 {status: 'connected'}，有时直接返回字符串
-        const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
-        setConnStatus(s)
-        setWsDebug((prev) => ({
-          ...prev,
-          connected: s === 'connected',
-          connecting: s === 'connecting'
-        }))
+    setProvider(p)
+    setConnStatus('connecting')
 
-        if (s === 'connected') {
-          setLocalMode(false)
-          setCollabEnabled(true)
+    // ✅ 修正：status 事件直接返回状态字符串，不是事件对象
+    const statusHandler = (status: any) => {
+      // 兼容处理：y-websocket 有时返回对象 {status: 'connected'}，有时直接返回字符串
+      const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
+      setConnStatus(s)
+      setWsDebug((prev) => ({
+        ...prev,
+        connected: s === 'connected',
+        connecting: s === 'connecting'
+      }))
 
-          // ✅ 重连成功后，重新设置本地用户状态（使用官方原生逻辑）
-          const aw = p.awareness
-          aw.setLocalStateField('user', {
-            id: user.id,
-            name: user.name,
-            clientId: aw.clientID,
-            timestamp: Date.now()
-          })
+      if (s === 'connected') {
+        setLocalMode(false)
+        setCollabEnabled(true)
 
-          // ✅ 恢复缓存的协作者列表
-          if (participantsCache.current.length > 0) {
-            setParticipants([...participantsCache.current])
-          }
+        // ✅ 重连成功后，重新设置本地用户状态（使用官方原生逻辑）
+        const aw = p!.awareness
+        aw.setLocalStateField('user', {
+          id: user.id,
+          name: user.name,
+          clientId: aw.clientID,
+          timestamp: Date.now()
+        })
 
+        // ✅ 恢复缓存的协作者列表
+        if (participantsCache.current.length > 0) {
+          setParticipants([...participantsCache.current])
         }
 
         try {
@@ -155,107 +150,105 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           document.dispatchEvent(evt)
         } catch { }
       }
+    }
 
-      p.on('status', statusHandler)
+    p.on('status', statusHandler)
 
-      const syncHandler = (synced: boolean) => {
-        setWsDebug((prev) => ({ ...prev, synced }))
-        try {
-          const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_sync', meta: { synced }, ts: Date.now() } })
-          document.dispatchEvent(evt)
-        } catch { }
+    const syncHandler = (synced: boolean) => {
+      setWsDebug((prev) => ({ ...prev, synced }))
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_sync', meta: { synced }, ts: Date.now() } })
+        document.dispatchEvent(evt)
+      } catch { }
+    }
+    p.on('sync', syncHandler as any)
+
+    const aw = p.awareness
+
+    // ✅ 优化的 awareness 更新处理（使用官方原生同步）
+    const updateAwareness = () => {
+      const entries = Array.from(aw.getStates().entries()) as any[]
+      const byId = new Map<string, { id: string; name?: string }>()
+      for (const [clientId, s] of entries) {
+        const uid = String(s?.user?.id || s?.user?.name || clientId)
+        const name = s?.user?.name
+        if (!byId.has(uid)) byId.set(uid, { id: uid, name })
       }
-      p.on('sync', syncHandler as any)
+      const newParticipants = Array.from(byId.values())
 
-      const aw = p.awareness
+      // ✅ 更新缓存
+      participantsCache.current = newParticipants
+      setParticipants(newParticipants)
 
-      // ✅ 优化的 awareness 更新处理（使用官方原生同步）
-      const updateAwareness = () => {
-        const entries = Array.from(aw.getStates().entries()) as any[]
-        const byId = new Map<string, { id: string; name?: string }>()
-        for (const [clientId, s] of entries) {
-          const uid = String(s?.user?.id || s?.user?.name || clientId)
-          const name = s?.user?.name
-          if (!byId.has(uid)) byId.set(uid, { id: uid, name })
-        }
-        const newParticipants = Array.from(byId.values())
-
-        // ✅ 更新缓存
-        participantsCache.current = newParticipants
-        setParticipants(newParticipants)
-
-        // ✅ 清除之前的延迟清空定时器
-        if (cacheTimeout.current) {
-          clearTimeout(cacheTimeout.current)
-        }
+      // ✅ 清除之前的延迟清空定时器
+      if (cacheTimeout.current) {
+        clearTimeout(cacheTimeout.current)
       }
+    }
 
-      // ✅ 设置初始用户状态
-      aw.setLocalStateField('user', {
-        id: user.id,
-        name: user.name,
-        clientId: aw.clientID,
-        timestamp: Date.now()
-      })
+    // ✅ 设置初始用户状态
+    aw.setLocalStateField('user', {
+      id: user.id,
+      name: user.name,
+      clientId: aw.clientID,
+      timestamp: Date.now()
+    })
 
-      // ✅ 监听官方原生的 awareness 更新
-      aw.on('update', updateAwareness)
+    // ✅ 监听官方原生的 awareness 更新
+    aw.on('update', updateAwareness)
 
-      updateAwareness()
+    updateAwareness()
 
-      // ✅ 监听 provider 的 destroy 事件（重连时触发）
-      const destroyHandler = () => {
-        console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
-        // ✅ 5秒后再清空缓存，避免重连时立即消失
-        cacheTimeout.current = setTimeout(() => {
-          // ✅ 修正：使用驼峰命名 wsConnected
-          if ((p as any).wsConnected === false) {
-            console.log('⏰ Cache timeout - clearing collaborators')
-            participantsCache.current = []
-            setParticipants([])
-          } else {
-            console.log('✅ Reconnected - keeping collaborators')
-          }
-        }, 5000)
-      }
-      p.on('destroy', destroyHandler)
-
-      let failCount = 0
-      const degradeTimer = setInterval(() => {
-        // ✅ 修正：使用驼峰命名 wsConnected 和 wsConnecting
-        const disconnected = (p as any).wsConnected === false && (p as any).wsConnecting === false
-        setWsDebug({
-          connecting: Boolean((p as any).wsConnecting),
-          connected: Boolean((p as any).wsConnected),
-          synced: Boolean((p as any).synced)
-        })
-        if (disconnected) {
-          failCount++
-          if (failCount >= 2) {
-            setLocalMode(true)
-            setCollabEnabled(false)
-          }
+    // ✅ 监听 provider 的 destroy 事件（重连时触发）
+    const destroyHandler = () => {
+      console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
+      // ✅ 5秒后再清空缓存，避免重连时立即消失
+      cacheTimeout.current = setTimeout(() => {
+        // ✅ 修正：使用驼峰命名 wsConnected
+        if ((p as any).wsConnected === false) {
+          console.log('⏰ Cache timeout - clearing collaborators')
+          participantsCache.current = []
+          setParticipants([])
         } else {
-          failCount = 0
+          console.log('✅ Reconnected - keeping collaborators')
         }
       }, 5000)
-
-      return () => {
-        clearInterval(degradeTimer)
-        if (cacheTimeout.current) {
-          clearTimeout(cacheTimeout.current)
-        }
-        p.off('status', statusHandler)
-        p.off('sync', syncHandler as any)
-        p.off('destroy', destroyHandler)
-        aw.off('update', updateAwareness)
-      }
-    } catch (err) {
-      console.error('Provider setup error:', err)
-      setLocalMode(true)
-      setCollabEnabled(false)
     }
-  }, [computedProvider, user.id, user.name, connStatus])
+    p.on('destroy', destroyHandler)
+
+    let failCount = 0
+    const degradeTimer = setInterval(() => {
+      // ✅ 修正：使用驼峰命名 wsConnected 和 wsConnecting
+      const disconnected = (p as any).wsConnected === false && (p as any).wsConnecting === false
+      setWsDebug({
+        connecting: Boolean((p as any).wsConnecting),
+        connected: Boolean((p as any).wsConnected),
+        synced: Boolean((p as any).synced)
+      })
+      if (disconnected) {
+        failCount++
+        if (failCount >= 2) {
+          setLocalMode(true)
+          setCollabEnabled(false)
+        }
+      } else {
+        failCount = 0
+      }
+    }, 5000)
+
+    return () => {
+      console.log('[Collab] Disconnecting provider')
+      clearInterval(degradeTimer)
+      if (cacheTimeout.current) {
+        clearTimeout(cacheTimeout.current)
+      }
+      p?.off('status', statusHandler)
+      p?.off('sync', syncHandler as any)
+      p?.off('destroy', destroyHandler)
+      aw.off('update', updateAwareness)
+      p?.destroy()
+    }
+  }, [noteId, versionKey, ydoc, user.id, user.name])
 
   const editor = useEditor({
     extensions: [
@@ -284,11 +277,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       Heading,
       Placeholder.configure({ placeholder: '开始写作…' }),
       CommentMark,
-      ...(collabEnabled && (provider || computedProvider)
+      ...(collabEnabled && provider
         ? [
           Collaboration.configure({ document: ydoc }),
           CollaborationCursor.configure({
-            provider: (provider || computedProvider) as any,
+            provider: provider as any,
             // 传递color字段
             user: { ...user, color: colorFromString(user.name || user.id || 'user') },
             render: (u) => {
@@ -310,14 +303,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         ]
         : []),
     ],
-    content: ((collabEnabled && (provider || computedProvider) && !versionKey) ? undefined : (initialHTML || '<p></p>')),
+    content: ((collabEnabled && provider && !versionKey) ? undefined : (initialHTML || '<p></p>')),
     // 使 .ProseMirror 在容器内占满高度，消除底部空白不可点击/不可输入区
     editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
     // 本地降级时仍保持可编辑（仅关闭协同），避免工具栏操作无效
     editable: !readOnly,
     // 禁用SSR立即渲染，避免hydration mismatch警告
     immediatelyRender: false,
-  }, [computedProvider, provider, collabEnabled])
+  }, [provider, collabEnabled])
 
   useEffect(() => {
     if (!editor || migratedOnceRef.current) return
@@ -386,7 +379,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const normalized = String(html || '').trim()
           const current = String(editor.getHTML() || '').trim()
           if (normalized === current || normalized === lastInjectedHTMLRef.current) return
-          const p = (provider || computedProvider)
+          const p = provider
           const safe = sanitizeHTML(html || '<p></p>')
           const apply = () => {
             injectBusyRef.current = true
@@ -438,7 +431,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     document.addEventListener('editor:setContent', setHandler as any)
     return () => { document.removeEventListener('editor:setContent', setHandler as any) }
-  }, [editor, provider, computedProvider, collabEnabled, ydoc])
+  }, [editor, provider, collabEnabled, ydoc])
 
   // 悬浮提示：鼠标移入评论标记时在编辑器内显示提示框
   useEffect(() => {
