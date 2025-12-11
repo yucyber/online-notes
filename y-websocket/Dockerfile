@@ -8,6 +8,9 @@ COPY package*.json ./
 # 安装生产依赖
 RUN npm install --production
 
+# 复制源代码 (包括 server.js)
+COPY . .
+
 # 设置环境变量
 # HOST=0.0.0.0 确保容器外可以访问
 ENV HOST=0.0.0.0
