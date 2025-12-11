@@ -85,14 +85,21 @@ wss.on('connection', (conn, req) => {
     })
 })
 
-// 10秒心跳检测，清除死连接 (Zeabur 可能有较短的空闲超时)
+// 30秒心跳检测，保持连接活跃 (Keep-Alive)
 const interval = setInterval(() => {
     wss.clients.forEach((ws) => {
-        if (ws.isAlive === false) return ws.terminate()
+        // 即使 isAlive 为 false，也不再主动 terminate，避免因网络波动误杀
+        // if (ws.isAlive === false) return ws.terminate()
+        
         ws.isAlive = false
-        ws.ping()
+        try {
+            ws.ping()
+        } catch (e) {
+            // 只有在 ping 失败（连接已物理断开）时才移除
+            // ws.terminate() 
+        }
     })
-}, 10000)
+}, 20000) // 延长到 20s，减少网络开销
 
 wss.on('close', () => {
     clearInterval(interval)
