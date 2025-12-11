@@ -179,6 +179,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     // ✅ 优化的 awareness 更新处理（使用官方原生同步）
     const updateAwareness = () => {
       const entries = Array.from(aw.getStates().entries()) as any[]
+      console.log('[Collab] Awareness update:', entries.length, 'entries')
       const byId = new Map<string, { id: string; name?: string }>()
       for (const [clientId, s] of entries) {
         const uid = String(s?.user?.id || s?.user?.name || clientId)
