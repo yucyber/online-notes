@@ -25,6 +25,7 @@ wss.on('connection', (conn, req) => {
 
         // 监听消息接收，确认数据流
         conn.on('message', (message) => {
+            conn.isAlive = true
             try {
                 // 简单的二进制消息解析日志
                 const arr = new Uint8Array(message)
