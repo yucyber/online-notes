@@ -115,47 +115,46 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     try {
       setProvider(p)
       setConnStatus('connecting')
-      const statusHandler = (e: any) => {
-        const s = e.status as 'connected' | 'disconnected'
+
+      // ✅ 修正：status 事件直接返回状态字符串，不是事件对象
+      const statusHandler = (status: any) => {
+        // 兼容处理：y-websocket 有时返回对象 {status: 'connected'}，有时直接返回字符串
+        const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
         setConnStatus(s)
-        setWsDebug((prev) => ({ ...prev, connected: s === 'connected', connecting: connStatus === 'connecting' }))
+        setWsDebug((prev) => ({
+          ...prev,
+          connected: s === 'connected',
+          connecting: s === 'connecting'
+        }))
+
         if (s === 'connected') {
           setLocalMode(false)
           setCollabEnabled(true)
-          // 🆕 重连成功后，重新设置本地用户状态
+
+          // ✅ 重连成功后，重新设置本地用户状态（使用官方原生逻辑）
           const aw = p.awareness
           aw.setLocalStateField('user', {
             id: user.id,
             name: user.name,
-            clientId: p.awareness.clientID, // 添加 clientId 避免去重
-            timestamp: Date.now() // 添加时间戳确保状态更新
+            clientId: aw.clientID,
+            timestamp: Date.now()
           })
-          // 🆕 恢复缓存的协作者列表
+
+          // ✅ 恢复缓存的协作者列表
           if (participantsCache.current.length > 0) {
             setParticipants([...participantsCache.current])
           }
-          // 🆕 兼容逻辑：监听普通 JSON 消息并更新 awareness
-          const ws = (p as any).ws
-          if (ws) {
-            const msgHandler = (event: MessageEvent) => {
-              try {
-                if (typeof event.data !== 'string') return
-                const msg = JSON.parse(event.data)
-                if (msg.type === 'awareness' && msg.clientId !== aw.clientID) {
-                  // 改用官方的setRemoteState方法，自动触发update事件
-                  (aw as any).setRemoteState(msg.clientId, msg.state)
-                }
-              } catch { }
-            }
-            ws.addEventListener('message', msgHandler)
-          }
+
         }
+
         try {
           const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_status', meta: { status: s }, ts: Date.now() } })
           document.dispatchEvent(evt)
         } catch { }
       }
+
       p.on('status', statusHandler)
+
       const syncHandler = (synced: boolean) => {
         setWsDebug((prev) => ({ ...prev, synced }))
         try {
@@ -164,8 +163,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         } catch { }
       }
       p.on('sync', syncHandler as any)
+
       const aw = p.awareness
-      // 🆕 优化的 awareness 更新处理
+
+      // ✅ 优化的 awareness 更新处理（使用官方原生同步）
       const updateAwareness = () => {
         const entries = Array.from(aw.getStates().entries()) as any[]
         const byId = new Map<string, { id: string; name?: string }>()
@@ -175,44 +176,36 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           if (!byId.has(uid)) byId.set(uid, { id: uid, name })
         }
         const newParticipants = Array.from(byId.values())
-        // 🆕 更新缓存
+
+        // ✅ 更新缓存
         participantsCache.current = newParticipants
         setParticipants(newParticipants)
-        // 🆕 清除之前的延迟清空定时器
+
+        // ✅ 清除之前的延迟清空定时器
         if (cacheTimeout.current) {
           clearTimeout(cacheTimeout.current)
         }
       }
-      // 设置初始用户状态
+
+      // ✅ 设置初始用户状态
       aw.setLocalStateField('user', {
         id: user.id,
         name: user.name,
         clientId: aw.clientID,
         timestamp: Date.now()
       })
+
+      // ✅ 监听官方原生的 awareness 更新
       aw.on('update', updateAwareness)
-      // 🆕 兼容逻辑：将 awareness 变更转为普通 JSON 消息发送
-      const jsonAwarenessHandler = () => {
-        try {
-          const localState = aw.getLocalState()
-          const ws = (p as any).ws
-          // 增加：判断ws的readyState是否为1（OPEN）
-          if (localState && ws && ws.readyState === 1) {
-            ws.send(JSON.stringify({
-              type: 'awareness',
-              state: localState,
-              clientId: aw.clientID
-            }))
-          }
-        } catch { }
-      }
-      aw.on('update', jsonAwarenessHandler)
+
       updateAwareness()
-      // 🆕 监听 provider 的 destroy 事件（重连时触发）
+
+      // ✅ 监听 provider 的 destroy 事件（重连时触发）
       const destroyHandler = () => {
         console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
-        // 🆕 5秒后再清空缓存，避免重连时立即消失
+        // ✅ 5秒后再清空缓存，避免重连时立即消失
         cacheTimeout.current = setTimeout(() => {
+          // ✅ 修正：使用驼峰命名 wsConnected
           if ((p as any).wsConnected === false) {
             console.log('⏰ Cache timeout - clearing collaborators')
             participantsCache.current = []
@@ -223,12 +216,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         }, 5000)
       }
       p.on('destroy', destroyHandler)
+
       let failCount = 0
       const degradeTimer = setInterval(() => {
-        const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
+        // ✅ 修正：使用驼峰命名 wsConnected 和 wsConnecting
+        const disconnected = (p as any).wsConnected === false && (p as any).wsConnecting === false
         setWsDebug({
-          connecting: Boolean((p as any).wsconnecting),
-          connected: Boolean((p as any).wsconnected),
+          connecting: Boolean((p as any).wsConnecting),
+          connected: Boolean((p as any).wsConnected),
           synced: Boolean((p as any).synced)
         })
         if (disconnected) {
@@ -241,6 +236,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           failCount = 0
         }
       }, 5000)
+
       return () => {
         clearInterval(degradeTimer)
         if (cacheTimeout.current) {
@@ -250,7 +246,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         p.off('sync', syncHandler as any)
         p.off('destroy', destroyHandler)
         aw.off('update', updateAwareness)
-        aw.off('update', jsonAwarenessHandler)
       }
     } catch (err) {
       console.error('Provider setup error:', err)
