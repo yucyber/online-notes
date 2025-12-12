@@ -1,4 +1,4 @@
-import { readdirSync, readFileSync } from 'node:fs'
+import { readdirSync, readFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 
 const root = join(process.cwd(), 'src')
@@ -8,10 +8,10 @@ const walk = (dir) => {
     const p = join(dir, name)
     if (name.startsWith('.')) continue
     try {
-      const stat = require('node:fs').statSync(p)
+      const stat = statSync(p)
       if (stat.isDirectory()) walk(p)
       else if (/(\.(tsx|ts|jsx|js))$/.test(name)) files.push(p)
-    } catch {}
+    } catch { }
   }
 }
 walk(root)

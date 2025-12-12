@@ -1,7 +1,7 @@
 import './globals.css'
 import 'tippy.js/dist/tippy.css'
 import '@/styles/editor-tokens.css'
-import dynamic from 'next/dynamic'
+import RUMClient from '@/components/rum/RUMClient'
 
 export const metadata = {
   title: '在线知识笔记平台',
@@ -25,7 +25,7 @@ export default function RootLayout({
 }) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
   const apiOrigin = apiUrl.replace(/\/(api|v\d+).*/, '')
-  const RUMClient = dynamic(() => import('@/components/rum/RUMClient'), { ssr: false })
+
   return (
     <html lang="zh-CN" data-theme="editor-light" suppressHydrationWarning>
       <head>
