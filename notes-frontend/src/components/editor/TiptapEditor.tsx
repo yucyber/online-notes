@@ -417,12 +417,16 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   // ✅ 修复：当连接成功且服务器文档为空时，使用 initialHTML 初始化
   useEffect(() => {
     if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>') {
-      // 检查编辑器是否为空（只有默认段落）
-      if (editor.isEmpty) {
-        console.log('[Collab] Server document seems empty, seeding from initialHTML')
-        // 使用 setContent 初始化，这会触发 Yjs 更新并同步到服务器
-        editor.commands.setContent(initialHTML)
-      }
+      // 延迟检查，确保 Yjs 同步完成（如果 Yjs 覆盖了内容导致为空，这里可以检测到）
+      const timer = setTimeout(() => {
+        // 检查编辑器是否为空（只有默认段落）
+        if (editor.isEmpty) {
+          console.log('[Collab] Server document seems empty, seeding from initialHTML')
+          // 使用 setContent 初始化，这会触发 Yjs 更新并同步到服务器
+          editor.commands.setContent(initialHTML)
+        }
+      }, 100)
+      return () => clearTimeout(timer)
     }
   }, [wsDebug.synced, editor, initialHTML])
 
@@ -580,7 +584,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }
       else if (cmd === 'undo') { chain.undo().run() }
       else if (cmd === 'redo') { chain.redo().run() }
-      else if (cmd === 'save') { const html = editor.getHTML(); onSaveRef.current?.(html) }
+      else if (cmd === 'save') {
+        console.log('[Editor] Save triggered via toolbar')
+        const html = editor.getHTML();
+        onSaveRef.current?.(html)
+      }
     }
     document.addEventListener('tiptap:exec', execHandler as any)
     return () => { document.removeEventListener('tiptap:exec', execHandler as any) }

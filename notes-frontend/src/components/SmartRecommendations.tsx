@@ -111,7 +111,7 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
                     </h4>
                   </div>
                   <div className="mt-1 text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                    {truncateText(String(note.content || '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
+                    {truncateText(String(note.content || '').replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
                   </div>
                   <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <Clock className="h-3 w-3" />
@@ -141,7 +141,7 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
                     <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)', border: '1px solid var(--border)' }}>草稿</span>
                   </div>
                   <div className="mt-1 text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                    {truncateText(String(note.content || '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
+                    {truncateText(String(note.content || '').replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
                   </div>
                   <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
                     <Clock className="h-3 w-3" />

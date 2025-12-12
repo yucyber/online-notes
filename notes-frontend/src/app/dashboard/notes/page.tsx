@@ -569,7 +569,7 @@ export default function NotesPage() {
                         )}
                       </div>
                       <div className="text-sm line-clamp-3 mb-4 leading-relaxed" style={{ color: 'var(--on-surface)' }}>
-                        {truncateText(note.content.replace(/[#*`_~>\[\]()]/g, ''), 150)}
+                        {truncateText(note.content.replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 150)}
                       </div>
                       {note.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2">

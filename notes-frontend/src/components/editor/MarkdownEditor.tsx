@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from 'react'
 import ReactMarkdown from 'react-markdown'
+import rehypeRaw from 'rehype-raw'
 import rehypeSanitize from 'rehype-sanitize'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism'
@@ -366,7 +367,7 @@ export default function MarkdownEditor({
               } catch { }
             }}
             placeholder="使用Markdown格式编写笔记...\n\n支持以下语法:\n# 标题\n**粗体**\n*斜体*\n`代码`\n```代码块```\n- 列表项\n[链接](url)\n> 引用"
-            className="min-h-[500px] font-mono text-sm resize-none border border-[#e8e8e8] rounded-[2px] p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+            className="min-h-[560px] h-[60vh] md:min-h-[640px] md:h-[70vh] font-mono text-sm resize-none border border-[#e8e8e8] rounded-[2px] p-3 focus:ring-2 focus:ring-blue-500 focus:border-transparent"
           />
           <div className="flex justify-between items-center text-xs text-gray-500">
             <div>
@@ -382,7 +383,7 @@ export default function MarkdownEditor({
       {/* 预览区域 */}
       {activeTab === 'preview' && (
         <div
-          className="min-h-[500px] border border-gray-200 p-6 bg-white"
+          className="min-h-[560px] h-[60vh] md:min-h-[640px] md:h-[70vh] border border-gray-200 p-6 bg-white overflow-y-auto"
           style={{
             borderRadius: '12px',
             boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
@@ -391,7 +392,7 @@ export default function MarkdownEditor({
           {content.trim() ? (
             <div className="prose prose-lg max-w-none">
               <ReactMarkdown
-                rehypePlugins={[rehypeSanitize]}
+                rehypePlugins={[rehypeRaw, rehypeSanitize]}
                 components={{
                   // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   code({ className, children, ...props }: any) {

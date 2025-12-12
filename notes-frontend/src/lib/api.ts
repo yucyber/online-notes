@@ -301,7 +301,13 @@ export const notesAPI = {
       if (context.endDate) sp.set('endDate', context.endDate)
       if (context.status) sp.set('status', context.status)
     }
-    return api.get<Note[]>('/notes/recommendations', { params: sp }).then(res => res as unknown as Note[])
+    return api.get<Note[]>('/notes/recommendations', { params: sp }).then(res => {
+      const items = (res as unknown as any[]).map((raw: any) => ({
+        ...raw,
+        id: raw.id || raw._id || ''
+      }))
+      return items as Note[]
+    })
   },
   // 带缓存与后台重验证
   getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {

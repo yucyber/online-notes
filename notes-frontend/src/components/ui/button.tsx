@@ -53,7 +53,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
     // 变体样式
     const variantStyles: Record<string, React.CSSProperties> = {
       default: {
-        background: 'linear-gradient(to right, var(--primary-500), var(--primary-600))',
+        backgroundImage: 'linear-gradient(to right, var(--primary-500), var(--primary-600))',
         color: '#ffffff',
         opacity: isHovered ? 0.8 : 1,
         boxShadow: isHovered
@@ -61,7 +61,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           : '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
       },
       destructive: {
-        background: isHovered
+        backgroundImage: isHovered
           ? 'linear-gradient(to right, #dc2626, #b91c1c)'
           : 'linear-gradient(to right, #ef4444, #dc2626)',
         color: '#ffffff',
@@ -71,7 +71,7 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
         transform: isHovered ? 'translateY(-2px)' : 'none',
       },
       outline: {
-        background: isHovered ? 'var(--gray-50)' : '#ffffff',
+        backgroundColor: isHovered ? 'var(--gray-50)' : '#ffffff',
         color: isHovered ? 'var(--primary-600)' : '#374151',
         border: '2px solid',
         borderColor: isHovered ? 'var(--primary-600)' : '#e5e7eb',
@@ -80,18 +80,18 @@ const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
           : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
       },
       secondary: {
-        background: isHovered ? '#e5e7eb' : '#f7f8fa',
+        backgroundColor: isHovered ? '#e5e7eb' : '#f7f8fa',
         color: '#1F2329',
         boxShadow: isHovered
           ? '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)'
           : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
       },
       ghost: {
-        background: isHovered ? '#f3f4f6' : 'transparent',
+        backgroundColor: isHovered ? '#f3f4f6' : 'transparent',
         color: isHovered ? '#1F2329' : '#4E5969',
       },
       link: {
-        background: 'transparent',
+        backgroundColor: 'transparent',
         color: 'var(--primary-600)',
         textDecoration: isHovered ? 'underline' : 'none',
         textUnderlineOffset: '4px',
