@@ -135,35 +135,7 @@ export default function EditNotePage() {
     } catch { }
   }, [editorMode, id])
 
-  // 评论弹窗可访问性：聚焦管理与键盘陷阱
-  useEffect(() => {
-    if (!showCommentsModal) return
-    const dialog = commentsDialogRef.current
-    if (!dialog) return
-    const focusable = dialog.querySelectorAll<HTMLElement>(
-      'a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])'
-    )
-    const first = focusable[0]
-    const last = focusable[focusable.length - 1]
-    first?.focus()
 
-    const handleKey = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        setShowCommentsModal(false)
-      }
-      if (e.key === 'Tab') {
-        if (focusable.length === 0) return
-        if (e.shiftKey && document.activeElement === first) {
-          e.preventDefault(); last?.focus()
-        } else if (!e.shiftKey && document.activeElement === last) {
-          e.preventDefault(); first?.focus()
-        }
-      }
-    }
-    dialog.addEventListener('keydown', handleKey)
-    return () => { dialog.removeEventListener('keydown', handleKey) }
-  }, [showCommentsModal])
 
   useEffect(() => {
     if (!showCommentsDrawer) return
@@ -270,10 +242,7 @@ export default function EditNotePage() {
     }, 200)
   }
 
-  const openCommentsModal = () => {
-    lastFocusRef.current = document.activeElement as HTMLElement
-    setShowCommentsModal(true)
-  }
+
 
   const loadNote = useCallback(async () => {
     try {
