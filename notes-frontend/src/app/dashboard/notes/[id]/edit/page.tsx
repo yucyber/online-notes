@@ -40,8 +40,6 @@ export default function EditNotePage() {
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
-  const [showCommentsModal, setShowCommentsModal] = useState(false)
-  const commentsDialogRef = useRef<HTMLDivElement>(null)
   const commentsDrawerRef = useRef<HTMLDivElement>(null)
   const lastFocusRef = useRef<HTMLElement | null>(null)
   const [toc, setToc] = useState<Array<{ id: string; text: string; level: number }>>([])
@@ -276,10 +274,6 @@ export default function EditNotePage() {
     lastFocusRef.current = document.activeElement as HTMLElement
     setShowCommentsModal(true)
   }
-  const closeCommentsModal = () => {
-    setShowCommentsModal(false)
-    setTimeout(() => { lastFocusRef.current?.focus() }, 0)
-  }
 
   const loadNote = useCallback(async () => {
     try {
@@ -411,7 +405,7 @@ export default function EditNotePage() {
           resultIds.push(id)
           setTags(prev => [{ ...created, id }, ...prev])
         }
-      } catch (e) { }
+      } catch { }
     }
     if (resultIds.length > 0) {
       setSelectedTags(prev => Array.from(new Set([...prev, ...resultIds])))
