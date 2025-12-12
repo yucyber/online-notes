@@ -260,9 +260,17 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }
     }, 5000)
 
+    // ✅ 应用层心跳：每15秒发送一次 Awareness 更新，防止 Nginx/LoadBalancer 因“无数据传输”而切断连接
+    const appHeartbeat = setInterval(() => {
+      if (p && (p as any).wsconnected) {
+        p.awareness.setLocalStateField('lastPing', Date.now())
+      }
+    }, 15000)
+
     return () => {
       console.log('[Collab] Disconnecting provider')
       clearInterval(degradeTimer)
+      clearInterval(appHeartbeat)
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
       }
