@@ -13,7 +13,7 @@ const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), {
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import { CommentsPanel } from '@/components/collab/CommentsPanel'
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, Trash2, Users } from 'lucide-react'
+import { ArrowLeft, Trash2, Users, ChevronLeft, ChevronRight } from 'lucide-react'
 import type { Note } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
 import OutlinePanel from '@/components/editor/OutlinePanel'
@@ -33,6 +33,7 @@ export default function NoteDetailPage() {
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
   const [html, setHtml] = useState<string>('')
+  const [showSidebar, setShowSidebar] = useState(true)
   // 全屏相关状态与引用
   const [isFullscreen, setIsFullscreen] = useState(false)
   const editorContainerRef = useRef<HTMLDivElement | null>(null)
@@ -59,6 +60,7 @@ export default function NoteDetailPage() {
       setIsFullscreen(active)
       if (active) {
         document.body.style.overflow = 'hidden'
+        setShowSidebar(false)
         const btn = document.getElementById('fullscreen-button') as HTMLButtonElement | null
         try { btn?.focus({ preventScroll: true } as any) } catch { btn?.focus() }
         try {
@@ -266,7 +268,7 @@ export default function NoteDetailPage() {
       {/* 协作区块确保在首屏右侧可见 */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         <div
-          className="bg-white lg:col-span-2"
+          className={`bg-white ${showSidebar ? 'lg:col-span-2' : 'lg:col-span-3'}`}
           style={{
             borderRadius: '12px',
             boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)',
@@ -281,6 +283,19 @@ export default function NoteDetailPage() {
               </select>
             </div>
             <div className="flex items-center gap-2">
+              <Button
+                variant="ghost"
+                size="sm"
+                aria-pressed={!showSidebar}
+                onClick={() => setShowSidebar(s => !s)}
+                className="hover:bg-gray-100 text-gray-600"
+              >
+                {showSidebar ? (
+                  <span className="inline-flex items-center gap-1"><ChevronRight className="h-4 w-4" /> 隐藏侧栏</span>
+                ) : (
+                  <span className="inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> 显示侧栏</span>
+                )}
+              </Button>
               <Button
                 variant="ghost"
                 size="icon"
@@ -322,6 +337,7 @@ export default function NoteDetailPage() {
                 readOnly={(note as any)?.visibility === 'public'}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
                 onContentChange={(h) => setHtml(h)}
+                className="min-h-[calc(100vh-200px)]"
               />
               {/* 左侧浮动 “+” 插入菜单 */}
               {!isFullscreen && (
@@ -390,7 +406,7 @@ export default function NoteDetailPage() {
             />
           )}
         </div>
-        {!isFullscreen && (
+        {showSidebar && !isFullscreen && (
           <div className="space-y-6">
             <div className="bg-white" style={{ borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)' }}>
               <div className="p-4">

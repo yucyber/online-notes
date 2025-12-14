@@ -455,6 +455,7 @@ export default function NewNotePage() {
               user={{ id: 'me', name: '我' }}
               readOnly={false}
               onSelectionChange={(start, end) => setSelection({ start, end })}
+              className="min-h-[calc(100vh-200px)]"
             />
           </div>
         ) : (

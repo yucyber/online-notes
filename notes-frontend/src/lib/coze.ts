@@ -97,3 +97,34 @@ export const getAIMindMapData = async (content: string | any, scenario: MindMapS
         throw error;
     }
 };
+
+export const getAIMermaidData = async (content: string, availableIcons: string[] = []) => {
+    try {
+        const response = await fetch('/api/ai/mermaid', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ content, availableIcons })
+        });
+
+        if (!response.ok) {
+            throw new Error(`AI 服务调用失败: ${response.statusText}`);
+        }
+
+        const data = await response.json();
+        const messages = data.messages;
+        const lastMessage = messages.find((msg: any) => msg.type === 'answer');
+
+        if (!lastMessage) {
+            throw new Error('未获取到 AI 回复');
+        }
+
+        let mermaidCode = lastMessage.content;
+        // 清理 Markdown 代码块标记
+        mermaidCode = mermaidCode.replace(/```mermaid\n?|\n?```/g, '').replace(/```\n?|\n?```/g, '').trim();
+
+        return mermaidCode;
+    } catch (error) {
+        console.error('COZE AI Mermaid 调用失败:', error);
+        throw error;
+    }
+};

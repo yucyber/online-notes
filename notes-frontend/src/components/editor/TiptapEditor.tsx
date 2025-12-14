@@ -42,6 +42,8 @@ type Props = {
   onSelectionChange?: (start: number, end: number) => void
   onContentChange?: (html: string) => void
   versionKey?: string
+  className?: string
+  style?: React.CSSProperties
 }
 
 function colorFromString(s: string) {
@@ -60,7 +62,7 @@ function srgb(x: number) {
   return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
 }
 
-export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey }: Props) {
+export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style }: Props) {
   const ydoc = useMemo(() => new Y.Doc(), [])
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
@@ -724,7 +726,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       </div>
       <div
         id="editor-card"
-        className="border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
+        className={`border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${className || ''}`}
         // 使容器点击空白区域也可将光标移动到文末，解决下半区域无法输入/无法聚焦的问题
         onMouseDown={(e) => {
           try {
@@ -738,7 +740,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             }
           } catch { }
         }}
-        style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface-1)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }}
+        style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface-1)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)', ...style }}
       >
         <BubbleMenu
           editor={editor}

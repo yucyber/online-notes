@@ -1,4 +1,4 @@
-import { Node, mergeAttributes } from '@tiptap/core'
+import { Node, mergeAttributes, InputRule } from '@tiptap/core'
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import React, { useState } from 'react'
 import { Eye, Link as LinkIcon, ExternalLink } from 'lucide-react'
@@ -17,7 +17,7 @@ const ResourceComponent = ({ node, updateAttributes }: any) => {
     const url = `/dashboard/${type}s/${id}`
     const previewUrl = type === 'mindmap'
         ? `/embed/mindmaps/${id}?readonly=true`
-        : `/dashboard/boards/${id}/embed?readonly=true`
+        : `/embed/boards/${id}?readonly=true`
     const label = type === 'mindmap' ? '思维导图' : '画板'
 
     return (
@@ -115,6 +115,29 @@ export default Node.create({
 
     addNodeView() {
         return ReactNodeViewRenderer(ResourceComponent)
+    },
+
+    addInputRules() {
+        return [
+            new InputRule({
+                find: /(?:^|\s)(?:https?:\/\/[^\/]+)?\/dashboard\/(mindmaps|boards)\/([a-zA-Z0-9-]+)$/,
+                handler: ({ state, range, match }) => {
+                    const rawType = match[1]
+                    const type = rawType === 'mindmaps' ? 'mindmap' : 'board'
+                    const id = match[2]
+
+                    const { tr } = state
+                    let start = range.from
+                    const end = range.to
+
+                    if (match[0].startsWith(' ')) {
+                        start += 1
+                    }
+
+                    tr.replaceWith(start, end, this.type.create({ type, id, displayMode: 'link' }))
+                }
+            })
+        ]
     },
 
     addProseMirrorPlugins() {

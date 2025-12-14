@@ -787,6 +787,7 @@ export default function EditNotePage() {
                       onContentChange={(html) => extractHeadingsFromHTML(html)}
                       // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
                       versionKey={searchParams?.get('restored') || undefined}
+                      className="min-h-[calc(100vh-200px)]"
                     />
                   </div>
                 ) : (

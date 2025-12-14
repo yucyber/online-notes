@@ -19,6 +19,8 @@
     "ci:lhci": "npx @lhci/cli autorun"
   },
   "dependencies": {
+    "@excalidraw/excalidraw": "^0.18.0",
+    "@excalidraw/mermaid-to-excalidraw": "^2.0.0",
     "@hookform/resolvers": "^3.3.4",
     "@tailwindcss/typography": "^0.5.10",
     "@tiptap/core": "^2.27.1",

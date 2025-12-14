@@ -3,12 +3,31 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Search, Sun, Moon } from 'lucide-react'
+import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Search, Sun, Moon, ChevronRight } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import { getCurrentUser, isAuthenticated, removeToken } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
 import type { User } from '@/types'
 import { listNotifications } from '@/lib/api'
+
+const routeNames: Record<string, string> = {
+  dashboard: '工作台',
+  notes: '我的笔记',
+  boards: '看板',
+  mindmaps: '思维导图',
+  tags: '标签管理',
+  settings: '设置',
+  trash: '回收站',
+  new: '新建',
+  edit: '编辑',
+  categories: '分类管理',
+  logs: '活动日志',
+  profile: '个人资料',
+  security: '安全设置',
+  notifications: '通知',
+  search: '搜索',
+  invitations: '邀请',
+}
 
 export default function DashboardLayout({
   children,
@@ -202,7 +221,7 @@ export default function DashboardLayout({
     <div className="flex min-h-screen bg-[var(--surface-2)]">
       {/* 桌面端侧边栏 */}
       {/* 桌面端侧边栏整体容器：使用深色渐变与玻璃质感 */}
-      {!isNotesFocusedRoute && !isSidebarHidden && (
+      {!isSidebarHidden && (
         <aside
           className="relative hidden flex-col overflow-hidden md:flex bg-[var(--surface-1)]"
           style={{
@@ -367,12 +386,12 @@ export default function DashboardLayout({
         {/* 顶部吸附导航条，添加柔和渐变和模糊效果 */}
         <div className="sticky top-0 z-10 px-4 pt-3 pb-3 md:px-6 md:pt-3 md:pb-3 bg-[var(--surface-1)] border-b" style={{ borderColor: 'var(--border)' }}>
           {/* 顶部卡片容器：承载菜单按钮与用户信息 */}
-          <header className="flex h-14 items-center justify-between px-0 gap-4">
+          <header className="flex h-12 items-center justify-between px-0 gap-4">
             <div className="flex items-center gap-3">
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+                className="h-8 w-8 text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
                 onClick={() => {
                   try {
                     const isDesktop = window.innerWidth >= 768
@@ -389,88 +408,112 @@ export default function DashboardLayout({
                 }}
                 aria-label={isSidebarHidden ? '显示侧边栏' : '隐藏侧边栏'}
               >
-                <Menu className="h-6 w-6" />
+                <Menu className="h-4 w-4" />
               </Button>
               <div className="hidden md:flex items-center gap-2">
-                <div className="h-6 w-6 rounded-md bg-primary-600/90 flex items-center justify-center text-white font-semibold">N</div>
-                <span className="text-title text-text-secondary">笔记平台</span>
+                <div className="h-5 w-5 rounded-md bg-primary-600/90 flex items-center justify-center text-white text-xs font-bold">N</div>
+                <span className="text-sm font-semibold text-text-secondary">笔记平台</span>
               </div>
+
+              {/* 分隔线 */}
+              <div className="hidden md:block h-4 w-[1px] bg-border/60 mx-1" />
+
+              {/* 面包屑导航 - 紧凑美化版 */}
+              <nav aria-label="Breadcrumb" className="hidden md:flex items-center">
+                {pathname?.split('/').filter(Boolean).map((segment, index, array) => {
+                  const isLast = index === array.length - 1
+                  const path = `/${array.slice(0, index + 1).join('/')}`
+                  const name = routeNames[segment] || (segment.length > 20 ? `${segment.slice(0, 8)}...` : segment)
+
+                  return (
+                    <div key={path} className="flex items-center">
+                      {index > 0 && <ChevronRight className="mx-1 h-3 w-3 text-text-muted/60" />}
+                      {isLast ? (
+                        <span className="px-1.5 py-0.5 text-xs font-medium text-text-primary bg-surface-2/50 rounded-md animate-in fade-in zoom-in-95 duration-200">
+                          {name}
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => router.push(path)}
+                          className="px-1.5 py-0.5 text-xs text-text-secondary hover:text-primary-600 hover:bg-surface-2 rounded-md transition-all duration-200"
+                        >
+                          {name}
+                        </button>
+                      )}
+                    </div>
+                  )
+                })}
+              </nav>
             </div>
-            <div className="flex items-center gap-3">
-              <div className="hidden md:flex items-center justify-center w-[400px]">
-                <div className="relative w-full">
-                  <label htmlFor="global-search" className="sr-only">搜索</label>
-                  <input id="global-search" aria-label="搜索" className="w-full h-11 rounded-xl border pl-10 pr-3 text-body input-enhanced" placeholder="搜索" style={{ borderColor: 'var(--border)', backgroundColor: 'var(--surface-1)', color: 'var(--on-surface)' }} />
-                  <Search aria-hidden className="absolute left-3 top-1/2 -translate-y-1/2 h-5 w-5" style={{ color: 'var(--text-muted)' }} />
-                </div>
-              </div>
-              {/* 主题切换：基于 CSS 令牌 */}
+
+            <div className="flex items-center gap-2">
+              {/* 主题切换 */}
               <Button
                 variant="ghost"
                 size="icon"
-                className={`hover:bg-[var(--surface-2)]`}
+                className="h-8 w-8 hover:bg-[var(--surface-2)]"
                 aria-label={isDark ? '切换到浅色主题' : '切换到深色主题'}
                 aria-pressed={isDark}
                 onClick={toggleTheme}
                 title={isDark ? '浅色主题' : '深色主题'}
               >
-                {isDark ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+                {isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}
               </Button>
-              <span className="hidden md:inline text-xs" aria-live="polite" style={{ color: 'var(--text-muted)' }}>{isDark ? '深色' : '浅色'}</span>
-              {/* 消息铃铛，显示未读角标 */}
+              <span className="hidden md:inline text-[10px]" aria-live="polite" style={{ color: 'var(--text-muted)' }}>{isDark ? '深色' : '浅色'}</span>
+
+              {/* 消息铃铛 */}
               <div className="relative">
                 <Button
                   variant="ghost"
                   size="icon"
-                  className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+                  className="h-8 w-8 text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
                   onClick={() => router.push('/dashboard/notifications')}
                   aria-label={unreadCount > 0 ? `消息中心，未读 ${unreadCount} 条` : '打开消息中心'}
                   aria-describedby="notify-unread-status"
                 >
-                  <Bell className="h-5 w-5" />
+                  <Bell className="h-4 w-4" />
                 </Button>
                 {unreadCount > 0 && (
                   <span
-                    className="absolute -top-1 -right-1 min-w-[18px] h-[18px] px-1 rounded-full bg-red-600 text-white text-[10px] leading-[18px] text-center"
-                    title={`${unreadCount} 条未读`}
-                  >
-                    {unreadCount > 99 ? '99+' : unreadCount}
-                  </span>
+                    className="absolute top-1.5 right-1.5 min-w-[6px] h-[6px] rounded-full bg-red-600 ring-2 ring-surface-1"
+                  />
                 )}
-                {/* 屏幕阅读器动态公告未读数 */}
                 <div id="notify-unread-status" role="status" aria-live="polite" aria-atomic="true" className="sr-only">
                   未读 {unreadCount} 条
                 </div>
               </div>
+
               <Button
                 variant="ghost"
                 size="icon"
-                className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
+                className="h-8 w-8 text-[var(--on-surface)] hover:bg-[var(--surface-2)]"
                 onClick={() => router.push('/dashboard/settings')}
                 aria-label="打开设置"
               >
-                <Settings2 className="h-5 w-5" />
+                <Settings2 className="h-4 w-4" />
               </Button>
+
+              {/* 用户信息 - 紧凑版 */}
               <div
-                className="flex items-center gap-3 rounded-xl px-3 py-2 border border-gray-200 bg-gray-50"
+                className="flex items-center gap-2 rounded-lg px-2 py-1 border border-border/40 bg-surface-1 hover:bg-surface-2 transition-colors cursor-default"
               >
                 <div
-                  className="h-8 w-8 rounded-full flex items-center justify-center font-semibold text-white"
+                  className="h-6 w-6 rounded-full flex items-center justify-center text-xs font-semibold text-white shadow-sm"
                   style={{ backgroundColor: '#2468F2' }}
                 >
                   {String(user?.email || 'U').charAt(0).toUpperCase()}
                 </div>
-                <div className="text-right">
-                  <p className="text-sm font-medium text-text-default">
-                    {user?.email || '用户'}
+                <div className="text-right hidden sm:block">
+                  <p className="text-xs font-medium text-text-default leading-tight">
+                    {user?.email?.split('@')[0] || '用户'}
                   </p>
-                  <p className="text-xs text-text-muted flex items-center gap-1 justify-end">
-                    <span className="inline-block w-2 h-2 bg-green-500 rounded-full animate-pulse"></span>
+                  <p className="text-[10px] text-text-muted flex items-center gap-1 justify-end leading-tight">
+                    <span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full"></span>
                     在线
                   </p>
                 </div>
               </div>
-              <div className="hidden md:block">
+              <div className="hidden md:block scale-90 origin-right">
                 <NetworkStatus onReconnect={() => { /* 可广播同步事件 */ }} />
               </div>
             </div>
