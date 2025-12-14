@@ -1,26 +1,33 @@
 'use client'
 import { listVersions, snapshotVersion, restoreVersion, fetchNoteById } from '@/lib/api'
-import { useRouter } from 'next/navigation'
+import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Suspense, useEffect, useState } from 'react'
 
-export default function VersionsPage({ params }: { params: { id: string } }) {
-  const noteId = params.id
+export default function VersionsPage() {
+  const params = useParams()
+  const noteId = params?.id as string
   const router = useRouter()
   const [versions, setVersions] = useState<any[]>([])
   const [note, setNote] = useState<any>(null)
   const load = async () => {
+    if (!noteId) return
     const v = await listVersions(noteId)
     setVersions(v || [])
     const n = await fetchNoteById(noteId)
     setNote(n)
   }
   useEffect(() => { load() }, [noteId])
-  const snapshot = async () => { await snapshotVersion(noteId); await load() }
+  const snapshot = async () => {
+    const name = window.prompt('请输入版本名称（可选）')
+    if (name === null) return
+    await snapshotVersion(noteId, name || undefined)
+    await load()
+  }
   const restore = async (no: number) => {
     await restoreVersion(noteId, no)
     await load()
-    try { sessionStorage.setItem('restoredVersion', String(no)) } catch {}
+    try { sessionStorage.setItem('restoredVersion', String(no)) } catch { }
     router.push(`/dashboard/notes/${noteId}/edit?restored=${no}`)
   }
   return (
@@ -34,7 +41,11 @@ export default function VersionsPage({ params }: { params: { id: string } }) {
         <ul className="space-y-2">
           {versions.map(v => (
             <li key={v.versionNo} className="flex items-center justify-between border rounded px-3 py-2">
-              <span className="text-sm">#{v.versionNo} · {new Date(v.createdAt).toLocaleString()}</span>
+              <span className="text-sm">
+                #{v.versionNo}
+                {v.name ? <span className="mx-2 font-medium text-blue-600">{v.name}</span> : ''}
+                <span className="text-gray-500">· {new Date(v.createdAt).toLocaleString()}</span>
+              </span>
               <Button variant="outline" onClick={() => restore(v.versionNo)}>恢复</Button>
             </li>
           ))}

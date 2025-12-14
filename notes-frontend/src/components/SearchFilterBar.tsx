@@ -414,9 +414,9 @@ export default function SearchFilterBar() {
               <div className="flex gap-2 items-center">
                 <span className="text-sm" style={{ color: 'var(--text-muted)' }}>已保存:</span>
                 <div className="flex gap-2 flex-wrap">
-                  {savedFilters.map(filter => (
+                  {savedFilters.map((filter, index) => (
                     <button
-                      key={filter.id}
+                      key={filter.id || index}
                       onClick={() => applySavedFilter(filter)}
                       className="text-xs px-2 py-1 rounded-full border"
                       style={{ background: 'var(--surface-2)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}

@@ -385,7 +385,7 @@ export const semanticAPI = {
     if (opts?.tagIds && opts.tagIds.length > 0) opts.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
     const isVectorLike = (opts?.mode === 'vector' || opts?.mode === 'hybrid')
     return api
-      .get<SemanticSearchPage>('/v1/semantic/search', { params: sp, timeout: isVectorLike ? 5000 : 3000 })
+      .get<SemanticSearchPage>('/v1/semantic/search', { params: sp, timeout: isVectorLike ? 120000 : 10000 })
       .then(res => res as unknown as SemanticSearchPage)
       .catch(async (error) => {
         const status = error?.response?.status
@@ -436,7 +436,7 @@ export const invitationsAPI = {
 
 export const versionsAPI = {
   list: (noteId: string) => api.get(`/notes/${noteId}/versions`).then(res => res as unknown as any[]),
-  snapshot: (noteId: string) => api.post(`/notes/${noteId}/versions`, {}).then(res => res as unknown as any),
+  snapshot: (noteId: string, name?: string) => api.post(`/notes/${noteId}/versions`, { name }).then(res => res as unknown as any),
   restore: (noteId: string, versionNo: number) => api.post(`/notes/${noteId}/versions/${versionNo}/restore`, {}).then(res => res as unknown as any),
 }
 

@@ -11,6 +11,9 @@ export class NoteVersion {
   @Prop({ required: true })
   versionNo: number
 
+  @Prop()
+  name?: string
+
   @Prop({ required: true })
   title: string
 

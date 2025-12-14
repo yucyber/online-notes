@@ -9,6 +9,7 @@ import { getCurrentUser, isAuthenticated, removeToken } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
 import type { User } from '@/types'
 import { listNotifications } from '@/lib/api'
+import AIPet from '@/components/ai/AIPet'
 
 const routeNames: Record<string, string> = {
   dashboard: '工作台',
@@ -525,6 +526,7 @@ export default function DashboardLayout({
           </div>
         </div>
       </main>
+      <AIPet />
     </div>
   )
 }

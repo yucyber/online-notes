@@ -5,7 +5,7 @@ import { VersionsService } from './versions.service'
 @UseGuards(AuthGuard('jwt'))
 @Controller('notes/:id/versions')
 export class VersionsController {
-  constructor(private readonly service: VersionsService) {}
+  constructor(private readonly service: VersionsService) { }
 
   @Get()
   async list(@Param('id') id: string, @Request() req) {
@@ -18,7 +18,8 @@ export class VersionsController {
   async snapshot(@Param('id') id: string, @Body() body: any, @Request() req) {
     const headerRid = (req.headers['x-request-id'] as string) || undefined
     const rid = body?.requestId || headerRid
-    const data = await this.service.snapshot(id, req.user.id, rid)
+    const name = body?.name
+    const data = await this.service.snapshot(id, req.user.id, name, rid)
     return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
   }
 

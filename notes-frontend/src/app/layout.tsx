@@ -25,14 +25,14 @@ export default function RootLayout({
   children: React.ReactNode
 }) {
   const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
-  const apiOrigin = apiUrl.replace(/\/(api|v\d+).*/, '')
+  // const apiOrigin = apiUrl.startsWith('http') ? apiUrl.replace(/\/(api|v\d+).*/, '') : undefined
 
   return (
     <html lang="zh-CN" data-theme="editor-light" suppressHydrationWarning>
       <head>
         {/* 预连接后端 API，降低首包请求握手与 DNS 延迟 */}
-        <link rel="preconnect" href={apiOrigin} />
-        <link rel="dns-prefetch" href={apiOrigin} />
+        {/* {apiOrigin && <link rel="preconnect" href={apiOrigin} />} */}
+        {/* {apiOrigin && <link rel="dns-prefetch" href={apiOrigin} />} */}
         {/* 主题预置：在水合前应用，避免闪烁 */}
         <script
           dangerouslySetInnerHTML={{

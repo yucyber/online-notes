@@ -53,6 +53,9 @@ export class Note {
 
   @Prop({ type: Date })
   lockedAt?: Date;
+
+  @Prop({ type: [Number], index: true })
+  embedding?: number[];
 }
 
 export const NoteSchema = SchemaFactory.createForClass(Note);

@@ -187,7 +187,8 @@ export default function NotesPage() {
         // axios 错误：无响应对象通常为取消或网络中断，忽略；仅对有响应码的请求报错
         if (axios.isAxiosError(err)) {
           const status = err.response?.status
-          if (!status) return
+          // 如果是超时 (ECONNABORTED)，不应忽略，需提示用户
+          if (!status && err.code !== 'ECONNABORTED') return
         }
         setError('加载笔记失败，请重试')
         console.error('Failed to load notes:', err)

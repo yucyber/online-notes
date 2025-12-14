@@ -45,6 +45,7 @@ type Props = {
   versionKey?: string
   className?: string
   style?: React.CSSProperties
+  updatedAt?: string
 }
 
 function colorFromString(s: string) {
@@ -63,7 +64,7 @@ function srgb(x: number) {
   return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
 }
 
-export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style }: Props) {
+export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
   const ydoc = useMemo(() => new Y.Doc(), [])
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
@@ -363,6 +364,52 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     immediatelyRender: false,
   }, [provider, collabEnabled])
 
+  // 监听来自大纲的跳转请求
+  useEffect(() => {
+    if (!editor) return
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      if (typeof detail?.index === 'number') {
+        const targetIndex = detail.index
+        let currentHeadingIndex = 0
+        let foundPos = -1
+        editor.state.doc.descendants((node, pos) => {
+          if (foundPos !== -1) return false
+          if (node.type.name === 'heading') {
+            if (currentHeadingIndex === targetIndex) {
+              foundPos = pos
+              return false
+            }
+            currentHeadingIndex++
+          }
+        })
+
+        if (foundPos !== -1) {
+          try {
+            // 尝试获取 DOM 节点并平滑滚动
+            // 优先使用 nodeDOM 获取精确的块级元素
+            const dom = editor.view.nodeDOM(foundPos) as HTMLElement
+            // 降级使用 domAtPos
+            const targetDom = dom || (editor.view.domAtPos(foundPos).node as HTMLElement)
+
+            if (targetDom && targetDom.scrollIntoView) {
+              targetDom.scrollIntoView({ behavior: 'smooth', block: 'center' })
+            } else {
+              // 降级方案：使用 Tiptap 命令
+              editor.commands.setTextSelection(foundPos)
+              editor.commands.scrollIntoView()
+            }
+          } catch (e) {
+            editor.commands.setTextSelection(foundPos)
+            editor.commands.scrollIntoView()
+          }
+        }
+      }
+    }
+    document.addEventListener('editor:scrollToHeading', handler)
+    return () => document.removeEventListener('editor:scrollToHeading', handler)
+  }, [editor])
+
   // 监听来自 MindMap 页面的插入消息
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -432,27 +479,53 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   // 内容变化回调，用于右侧大纲同步
   useEffect(() => {
     if (!editor) return
+    let lastHtml = ''
     const updateHandler = () => {
-      try { onContentChangeRef.current?.(editor.getHTML()) } catch { }
+      try {
+        const html = editor.getHTML()
+        if (html === lastHtml) return
+        lastHtml = html
+        onContentChangeRef.current?.(html)
+      } catch { }
     }
     editor.on('update', updateHandler)
-    try { onContentChangeRef.current?.(editor.getHTML()) } catch { }
+    // Initial call
+    try {
+      const html = editor.getHTML()
+      lastHtml = html
+      onContentChangeRef.current?.(html)
+    } catch { }
     return () => { editor.off('update', updateHandler) }
   }, [editor])
 
   // ✅ 修复：当连接成功且服务器文档为空时，使用 initialHTML 初始化
+  // 另外，如果 initialHTML 看起来是“干净的 HTML”（包含 h1/ul 等），而当前编辑器内容是“脏的 Markdown”（以 # 开头），则强制覆盖
+  // 增强：如果传入的 updatedAt 比 Yjs 中记录的 lastUpdatedAt 新，说明发生了外部更新（如版本恢复），强制覆盖
   useEffect(() => {
     if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>' && provider) {
       const timer = setTimeout(() => {
         try {
           const meta = ydoc.getMap('meta')
           const clientId = provider.awareness.clientID
+
+          // 检查当前内容是否是“脏 Markdown”
+          const currentText = editor.getText().trim()
+          const isDirtyMarkdown = currentText.startsWith('# ') || currentText.startsWith('## ')
+          const isCleanHTML = initialHTML.includes('<h') || initialHTML.includes('<ul') || initialHTML.includes('<ol')
+
+          // 检查时间戳
+          const lastUpdatedAt = meta.get('lastUpdatedAt') as number | undefined
+          const serverUpdatedAt = updatedAt ? new Date(updatedAt).getTime() : 0
+          const isExternalUpdate = serverUpdatedAt > (lastUpdatedAt || 0) + 1000 // 1s 容差
+
           ydoc.transact(() => {
-            if (!meta.get('seeded')) {
+            if (!meta.get('seeded') || (isDirtyMarkdown && isCleanHTML) || isExternalUpdate) {
               meta.set('seeded', { by: clientId, at: Date.now() })
+              if (serverUpdatedAt > 0) meta.set('lastUpdatedAt', serverUpdatedAt)
+
               // 原子化写入，避免并发重复
               editor.commands.setContent(initialHTML)
-              console.log('[Collab] seeded by', clientId)
+              console.log('[Collab] seeded/repaired by', clientId, { isExternalUpdate, serverUpdatedAt, lastUpdatedAt })
             } else {
               console.log('[Collab] skip seed, already seeded', meta.get('seeded'))
             }
@@ -463,7 +536,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, initialHTML, provider])
+  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt])
 
   useEffect(() => {
     if (!editor) return

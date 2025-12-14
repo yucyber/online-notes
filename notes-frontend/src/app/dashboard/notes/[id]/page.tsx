@@ -18,6 +18,7 @@ import type { Note } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
 import OutlinePanel from '@/components/editor/OutlinePanel'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
+import { isHtml, htmlToMarkdown, markdownToHtml } from '@/utils/markdown-converter'
 
 export default function NoteDetailPage() {
   const router = useRouter()
@@ -331,7 +332,12 @@ export default function NoteDetailPage() {
               }} />
               <TiptapEditor
                 noteId={id}
-                initialHTML={note.content || '<p></p>'}
+                // Always normalize: HTML -> Markdown -> Clean HTML
+                // This handles:
+                // 1. "Bad HTML" (Markdown wrapped in p tags) -> Clean HTML
+                // 2. "Good HTML" -> Markdown -> Clean HTML (Safe roundtrip)
+                // 3. "Markdown" -> Clean HTML
+                initialHTML={markdownToHtml(htmlToMarkdown(note.content || ''))}
                 onSave={async (html: string) => { await handleSave(note.title || '', html); setHtml(html) }}
                 user={me}
                 readOnly={(note as any)?.visibility === 'public'}
@@ -396,7 +402,7 @@ export default function NoteDetailPage() {
             </div>
           ) : (
             <MarkdownEditor
-              initialContent={note.content || ''}
+              initialContent={isHtml(note.content || '') ? htmlToMarkdown(note.content || '') : (note.content || '')}
               initialTitle={note.title || ''}
               onSave={handleSave}
               onSaveDraft={handleSaveDraft}
@@ -408,14 +414,13 @@ export default function NoteDetailPage() {
         </div>
         {showSidebar && !isFullscreen && (
           <div className="space-y-6">
-            <div className="bg-white" style={{ borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1), 0 2px 4px -2px rgba(0,0,0,0.1)' }}>
-              <div className="p-4">
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm font-medium">大纲</div>
-                  <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">查看版本</a>
-                </div>
-                <OutlinePanel html={html || (note.content || '<p></p>')} />
+            {/* 仿语雀风格大纲容器：无边框，纯净背景 */}
+            <div className="sticky top-6">
+              <div className="mb-3 flex items-center justify-between px-2">
+                <div className="text-sm font-medium text-gray-900">大纲</div>
+                <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-gray-400 hover:text-blue-600">历史版本</a>
               </div>
+              <OutlinePanel html={html || (isHtml(note.content || '') ? (note.content || '<p></p>') : markdownToHtml(note.content || ''))} />
             </div>
           </div>
         )}

@@ -5,6 +5,7 @@ import { Note, NoteDocument } from './schemas/note.schema';
 import { CreateNoteDto, UpdateNoteDto, NoteFilterDto } from './dto';
 import { CategoriesService } from '../categories/categories.service';
 import { TagsService } from '../tags/tags.service';
+import { EmbeddingService } from '../semantic/embedding.service';
 import Redis from 'ioredis'
 import { createHash } from 'crypto'
 
@@ -14,6 +15,7 @@ export class NotesService {
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
     private readonly categoriesService: CategoriesService,
     private readonly tagsService: TagsService,
+    private readonly embeddingService: EmbeddingService,
   ) { }
 
   private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
@@ -44,7 +46,29 @@ export class NotesService {
       }
     }
 
+    // Async embedding generation
+    this.updateEmbedding(savedNote);
+
     return savedNote;
+  }
+
+  private async updateEmbedding(note: NoteDocument) {
+    try {
+      const text = `${note.title}\n${note.content}`;
+      // Truncate if too long (Coze might have limits, e.g. 4000 chars)
+      const truncatedText = text.substring(0, 8000);
+      const embedding = await this.embeddingService.generateEmbedding(truncatedText);
+
+      if (embedding && embedding.length > 0) {
+        // Use updateOne to avoid version conflicts and unnecessary overhead
+        await this.noteModel.updateOne(
+          { _id: note._id },
+          { $set: { embedding: embedding } }
+        );
+      }
+    } catch (error) {
+      console.error(`Failed to update embedding for note ${note._id}:`, error);
+    }
   }
 
   async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
@@ -239,6 +263,11 @@ export class NotesService {
 
     if (!updatedNote) {
       throw new NotFoundException('笔记不存在');
+    }
+
+    // Async embedding generation if content or title changed
+    if (updateNoteDto.title || updateNoteDto.content) {
+      this.updateEmbedding(updatedNote);
     }
 
     // Handle category count changes
@@ -448,23 +477,67 @@ export class NotesService {
 
     if (currentNoteId) {
       try {
-        const currentNote = await this.noteModel.findById(currentNoteId).exec();
-        excludeIds.push(new Types.ObjectId(currentNoteId));
+        // Select embedding explicitly if it's not selected by default
+        const currentNote = await this.noteModel.findById(currentNoteId).select('+embedding').exec();
 
-        if (currentNote && currentNote.tags && currentNote.tags.length > 0) {
-          const base = { $and: andConditions }
-          const relatedNotes = await this.noteModel.find({
-            ...base,
-            _id: { $ne: new Types.ObjectId(currentNoteId) },
-            tags: { $in: currentNote.tags },
-          })
-            .limit(limit)
-            .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
-            .lean()
-            .exec();
+        if (currentNote) {
+          excludeIds.push(currentNote._id as Types.ObjectId);
 
-          recommendations.push(...relatedNotes);
-          relatedNotes.forEach(note => excludeIds.push(note._id as Types.ObjectId));
+          // 1. Strategy: Vector Search (Semantic Similarity)
+          // If the current note has an embedding, find semantically similar notes
+          if (currentNote.embedding && currentNote.embedding.length > 0) {
+            try {
+              const vectorResults = await this.noteModel.aggregate([
+                {
+                  $vectorSearch: {
+                    index: 'vector_index',
+                    path: 'embedding',
+                    queryVector: currentNote.embedding,
+                    numCandidates: 50,
+                    limit: limit,
+                    filter: {
+                      userId: { $eq: userObjectId }
+                    }
+                  }
+                },
+                {
+                  $match: {
+                    _id: { $ne: currentNote._id },
+                    status: 'published'
+                  }
+                },
+                {
+                  $project: {
+                    title: 1, content: 1, categoryId: 1, categoryIds: 1, tags: 1, userId: 1, status: 1, createdAt: 1, updatedAt: 1,
+                    score: { $meta: 'vectorSearchScore' }
+                  }
+                }
+              ]).exec();
+
+              recommendations.push(...(vectorResults as any[]));
+              vectorResults.forEach(r => excludeIds.push(r._id));
+            } catch (err) {
+              console.warn('[Recommendations] Vector search failed, falling back to tags', err);
+            }
+          }
+
+          // 2. Strategy: Tag Search (Fallback or Supplement)
+          // If we still need more recommendations, use tags
+          if (recommendations.length < limit && currentNote.tags && currentNote.tags.length > 0) {
+            const base = { $and: andConditions }
+            const relatedNotes = await this.noteModel.find({
+              ...base,
+              _id: { $nin: excludeIds },
+              tags: { $in: currentNote.tags },
+            })
+              .limit(limit - recommendations.length)
+              .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+              .lean()
+              .exec();
+
+            recommendations.push(...relatedNotes);
+            relatedNotes.forEach(note => excludeIds.push(note._id as Types.ObjectId));
+          }
         }
       } catch (error) {
         console.error('Recommendations currentNote branch error', error)

@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-type TocItem = { id: string; text: string; level: number; children?: TocItem[] }
+type TocItem = { id: string; text: string; level: number; children?: TocItem[]; index: number }
 
 function buildToc(html: string): TocItem[] {
   const doc = new DOMParser().parseFromString(html || '<p></p>', 'text/html')
@@ -9,7 +9,7 @@ function buildToc(html: string): TocItem[] {
   const items = hs.map((h, i) => {
     const id = h.id || ((h.textContent || '').trim().toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-') + '-' + i)
     h.id = id
-    return { id, text: h.textContent || '', level: Number(h.tagName.substring(1)) }
+    return { id, text: h.textContent || '', level: Number(h.tagName.substring(1)), index: i }
   })
   const root: TocItem[] = []
   const stack: TocItem[] = []
@@ -52,42 +52,45 @@ export default function OutlinePanel({ html }: { html: string }) {
     return toc.map(hit).filter(Boolean) as TocItem[]
   }, [toc, filter])
 
-  const scrollTo = (id: string) => {
+  const scrollTo = (id: string, index: number) => {
     const el = document.getElementById(id)
-    if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    if (el) {
+      el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+    } else {
+      // Dispatch event for Tiptap editor to handle scrolling by index
+      document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))
+    }
   }
 
-  const onKey = (e: React.KeyboardEvent<HTMLButtonElement>, id: string) => {
+  const onKey = (e: React.KeyboardEvent<HTMLButtonElement>, id: string, index: number) => {
     if (e.key === 'Enter' || e.key === ' ') {
       e.preventDefault()
-      scrollTo(id)
+      scrollTo(id, index)
     }
   }
   const render = (nodes: TocItem[]) => nodes.map(n => (
-    <li key={n.id} style={{ listStyle: 'none' }}>
+    <li key={n.id} className="list-none">
       <button
         role="treeitem"
         aria-level={n.level}
         aria-current={currentId === n.id ? 'true' : undefined}
-        onClick={() => scrollTo(n.id)}
-        onKeyDown={(e) => onKey(e, n.id)}
-        className="cursor-pointer select-none focus:outline-none focus:ring-2 focus:ring-blue-500"
+        onClick={() => scrollTo(n.id, n.index)}
+        onKeyDown={(e) => onKey(e, n.id, n.index)}
+        className={`
+          group flex w-full items-center text-left text-sm transition-colors duration-200
+          ${currentId === n.id ? 'text-blue-600 font-medium' : 'text-gray-500 hover:text-gray-900'}
+        `}
         style={{
-          paddingLeft: `${(n.level - 1) * 12}px`,
-          minHeight: 44,
-          display: 'flex',
-          alignItems: 'center',
-          borderRadius: 6,
-          background: currentId === n.id ? '#eef2ff' : 'transparent',
-          color: currentId === n.id ? '#111827' : '#374151',
-          paddingRight: 12,
-          width: '100%'
+          paddingTop: 6,
+          paddingBottom: 6,
+          paddingLeft: `${(n.level - 1) * 16 + 12}px`, // Indentation
+          borderLeft: currentId === n.id ? '2px solid #2563eb' : '2px solid transparent', // Active marker
         }}
       >
-        <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{n.text}</span>
+        <span className="truncate">{n.text}</span>
       </button>
       {n.children?.length ? (
-        <ul role="group" style={{ marginTop: 4, paddingLeft: 0 }}>
+        <ul role="group" className="m-0 p-0">
           {render(n.children)}
         </ul>
       ) : null}
@@ -95,16 +98,20 @@ export default function OutlinePanel({ html }: { html: string }) {
   ))
 
   return (
-    <aside role="navigation" aria-label="文档大纲" className="bg-white"
-      style={{ width: 280, minWidth: 240, maxWidth: 360, border: '1px solid #e5e7eb', borderRadius: 12 }}
-    >
-      <div style={{ padding: 12, borderBottom: '1px solid #e5e7eb' }}>
-        <div className="text-sm font-medium">文档大纲</div>
-        <input type="text" placeholder="搜索大纲…" value={filter} onChange={e => setFilter(e.target.value)} aria-label="搜索大纲" className="mt-2 w-full border rounded px-2 py-1 text-sm" />
+    <div className="w-full">
+      <div className="mb-3 px-2">
+        <input 
+          type="text" 
+          placeholder="搜索大纲..." 
+          value={filter} 
+          onChange={e => setFilter(e.target.value)} 
+          aria-label="搜索大纲" 
+          className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 focus:border-blue-500 focus:bg-white focus:outline-none" 
+        />
       </div>
-      <ul role="tree" aria-label="标题列表" style={{ padding: 8, maxHeight: 'calc(100vh - 180px)', overflow: 'auto' }}>
+      <ul role="tree" aria-label="标题列表" className="max-h-[calc(100vh-240px)] overflow-y-auto overflow-x-hidden">
         {render(filtered)}
       </ul>
-    </aside>
+    </div>
   )
 }

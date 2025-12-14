@@ -9,7 +9,7 @@ const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'
   loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
 })
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { ArrowLeft, ChevronLeft, ChevronRight, Users, ChevronDown, ChevronUp } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import { CommentsPanel } from '@/components/collab/CommentsPanel'
@@ -50,6 +50,7 @@ export default function EditNotePage() {
   const [showInsertMenu, setShowInsertMenu] = useState(false)
   const [showLinkDialog, setShowLinkDialog] = useState(false)
   const [linkHref, setLinkHref] = useState('https://')
+  const [showMeta, setShowMeta] = useState(true)
   useEffect(() => {
     const open = () => setShowLinkDialog(true)
     document.addEventListener('open:link-dialog', open as any)
@@ -69,7 +70,13 @@ export default function EditNotePage() {
         result.push({ id, text, level })
       }
     }
-    setToc(result)
+    setToc(prev => {
+      if (prev.length !== result.length) return result
+      for (let i = 0; i < prev.length; i++) {
+        if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
+      }
+      return prev
+    })
   }, [])
 
   // 生成 HTML 大纲（用于 TipTap）
@@ -83,7 +90,13 @@ export default function EditNotePage() {
         const id = (h.id && h.id.trim()) || text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + i
         return { id, text, level }
       })
-      setToc(result)
+      setToc(prev => {
+        if (prev.length !== result.length) return result
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
+        }
+        return prev
+      })
     } catch {
       setToc([])
     }
@@ -256,6 +269,8 @@ export default function EditNotePage() {
         const isLikelyMarkdown = /(\n|^)\s{0,3}(#{1,6}\s+|[-*]\s+|\d+\.\s+|`{3,}|>|\[.+\]\(.+\))/m.test(raw)
         // 若此前因 UI 降级已选择 markdown，则不强制改回
         setEditorMode(prev => {
+          // 如果内容明显是 HTML，强制使用富文本模式，否则 Markdown 编辑器会显示源码，体验极差
+          if (isLikelyHTML) return 'rich'
           if (prev === 'markdown') return prev
           return (!isLikelyHTML && isLikelyMarkdown) ? 'markdown' : 'rich'
         })
@@ -499,6 +514,14 @@ export default function EditNotePage() {
     router.push('/dashboard/notes')
   }
 
+  const handleMarkdownChange = useCallback((content: string) => {
+    extractHeadingsFromMarkdown(content)
+  }, [extractHeadingsFromMarkdown])
+
+  const handleSelectionChange = useCallback((start: number, end: number) => {
+    setSelection({ start, end })
+  }, [])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -615,411 +638,425 @@ export default function EditNotePage() {
           background: 'var(--surface-1)'
         }}
       >
-        <div className="grid gap-6 border-b p-6 lg:grid-cols-12" style={{ borderColor: 'var(--border)' }}>
+        <div
+          className="flex items-center justify-between px-6 py-3 cursor-pointer select-none"
+          style={{ borderBottom: showMeta ? '1px solid var(--border)' : 'none' }}
+          onClick={() => setShowMeta(!showMeta)}
+        >
+          <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>笔记属性</span>
+          <button className="text-gray-500 hover:text-gray-700">
+            {showMeta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </div>
 
-          <div
-            className="col-span-12 w-full"
-            style={{
-              borderRadius: '12px',
-              boxShadow: 'var(--shadow-md)',
-              background: 'var(--surface-1)'
-            }}
-          >
-            <div className="grid gap-6 border-b p-6 md:grid-cols-2" style={{ borderColor: 'var(--border)' }}>
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>选择分类</span>
-                  {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
-                </div>
-                <select
-                  className="w-full rounded-lg border p-3 text-sm"
-                  style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                  value={selectedCategory}
-                  onChange={(e) => setSelectedCategory(e.target.value)}
-                  disabled={metaLoading || !!metaError}
-                >
-                  <option value="">未分类</option>
-                  {categories.map((category) => {
-                    const value = resolveCategoryId(category)
-                    return (
-                      <option key={value || category.name} value={value}>
-                        {category.name}
-                      </option>
-                    )
-                  })}
-                </select>
+        {showMeta && (
+          <div className="grid gap-6 p-6 lg:grid-cols-12" style={{ borderColor: 'var(--border)' }}>
 
-                <div className="mt-4">
+            <div
+              className="col-span-12 w-full"
+              style={{
+                borderRadius: '12px',
+                boxShadow: 'none',
+                background: 'transparent'
+              }}
+            >
+              <div className="grid gap-6 md:grid-cols-2">
+                <div>
                   <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>附属分类（仅用于标签）</span>
+                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>选择分类</span>
+                    {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
                   </div>
-                  <div className="max-h-56 overflow-auto rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-                    {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="mb-2 flex items-center justify-between">
-                  <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标签（可多选）</span>
-                  {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
-                </div>
-                <div className="mb-2 flex items-center gap-2">
-                  <input
-                    type="text"
-                    value={tagInput}
-                    onChange={(e) => setTagInput(e.target.value)}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') {
-                        const parts = tagInput.split(/[,\s]+/)
-                        setTagInput('')
-                        addTagsByNames(parts)
-                      }
-                    }}
-                    placeholder="输入标签，Enter 添加，支持逗号分隔"
-                    className="flex-1 rounded-lg border p-2 text-sm placeholder-muted"
-                    style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                  />
-                  <button
-                    className="px-3 py-1 rounded border text-sm"
+                  <select
+                    className="w-full rounded-lg border p-3 text-sm"
                     style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                    onClick={() => setSelectedTags([])}
-                  >清空标签</button>
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    disabled={metaLoading || !!metaError}
+                  >
+                    <option value="">未分类</option>
+                    {categories.map((category) => {
+                      const value = resolveCategoryId(category)
+                      return (
+                        <option key={value || category.name} value={value}>
+                          {category.name}
+                        </option>
+                      )
+                    })}
+                  </select>
+
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>附属分类（仅用于标签）</span>
+                    </div>
+                    <div className="max-h-56 overflow-auto rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
+                      {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
+                    </div>
+                  </div>
                 </div>
-                {tagInput && (
-                  <div className="mb-2 rounded-lg border p-2 shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-                    <div className="text-xs text-gray-500 mb-1">建议</div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标签（可多选）</span>
+                    {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
+                  </div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const parts = tagInput.split(/[,\s]+/)
+                          setTagInput('')
+                          addTagsByNames(parts)
+                        }
+                      }}
+                      placeholder="输入标签，Enter 添加，支持逗号分隔"
+                      className="flex-1 rounded-lg border p-2 text-sm placeholder-muted"
+                      style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
+                    />
+                    <button
+                      className="px-3 py-1 rounded border text-sm"
+                      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
+                      onClick={() => setSelectedTags([])}
+                    >清空标签</button>
+                  </div>
+                  {tagInput && (
+                    <div className="mb-2 rounded-lg border p-2 shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
+                      <div className="text-xs text-gray-500 mb-1">建议</div>
+                      <div className="flex flex-wrap gap-2">
+                        {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
+                          const id = (t.id || (t as unknown as { _id?: string })?._id || '')
+                          return (
+                            <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                              {t.name}
+                            </button>
+                          )
+                        })}
+                        <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                          创建标签 “{tagInput}”
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {tags.length === 0 ? (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      {metaError || '暂无可用标签'}
+                    </p>
+                  ) : (
                     <div className="flex flex-wrap gap-2">
-                      {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
-                        const id = (t.id || (t as unknown as { _id?: string })?._id || '')
+                      {tags.map((tag) => {
+                        const tagId =
+                          tag.id ||
+                          (tag as unknown as { _id?: string })?._id ||
+                          ''
+                        const isActive = tagId ? selectedTags.includes(tagId) : false
                         return (
-                          <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
-                            {t.name}
+                          <button
+                            key={tagId || tag.name}
+                            type="button"
+                            onClick={() => tagId && toggleTag(tagId)}
+                            disabled={!tagId}
+                            className="rounded-full border px-3 py-1 text-sm transition"
+                            style={{
+                              ...(isActive
+                                ? { borderColor: 'var(--primary-100)', background: 'var(--primary-50)', color: 'var(--primary-600)' }
+                                : { borderColor: 'var(--border)', color: 'var(--on-surface)' }),
+                              minHeight: 44,
+                            }}
+                          >
+                            {tag.name}
                           </button>
                         )
                       })}
-                      <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
-                        创建标签 “{tagInput}”
-                      </button>
                     </div>
-                  </div>
-                )}
-                {tags.length === 0 ? (
-                  <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                    {metaError || '暂无可用标签'}
-                  </p>
-                ) : (
-                  <div className="flex flex-wrap gap-2">
-                    {tags.map((tag) => {
-                      const tagId =
-                        tag.id ||
-                        (tag as unknown as { _id?: string })?._id ||
-                        ''
-                      const isActive = tagId ? selectedTags.includes(tagId) : false
-                      return (
-                        <button
-                          key={tagId || tag.name}
-                          type="button"
-                          onClick={() => tagId && toggleTag(tagId)}
-                          disabled={!tagId}
-                          className="rounded-full border px-3 py-1 text-sm transition"
-                          style={{
-                            ...(isActive
-                              ? { borderColor: 'var(--primary-100)', background: 'var(--primary-50)', color: 'var(--primary-600)' }
-                              : { borderColor: 'var(--border)', color: 'var(--on-surface)' }),
-                            minHeight: 44,
-                          }}
-                        >
-                          {tag.name}
-                        </button>
-                      )
-                    })}
-                  </div>
-                )}
-              </div>
-
-              {metaError && (
-                <p className="md:col-span-2 text-sm text-red-500">{metaError}</p>
-              )}
-            </div>
-
-            <div className="px-6 pb-2">
-              <div className="flex items-center gap-2">
-                <span className="text-xs text-gray-500">编辑器</span>
-                <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
-                  <option value="rich">富文本（协同）</option>
-                  <option value="markdown">Markdown</option>
-                </select>
-                {uiDegraded && (
-                  <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
-                )}
-              </div>
-            </div>
-            <div className="grid gap-6 p-6 lg:grid-cols-12 xl:grid-cols-12">
-              <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
-                {editorMode === 'rich' ? (
-                  <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
-                    <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
-                      if (cmd === 'comments') {
-                        try {
-                          setShowCommentsDrawer(true)
-                          const openEvt = new CustomEvent('comments:open')
-                          document.dispatchEvent(openEvt)
-                          if (selection && typeof selection.start === 'number' && typeof selection.end === 'number' && selection.start !== selection.end) {
-                            const markEvt = new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId: `local-${Date.now()}` } })
-                            document.dispatchEvent(markEvt)
-                          }
-                          setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50)
-                        } catch { }
-                        return
-                      }
-                      if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
-                      const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
-                      document.dispatchEvent(ev)
-                    }} />
-                    <TiptapEditor
-                      noteId={id}
-                      initialHTML={note.content || '<p></p>'}
-                      onSave={async (html: string) => { await handleSave(note.title || '', html) }}
-                      user={me}
-                      readOnly={false}
-                      onSelectionChange={(start, end) => setSelection({ start, end })}
-                      onContentChange={(html) => extractHeadingsFromHTML(html)}
-                      // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
-                      versionKey={searchParams?.get('restored') || undefined}
-                      className="min-h-[calc(100vh-200px)]"
-                    />
-                  </div>
-                ) : (
-                  <MarkdownEditor
-                    initialContent={note.content || ''}
-                    initialTitle={note.title || ''}
-                    onSave={handleSave}
-                    onSaveDraft={handleSaveDraft}
-                    isNew={false}
-                    draftKey={`note:${id}`}
-                    onSelectionChange={(start, end) => setSelection({ start, end })}
-                    onContentChange={(content) => extractHeadingsFromMarkdown(content)}
-                  />
-                )}
-              </div>
-              {showSidebar && !isFullscreen && (
-                <div className="lg:col-span-2 xl:col-span-3">
-                  <div className="sticky top-20 space-y-3">
-                    <div className="rounded-lg border bg-white">
-                      <div className="px-4 py-2 border-b text-sm font-medium">大纲</div>
-                      <div className="p-3">
-                        {toc.length === 0 ? (
-                          <div className="text-xs text-gray-400">暂无标题</div>
-                        ) : (
-                          <div className="space-y-1">
-                            {toc.map((h) => (
-                              <button
-                                key={h.id}
-                                onClick={() => {
-                                  const el = document.getElementById(h.id)
-                                  if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                                }}
-                                className={`w-full text-left text-xs rounded px-3 py-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 ${currentHeadingId === h.id ? 'text-blue-600' : 'text-gray-700'}`}
-                                style={{ paddingLeft: `${(h.level - 1) * 12}px` }}
-                              >
-                                {h.text}
-                              </button>
-                            ))}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                    <div className="rounded-lg border bg-white">
-                      <div className="px-4 py-2 border-b text-sm font-medium flex items-center justify-between">
-                        <span>快速操作</span>
-                        <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">版本</a>
-                      </div>
-                      <div className="p-3 text-xs text-gray-500">
-                        在上方工具栏打开“协作抽屉”查看评论与协作者。
-                      </div>
-                    </div>
-                  </div>
+                  )}
                 </div>
-              )}
+
+                {metaError && (
+                  <p className="md:col-span-2 text-sm text-red-500">{metaError}</p>
+                )}
+              </div>
             </div>
           </div>
+        )}
 
-          {/* 右侧协作抽屉（不包含评论内容） */}
-          {showCollabDrawer && (
-            <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
-              <div
-                className="absolute inset-0 bg-black/20"
-                role="button"
-                tabIndex={0}
-                onClick={() => setShowCollabDrawer(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setShowCollabDrawer(false)
-                }}
-              />
-              <div className="absolute right-0 top-0 h-full w-[360px] bg-white border-l shadow-xl">
-                <div className="flex items-center justify-between px-4 py-2 border-b">
-                  <div className="text-sm font-medium">协作</div>
-                  <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCollabDrawer(false)}>关闭</button>
-                </div>
-                <div className="p-4 space-y-4 overflow-auto h-full">
-                  <div className="rounded-lg border">
-                    <div className="px-3 py-2 border-b text-xs font-medium">协作者</div>
-                    <div className="p-3">
-                      <CollaboratorsPanel noteId={id} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* 右侧评论抽屉（独立） */}
-          {showCommentsDrawer && (
-            <div className="fixed inset-0 z-50" aria-modal="true" role="dialog" aria-labelledby="comments-drawer-title">
-              <div
-                className="absolute inset-0 bg-black/20"
-                role="button"
-                tabIndex={0}
-                onClick={() => setShowCommentsDrawer(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') setShowCommentsDrawer(false)
-                }}
-              />
-              <div
-                ref={commentsDrawerRef}
-                id="comments-drawer"
-                className="absolute right-0 top-0 h-full w-[380px] bg-white border-l shadow-xl"
-                style={{
-                  borderRadius: 0,
-                  transform: 'translateX(0)',
-                  transition: 'transform 300ms ease-in-out',
-                }}
-              >
-                <div className="flex items-center justify-between px-4 py-2 border-b">
-                  <div id="comments-drawer-title" className="text-sm font-medium">划词评论</div>
-                  <div className="text-xs text-gray-500">选区：{selection.start}–{selection.end}（长度 {Math.max(0, selection.end - selection.start)}）</div>
-                  <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCommentsDrawer(false)}>关闭</button>
-                </div>
-                <div className="p-4 overflow-auto h-full">
-                  <div className="rounded-lg border" style={{ borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)' }}>
-                    <div className="p-3">
-                      <CommentsPanel noteId={id} selection={selection} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
-          <button
-            aria-label="打开协作抽屉"
-            className="fixed right-6 bottom-24 z-40 rounded-full shadow-xl active-95"
-            onClick={() => setShowCollabDrawer(true)}
-            style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
-          >
-            <span className="sr-only">打开协作抽屉</span>
-            •
-          </button>
-          {/* 左侧浮动 “+” 插入菜单 */}
-          {!isFullscreen && (
-            <>
-              <button
-                aria-label="插入工具"
-                className="fixed left-6 bottom-24 z-40 rounded-full shadow-xl active-95"
-                onClick={() => setShowInsertMenu(s => !s)}
-                style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
-              >
-                +
-              </button>
-              {showInsertMenu && (
-                <div className="fixed left-6 bottom-40 z-50 rounded-xl border bg-white shadow-xl"
-                  role="menu" aria-label="插入工具菜单"
-                  style={{ minWidth: 220 }}
-                >
-                  <div className="p-2 grid" style={{ rowGap: 6 }}>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
-                      setShowInsertMenu(false)
-                      try {
-                        const res = await boardsAPI.create('画板', id)
-                        const link = `/dashboard/boards/${res.id}`
-                        const label = String(res?.title || '画板')
-                        document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } }))
-                      } catch { }
-                    }}>画板</button>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
-                      setShowInsertMenu(false)
-                      try {
-                        const res = await mindmapsAPI.create('思维导图', id)
-                        // 使用 insertResource 命令直接插入卡片
-                        document.dispatchEvent(new CustomEvent('tiptap:exec', {
-                          detail: {
-                            cmd: 'insertResource',
-                            payload: { type: 'mindmap', id: res.id }
-                          }
-                        }))
-                      } catch { }
-                    }}>思维导图</button>
-                    <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
-                      setShowInsertMenu(false)
-                      try {
-                        const input = document.createElement('input')
-                        input.type = 'file'
-                        input.onchange = async () => {
-                          const f = input.files?.[0]
-                          if (!f) return
-                          const reader = new FileReader()
-                          reader.onload = async () => {
-                            const dataUri = String(reader.result || '')
-                            const r = await assetsAPI.uploadBase64(f.name, dataUri, id)
-                            const href = r?.url || dataUri
-                            document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } }))
-                          }
-                          reader.readAsDataURL(f)
-                        }
-                        input.click()
-                      } catch { }
-                    }}>附件</button>
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-          {/* 插入链接对话框 */}
-          {showLinkDialog && (
-            <div
-              className="fixed inset-0 z-50 bg-black/30"
-              role="dialog"
-              aria-modal="true"
-              tabIndex={0}
-              onClick={() => setShowLinkDialog(false)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') setShowLinkDialog(false)
-                if (e.key === 'Escape') setShowLinkDialog(false)
-              }}
-            >
-              <div
-                className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]"
-                onClick={(e) => e.stopPropagation()}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
-                }}
-              >
-                <h3 className="text-base font-medium mb-3">插入链接</h3>
-                <input aria-label="链接地址" value={linkHref} onChange={(e) => setLinkHref(e.target.value)} className="w-full border rounded-md px-3 py-2" placeholder="https://example.com" />
-                <div className="mt-3 flex justify-end gap-2">
-                  <button className="px-3 py-2 rounded-md border" onClick={() => setShowLinkDialog(false)}>取消</button>
-                  <button className="px-3 py-2 rounded-md bg-blue-600 text-white" onClick={() => { const href = linkHref.trim(); if (href) document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } })); setShowLinkDialog(false) }}>插入</button>
-                </div>
-              </div>
-            </div>
-          )}
-          {/* 旧的顶部弹窗已改为右侧抽屉，保留变量但不再渲染 */}
+        <div className="px-6 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">编辑器</span>
+            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+              <option value="rich">富文本（协同）</option>
+              <option value="markdown">Markdown</option>
+            </select>
+            {uiDegraded && (
+              <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
+            )}
+          </div>
         </div>
       </div>
+      <div className="grid gap-6 p-6 lg:grid-cols-12 xl:grid-cols-12">
+        <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
+          {editorMode === 'rich' ? (
+            <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
+              <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+                if (cmd === 'comments') {
+                  try {
+                    setShowCommentsDrawer(true)
+                    const openEvt = new CustomEvent('comments:open')
+                    document.dispatchEvent(openEvt)
+                    if (selection && typeof selection.start === 'number' && typeof selection.end === 'number' && selection.start !== selection.end) {
+                      const markEvt = new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId: `local-${Date.now()}` } })
+                      document.dispatchEvent(markEvt)
+                    }
+                    setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50)
+                  } catch { }
+                  return
+                }
+                if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
+                const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
+                document.dispatchEvent(ev)
+              }} />
+              <TiptapEditor
+                noteId={id}
+                initialHTML={note.content || '<p></p>'}
+                onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+                user={me}
+                readOnly={false}
+                onSelectionChange={(start, end) => setSelection({ start, end })}
+                onContentChange={(html) => extractHeadingsFromHTML(html)}
+                // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
+                versionKey={searchParams?.get('restored') || undefined}
+                updatedAt={note.updatedAt}
+                className="min-h-[calc(100vh-200px)]"
+              />
+            </div>
+          ) : (
+            <MarkdownEditor
+              initialContent={note.content || ''}
+              initialTitle={note.title || ''}
+              onSave={handleSave}
+              onSaveDraft={handleSaveDraft}
+              isNew={false}
+              draftKey={`note:${id}`}
+              onSelectionChange={handleSelectionChange}
+              onContentChange={handleMarkdownChange}
+            />
+          )}
+        </div>
+        {showSidebar && !isFullscreen && (
+          <div className="lg:col-span-2 xl:col-span-3">
+            <div className="sticky top-20 space-y-3">
+              <div className="rounded-lg border bg-white">
+                <div className="px-4 py-2 border-b text-sm font-medium">大纲</div>
+                <div className="p-3">
+                  {toc.length === 0 ? (
+                    <div className="text-xs text-gray-400">暂无标题</div>
+                  ) : (
+                    <div className="space-y-1">
+                      {toc.map((h) => (
+                        <button
+                          key={h.id}
+                          onClick={() => {
+                            const el = document.getElementById(h.id)
+                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
+                          }}
+                          className={`w-full text-left text-xs rounded px-3 py-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 ${currentHeadingId === h.id ? 'text-blue-600' : 'text-gray-700'}`}
+                          style={{ paddingLeft: `${(h.level - 1) * 12}px` }}
+                        >
+                          {h.text}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="rounded-lg border bg-white">
+                <div className="px-4 py-2 border-b text-sm font-medium flex items-center justify-between">
+                  <span>快速操作</span>
+                  <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">版本</a>
+                </div>
+                <div className="p-3 text-xs text-gray-500">
+                  在上方工具栏打开“协作抽屉”查看评论与协作者。
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* 右侧协作抽屉（不包含评论内容） */}
+      {showCollabDrawer && (
+        <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
+          <div
+            className="absolute inset-0 bg-black/20"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowCollabDrawer(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') setShowCollabDrawer(false)
+            }}
+          />
+          <div className="absolute right-0 top-0 h-full w-[360px] bg-white border-l shadow-xl">
+            <div className="flex items-center justify-between px-4 py-2 border-b">
+              <div className="text-sm font-medium">协作</div>
+              <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCollabDrawer(false)}>关闭</button>
+            </div>
+            <div className="p-4 space-y-4 overflow-auto h-full">
+              <div className="rounded-lg border">
+                <div className="px-3 py-2 border-b text-xs font-medium">协作者</div>
+                <div className="p-3">
+                  <CollaboratorsPanel noteId={id} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 右侧评论抽屉（独立） */}
+      {showCommentsDrawer && (
+        <div className="fixed inset-0 z-50" aria-modal="true" role="dialog" aria-labelledby="comments-drawer-title">
+          <div
+            className="absolute inset-0 bg-black/20"
+            role="button"
+            tabIndex={0}
+            onClick={() => setShowCommentsDrawer(false)}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') setShowCommentsDrawer(false)
+            }}
+          />
+          <div
+            ref={commentsDrawerRef}
+            id="comments-drawer"
+            className="absolute right-0 top-0 h-full w-[380px] bg-white border-l shadow-xl"
+            style={{
+              borderRadius: 0,
+              transform: 'translateX(0)',
+              transition: 'transform 300ms ease-in-out',
+            }}
+          >
+            <div className="flex items-center justify-between px-4 py-2 border-b">
+              <div id="comments-drawer-title" className="text-sm font-medium">划词评论</div>
+              <div className="text-xs text-gray-500">选区：{selection.start}–{selection.end}（长度 {Math.max(0, selection.end - selection.start)}）</div>
+              <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCommentsDrawer(false)}>关闭</button>
+            </div>
+            <div className="p-4 overflow-auto h-full">
+              <div className="rounded-lg border" style={{ borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)' }}>
+                <div className="p-3">
+                  <CommentsPanel noteId={id} selection={selection} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
+      <button
+        aria-label="打开协作抽屉"
+        className="fixed right-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+        onClick={() => setShowCollabDrawer(true)}
+        style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
+      >
+        <span className="sr-only">打开协作抽屉</span>
+        •
+      </button>
+      {/* 左侧浮动 “+” 插入菜单 */}
+      {!isFullscreen && (
+        <>
+          <button
+            aria-label="插入工具"
+            className="fixed left-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+            onClick={() => setShowInsertMenu(s => !s)}
+            style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
+          >
+            +
+          </button>
+          {showInsertMenu && (
+            <div className="fixed left-6 bottom-40 z-50 rounded-xl border bg-white shadow-xl"
+              role="menu" aria-label="插入工具菜单"
+              style={{ minWidth: 220 }}
+            >
+              <div className="p-2 grid" style={{ rowGap: 6 }}>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                  setShowInsertMenu(false)
+                  try {
+                    const res = await boardsAPI.create('画板', id)
+                    const link = `/dashboard/boards/${res.id}`
+                    const label = String(res?.title || '画板')
+                    document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } }))
+                  } catch { }
+                }}>画板</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                  setShowInsertMenu(false)
+                  try {
+                    const res = await mindmapsAPI.create('思维导图', id)
+                    // 使用 insertResource 命令直接插入卡片
+                    document.dispatchEvent(new CustomEvent('tiptap:exec', {
+                      detail: {
+                        cmd: 'insertResource',
+                        payload: { type: 'mindmap', id: res.id }
+                      }
+                    }))
+                  } catch { }
+                }}>思维导图</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                  setShowInsertMenu(false)
+                  try {
+                    const input = document.createElement('input')
+                    input.type = 'file'
+                    input.onchange = async () => {
+                      const f = input.files?.[0]
+                      if (!f) return
+                      const reader = new FileReader()
+                      reader.onload = async () => {
+                        const dataUri = String(reader.result || '')
+                        const r = await assetsAPI.uploadBase64(f.name, dataUri, id)
+                        const href = r?.url || dataUri
+                        document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } }))
+                      }
+                      reader.readAsDataURL(f)
+                    }
+                    input.click()
+                  } catch { }
+                }}>附件</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {/* 插入链接对话框 */}
+      {showLinkDialog && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30"
+          role="dialog"
+          aria-modal="true"
+          tabIndex={0}
+          onClick={() => setShowLinkDialog(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setShowLinkDialog(false)
+            if (e.key === 'Escape') setShowLinkDialog(false)
+          }}
+        >
+          <div
+            className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
+            }}
+          >
+            <h3 className="text-base font-medium mb-3">插入链接</h3>
+            <input aria-label="链接地址" value={linkHref} onChange={(e) => setLinkHref(e.target.value)} className="w-full border rounded-md px-3 py-2" placeholder="https://example.com" />
+            <div className="mt-3 flex justify-end gap-2">
+              <button className="px-3 py-2 rounded-md border" onClick={() => setShowLinkDialog(false)}>取消</button>
+              <button className="px-3 py-2 rounded-md bg-blue-600 text-white" onClick={() => { const href = linkHref.trim(); if (href) document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } })); setShowLinkDialog(false) }}>插入</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 旧的顶部弹窗已改为右侧抽屉，保留变量但不再渲染 */}
     </div>
   );
 
