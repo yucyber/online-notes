@@ -342,7 +342,18 @@ export default function NoteDetailPage() {
                         <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
                         <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
                         <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => { setShowInsertMenu(false); try { const res = await boardsAPI.create('画板', id); const link = `/dashboard/boards/${res.id}`; const label = String(res?.title || '画板'); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } })) } catch { } }}>画板</button>
-                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => { setShowInsertMenu(false); try { const res = await mindmapsAPI.create('思维导图', id); const link = `/dashboard/mindmaps/${res.id}`; const label = String(res?.title || '思维导图'); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } })) } catch { } }}>思维导图</button>
+                        <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                          setShowInsertMenu(false)
+                          try {
+                            const res = await mindmapsAPI.create('思维导图', id)
+                            document.dispatchEvent(new CustomEvent('tiptap:exec', {
+                              detail: {
+                                cmd: 'insertResource',
+                                payload: { type: 'mindmap', id: res.id }
+                              }
+                            }))
+                          } catch { }
+                        }}>思维导图</button>
 
                         <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
                           setShowInsertMenu(false)

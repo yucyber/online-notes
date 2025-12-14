@@ -31,6 +31,7 @@ import { createComment, commentsAPI } from '@/lib/api'
 import CommentMark from './extensions/CommentMark'
 import FontSize from './extensions/FontSize'
 import StatusPill from './extensions/StatusPill'
+import ResourceEmbed from './extensions/ResourceEmbed'
 
 type Props = {
   noteId: string
@@ -312,6 +313,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       FontSize,
       TextStyle,
       StatusPill,
+      ResourceEmbed,
       Color,
       Highlight,
       Subscript,
@@ -356,6 +358,26 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     // 禁用SSR立即渲染，避免hydration mismatch警告
     immediatelyRender: false,
   }, [provider, collabEnabled])
+
+  // 监听来自 MindMap 页面的插入消息
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.origin !== window.location.origin) return
+      if (event.data?.type === 'INSERT_MINDMAP' && editor) {
+        const { id } = event.data.payload
+        editor.chain().focus().insertContent({
+          type: 'resourceEmbed',
+          attrs: {
+            type: 'mindmap',
+            id,
+            displayMode: 'preview'
+          }
+        }).run()
+      }
+    }
+    window.addEventListener('message', handleMessage)
+    return () => window.removeEventListener('message', handleMessage)
+  }, [editor])
 
   useEffect(() => {
     if (!editor || migratedOnceRef.current) return
@@ -416,19 +438,28 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
   // ✅ 修复：当连接成功且服务器文档为空时，使用 initialHTML 初始化
   useEffect(() => {
-    if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>') {
-      // 延迟检查，确保 Yjs 同步完成（如果 Yjs 覆盖了内容导致为空，这里可以检测到）
+    if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>' && provider) {
       const timer = setTimeout(() => {
-        // 检查编辑器是否为空（只有默认段落）
-        if (editor.isEmpty) {
-          console.log('[Collab] Server document seems empty, seeding from initialHTML')
-          // 使用 setContent 初始化，这会触发 Yjs 更新并同步到服务器
-          editor.commands.setContent(initialHTML)
+        try {
+          const meta = ydoc.getMap('meta')
+          const clientId = provider.awareness.clientID
+          ydoc.transact(() => {
+            if (!meta.get('seeded')) {
+              meta.set('seeded', { by: clientId, at: Date.now() })
+              // 原子化写入，避免并发重复
+              editor.commands.setContent(initialHTML)
+              console.log('[Collab] seeded by', clientId)
+            } else {
+              console.log('[Collab] skip seed, already seeded', meta.get('seeded'))
+            }
+          })
+        } catch (e) {
+          console.warn('[Collab] seed failed', e)
         }
-      }, 100)
+      }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, initialHTML])
+  }, [wsDebug.synced, editor, initialHTML, provider])
 
   useEffect(() => {
     if (!editor) return
@@ -573,6 +604,16 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         chain.setMark('textStyle', { fontSize: size }).run()
       }
       else if (cmd === 'paragraph') { chain.setParagraph().run() }
+      else if (cmd === 'insertResource') {
+        const type = String((payload && payload.type) || 'mindmap')
+        const id = String((payload && payload.id) || '')
+        if (id) {
+          chain.insertContent({
+            type: 'resourceEmbed',
+            attrs: { type, id, displayMode: 'preview' }
+          }).run()
+        }
+      }
       else if (cmd === 'embedPlaceholder') {
         const type = String((payload && payload.type) || 'embed')
         const label = String((payload && payload.label) || `占位：${type}`)
@@ -683,7 +724,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       </div>
       <div
         id="editor-card"
-        className="border rounded-[8px] p-3 min-h-[560px] h-[60vh] md:min-h-[640px] md:h-[70vh] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
+        className="border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent"
         // 使容器点击空白区域也可将光标移动到文末，解决下半区域无法输入/无法聚焦的问题
         onMouseDown={(e) => {
           try {
@@ -745,7 +786,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           </div>
         </BubbleMenu>
         {/* 让 ProseMirror 填满容器高度，点击任意空白处可聚焦 */}
-        <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', height: '100%', padding: 12, background: 'var(--surface-1)', color: 'var(--on-surface)' }} />
+        <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', padding: 12, background: 'var(--surface-1)', color: 'var(--on-surface)' }} />
         {/* 悬浮提示容器 */}
         <div id="comment-tooltip" style={{ position: 'absolute', pointerEvents: 'none', display: 'none', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.1)', transition: 'opacity 300ms ease-in-out' }}>已添加评论，打开右侧面板查看</div>
       </div>

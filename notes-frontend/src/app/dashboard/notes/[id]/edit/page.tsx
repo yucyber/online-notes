@@ -260,7 +260,8 @@ export default function EditNotePage() {
           return (!isLikelyHTML && isLikelyMarkdown) ? 'markdown' : 'rich'
         })
       } catch { }
-      try { document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: String(data?.content || '<p></p>') } })) } catch { }
+      // 移除强制 setContent，避免与 Yjs 协同冲突导致内容重复或覆盖
+      // try { document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: String(data?.content || '<p></p>') } })) } catch { }
       setError('')
     } catch (err) {
       setError('加载笔记失败')
@@ -784,7 +785,8 @@ export default function EditNotePage() {
                       readOnly={false}
                       onSelectionChange={(start, end) => setSelection({ start, end })}
                       onContentChange={(html) => extractHeadingsFromHTML(html)}
-                      versionKey={(searchParams?.get('restored') || '') || String(note.updatedAt || '')}
+                      // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
+                      versionKey={searchParams?.get('restored') || undefined}
                     />
                   </div>
                 ) : (
@@ -951,9 +953,13 @@ export default function EditNotePage() {
                       setShowInsertMenu(false)
                       try {
                         const res = await mindmapsAPI.create('思维导图', id)
-                        const link = `/dashboard/mindmaps/${res.id}`
-                        const label = String(res?.title || '思维导图')
-                        document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } }))
+                        // 使用 insertResource 命令直接插入卡片
+                        document.dispatchEvent(new CustomEvent('tiptap:exec', {
+                          detail: {
+                            cmd: 'insertResource',
+                            payload: { type: 'mindmap', id: res.id }
+                          }
+                        }))
                       } catch { }
                     }}>思维导图</button>
                     <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {

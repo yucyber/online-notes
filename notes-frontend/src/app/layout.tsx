@@ -2,6 +2,7 @@ import './globals.css'
 import 'tippy.js/dist/tippy.css'
 import '@/styles/editor-tokens.css'
 import RUMClient from '@/components/rum/RUMClient'
+import { AIProvider } from '@/context/AIContext'
 
 export const metadata = {
   title: '在线知识笔记平台',
@@ -40,7 +41,9 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen antialiased bg-white">
-        {children}
+        <AIProvider>
+          {children}
+        </AIProvider>
         {/* RUM 注入：在全局布局挂载轻量 Web Vitals 采集 */}
         <RUMClient />
       </body>

@@ -648,3 +648,28 @@ export const replyComment = commentsAPI.reply
 export const lockNote = noteLockAPI.lock
 export const unlockNote = noteLockAPI.unlock
 
+
+export const createMindMap = async (data: { _id?: string; title: string; content?: any }) => {
+  return api.post('/v1/mindmaps', data);
+};
+
+export const saveMindMap = async (id: string, data: any) => {
+  return api.put(`/v1/mindmaps/${id}`, { content: data });
+};
+
+export const getMindMap = async (id: string) => {
+  return api.get(`/v1/mindmaps/${id}`);
+};
+
+export const createBoard = async (data: { _id?: string; title: string; content?: any }) => {
+  return api.post('/v1/boards', data);
+};
+
+export const saveBoard = async (id: string, data: any) => {
+  return api.put(`/v1/boards/${id}`, { content: data });
+};
+
+export const getBoard = async (id: string) => {
+  return api.get(`/v1/boards/${id}`);
+};
+

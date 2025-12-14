@@ -23,6 +23,9 @@ export class Board {
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId
+
+  @Prop({ type: Object })
+  content: any
 }
 
 export const BoardSchema = SchemaFactory.createForClass(Board)
