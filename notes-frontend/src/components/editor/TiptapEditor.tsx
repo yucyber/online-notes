@@ -1,6 +1,6 @@
 'use client'
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { EditorContent, useEditor, BubbleMenu } from '@tiptap/react'
+import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import Underline from '@tiptap/extension-underline'
 import Link from '@tiptap/extension-link'
@@ -26,12 +26,13 @@ import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { Button } from '@/components/ui/button'
-import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
+import { Bold, Italic, Underline as UnderlineIcon, MessageSquare, Sparkles, FileText, PenTool, Loader2 } from 'lucide-react'
 import { createComment, commentsAPI } from '@/lib/api'
 import CommentMark from './extensions/CommentMark'
 import FontSize from './extensions/FontSize'
 import StatusPill from './extensions/StatusPill'
 import ResourceEmbed from './extensions/ResourceEmbed'
+import { streamAIWriter } from '@/lib/ai-writer'
 
 type Props = {
   noteId: string
@@ -78,6 +79,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const onSelectionChangeRef = useRef<typeof onSelectionChange | null>(onSelectionChange)
   const onContentChangeRef = useRef<typeof onContentChange | null>(onContentChange)
   const onSaveRef = useRef<typeof onSave | null>(onSave)
+  const [aiWritingType, setAiWritingType] = useState<null | 'continue' | 'polish' | 'summary'>(null)
 
   useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
   useEffect(() => { onContentChangeRef.current = onContentChange }, [onContentChange])
@@ -742,6 +744,42 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         }}
         style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface-1)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)', ...style }}
       >
+        <FloatingMenu
+          editor={editor}
+          tippyOptions={{ duration: 100 }}
+          shouldShow={({ state }) => {
+            const { $from } = state.selection
+            return $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0
+          }}
+        >
+          <Button
+            variant="ghost"
+            size="sm"
+            className="flex items-center gap-1 bg-white shadow-md border"
+            disabled={!!aiWritingType || readOnly}
+            onClick={() => {
+              if (!editor) return
+              const { from } = editor.state.selection
+              // 获取前文 500 字符
+              const context = editor.state.doc.textBetween(Math.max(0, from - 500), from, '\n')
+
+              setAiWritingType('continue')
+              streamAIWriter({
+                context,
+                type: 'continue',
+                onChunk: (text) => {
+                  editor.chain().focus().insertContent(text).run()
+                },
+                onDone: () => setAiWritingType(null),
+                onError: () => setAiWritingType(null)
+              })
+            }}
+          >
+            {aiWritingType === 'continue' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
+            AI 续写
+          </Button>
+        </FloatingMenu>
+
         <BubbleMenu
           editor={editor}
           pluginKey="bubble-menu"
@@ -771,6 +809,75 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             <Button aria-label="下划线" title="下划线 (Ctrl+U)" size="icon" variant="ghost" disabled={readOnly} onClick={() => editor.chain().focus().toggleUnderline().run()}>
               <UnderlineIcon className="w-4 h-4" aria-hidden />
             </Button>
+
+            <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
+
+            <Button
+              aria-label="AI 润色"
+              title="AI 润色"
+              size="icon"
+              variant="ghost"
+              disabled={readOnly || !!aiWritingType}
+              onClick={() => {
+                const { from, to } = editor.state.selection
+                const context = editor.state.doc.textBetween(from, to, '\n')
+
+                setAiWritingType('polish')
+                // 先清空选区内容，准备接收流式输入
+                // 或者保留选区，等第一个 chunk 回来再替换？
+                // 更好的体验是：保留选区，等流开始时替换
+                let isFirstChunk = true
+
+                streamAIWriter({
+                  context,
+                  type: 'polish',
+                  onChunk: (text) => {
+                    if (isFirstChunk) {
+                      editor.chain().focus().deleteSelection().insertContent(text).run()
+                      isFirstChunk = false
+                    } else {
+                      editor.chain().focus().insertContent(text).run()
+                    }
+                  },
+                  onDone: () => setAiWritingType(null),
+                  onError: () => setAiWritingType(null)
+                })
+              }}
+            >
+              {aiWritingType === 'polish' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-purple-500" />}
+            </Button>
+
+            <Button
+              aria-label="AI 摘要"
+              title="生成摘要"
+              size="icon"
+              variant="ghost"
+              disabled={readOnly || !!aiWritingType}
+              onClick={() => {
+                const { from, to } = editor.state.selection
+                const context = editor.state.doc.textBetween(from, to, '\n')
+
+                setAiWritingType('summary')
+                // 摘要插入到选区下方
+                editor.chain().focus().setTextSelection(to).insertContent('\n\n> **摘要**：').run()
+
+                streamAIWriter({
+                  context,
+                  type: 'summary',
+                  onChunk: (text) => {
+                    editor.chain().focus().insertContent(text).run()
+                  },
+                  onDone: () => {
+                    editor.chain().focus().insertContent('\n\n').run()
+                    setAiWritingType(null)
+                  },
+                  onError: () => setAiWritingType(null)
+                })
+              }}
+            >
+              {aiWritingType === 'summary' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4 text-blue-500" />}
+            </Button>
+
             <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
             <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={readOnly} onClick={() => {
               try {
