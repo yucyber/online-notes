@@ -38,7 +38,7 @@ export default function MindmapDetailPage() {
             const newMap = await createMindMap({ _id: id, title: '未命名思维导图' });
             setMap(newMap);
             setError('');
-          } catch (createErr) {
+          } catch {
             setError('创建思维导图失败');
           }
         } else {

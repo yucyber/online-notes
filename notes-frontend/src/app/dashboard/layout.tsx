@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Search, Sun, Moon, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Sun, Moon, ChevronRight } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import { getCurrentUser, isAuthenticated, removeToken } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'

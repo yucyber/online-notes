@@ -23,7 +23,7 @@ export default function MindmapEmbedPage() {
                 const data = await getMindMap(id)
                 setMap(data)
                 setError('')
-            } catch (e) {
+            } catch {
                 setError('加载失败')
             } finally {
                 setLoading(false)

@@ -165,7 +165,7 @@ export async function POST(request: Request) {
                                     else if (!eventType && data.content && data.role === 'assistant' && data.type === 'answer') {
                                         controller.enqueue(data.content);
                                     }
-                                } catch (e) {
+                                } catch {
                                     // Ignore parse errors for non-JSON lines
                                 }
                             }

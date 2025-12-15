@@ -70,7 +70,7 @@ export async function POST(req: Request) {
             try {
                 const parsedData = typeof data.data === 'string' ? JSON.parse(data.data) : data.data;
                 summary = parsedData.summary || parsedData.output || (typeof parsedData === 'string' ? parsedData : JSON.stringify(parsedData));
-            } catch (e) {
+            } catch {
                 // 如果解析失败，直接使用 data
                 summary = String(data.data);
             }

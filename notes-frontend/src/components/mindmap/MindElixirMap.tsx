@@ -1,6 +1,6 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
-import MindElixir, { E } from 'mind-elixir';
+import MindElixir from 'mind-elixir';
 // 引入样式文件，修复 UI 显示异常
 import 'mind-elixir/style';
 import { useAI } from '@/context/AIContext';
@@ -96,7 +96,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
                         const id = node.getAttribute('data-nodeid');
                         if (!id) return;
 
-                        // @ts-ignore
+                        // @ts-expect-error: MindElixir types are incomplete
                         const nodeData = me.nodeDataMap[id];
                         if (nodeData?.data?.image) {
                             // 防止重复添加图片
@@ -194,7 +194,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
                                 const id = node.getAttribute('data-nodeid');
                                 if (!id) return;
 
-                                // @ts-ignore
+                                // @ts-expect-error: MindElixir types are incomplete
                                 const nodeData = me.nodeDataMap[id];
                                 if (nodeData?.data?.image) {
                                     if (node.querySelector('img')) return;
@@ -221,7 +221,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
                             // 或者触发点击
                             const rootEl = containerRef.current?.querySelector('me-root');
                             if (rootEl) (rootEl as HTMLElement).click();
-                        } catch (ignore) { }
+                        } catch { }
                     }, 500);
                 }
             } catch (e) {

@@ -1,3 +1,4 @@
+/* eslint-disable */
 
 const MindElixir = require('mind-elixir');
 console.log('MindElixir:', MindElixir);

@@ -52,7 +52,7 @@ export const getAIMindMapData = async (content: string | any, scenario: MindMapS
             }
 
             parsedData = JSON.parse(jsonStr);
-        } catch (e) {
+        } catch {
             console.warn('AI response is not valid JSON, attempting fallback parsing:', messageContent);
 
             // Fallback logic for non-JSON responses (e.g. Markdown images or plain text)

@@ -8,12 +8,15 @@ export default function ActivityPage() {
   const [items, setItems] = useState<any[]>([])
   const { page, size, setPage, setSize } = usePaginationSync({ page: 1, size: 20 })
   const [total, setTotal] = useState(0)
-  const load = async () => {
-    const r = await listAuditLogs(undefined, undefined, undefined, page, size)
-    setItems(r.items || [])
-    setTotal(Number(r.total || 0))
-  }
-  useEffect(() => { load() }, [page, size])
+
+  useEffect(() => {
+    const load = async () => {
+      const r = await listAuditLogs(undefined, undefined, undefined, page, size)
+      setItems(r.items || [])
+      setTotal(Number(r.total || 0))
+    }
+    load()
+  }, [page, size])
   return (
     <div className="p-4 space-y-4">
       <div className="font-semibold">活动日志</div>

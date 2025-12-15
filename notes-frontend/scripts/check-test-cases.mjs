@@ -20,7 +20,7 @@ function listFiles(dir) {
       else files.push(full)
     }
     return files
-  } catch (e) {
+  } catch {
     return []
   }
 }

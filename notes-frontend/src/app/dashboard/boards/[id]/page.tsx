@@ -29,7 +29,7 @@ export default function BoardDetailPage() {
             const newBoard = await createBoard({ _id: id, title: '未命名画板' });
             setBoard(newBoard);
             setError('');
-          } catch (createErr) {
+          } catch {
             setError('创建画板失败');
           }
         } else {

@@ -380,7 +380,7 @@ const DrawnixBoard: React.FC<DrawnixBoardProps> = ({ id, initialData, readonly =
             console.log('Available icons for AI:', availableIcons);
 
             const mermaidCode = await getAIMermaidData(aiPrompt, availableIcons);
-            const { elements } = await parseMermaidToExcalidraw(mermaidCode, { fontSize: 16 });
+            const { elements } = await parseMermaidToExcalidraw(mermaidCode);
 
             // 统一调整样式：手写体、细线条、手绘感 (可爱风格)
             elements.forEach((el: any) => {

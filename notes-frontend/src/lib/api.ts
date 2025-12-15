@@ -619,10 +619,10 @@ export const networkAPI = {
   ping: async (): Promise<{ ok: boolean; latency: number; status?: number }> => {
     const start = Date.now()
     try {
-      const resp = await api.get('/health')
+      await api.get('/health')
       const latency = Date.now() - start
       return { ok: true, latency, status: 200 }
-    } catch (e: any) {
+    } catch {
       // 回退：请求最小数据以检测连通性
       try {
         const start2 = Date.now()
@@ -678,26 +678,26 @@ export const unlockNote = noteLockAPI.unlock
 
 
 export const createMindMap = async (data: { _id?: string; title: string; content?: any }) => {
-  return api.post('/v1/mindmaps', data);
+  return api.post('/v1/mindmaps', data) as Promise<any>;
 };
 
 export const saveMindMap = async (id: string, data: any) => {
-  return api.put(`/v1/mindmaps/${id}`, { content: data });
+  return api.put(`/v1/mindmaps/${id}`, { content: data }) as Promise<any>;
 };
 
 export const getMindMap = async (id: string) => {
-  return api.get(`/v1/mindmaps/${id}`);
+  return api.get(`/v1/mindmaps/${id}`) as Promise<any>;
 };
 
 export const createBoard = async (data: { _id?: string; title: string; content?: any }) => {
-  return api.post('/v1/boards', data);
+  return api.post('/v1/boards', data) as Promise<any>;
 };
 
 export const saveBoard = async (id: string, data: any) => {
-  return api.put(`/v1/boards/${id}`, { content: data });
+  return api.put(`/v1/boards/${id}`, { content: data }) as Promise<any>;
 };
 
 export const getBoard = async (id: string) => {
-  return api.get(`/v1/boards/${id}`);
+  return api.get(`/v1/boards/${id}`) as Promise<any>;
 };
 
