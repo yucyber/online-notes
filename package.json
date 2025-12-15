@@ -1,8 +1,4 @@
 {
-  "dependencies": {
-    "@tailwindcss/postcss": "^4.1.17",
-    "rehype-raw": "^7.0.0"
-  },
   "devDependencies": {
     "ts-node": "^10.9.2"
   }

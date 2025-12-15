@@ -96,6 +96,15 @@ export class NoteFilterDto {
   @IsString()
   keyword?: string;
 
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  @Transform(({ value }) => {
+    if (value === undefined || value === null) return undefined
+    return Array.isArray(value) ? value : String(value).split(',').filter(Boolean)
+  })
+  ids?: string[];
+
   // 搜索模式（默认 regex）；当为 text 时，使用 `$text` 查询以利用文本索引
   @IsOptional()
   @IsEnum(SearchMode)

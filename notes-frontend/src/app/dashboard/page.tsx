@@ -20,6 +20,7 @@ import {
   RefreshCcw,
   ArrowRight,
 } from 'lucide-react'
+import { TopicClusters } from '@/components/dashboard/TopicClusters'
 
 export default function DashboardPage() {
   const [overview, setOverview] = useState<DashboardOverview | null>(null)
@@ -142,6 +143,8 @@ export default function DashboardPage() {
           </Card>
         ))}
       </div>
+
+      <TopicClusters />
 
       <div className="grid gap-6 lg:grid-cols-2">
         <Card className="card-hover" style={{ boxShadow: 'var(--shadow-md)', borderColor: 'var(--border)' }}>

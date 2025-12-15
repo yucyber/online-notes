@@ -1,17 +1,28 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { EmbeddingService } from './embedding.service'
+import { ConfigService } from '@nestjs/config'
+import { TagsService } from '../tags/tags.service'
+import Redis from 'ioredis'
+
+// Explicitly reference the type definition to ensure ts-node picks it up
+/// <reference path="../../types/ml-kmeans.d.ts" />
 
 export type SemanticItem = { id: string; title: string; preview: string; score: number; updatedAt: string }
 export type SemanticPage = { page: number; limit: number; total: number; totalPages: number; hasNext: boolean; data: SemanticItem[] }
 
 @Injectable()
 export class SemanticService {
+  private readonly logger = new Logger(SemanticService.name);
+  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379');
+
   constructor(
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
-    private readonly embeddingService: EmbeddingService
+    private readonly embeddingService: EmbeddingService,
+    private readonly configService: ConfigService,
+    private readonly tagsService: TagsService
   ) { }
 
   async searchVector(query: string, userId: string): Promise<any[]> {
@@ -141,5 +152,197 @@ export class SemanticService {
     const totalPages = Math.max(1, Math.ceil(Number(total || 0) / limit))
     const hasNext = page < totalPages
     return { page, limit, total, totalPages, hasNext, data: mapped }
+  }
+
+  async discoverTopics(userId: string) {
+    const cacheKey = `topics:${userId}`;
+    // Debug: Log userId
+    this.logger.log(`Discovering topics for user: ${userId}`);
+
+    try {
+      const cached = await this.redis.get(cacheKey);
+      if (cached) {
+        this.logger.log(`Cache hit for ${cacheKey}`);
+        return JSON.parse(cached);
+      }
+    } catch (e) {
+      this.logger.warn('Redis get failed', e);
+    }
+
+    // 1. Fetch Data
+    const notes = await this.noteModel.find({
+      userId: new Types.ObjectId(userId),
+      status: 'published',
+      embedding: { $exists: true, $not: { $size: 0 } }
+    }).select('_id title content embedding');
+
+    this.logger.log(`Found ${notes.length} notes with embeddings for user ${userId}`);
+
+    if (notes.length < 5) {
+      this.logger.log('Not enough notes to cluster (min 5)');
+      return [];
+    }
+
+    // 2. Prepare Vectors & Filter invalid embeddings
+    const validNotes = notes.filter(n => Array.isArray(n.embedding) && n.embedding.length > 0);
+    if (validNotes.length < 5) return [];
+
+    const data = validNotes.map(n => n.embedding);
+
+    // 3. K-Means Clustering
+    // K value: at least 3 notes per cluster, max 8 clusters
+    const k = Math.min(Math.floor(validNotes.length / 3), 8);
+
+    let clusters: number[] = [];
+    try {
+      // Dynamic import for ESM module (ml-kmeans is ESM only)
+      // Use new Function to bypass TypeScript transpiling dynamic import to require()
+      const dynamicImport = new Function('specifier', 'return import(specifier)');
+      const mlKmeans = await dynamicImport('ml-kmeans') as any;
+      const { kmeans } = mlKmeans;
+      const result = kmeans(data, k, { initialization: 'kmeans++' });
+      clusters = result.clusters;
+    } catch (error) {
+      this.logger.error('K-Means clustering failed', error);
+      return [];
+    }
+
+    // 4. Grouping
+    const groups: Record<number, any[]> = {};
+    clusters.forEach((clusterId, index) => {
+      if (!groups[clusterId]) groups[clusterId] = [];
+      groups[clusterId].push(validNotes[index]);
+    });
+
+    // 5. Naming
+    // Limit concurrency to avoid rate limits
+    const clusterIds = Object.keys(groups).map(Number);
+
+    const results = await Promise.all(clusterIds.map(async (clusterId) => {
+      const groupNotes = groups[clusterId];
+      // Extract context from top 3 notes
+      const context = groupNotes.slice(0, 3).map(n => {
+        return `Title: ${n.title}\nContent: ${n.content.substring(0, 200)}...`;
+      }).join('\n---\n');
+
+      let topicName = `Topic Group ${clusterId + 1}`;
+      try {
+        // Timeout control handled in callCozeToNameTopic or here
+        topicName = await this.callCozeToNameTopic(context);
+      } catch (e) {
+        this.logger.warn(`Failed to name topic for cluster ${clusterId}: ${e.message}`);
+      }
+
+      return {
+        name: topicName,
+        count: groupNotes.length,
+        noteIds: groupNotes.map(n => n._id.toString()),
+        preview: groupNotes.slice(0, 3).map(n => n.title)
+      };
+    }));
+
+    // Sort by count descending
+    const finalResults = results.sort((a, b) => b.count - a.count);
+
+    // Cache for 1 hour
+    try {
+      await this.redis.set(cacheKey, JSON.stringify(finalResults), 'EX', 3600);
+    } catch (e) {
+      this.logger.warn('Redis set failed', e);
+    }
+
+    return finalResults;
+  }
+
+  private async callCozeToNameTopic(context: string): Promise<string> {
+    const apiKey = this.configService.get<string>('COZE_API_KEY');
+    const botId = this.configService.get<string>('COZE_BOT_ID');
+
+    if (!apiKey || !botId) {
+      this.logger.warn('COZE_API_KEY or COZE_BOT_ID not configured');
+      return 'Uncategorized Topic';
+    }
+
+    const prompt = `
+You are a helpful assistant. 
+Based on the following notes, summarize them into a single short topic phrase (2-6 words).
+Examples: "Frontend Performance", "Travel Plans 2024", "React Hooks Learning".
+Only return the phrase, no quotes or extra text.
+
+Notes:
+${context}
+    `;
+
+    try {
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+
+      const response = await fetch('https://api.coze.cn/open_api/v2/chat', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'Accept': '*/*',
+          'Host': 'api.coze.cn',
+          'Connection': 'keep-alive'
+        },
+        body: JSON.stringify({
+          conversation_id: 'topic_discovery_' + Date.now(),
+          bot_id: botId,
+          user: 'system_topic_discovery',
+          query: prompt,
+          stream: false
+        }),
+        signal: controller.signal
+      });
+
+      clearTimeout(timeoutId);
+
+      if (!response.ok) {
+        throw new Error(`Coze API error: ${response.status} ${response.statusText}`);
+      }
+
+      const data = await response.json();
+      // Parse Coze V2 response
+      // Structure might vary, usually messages are in data.messages
+      // Assuming non-streaming response
+      if (data.messages && data.messages.length > 0) {
+        const answer = data.messages.find((m: any) => m.type === 'answer');
+        if (answer) {
+          return answer.content.trim().replace(/^["']|["']$/g, '');
+        }
+      }
+
+      return 'General Topic';
+    } catch (error) {
+      if (error.name === 'AbortError') {
+        throw new Error('Coze API timeout');
+      }
+      throw error;
+    }
+  }
+
+  async convertToTag(userId: string, topicName: string, noteIds: string[]) {
+    // 1. Find or Create Tag
+    const tag = await this.tagsService.findOrCreate(topicName, userId);
+
+    // 2. Update Notes
+    const objectIds = noteIds.map(id => new Types.ObjectId(id));
+
+    const result = await this.noteModel.updateMany(
+      {
+        _id: { $in: objectIds },
+        userId: new Types.ObjectId(userId) // Security check
+      },
+      {
+        $addToSet: { tags: (tag as any)._id }
+      }
+    );
+
+    if (result.modifiedCount > 0) {
+      await this.tagsService.incrementNoteCount((tag as any)._id, result.modifiedCount);
+    }
+
+    return { tag, updated: result.modifiedCount };
   }
 }

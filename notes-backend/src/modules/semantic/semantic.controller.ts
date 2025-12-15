@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards, Request } from '@nestjs/common'
+import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/common'
 import { SemanticService } from './semantic.service'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
@@ -6,6 +6,13 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 @UseGuards(JwtAuthGuard)
 export class SemanticController {
   constructor(private readonly semantic: SemanticService) { }
+
+  @Post('topics/convert')
+  async convertTopicToTag(@Request() req, @Body() body: { topicName: string; noteIds: string[] }) {
+    const userObj = req.user as any;
+    const userId = userObj._id || userObj.id || userObj.userId;
+    return this.semantic.convertToTag(userId, body.topicName, body.noteIds);
+  }
 
   @Get('search')
   async search(
@@ -76,5 +83,13 @@ export class SemanticController {
 
       return this.semantic.search(String(q || ''), { mode, page: Number(page || 1), limit: Number(limit || 10), threshold: Number(threshold || 0), categoryId, tagIds: tagArray, tagsMode, categoriesMode })
     }
+  }
+
+  @Get('topics')
+  async getTopics(@Request() req) {
+    const userObj = req.user as any;
+    const userId = userObj._id || userObj.id || userObj.userId;
+    const topics = await this.semantic.discoverTopics(String(userId));
+    return { code: 200, message: 'success', data: { topics } };
   }
 }

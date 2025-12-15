@@ -8,10 +8,12 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Note, Category, Tag, NoteFilterParams } from '@/types'
-import { fetchNotes, deleteNote, fetchCategories, fetchTags } from '@/lib/api'
+import { fetchNotes, deleteNote, fetchCategories, fetchTags, createNote, clearNotesCache } from '@/lib/api'
 import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
 import { formatDate, truncateText } from '@/utils'
-import { Trash2, Plus, Edit, FileText } from 'lucide-react'
+import { Trash2, Plus, Edit, FileText, ListChecks, Sparkles, Check } from 'lucide-react'
+import { toast } from 'react-hot-toast'
+import { AggregateSummaryDialog } from '@/components/ai/AggregateSummaryDialog'
 import dynamic from 'next/dynamic'
 // 延迟加载重组件，减少初始 JS 体积与阻塞，提升 FCP/LCP
 const SearchFilterBar = dynamic(() => import('@/components/SearchFilterBar'), { ssr: false })
@@ -64,6 +66,13 @@ export default function NotesPage() {
     try { return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').toString() } catch { return '' }
   })
 
+  // 多选与摘要相关状态
+  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
+  const [showSummaryDialog, setShowSummaryDialog] = useState(false)
+  const [summaryResult, setSummaryResult] = useState('')
+  const [summaryLoading, setSummaryLoading] = useState(false)
+
   useEffect(() => {
     const controller = new AbortController()
     let aborted = false
@@ -84,6 +93,7 @@ export default function NotesPage() {
           startDate: sp.get('startDate') || undefined,
           endDate: sp.get('endDate') || undefined,
           status: (sp.get('status') as 'published' | 'draft') || undefined,
+          ids: sp.get('ids') ? sp.get('ids')?.split(',').filter(Boolean) : undefined,
         }
         if (isNlq && (params.keyword || '')) {
           const mode = (sp.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid'
@@ -291,6 +301,77 @@ export default function NotesPage() {
     }
   }, [router])
 
+  const toggleSelectionMode = () => {
+    setIsSelectionMode(!isSelectionMode)
+    setSelectedNoteIds(new Set())
+  }
+
+  const toggleNoteSelection = (id: string) => {
+    const newSelected = new Set(selectedNoteIds)
+    if (newSelected.has(id)) {
+      newSelected.delete(id)
+    } else {
+      newSelected.add(id)
+    }
+    setSelectedNoteIds(newSelected)
+  }
+
+  const handleGenerateSummary = async () => {
+    if (selectedNoteIds.size < 1) {
+      toast.error('请至少选择 1 篇笔记')
+      return
+    }
+
+    setShowSummaryDialog(true)
+    setSummaryLoading(true)
+    setSummaryResult('')
+
+    try {
+      const selectedNotes = notes.filter(n => selectedNoteIds.has(n.id))
+      const response = await axios.post('/api/ai/summary', { notes: selectedNotes })
+      setSummaryResult(response.data.summary)
+    } catch (err: any) {
+      console.error(err)
+      toast.error(err.response?.data?.error || '生成摘要失败')
+      setSummaryResult('生成失败，请重试。')
+    } finally {
+      setSummaryLoading(false)
+    }
+  }
+
+  const handleSaveSummary = async () => {
+    if (summaryResult) {
+      try {
+        // 1. 复制到剪贴板
+        navigator.clipboard.writeText(summaryResult);
+
+        // 2. 调用创建笔记 API
+        const newNote = await createNote({
+          title: `聚合摘要 - ${new Date().toLocaleString()}`,
+          content: summaryResult,
+          status: 'draft', // 默认为草稿
+          tags: [], // 可选：添加 '摘要' 标签
+        });
+
+        toast.success('摘要已保存为新笔记');
+        setShowSummaryDialog(false);
+
+        // 3. 刷新列表
+        clearNotesCache(); // 强制清除缓存
+        setNotes(prev => [newNote, ...prev]); // 立即更新 UI
+        setTotal(prev => prev + 1);
+        router.refresh();
+
+        // 触发自定义事件以更新缓存列表（如果使用了 SWR 或其他缓存机制）
+        document.dispatchEvent(new CustomEvent('search:revalidated', { detail: { key: `notes:${queryKey}`, payload: null } })); // 简单触发重载
+
+      } catch (error) {
+        console.error('保存笔记失败:', error);
+        toast.error('保存失败，内容已复制到剪贴板');
+      }
+    }
+  }
+
   const handleDelete = async (id: string) => {
     try {
       await deleteNote(id)
@@ -374,78 +455,112 @@ export default function NotesPage() {
           </h1>
           <p className="mt-2" style={{ color: 'var(--text-muted)' }}>管理和组织您的所有笔记</p>
         </div>
-        <Link
-          href="/dashboard/notes/new"
-          className="relative inline-flex"
-          style={{ borderRadius: '20px' }}
-        >
-          <span
-            aria-hidden
-            style={{
-              position: 'absolute',
-              inset: 0,
-              borderRadius: '20px',
-              background: 'linear-gradient(120deg, rgba(59,130,246,0.65), rgba(147,51,234,0.55))',
-              filter: isCreateHovered ? 'blur(18px)' : 'blur(26px)',
-              opacity: isCreateHovered ? 0.85 : 0.5,
-              transition: 'all 0.3s ease',
-              pointerEvents: 'none',
-            }}
-          />
+        <div className="flex items-center gap-3">
           <Button
-            aria-label="新建笔记"
-            className="relative flex items-center gap-3 font-semibold tracking-wide text-white"
-            style={{
-              background: 'linear-gradient(120deg, #5eead4, #2563eb 45%, #7c3aed)',
-              borderRadius: '18px',
-              padding: '0 32px',
-              height: '52px',
-              letterSpacing: '0.5px',
-              boxShadow: isCreateHovered
-                ? '0 30px 45px -25px rgba(37, 99, 235, 0.9)'
-                : '0 20px 40px -28px rgba(37, 99, 235, 0.75)',
-            }}
-            onMouseEnter={() => setIsCreateHovered(true)}
-            onMouseLeave={() => setIsCreateHovered(false)}
+            variant="outline"
+            onClick={toggleSelectionMode}
+            className={isSelectionMode ? 'bg-blue-50 border-blue-200 text-blue-600' : ''}
+            style={{ height: '52px', borderRadius: '18px' }}
           >
-            <span
-              aria-hidden
-              style={{
-                position: 'absolute',
-                width: '160%',
-                height: '160%',
-                background: 'radial-gradient(circle at 15% 15%, rgba(255,255,255,0.65), transparent 55%)',
-                transform: isCreateHovered ? 'translateX(18%)' : 'translateX(-15%)',
-                opacity: 0.9,
-                transition: 'transform 0.45s ease',
-                pointerEvents: 'none',
-                zIndex: 0,
-              }}
-            />
-            <span
-              className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full"
-              style={{
-                backgroundColor: 'rgba(255,255,255,0.18)',
-                boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.35)',
-                backdropFilter: 'blur(6px)',
-              }}
-            >
-              <Plus className="h-5 w-5 text-white" />
-            </span>
-            <span className="relative z-10 text-base">新建笔记</span>
-            <span
-              className="relative z-10 hidden sm:inline-flex text-[11px] uppercase tracking-[0.35em]"
-              style={{
-                padding: '4px 10px',
-                borderRadius: '999px',
-                border: '1px solid rgba(255,255,255,0.35)',
-                backgroundColor: 'rgba(255,255,255,0.15)',
-              }}
-            >
-              快速创建
-            </span>
+            {isSelectionMode ? (
+              <>
+                <Check className="mr-2 h-4 w-4" />
+                完成
+              </>
+            ) : (
+              <>
+                <ListChecks className="mr-2 h-4 w-4" />
+                批量
+              </>
+            )}
           </Button>
-        </Link>
+
+          {isSelectionMode && selectedNoteIds.size >= 1 && (
+            <Button
+              onClick={handleGenerateSummary}
+              className="animate-in fade-in zoom-in duration-200 text-white"
+              style={{ height: '52px', borderRadius: '18px', background: 'linear-gradient(120deg, #8b5cf6, #d946ef)' }}
+            >
+              <Sparkles className="mr-2 h-4 w-4" />
+              生成摘要 ({selectedNoteIds.size})
+            </Button>
+          )}
+
+          {!isSelectionMode && (
+            <Link
+              href="/dashboard/notes/new"
+              className="relative inline-flex"
+              style={{ borderRadius: '20px' }}
+            >
+              <span
+                aria-hidden
+                style={{
+                  position: 'absolute',
+                  inset: 0,
+                  borderRadius: '20px',
+                  background: 'linear-gradient(120deg, rgba(59,130,246,0.65), rgba(147,51,234,0.55))',
+                  filter: isCreateHovered ? 'blur(18px)' : 'blur(26px)',
+                  opacity: isCreateHovered ? 0.85 : 0.5,
+                  transition: 'all 0.3s ease',
+                  pointerEvents: 'none',
+                }}
+              />
+              <Button
+                aria-label="新建笔记"
+                className="relative flex items-center gap-3 font-semibold tracking-wide text-white"
+                style={{
+                  background: 'linear-gradient(120deg, #5eead4, #2563eb 45%, #7c3aed)',
+                  borderRadius: '18px',
+                  padding: '0 32px',
+                  height: '52px',
+                  letterSpacing: '0.5px',
+                  boxShadow: isCreateHovered
+                    ? '0 30px 45px -25px rgba(37, 99, 235, 0.9)'
+                    : '0 20px 40px -28px rgba(37, 99, 235, 0.75)',
+                }}
+                onMouseEnter={() => setIsCreateHovered(true)}
+                onMouseLeave={() => setIsCreateHovered(false)}
+              >
+                <span
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    width: '160%',
+                    height: '160%',
+                    background: 'radial-gradient(circle at 15% 15%, rgba(255,255,255,0.65), transparent 55%)',
+                    transform: isCreateHovered ? 'translateX(18%)' : 'translateX(-15%)',
+                    opacity: 0.9,
+                    transition: 'transform 0.45s ease',
+                    pointerEvents: 'none',
+                    zIndex: 0,
+                  }}
+                />
+                <span
+                  className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full"
+                  style={{
+                    backgroundColor: 'rgba(255,255,255,0.18)',
+                    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.35)',
+                    backdropFilter: 'blur(6px)',
+                  }}
+                >
+                  <Plus className="h-5 w-5 text-white" />
+                </span>
+                <span className="relative z-10 text-base">新建笔记</span>
+                <span
+                  className="relative z-10 hidden sm:inline-flex text-[11px] uppercase tracking-[0.35em]"
+                  style={{
+                    padding: '4px 10px',
+                    borderRadius: '999px',
+                    border: '1px solid rgba(255,255,255,0.35)',
+                    backgroundColor: 'rgba(255,255,255,0.15)',
+                  }}
+                >
+                  快速创建
+                </span>
+              </Button>
+            </Link>
+          )}
+        </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -525,7 +640,7 @@ export default function NotesPage() {
                 return (
                   <Card
                     key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${i}`}
-                    className="card-hover relative overflow-hidden group"
+                    className={`card-hover relative overflow-hidden group ${isSelectionMode && selectedNoteIds.has(note.id) ? 'ring-2 ring-blue-500' : ''}`}
                     style={{ borderRadius: '22px', background: 'var(--surface-1)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--border)', transition: 'all 0.3s ease' }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.boxShadow = 'var(--shadow-lg)'
@@ -536,6 +651,22 @@ export default function NotesPage() {
                       e.currentTarget.style.transform = 'none'
                     }}
                   >
+                    {isSelectionMode && (
+                      <>
+                        <div
+                          className="absolute inset-0 z-10 cursor-pointer"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            toggleNoteSelection(note.id);
+                          }}
+                        />
+                        <div className="absolute top-4 left-4 z-20 pointer-events-none">
+                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedNoteIds.has(note.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white/80'}`}>
+                            {selectedNoteIds.has(note.id) && <Check className="w-4 h-4 text-white" />}
+                          </div>
+                        </div>
+                      </>
+                    )}
                     <div
                       aria-hidden
                       className="absolute inset-x-10 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
@@ -640,6 +771,13 @@ export default function NotesPage() {
           </div>
         </div>
       )}
+      <AggregateSummaryDialog
+        open={showSummaryDialog}
+        onClose={() => setShowSummaryDialog(false)}
+        loading={summaryLoading}
+        summary={summaryResult}
+        onSave={handleSaveSummary}
+      />
     </div>
   )
 }

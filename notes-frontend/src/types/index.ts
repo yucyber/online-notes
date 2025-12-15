@@ -65,6 +65,7 @@ export interface NoteFilterParams {
   startDate?: string
   endDate?: string
   status?: 'published' | 'draft'
+  ids?: string[]
 }
 
 export interface SavedFilter {

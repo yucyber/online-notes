@@ -10,7 +10,7 @@ export class TagsService {
   constructor(
     @InjectModel(Tag.name) private tagModel: Model<TagDocument>,
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
-  ) {}
+  ) { }
 
   async create(createTagDto: CreateTagDto, userId: string): Promise<Tag> {
     // Check if tag name already exists for this user
@@ -26,6 +26,24 @@ export class TagsService {
     const createdTag = new this.tagModel({
       ...createTagDto,
       userId: new Types.ObjectId(userId),
+    });
+    return createdTag.save();
+  }
+
+  async findOrCreate(name: string, userId: string): Promise<Tag> {
+    const existingTag = await this.tagModel.findOne({
+      name: name,
+      userId: new Types.ObjectId(userId),
+    });
+
+    if (existingTag) {
+      return existingTag;
+    }
+
+    const createdTag = new this.tagModel({
+      name,
+      userId: new Types.ObjectId(userId),
+      color: '#3b82f6' // Default blue
     });
     return createdTag.save();
   }
@@ -79,6 +97,10 @@ export class TagsService {
     return updatedTag;
   }
 
+  async incrementNoteCount(tagId: string, amount: number = 1) {
+    return this.tagModel.findByIdAndUpdate(tagId, { $inc: { noteCount: amount } });
+  }
+
   async remove(id: string, userId: string): Promise<void> {
     // 默认策略：移除模式。从所有笔记中移除该标签，再删除
     await this.noteModel.updateMany(
@@ -96,19 +118,13 @@ export class TagsService {
     }
   }
 
-  async incrementNoteCount(tagId: string): Promise<void> {
-    await this.tagModel.findByIdAndUpdate(tagId, {
-      $inc: { noteCount: 1 },
-    }).exec();
-  }
-
   async decrementNoteCount(tagId: string): Promise<void> {
     await this.tagModel.findByIdAndUpdate(tagId, {
       $inc: { noteCount: -1 },
     }).exec();
   }
 
-  async bulkCreate(names: string[], userId: string): Promise<{ created: Tag[]; skipped: string[] }>{
+  async bulkCreate(names: string[], userId: string): Promise<{ created: Tag[]; skipped: string[] }> {
     const trimmed = Array.from(new Set(names.map(n => n.trim()).filter(Boolean)))
     if (trimmed.length === 0) return { created: [], skipped: [] }
     const existing = await this.tagModel.find({
@@ -122,7 +138,26 @@ export class TagsService {
     return { created, skipped: trimmed.filter(n => existingNames.has(n)) }
   }
 
-  async merge(sourceIds: string[], targetId: string, userId: string): Promise<{ affectedNotes: number }>{
+  async syncCounts(userId: string) {
+    const tags = await this.tagModel.find({ userId: new Types.ObjectId(userId) });
+    let updated = 0;
+    for (const tag of tags) {
+      // 兼容性处理：同时匹配 ObjectId 和 String 类型的 ID，防止历史数据格式不一致
+      const count = await this.noteModel.countDocuments({
+        userId: new Types.ObjectId(userId),
+        tags: { $in: [tag._id, tag._id.toString()] }
+      });
+
+      if (tag.noteCount !== count || tag.noteCount === undefined) {
+        tag.noteCount = count;
+        await tag.save();
+        updated++;
+      }
+    }
+    return { total: tags.length, updated };
+  }
+
+  async merge(sourceIds: string[], targetId: string, userId: string): Promise<{ affectedNotes: number }> {
     if (!targetId || !Array.isArray(sourceIds) || sourceIds.length === 0) return { affectedNotes: 0 }
     if (sourceIds.length > 3) throw new ConflictException('一次最多合并 3 个标签')
     const userObj = new Types.ObjectId(userId)

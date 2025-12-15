@@ -45,6 +45,17 @@ const NOTES_CACHE_TTL_MS = 10_000
 const NOTES_SESSION_TTL_MS = 30_000
 type NotesListPayload = { items: any[]; page: number; size: number; total: number }
 const notesCache = new Map<string, { ts: number; payload: NotesListPayload }>()
+export const clearNotesCache = () => {
+  notesCache.clear()
+  try {
+    const keys: string[] = []
+    for (let i = 0; i < sessionStorage.length; i++) {
+      const k = sessionStorage.key(i)
+      if (k && k.startsWith('cache:notes:')) keys.push(k)
+    }
+    keys.forEach(k => sessionStorage.removeItem(k))
+  } catch { }
+}
 const buildNotesKey = (params?: any) => {
   const sp = new URLSearchParams()
   if (params) {
@@ -57,6 +68,7 @@ const buildNotesKey = (params?: any) => {
     if (params.startDate) sp.set('startDate', params.startDate)
     if (params.endDate) sp.set('endDate', params.endDate)
     if (params.status) sp.set('status', params.status)
+    if (Array.isArray(params.ids)) params.ids.filter(Boolean).forEach((id: string) => sp.append('ids', id))
     const page = (params as any).page
     const size = (params as any).size ?? (params as any).limit
     if (page) sp.set('page', String(page))
@@ -228,6 +240,10 @@ export const notesAPI = {
       if (params.startDate) sp.set('startDate', params.startDate)
       if (params.endDate) sp.set('endDate', params.endDate)
       if (params.status) sp.set('status', params.status)
+      if (params.ids && params.ids.length > 0) {
+        // Join with comma to keep URL shorter and consistent with TopicClusters navigation
+        sp.set('ids', params.ids.join(','))
+      }
       const page = (params as any).page
       const size = (params as any).size ?? (params as any).limit
       if (page) sp.set('page', String(page))
@@ -555,6 +571,9 @@ export const tagsAPI = {
   merge: (sourceIds: string[], targetId: string) =>
     api.post<{ affectedNotes: number }>(`/tags/merge`, { sourceIds, targetId }).then(res => res as unknown as { affectedNotes: number }),
 
+  syncCounts: () =>
+    api.post<{ total: number; updated: number }>('/tags/sync').then(res => res as unknown as { total: number; updated: number }),
+
   delete: (id: string) =>
     api.delete(`/tags/${id}`, { params: { mode: 'remove' } }).then(res => res as unknown as void),
 }
@@ -563,6 +582,13 @@ export const tagsAPI = {
 export const dashboardAPI = {
   getOverview: () =>
     api.get<DashboardOverview>('/dashboard/overview').then(res => res as unknown as DashboardOverview),
+  getTopics: () =>
+    api.get<{ topics: any[] }>('/v1/semantic/topics', { timeout: 60000 }).then(res => {
+      const data = res as unknown as any;
+      return data.data?.topics || [];
+    }),
+  convertTopicToTag: (topicName: string, noteIds: string[]) =>
+    api.post('/v1/semantic/topics/convert', { topicName, noteIds }).then(res => res as unknown as { tag: Tag; updated: number }),
 }
 
 // 资产/嵌入/画板/思维导图（轻量接口，后端 /api/v1 前缀）
@@ -629,6 +655,8 @@ export const fetchTags = tagsAPI.getAll
 export const createTag = tagsAPI.create
 export const deleteTag = tagsAPI.delete
 export const fetchDashboardOverview = dashboardAPI.getOverview
+export const fetchTopics = dashboardAPI.getTopics
+export const convertTopicToTag = dashboardAPI.convertTopicToTag
 export const fetchAcl = aclAPI.get
 export const createInvitation = invitationsAPI.create
 export const listInvitations = invitationsAPI.list

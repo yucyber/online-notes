@@ -16,6 +16,7 @@ export default function TagsManagePage() {
   const [selected, setSelected] = useState<string[]>([])
   const [mergeTarget, setMergeTarget] = useState('')
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [syncing, setSyncing] = useState(false)
 
   const load = async () => {
     try {
@@ -31,6 +32,18 @@ export default function TagsManagePage() {
   }
 
   useEffect(() => { load() }, [])
+
+  const handleSync = async () => {
+    try {
+      setSyncing(true)
+      await tagsAPI.syncCounts()
+      await load()
+    } catch {
+      setErrorMessage('同步失败')
+    } finally {
+      setSyncing(false)
+    }
+  }
 
   const filtered = useMemo(() => {
     const q = search.trim().toLowerCase()
@@ -101,9 +114,15 @@ export default function TagsManagePage() {
             {errorMessage}
           </div>
         )}
-        <div>
-          <h1 className="text-2xl font-bold">标签管理</h1>
-          <p className="text-gray-600">创建、重命名、配色、删除与合并标签，支持批量创建与限制合并源数。</p>
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-2xl font-bold">标签管理</h1>
+            <p className="text-gray-600">创建、重命名、配色、删除与合并标签，支持批量创建与限制合并源数。</p>
+          </div>
+          <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
+            <RefreshCcw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
+            {syncing ? '同步中...' : '同步计数'}
+          </Button>
         </div>
 
         <Card className="shadow-md" style={{ borderColor: 'var(--border)' }}>
@@ -170,7 +189,7 @@ export default function TagsManagePage() {
                             {isTarget ? '已目标' : '设目标'}
                           </Button>
                         </div>
-                        <Button aria-label="删除标签" title="删除标签" variant="destructive" size="icon" className="absolute top-2 right-2 h-8 w-8 rounded-full shadow-sm" onClick={() => handleDelete(tag.id)}>
+                        <Button aria-label="删除标签" title="删除标签" variant="destructive" size="icon" className="absolute bottom-2 right-2 h-8 w-8 rounded-full shadow-sm" onClick={() => handleDelete(tag.id)}>
                           <Trash2 className="h-4 w-4" />
                         </Button>
                       </div>

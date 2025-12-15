@@ -100,13 +100,13 @@ export default function OutlinePanel({ html }: { html: string }) {
   return (
     <div className="w-full">
       <div className="mb-3 px-2">
-        <input 
-          type="text" 
-          placeholder="搜索大纲..." 
-          value={filter} 
-          onChange={e => setFilter(e.target.value)} 
-          aria-label="搜索大纲" 
-          className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 focus:border-blue-500 focus:bg-white focus:outline-none" 
+        <input
+          type="text"
+          placeholder="搜索大纲..."
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          aria-label="搜索大纲"
+          className="w-full rounded-md border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs text-gray-600 focus:border-blue-500 focus:bg-white focus:outline-none"
         />
       </div>
       <ul role="tree" aria-label="标题列表" className="max-h-[calc(100vh-240px)] overflow-y-auto overflow-x-hidden">

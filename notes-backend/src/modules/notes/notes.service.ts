@@ -72,14 +72,14 @@ export class NotesService {
   }
 
   async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
-    const { keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor } = filterDto;
+    const { keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, ids } = filterDto;
     const page = Math.max(1, Number(filterDto.page || 1))
     const size = Math.max(1, Math.min(100, Number(filterDto.limit ?? filterDto.size ?? 20)))
     const sortBy = (filterDto.sortBy || 'createdAt')
     const sortOrder = (filterDto.sortOrder || 'desc')
 
     // Read-only cache (TTL 10s)
-    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder }
+    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids }
     const cacheKey = `notes:list:${userId}:${createHash('sha1').update(JSON.stringify(keyPayload)).digest('hex')}`
     try {
       const cached = await this.redis.get(cacheKey)
@@ -90,6 +90,11 @@ export class NotesService {
 
     // Use $and to safely combine multiple conditions including $or clauses
     const andConditions: any[] = [];
+
+    // 0. IDs Filter
+    if (ids && ids.length > 0) {
+      andConditions.push({ _id: { $in: ids.map(id => new Types.ObjectId(id)) } });
+    }
 
     // 1. Base condition: Access scope
     const u = new Types.ObjectId(userId)
@@ -394,26 +399,52 @@ export class NotesService {
   }
 
   async lockNote(id: string, userId: string) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
-    if (!note) throw new NotFoundException('无权限')
-      ; (note as any).editingBy = u
-      ; (note as any).lockedAt = new Date()
-    await note.save()
-    return { ok: true }
+    try {
+      const u = new Types.ObjectId(userId)
+      const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
+      if (!note) throw new NotFoundException('无权限')
+        ; (note as any).editingBy = u
+        ; (note as any).lockedAt = new Date()
+      await note.save()
+      return { ok: true }
+    } catch (e) {
+      // Ignore ParallelSaveError (common in dev mode with React StrictMode)
+      if (e.name === 'ParallelSaveError') {
+        return { ok: true }
+      }
+      console.error('lockNote error', e)
+      throw e
+    }
   }
 
   async unlockNote(id: string, userId: string) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findById(id).exec()
-    if (!note) throw new NotFoundException('笔记不存在')
-    if (note.userId.equals(u) || ((note as any).editingBy && (note as any).editingBy.equals(u))) {
-      ; (note as any).editingBy = undefined
-        ; (note as any).lockedAt = undefined
-      await note.save()
-      return { ok: true }
+    try {
+      const u = new Types.ObjectId(userId)
+      const note = await this.noteModel.findById(id).exec()
+      if (!note) throw new NotFoundException('笔记不存在')
+      // Allow unlock if user is owner OR user is the one who locked it
+      // Also handle case where editingBy is null/undefined
+      const isLocker = (note as any).editingBy && (note as any).editingBy.toString() === u.toString();
+      const isOwner = note.userId.toString() === u.toString();
+
+      if (isOwner || isLocker) {
+        ; (note as any).editingBy = undefined
+          ; (note as any).lockedAt = undefined
+        await note.save()
+        return { ok: true }
+      }
+      // If not locked by anyone, it's fine
+      if (!(note as any).editingBy) return { ok: true }
+
+      throw new NotFoundException('无权限')
+    } catch (e) {
+      // Ignore ParallelSaveError
+      if (e.name === 'ParallelSaveError') {
+        return { ok: true }
+      }
+      console.error('unlockNote error', e)
+      throw e
     }
-    throw new NotFoundException('无权限')
   }
 
   async getRecommendations(userId: string, currentNoteId?: string, limit: number = 5, context?: NoteFilterDto): Promise<Note[]> {

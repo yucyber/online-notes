@@ -3,6 +3,8 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { useRouter, useParams, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag, lockNote, unlockNote, boardsAPI, mindmapsAPI, assetsAPI } from '@/lib/api'
+import { marked } from 'marked'
+import { htmlToMarkdown } from '@/utils/markdown-converter'
 import dynamic from 'next/dynamic'
 const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
   ssr: false,
@@ -36,6 +38,7 @@ export default function EditNotePage() {
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
   const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
+  const [currentContent, setCurrentContent] = useState('')
   const [uiDegraded, setUiDegraded] = useState<boolean>(false)
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
@@ -262,6 +265,7 @@ export default function EditNotePage() {
       setLoading(true)
       const data = await fetchNoteById(id)
       setNote(data)
+      setCurrentContent(data?.content || '')
       // 根据内容类型自动选择编辑器模式：Markdown 快照回退后避免富文本空白
       try {
         const raw = String(data?.content || '')
@@ -463,6 +467,7 @@ export default function EditNotePage() {
         categoryId: selectedCategory || undefined,
         categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
         tags: selectedTags,
+        status: 'published', // 显式设置为已发布
       })
       setNote(updatedNote)
       try {
@@ -510,11 +515,34 @@ export default function EditNotePage() {
     }
   }
 
+  const handleModeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newMode = e.target.value as 'rich' | 'markdown'
+    if (newMode === editorMode) return
+
+    let newContent = currentContent
+    if (newMode === 'rich') {
+      // Markdown -> HTML
+      try {
+        newContent = await marked.parse(currentContent)
+      } catch (err) {
+        console.error('Markdown conversion failed:', err)
+      }
+    } else {
+      // HTML -> Markdown
+      newContent = htmlToMarkdown(currentContent)
+    }
+
+    setNote(prev => prev ? { ...prev, content: newContent } : null)
+    setCurrentContent(newContent)
+    setEditorMode(newMode)
+  }
+
   const handleBack = () => {
     router.push('/dashboard/notes')
   }
 
   const handleMarkdownChange = useCallback((content: string) => {
+    setCurrentContent(content)
     extractHeadingsFromMarkdown(content)
   }, [extractHeadingsFromMarkdown])
 
@@ -565,7 +593,7 @@ export default function EditNotePage() {
             <span className="text-sm" style={{ color: 'var(--on-surface)' }}>编辑笔记</span>
             <div className="hidden md:flex items-center gap-3 ml-2">
               <span className="text-xs" style={{ color: 'var(--text-muted)' }}>编辑器</span>
-              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
+              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={handleModeChange} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
                 <option value="rich">富文本（协同）</option>
                 <option value="markdown">Markdown</option>
               </select>
@@ -784,7 +812,7 @@ export default function EditNotePage() {
         <div className="px-6 pb-2">
           <div className="flex items-center gap-2">
             <span className="text-xs text-gray-500">编辑器</span>
-            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={e => setEditorMode(e.target.value as any)}>
+            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={handleModeChange}>
               <option value="rich">富文本（协同）</option>
               <option value="markdown">Markdown</option>
             </select>
@@ -823,7 +851,10 @@ export default function EditNotePage() {
                 user={me}
                 readOnly={false}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
-                onContentChange={(html) => extractHeadingsFromHTML(html)}
+                onContentChange={(html) => {
+                  setCurrentContent(html)
+                  extractHeadingsFromHTML(html)
+                }}
                 // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
                 versionKey={searchParams?.get('restored') || undefined}
                 updatedAt={note.updatedAt}
@@ -984,9 +1015,12 @@ export default function EditNotePage() {
                   setShowInsertMenu(false)
                   try {
                     const res = await boardsAPI.create('画板', id)
-                    const link = `/dashboard/boards/${res.id}`
-                    const label = String(res?.title || '画板')
-                    document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href: link, label } } }))
+                    document.dispatchEvent(new CustomEvent('tiptap:exec', {
+                      detail: {
+                        cmd: 'insertResource',
+                        payload: { type: 'board', id: res.id }
+                      }
+                    }))
                   } catch { }
                 }}>画板</button>
                 <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {

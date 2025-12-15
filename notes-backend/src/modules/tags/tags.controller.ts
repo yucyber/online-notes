@@ -19,6 +19,11 @@ import { Query } from '@nestjs/common';
 export class TagsController {
   constructor(private readonly tagsService: TagsService) { }
 
+  @Post('sync')
+  async syncCounts(@Request() req) {
+    return this.tagsService.syncCounts(req.user.id);
+  }
+
   @Post()
   async create(@Body() createTagDto: CreateTagDto, @Request() req) {
     return this.tagsService.create(createTagDto, req.user.id);
