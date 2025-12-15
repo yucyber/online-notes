@@ -69,7 +69,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
 
         const options = {
             el: containerRef.current,
-            direction: (MindElixir.LEFT || 2),
+            direction: (MindElixir.LEFT || 2) as 0 | 1 | 2,
             data: safeData,
             draggable: !readonly,
             contextMenu: !readonly,
@@ -77,7 +77,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
             nodeMenu: !readonly,
             keypress: !readonly,
             editable: !readonly,
-            locale: 'zh_CN'
+            locale: 'zh_CN' as any
         };
 
         console.log('Initializing MindElixir with options:', options);
@@ -134,7 +134,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
             let newData;
 
             // Check if data is already in MindElixir format (has nodeData)
-            if (mindMapData.nodeData) {
+            if ((mindMapData as any).nodeData) {
                 newData = mindMapData;
             } else {
                 // 转换 AI 数据格式到 MindElixir 格式
@@ -174,14 +174,14 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
 
                     const options = {
                         el: containerRef.current,
-                        direction: (MindElixir.LEFT || 2),
+                        direction: (MindElixir.LEFT || 2) as 0 | 1 | 2,
                         data: cleanData,
                         draggable: true,
                         contextMenu: true,
                         toolBar: true,
                         nodeMenu: true,
                         keypress: true,
-                        locale: 'zh_CN'
+                        locale: 'zh_CN' as any
                     };
 
                     const me = new MindElixir(options);
