@@ -90,7 +90,7 @@ export default function NewNotePage() {
       document.removeEventListener('editor:toggleFullscreen', onToggle as any)
       document.removeEventListener('keydown', onKey)
     }
-  }, [])
+  }, [isFullscreen])
 
   const handleToggleFullscreen = () => {
     const target = editorContainerRef.current || document.documentElement
@@ -149,7 +149,7 @@ export default function NewNotePage() {
           resultIds.push(id)
           setTags(prev => [{ ...created, id }, ...prev])
         }
-      } catch (e) { }
+      } catch { }
     }
     if (resultIds.length > 0) {
       setSelectedTags(prev => Array.from(new Set([...prev, ...resultIds])))

@@ -6,7 +6,7 @@ import axios from 'axios'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import type { Note, Category, Tag, NoteFilterParams } from '@/types'
+import type { Note, NoteFilterParams } from '@/types'
 import { fetchNotes, deleteNote, fetchCategories, fetchTags, createNote, clearNotesCache } from '@/lib/api'
 import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
 import { formatDate, truncateText } from '@/utils'
@@ -385,7 +385,7 @@ function NotesPageContent() {
         router.refresh();
 
         // 触发自定义事件以更新缓存列表（如果使用了 SWR 或其他缓存机制）
-        document.dispatchEvent(new CustomEvent('search:revalidated', { detail: { key: `notes:${queryKey}`, payload: null } })); // 简单触发重载
+        document.dispatchEvent(new CustomEvent('search:revalidated', { detail: { key: `notes:${searchParams.toString()}`, payload: null } })); // 简单触发重载
 
       } catch (error) {
         console.error('保存笔记失败:', error);
