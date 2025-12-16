@@ -1,10 +1,9 @@
 'use client'
 
-import { useState, useEffect, useRef } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useEffect, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 import axios from 'axios'
 import Link from 'next/link'
-// 移除 useSearchParams，避免 Hook 上下文错误，改为从 window.location 解析
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Note, Category, Tag, NoteFilterParams } from '@/types'
@@ -89,10 +88,9 @@ const SummaryPreview = ({ summary, fallback }: { summary?: string, fallback: str
   )
 }
 
-export default function NotesPage() {
-  const getSearchParams = () => {
-    try { return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '') } catch { return new URLSearchParams() }
-  }
+function NotesPageContent() {
+  const searchParams = useSearchParams()
+  const pathname = usePathname()
   const router = useRouter()
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
@@ -105,9 +103,6 @@ export default function NotesPage() {
   const [page, setPage] = useState(1)
   const [size, setSize] = useState(10)
   const [total, setTotal] = useState(0)
-  const [queryKey, setQueryKey] = useState<string>(() => {
-    try { return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '').toString() } catch { return '' }
-  })
 
   // 多选与摘要相关状态
   const [isSelectionMode, setIsSelectionMode] = useState(false)
@@ -124,7 +119,7 @@ export default function NotesPage() {
       try {
         setLoading(true)
         try { performance.mark('ConsoleListLoad:start') } catch { }
-        const sp = (() => { try { return new URLSearchParams(queryKey || getSearchParams().toString()) } catch { return getSearchParams() } })()
+        const sp = searchParams
         const isNlq = sp.get('nlq') === '1'
         const params: NoteFilterParams = {
           keyword: sp.get('keyword') || undefined,
@@ -252,7 +247,7 @@ export default function NotesPage() {
           const entry = performance.getEntriesByName('ConsoleListLoad').pop()
           const duration = entry?.duration
           const sid = (() => { try { return sessionStorage.getItem('lastSearchId') || undefined } catch { return undefined } })()
-          const sp = getSearchParams()
+          const sp = searchParams
           const nextQuery = sp.toString()
           document.dispatchEvent(new CustomEvent('search:result', {
             detail: {
@@ -274,7 +269,7 @@ export default function NotesPage() {
     return () => {
       controller.abort()
     }
-  }, [page, size, queryKey])
+  }, [page, size, searchParams])
 
   // 自动刷新与后台重验证联动：可见/聚焦/网络恢复触发；后台重验证事件直达更新
   useEffect(() => {
@@ -296,7 +291,7 @@ export default function NotesPage() {
     const onRevalidated = (e: any) => {
       try {
         const detail = e?.detail || {}
-        const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
+        const sp = searchParams
         const currentKey = `notes:${sp.toString()}`
         if (detail.key === currentKey && detail.payload) {
           const items = Array.isArray(detail.payload.items) ? detail.payload.items : []
@@ -310,39 +305,23 @@ export default function NotesPage() {
         setFallbackMsg('语义检索接口不可用，已回退关键词模式')
       } catch { }
     }
-    const onSearchTrigger = (e: any) => {
-      try {
-        const next = String(e?.detail?.nextQuery || '')
-        setQueryKey(next)
-      } catch { }
-    }
-    const onPopState = () => {
-      try {
-        const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-        setQueryKey(sp.toString())
-      } catch { }
-    }
     document.addEventListener('visibilitychange', onVisibility)
     if (typeof window !== 'undefined') {
       window.addEventListener('focus', onFocus)
       window.addEventListener('online', onOnline)
-      window.addEventListener('popstate', onPopState)
     }
     document.addEventListener('search:revalidated', onRevalidated as any)
-    document.addEventListener('search:trigger', onSearchTrigger as any)
     document.addEventListener('search:fallback', onFallback as any)
     return () => {
       document.removeEventListener('visibilitychange', onVisibility)
       if (typeof window !== 'undefined') {
         window.removeEventListener('focus', onFocus)
         window.removeEventListener('online', onOnline)
-        window.removeEventListener('popstate', onPopState)
       }
       document.removeEventListener('search:revalidated', onRevalidated as any)
-      document.removeEventListener('search:trigger', onSearchTrigger as any)
       document.removeEventListener('search:fallback', onFallback as any)
     }
-  }, [router])
+  }, [router, searchParams])
 
   const toggleSelectionMode = () => {
     setIsSelectionMode(!isSelectionMode)
@@ -621,28 +600,18 @@ export default function NotesPage() {
               const nextSize = Math.max(1, next)
               setSize(nextSize)
               setPage(1)
-              try {
-                const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-                sp.set('size', String(nextSize))
-                sp.set('page', '1')
-                if (typeof window !== 'undefined') {
-                  window.history.replaceState(null, '', `${window.location.pathname}?${sp.toString()}`)
-                }
-                setQueryKey(sp.toString())
-              } catch { }
+              const sp = new URLSearchParams(searchParams.toString())
+              sp.set('size', String(nextSize))
+              sp.set('page', '1')
+              router.replace(`${pathname}?${sp.toString()}`)
             }} />
             <Pagination page={page} size={size} total={total} onPageChange={(next) => {
               const nextPage = Math.max(1, next)
               setPage(nextPage)
-              try {
-                const sp = new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '')
-                sp.set('page', String(nextPage))
-                sp.set('size', String(size))
-                if (typeof window !== 'undefined') {
-                  window.history.replaceState(null, '', `${window.location.pathname}?${sp.toString()}`)
-                }
-                setQueryKey(sp.toString())
-              } catch { }
+              const sp = new URLSearchParams(searchParams.toString())
+              sp.set('page', String(nextPage))
+              sp.set('size', String(size))
+              router.push(`${pathname}?${sp.toString()}`)
             }} />
           </div>
           {notes.length === 0 ? (
@@ -661,7 +630,7 @@ export default function NotesPage() {
                   尝试调整筛选条件或创建新笔记
                 </p>
                 {(() => {
-                  const sp = getSearchParams()
+                  const sp = searchParams
                   const isNlq = sp.get('nlq') === '1'
                   if (isNlq) {
                     return <p className="mb-6" style={{ color: 'var(--text-muted)' }}>语义检索未命中（可能受阈值或过滤条件影响），可切换到“关键词”模式或降低阈值</p>
@@ -781,15 +750,15 @@ export default function NotesPage() {
 
         <div className="lg:col-span-1">
           <SmartRecommendations context={{
-            keyword: getSearchParams().get('keyword') || undefined,
-            categoryId: getSearchParams().get('categoryId') || undefined,
-            categoryIds: getSearchParams().getAll('categoryIds').length > 0 ? getSearchParams().getAll('categoryIds') : undefined,
-            categoriesMode: (getSearchParams().get('categoriesMode') as 'any' | 'all') || undefined,
-            tagIds: getSearchParams().getAll('tagIds').length > 0 ? getSearchParams().getAll('tagIds') : undefined,
-            tagsMode: (getSearchParams().get('tagsMode') as 'any' | 'all') || undefined,
-            startDate: getSearchParams().get('startDate') || undefined,
-            endDate: getSearchParams().get('endDate') || undefined,
-            status: (getSearchParams().get('status') as 'published' | 'draft') || undefined,
+            keyword: searchParams.get('keyword') || undefined,
+            categoryId: searchParams.get('categoryId') || undefined,
+            categoryIds: searchParams.getAll('categoryIds').length > 0 ? searchParams.getAll('categoryIds') : undefined,
+            categoriesMode: (searchParams.get('categoriesMode') as 'any' | 'all') || undefined,
+            tagIds: searchParams.getAll('tagIds').length > 0 ? searchParams.getAll('tagIds') : undefined,
+            tagsMode: (searchParams.get('tagsMode') as 'any' | 'all') || undefined,
+            startDate: searchParams.get('startDate') || undefined,
+            endDate: searchParams.get('endDate') || undefined,
+            status: (searchParams.get('status') as 'published' | 'draft') || undefined,
           }} />
         </div>
       </div>
@@ -825,5 +794,17 @@ export default function NotesPage() {
         onSave={handleSaveSummary}
       />
     </div>
+  )
+}
+
+export default function NotesPage() {
+  return (
+    <Suspense fallback={
+      <div className="flex min-h-screen items-center justify-center bg-gray-50">
+        <div className="text-center text-gray-500">加载中...</div>
+      </div>
+    }>
+      <NotesPageContent />
+    </Suspense>
   )
 }
