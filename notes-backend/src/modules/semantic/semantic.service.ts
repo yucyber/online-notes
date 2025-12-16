@@ -275,7 +275,7 @@ ${context}
 
     try {
       const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 10000); // 10s timeout
+      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increase timeout to 30s
 
       const response = await fetch('https://api.coze.cn/open_api/v2/chat', {
         method: 'POST',
@@ -299,13 +299,12 @@ ${context}
       clearTimeout(timeoutId);
 
       if (!response.ok) {
-        throw new Error(`Coze API error: ${response.status} ${response.statusText}`);
+        const errorText = await response.text();
+        throw new Error(`Coze API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const data = await response.json();
       // Parse Coze V2 response
-      // Structure might vary, usually messages are in data.messages
-      // Assuming non-streaming response
       if (data.messages && data.messages.length > 0) {
         const answer = data.messages.find((m: any) => m.type === 'answer');
         if (answer) {
@@ -313,10 +312,11 @@ ${context}
         }
       }
 
+      this.logger.warn(`Coze response parsed but no answer found: ${JSON.stringify(data)}`);
       return 'General Topic';
     } catch (error) {
       if (error.name === 'AbortError') {
-        throw new Error('Coze API timeout');
+        throw new Error('Coze API timeout (30s)');
       }
       throw error;
     }
