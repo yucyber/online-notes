@@ -38,6 +38,7 @@ function FreePort($port) {
 }
 $nodev = (node -v) 2>$null; if (-not $nodev) { throw 'node not found' }
 Exec 'npm ci' 'notes-backend'
+if (Test-Path 'notes-backend/dist') { Remove-Item -Recurse -Force 'notes-backend/dist' }
 Exec 'npm run build' 'notes-backend'
 $wd = (Resolve-Path 'notes-backend').Path
 $port = GetBackendPort

@@ -7,7 +7,7 @@ import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Note, NoteFilterParams } from '@/types'
-import { fetchNotes, deleteNote, fetchCategories, fetchTags, createNote, clearNotesCache } from '@/lib/api'
+import { fetchNotes, deleteNote, fetchCategories, fetchTags, createNote, clearNotesCache, fetchNoteById } from '@/lib/api'
 import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
 import { formatDate, truncateText } from '@/utils'
 import { Trash2, Plus, Edit, FileText, ListChecks, Sparkles, Check } from 'lucide-react'
@@ -349,7 +349,10 @@ function NotesPageContent() {
     setSummaryResult('')
 
     try {
-      const selectedNotes = notes.filter(n => selectedNoteIds.has(n.id))
+      // 获取选中笔记的完整内容（列表接口不包含 content）
+      const promises = Array.from(selectedNoteIds).map(id => fetchNoteById(id))
+      const selectedNotes = await Promise.all(promises)
+
       const response = await axios.post('/api/ai/summary', { notes: selectedNotes })
       setSummaryResult(response.data.summary)
     } catch (err: any) {
