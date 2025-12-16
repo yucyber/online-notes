@@ -6,6 +6,7 @@ import { Note, NoteSchema } from './schemas/note.schema';
 import { CategoriesModule } from '../categories/categories.module';
 import { TagsModule } from '../tags/tags.module';
 import { SemanticModule } from '../semantic/semantic.module';
+import { AiModule } from '../ai/ai.module';
 
 @Module({
   imports: [
@@ -13,6 +14,7 @@ import { SemanticModule } from '../semantic/semantic.module';
     CategoriesModule,
     TagsModule,
     SemanticModule,
+    AiModule,
   ],
   controllers: [NotesController],
   providers: [NotesService],

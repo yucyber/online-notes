@@ -21,6 +21,9 @@ export class Note {
   @Prop({ required: true })
   content: string;
 
+  @Prop({ required: false })
+  summary?: string;
+
   @Prop({ type: Types.ObjectId, ref: 'Category' })
   categoryId?: Types.ObjectId;
 

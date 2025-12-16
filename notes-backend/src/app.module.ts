@@ -18,6 +18,7 @@ import { SemanticModule } from './modules/semantic/semantic.module';
 import { RumModule } from './modules/rum/rum.module';
 import { BoardsModule } from './modules/boards/boards.module';
 import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
+import { AiModule } from './modules/ai/ai.module';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
     RumModule,
     BoardsModule,
     MindmapsModule,
+    AiModule,
   ],
 })
 export class AppModule { }

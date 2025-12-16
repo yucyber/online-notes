@@ -46,6 +46,49 @@ const getCategoryLabel = (note: Note, categoryMap: Record<string, string>) => {
   return categoryId || '未分类'
 }
 
+const SummaryPreview = ({ summary, fallback }: { summary?: string, fallback: string }) => {
+  const [isVisible, setIsVisible] = useState(false)
+  const timerRef = useRef<NodeJS.Timeout | null>(null)
+
+  const handleMouseEnter = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => setIsVisible(true), 500)
+  }
+
+  const handleMouseLeave = () => {
+    if (timerRef.current) clearTimeout(timerRef.current)
+    timerRef.current = setTimeout(() => setIsVisible(false), 200)
+  }
+
+  return (
+    <div className="relative" onMouseEnter={handleMouseEnter} onMouseLeave={handleMouseLeave}>
+      <div className="text-sm line-clamp-3 mb-4 leading-relaxed cursor-default" style={{ color: 'var(--on-surface)' }}>
+        {summary || fallback}
+      </div>
+      {summary && isVisible && (
+        <div
+          className="absolute bottom-full left-0 mb-2 w-80 p-4 rounded-xl shadow-2xl z-50 text-sm leading-relaxed animate-in fade-in zoom-in duration-200"
+          style={{
+            background: 'var(--surface-2)',
+            color: 'var(--on-surface)',
+            border: '1px solid var(--border)',
+            backdropFilter: 'blur(12px)',
+            maxHeight: '300px',
+            overflowY: 'auto',
+            pointerEvents: 'auto'
+          }}
+          onMouseEnter={() => {
+            if (timerRef.current) clearTimeout(timerRef.current)
+          }}
+          onMouseLeave={handleMouseLeave}
+        >
+          {summary}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function NotesPage() {
   const getSearchParams = () => {
     try { return new URLSearchParams(typeof window !== 'undefined' ? window.location.search : '') } catch { return new URLSearchParams() }
@@ -640,7 +683,7 @@ export default function NotesPage() {
                 return (
                   <Card
                     key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${i}`}
-                    className={`card-hover relative overflow-hidden group ${isSelectionMode && selectedNoteIds.has(note.id) ? 'ring-2 ring-blue-500' : ''}`}
+                    className={`card-hover relative group ${isSelectionMode && selectedNoteIds.has(note.id) ? 'ring-2 ring-blue-500' : ''}`}
                     style={{ borderRadius: '22px', background: 'var(--surface-1)', boxShadow: 'var(--shadow-md)', border: '1px solid var(--border)', transition: 'all 0.3s ease' }}
                     onMouseEnter={(e) => {
                       e.currentTarget.style.boxShadow = 'var(--shadow-lg)'
@@ -651,27 +694,29 @@ export default function NotesPage() {
                       e.currentTarget.style.transform = 'none'
                     }}
                   >
-                    {isSelectionMode && (
-                      <>
-                        <div
-                          className="absolute inset-0 z-10 cursor-pointer"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            toggleNoteSelection(note.id);
-                          }}
-                        />
-                        <div className="absolute top-4 left-4 z-20 pointer-events-none">
-                          <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedNoteIds.has(note.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white/80'}`}>
-                            {selectedNoteIds.has(note.id) && <Check className="w-4 h-4 text-white" />}
+                    <div className="absolute inset-0 rounded-[22px] overflow-hidden pointer-events-none">
+                      {isSelectionMode && (
+                        <>
+                          <div
+                            className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              toggleNoteSelection(note.id);
+                            }}
+                          />
+                          <div className="absolute top-4 left-4 z-20 pointer-events-none">
+                            <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedNoteIds.has(note.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white/80'}`}>
+                              {selectedNoteIds.has(note.id) && <Check className="w-4 h-4 text-white" />}
+                            </div>
                           </div>
-                        </div>
-                      </>
-                    )}
-                    <div
-                      aria-hidden
-                      className="absolute inset-x-10 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-                      style={{ background: 'var(--primary-600)', filter: 'blur(1px)' }}
-                    />
+                        </>
+                      )}
+                      <div
+                        aria-hidden
+                        className="absolute inset-x-10 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                        style={{ background: 'var(--primary-600)', filter: 'blur(1px)' }}
+                      />
+                    </div>
                     <CardHeader className="relative pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
                       <div className="flex justify-between items-start gap-2">
                         <CardTitle className="text-xl font-bold line-clamp-2 flex-1 group-hover:text-primary-600 transition-colors duration-200" style={{ color: 'var(--on-surface)' }}>
@@ -700,9 +745,10 @@ export default function NotesPage() {
                           <span className="ml-auto text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)', border: '1px solid var(--border)' }}>草稿</span>
                         )}
                       </div>
-                      <div className="text-sm line-clamp-3 mb-4 leading-relaxed" style={{ color: 'var(--on-surface)' }}>
-                        {truncateText(note.content.replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 150)}
-                      </div>
+                      <SummaryPreview
+                        summary={note.summary}
+                        fallback={note.content ? truncateText(note.content.replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 150) : '正在生成摘要...'}
+                      />
                       {note.tags.length > 0 && (
                         <div className="flex flex-wrap gap-2">
                           {note.tags.map((tag, idx) => {

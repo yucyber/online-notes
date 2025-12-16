@@ -6,6 +6,7 @@ import { CreateNoteDto, UpdateNoteDto, NoteFilterDto } from './dto';
 import { CategoriesService } from '../categories/categories.service';
 import { TagsService } from '../tags/tags.service';
 import { EmbeddingService } from '../semantic/embedding.service';
+import { AiService } from '../ai/ai.service';
 import Redis from 'ioredis'
 import { createHash } from 'crypto'
 
@@ -16,13 +17,22 @@ export class NotesService {
     private readonly categoriesService: CategoriesService,
     private readonly tagsService: TagsService,
     private readonly embeddingService: EmbeddingService,
+    private readonly aiService: AiService,
   ) { }
 
   private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
 
   async create(createNoteDto: CreateNoteDto, userId: string): Promise<Note> {
+    // 1. Sync fallback summary
+    const cleanContent = createNoteDto.content
+      .replace(/<[^>]+>/g, '')
+      .replace(/[#*`_~>\[\]()]/g, '')
+      .trim();
+    const fallbackSummary = cleanContent.substring(0, 200) + (cleanContent.length > 200 ? '...' : '');
+
     const createdNote = new this.noteModel({
       ...createNoteDto,
+      summary: fallbackSummary,
       userId: new Types.ObjectId(userId),
       tags: createNoteDto.tags ? createNoteDto.tags.map(tag => new Types.ObjectId(tag)) : [],
       categoryIds: createNoteDto.categoryIds ? createNoteDto.categoryIds.map(id => new Types.ObjectId(id)) : undefined,
@@ -49,7 +59,20 @@ export class NotesService {
     // Async embedding generation
     this.updateEmbedding(savedNote);
 
+    // Async AI summary generation
+    this.generateAndSaveSummary(savedNote);
+
     return savedNote;
+  }
+
+  private generateAndSaveSummary(note: NoteDocument) {
+    this.aiService.generateSummary(note.content)
+      .then(summary => {
+        if (summary) {
+          this.noteModel.updateOne({ _id: note._id }, { summary }).exec();
+        }
+      })
+      .catch(err => console.error(`Failed to generate summary for note ${note._id}`, err));
   }
 
   private async updateEmbedding(note: NoteDocument) {
@@ -206,7 +229,7 @@ export class NotesService {
         .skip((page - 1) * size)
         .limit(size)
         .maxTimeMS(300)
-        .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+        .select('title summary categoryId categoryIds tags userId status createdAt updatedAt')
         .lean()
         .exec(),
       this.noteModel.countDocuments(query),
@@ -256,6 +279,15 @@ export class NotesService {
       throw new NotFoundException('笔记不存在');
     }
 
+    // Sync fallback summary if content changes
+    if (updateNoteDto.content) {
+      const cleanContent = updateNoteDto.content
+        .replace(/<[^>]+>/g, '')
+        .replace(/[#*`_~>\[\]()]/g, '')
+        .trim();
+      updateNoteDto['summary'] = cleanContent.substring(0, 200) + (cleanContent.length > 200 ? '...' : '');
+    }
+
     const updatedNote = await this.noteModel
       .findOneAndUpdate(
         { _id: new Types.ObjectId(id) },
@@ -273,6 +305,11 @@ export class NotesService {
     // Async embedding generation if content or title changed
     if (updateNoteDto.title || updateNoteDto.content) {
       this.updateEmbedding(updatedNote);
+    }
+
+    // Async AI summary generation if content changed
+    if (updateNoteDto.content) {
+      this.generateAndSaveSummary(updatedNote);
     }
 
     // Handle category count changes

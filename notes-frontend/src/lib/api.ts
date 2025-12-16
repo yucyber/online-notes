@@ -284,6 +284,7 @@ export const notesAPI = {
             updatedAt: String(raw.updatedAt || raw.createdAt || new Date().toISOString()),
             userId: String(raw.userId || ''),
             status: raw.status || 'published',
+            summary: raw.summary,
           } as Note
         })
         return { ...payload, items } as { items: Note[]; page: number; size: number; total: number }
