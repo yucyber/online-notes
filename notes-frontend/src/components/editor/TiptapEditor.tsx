@@ -25,6 +25,7 @@ import Collaboration from '@tiptap/extension-collaboration'
 import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
 import * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
+import { IndexeddbPersistence } from 'y-indexeddb'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare, Sparkles, FileText, PenTool, Loader2 } from 'lucide-react'
 import { createComment, commentsAPI } from '@/lib/api'
@@ -66,6 +67,9 @@ function srgb(x: number) {
 
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
   const ydoc = useMemo(() => new Y.Doc(), [])
+  const room = useMemo(() => `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`,
+    [noteId, versionKey],
+  )
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
@@ -81,6 +85,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const onContentChangeRef = useRef<typeof onContentChange | null>(onContentChange)
   const onSaveRef = useRef<typeof onSave | null>(onSave)
   const [aiWritingType, setAiWritingType] = useState<null | 'continue' | 'polish' | 'summary'>(null)
+  const [idbSynced, setIdbSynced] = useState(false)
 
   useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
   useEffect(() => { onContentChangeRef.current = onContentChange }, [onContentChange])
@@ -96,7 +101,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   useEffect(() => {
     const yws = process.env.NEXT_PUBLIC_YWS_URL
     // const yws = 'wss://demos.yjs.dev' 
-    const room = `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`
 
     if (!yws) {
       setLocalMode(true)
@@ -301,6 +305,46 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
   }, [user.id, user.name, provider])
 
+  // IndexedDB 持久化：保证断网/刷新后仍能恢复 Y.Doc（富文本协同离线能力）
+  useEffect(() => {
+    let cancelled = false
+    let persistence: IndexeddbPersistence | null = null
+
+    try {
+      // 使用独立前缀避免与其他项目冲突
+      persistence = new IndexeddbPersistence(`online-notes:${room}`, ydoc)
+    } catch (e) {
+      console.warn('[Collab] Failed to init IndexedDB persistence', e)
+      return
+    }
+
+    persistence.whenSynced
+      .then(() => {
+        if (cancelled) return
+        setIdbSynced(true)
+
+        // 如果本地确实有内容，打个标记避免后续 initialHTML seed 覆盖
+        try {
+          const frag = ydoc.getXmlFragment('prosemirror') as any
+          const hasContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
+          if (hasContent) {
+            const meta = ydoc.getMap('meta')
+            if (!meta.get('seeded')) {
+              meta.set('seeded', { by: 'indexeddb', at: Date.now() })
+            }
+          }
+        } catch { }
+      })
+      .catch((e) => {
+        console.warn('[Collab] IndexedDB whenSynced failed', e)
+      })
+
+    return () => {
+      cancelled = true
+      try { persistence?.destroy() } catch { }
+    }
+  }, [room, ydoc])
+
   const editor = useEditor({
     extensions: [
       // 协同模式下必须关闭默认 history，避免与 Collaboration 冲突
@@ -329,33 +373,38 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       Heading,
       Placeholder.configure({ placeholder: '开始写作…' }),
       CommentMark,
-      ...(collabEnabled && provider
+      ...(collabEnabled
         ? [
+          // Collaboration 绑定到 ydoc：即使 WS 还没连上，也能在本地 doc 上编辑 + IndexedDB 持久化
           Collaboration.configure({ document: ydoc }),
-          CollaborationCursor.configure({
-            provider: provider as any,
-            // 传递color字段
-            user: { ...user, color: colorFromString(user.name || user.id || 'user') },
-            render: (u) => {
-              // 直接使用u.color，减少重复计算
-              const color = u.color || colorFromString(u.name || u.id || 'user')
-              const el = document.createElement('span')
-              el.className = 'rounded px-1 text-xs'
-              el.style.backgroundColor = color
-              const { r, g, b } = hexToRgb(color)
-              const lum = 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b)
-              el.style.color = lum > 0.5 ? '#111827' : '#FFFFFF'
-              el.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.15)'
-              el.textContent = u.name || '用户'
-              el.setAttribute('aria-hidden', 'true')
-              el.setAttribute('role', 'presentation')
-              return el
-            },
-          }),
+          ...(provider
+            ? [
+              CollaborationCursor.configure({
+                provider: provider as any,
+                // 传递color字段
+                user: { ...user, color: colorFromString(user.name || user.id || 'user') },
+                render: (u) => {
+                  // 直接使用u.color，减少重复计算
+                  const color = u.color || colorFromString(u.name || u.id || 'user')
+                  const el = document.createElement('span')
+                  el.className = 'rounded px-1 text-xs'
+                  el.style.backgroundColor = color
+                  const { r, g, b } = hexToRgb(color)
+                  const lum = 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b)
+                  el.style.color = lum > 0.5 ? '#111827' : '#FFFFFF'
+                  el.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.15)'
+                  el.textContent = u.name || '用户'
+                  el.setAttribute('aria-hidden', 'true')
+                  el.setAttribute('role', 'presentation')
+                  return el
+                },
+              }),
+            ]
+            : []),
         ]
         : []),
     ],
-    content: ((collabEnabled && provider && !versionKey) ? undefined : (initialHTML || '<p></p>')),
+    content: ((collabEnabled && !versionKey) ? undefined : (initialHTML || '<p></p>')),
     // 使 .ProseMirror 在容器内占满高度，消除底部空白不可点击/不可输入区
     editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
     // 本地降级时仍保持可编辑（仅关闭协同），避免工具栏操作无效
@@ -508,6 +557,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const meta = ydoc.getMap('meta')
           const clientId = provider.awareness.clientID
 
+          // 如果本地（IndexedDB）已经恢复出内容，优先保留本地内容，不做 seed 覆盖
+          let hasLocalDocContent = false
+          try {
+            const frag = ydoc.getXmlFragment('prosemirror') as any
+            hasLocalDocContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
+          } catch { }
+
           // 检查当前内容是否是“脏 Markdown”
           const currentText = editor.getText().trim()
           const isDirtyMarkdown = currentText.startsWith('# ') || currentText.startsWith('## ')
@@ -519,7 +575,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const isExternalUpdate = serverUpdatedAt > (lastUpdatedAt || 0) + 1000 // 1s 容差
 
           ydoc.transact(() => {
-            if (!meta.get('seeded') || (isDirtyMarkdown && isCleanHTML) || isExternalUpdate) {
+            // 默认只在“文档为空”时 seed；除非明确是外部版本恢复（updatedAt 更新）才强制覆盖
+            const shouldSeed = (!meta.get('seeded') && !hasLocalDocContent) || ((isDirtyMarkdown && isCleanHTML) && !hasLocalDocContent)
+            if (shouldSeed || isExternalUpdate) {
               meta.set('seeded', { by: clientId, at: Date.now() })
               if (serverUpdatedAt > 0) meta.set('lastUpdatedAt', serverUpdatedAt)
 
@@ -536,7 +594,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt])
+  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt, idbSynced])
 
   useEffect(() => {
     if (!editor) return

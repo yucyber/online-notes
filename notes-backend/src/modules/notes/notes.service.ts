@@ -239,7 +239,7 @@ export class NotesService {
       ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
       : undefined
     const resp: any = { items, page, size, total, ...(nextCursor ? { nextCursor } : {}) }
-    try { await this.redis.set(cacheKey, JSON.stringify(resp), 'EX', 10) } catch { /* ignore */ }
+    try { await this.redis.set(cacheKey, JSON.stringify(resp), 'EX', 300) } catch { /* ignore */ }
     return resp
   }
 

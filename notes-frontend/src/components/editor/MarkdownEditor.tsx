@@ -9,6 +9,7 @@ import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism'
 import { Button } from '@/components/ui/button'
 import { Textarea } from '@/components/ui/textarea'
 import { Save, Eye, Edit, FileText } from 'lucide-react'
+import { getDraft, putDraft, removeDraft } from '@/lib/draftStore'
 
 interface MarkdownEditorProps {
   initialContent: string
@@ -117,15 +118,23 @@ export default function MarkdownEditor({
     if (!storageKey) return
     if (localSaveTimerRef.current) clearTimeout(localSaveTimerRef.current)
     localSaveTimerRef.current = setTimeout(() => {
+      const payload = {
+        title,
+        content,
+        updatedAt: Date.now(),
+      }
+
+      // 优先 localStorage（同步、简单）；超额时自动降级到 IndexedDB
       try {
-        const payload = {
-          title,
-          content,
-          updatedAt: Date.now(),
-        }
         localStorage.setItem(storageKey, JSON.stringify(payload))
       } catch (e) {
-        console.warn('保存本地草稿失败', e)
+        console.warn('保存本地草稿到 localStorage 失败，将尝试 IndexedDB 兜底', e)
+        putDraft({ key: storageKey, ...payload }).catch((err) => {
+          console.warn('保存本地草稿到 IndexedDB 也失败', err)
+        })
+
+        // 尝试释放同 key 的旧值，避免持续抛错
+        try { localStorage.removeItem(storageKey) } catch { }
       }
     }, 1000)
     return () => {
@@ -136,16 +145,36 @@ export default function MarkdownEditor({
   // 启动时检测是否有本地草稿，且与初始值不同则提示恢复
   useEffect(() => {
     if (!storageKey) return
-    try {
-      const raw = localStorage.getItem(storageKey)
-      if (!raw) return
-      const parsed = JSON.parse(raw) as { title: string; content: string; updatedAt: number }
-      const isDifferent = (parsed.title !== initialTitle) || (parsed.content !== initialContent)
-      if (isDifferent) {
-        setRestoreBanner(parsed)
+    let cancelled = false
+
+    const loadDraft = async () => {
+      try {
+        const raw = localStorage.getItem(storageKey)
+        if (raw) {
+          const parsed = JSON.parse(raw) as { title: string; content: string; updatedAt: number }
+          const isDifferent = (parsed.title !== initialTitle) || (parsed.content !== initialContent)
+          if (!cancelled && isDifferent) setRestoreBanner(parsed)
+          return
+        }
+      } catch (e) {
+        console.warn('读取 localStorage 草稿失败，将尝试 IndexedDB', e)
       }
-    } catch (e) {
-      console.warn('读取本地草稿失败', e)
+
+      try {
+        const idbDraft = await getDraft(storageKey)
+        if (!idbDraft) return
+        const isDifferent = (idbDraft.title !== initialTitle) || (idbDraft.content !== initialContent)
+        if (!cancelled && isDifferent) {
+          setRestoreBanner({ title: idbDraft.title, content: idbDraft.content, updatedAt: idbDraft.updatedAt })
+        }
+      } catch (e) {
+        console.warn('读取 IndexedDB 草稿失败', e)
+      }
+    }
+
+    loadDraft()
+    return () => {
+      cancelled = true
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [storageKey])
@@ -155,24 +184,41 @@ export default function MarkdownEditor({
     const handleOnline = () => {
       setIsOnline(true)
       // 网络恢复后，如果存在本地草稿且当前内容与草稿一致，立即尝试同步
-      try {
-        if (storageKey) {
+      const trySync = async () => {
+        if (!storageKey) return
+
+        let draft: { title: string; content: string } | null = null
+        try {
           const raw = localStorage.getItem(storageKey)
-          if (raw) {
-            const parsed = JSON.parse(raw) as { title: string; content: string }
-            const same = (parsed.title === title) && (parsed.content === content)
-            if (same && title.trim()) {
-              handleSave(true)
-                .then(() => {
-                  localStorage.removeItem(storageKey)
-                })
-                .catch(() => {
-                  // 保留草稿，稍后重试
-                })
-            }
+          if (raw) draft = JSON.parse(raw) as { title: string; content: string }
+        } catch {
+          // ignore
+        }
+
+        if (!draft) {
+          try {
+            const idbDraft = await getDraft(storageKey)
+            if (idbDraft) draft = { title: idbDraft.title, content: idbDraft.content }
+          } catch {
+            // ignore
           }
         }
-      } catch { }
+
+        if (!draft) return
+        const same = (draft.title === title) && (draft.content === content)
+        if (!same || !title.trim()) return
+
+        handleSave(true)
+          .then(() => {
+            try { localStorage.removeItem(storageKey) } catch { }
+            removeDraft(storageKey).catch(() => { })
+          })
+          .catch(() => {
+            // 保留草稿，稍后重试
+          })
+      }
+
+      trySync().catch(() => { })
     }
     const handleOffline = () => {
       setIsOnline(false)
@@ -183,7 +229,7 @@ export default function MarkdownEditor({
       window.removeEventListener('online', handleOnline)
       window.removeEventListener('offline', handleOffline)
     }
-  }, [])
+  }, [storageKey, title, content, handleSave])
 
   const restoreDraft = async (doSync: boolean) => {
     if (!restoreBanner) return
@@ -194,7 +240,10 @@ export default function MarkdownEditor({
       try {
         await handleSave()
         // 成功同步后清理本地草稿
-        if (storageKey) localStorage.removeItem(storageKey)
+        if (storageKey) {
+          try { localStorage.removeItem(storageKey) } catch { }
+          removeDraft(storageKey).catch(() => { })
+        }
       } catch (e) {
         console.warn('恢复并同步失败，将保留本地草稿以便稍后重试', e)
       }
@@ -206,6 +255,9 @@ export default function MarkdownEditor({
     try {
       if (storageKey) localStorage.removeItem(storageKey)
     } catch { }
+    if (storageKey) {
+      removeDraft(storageKey).catch(() => { })
+    }
   }
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -394,7 +446,6 @@ export default function MarkdownEditor({
               <ReactMarkdown
                 rehypePlugins={[rehypeRaw, rehypeSanitize]}
                 components={{
-                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   code({ className, children, ...props }: any) {
                     const match = /language-(\w+)/.exec(className || '')
                     const inline = props.inline
