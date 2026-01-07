@@ -1,6 +1,7 @@
 
 const WebSocket = require('ws')
 const http = require('http')
+const jwt = require('jsonwebtoken')
 const utils = require('y-websocket/bin/utils')
 const setupWSConnection = utils.setupWSConnection
 const docs = utils.docs
@@ -107,7 +108,38 @@ wss.on('close', () => {
 
 
 server.on('upgrade', (request, socket, head) => {
-    // You may check auth here if needed
+    // Auth: validate JWT in query param before upgrading to WebSocket
+    // Frontend passes it via WebsocketProvider({ params: { access_token } })
+    try {
+        const url = new URL(request.url, 'http://localhost')
+        const token = url.searchParams.get('access_token') || url.searchParams.get('token')
+        const authDisabled = String(process.env.YWS_AUTH_DISABLED || '').toLowerCase() === '1'
+        const secret = process.env.YWS_JWT_SECRET || process.env.JWT_SECRET
+
+        if (!authDisabled) {
+            if (!token) {
+                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+                socket.destroy()
+                return
+            }
+            if (!secret) {
+                console.error('[Auth] Missing JWT secret. Set YWS_JWT_SECRET or JWT_SECRET.')
+                socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n')
+                socket.destroy()
+                return
+            }
+            const payload = jwt.verify(token, secret)
+            request.user = payload
+        }
+    } catch (e) {
+        try {
+            console.warn('[Auth] JWT verify failed:', e && e.message ? e.message : e)
+            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+            socket.destroy()
+        } catch { }
+        return
+    }
+
     wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request)
     })
