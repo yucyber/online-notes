@@ -51,6 +51,35 @@
 4. 稳定性优先于表面连通：协作失败要降级到本地/IndexedDB，不允许无限重连或假成功。
 5. 每个改动必须有测试入口；现有项目缺少后端测试脚本时，本阶段应补最小可运行测试入口或明确采用可运行的 service 级测试方式。
 
+## 纳入的项目内 Skills
+
+本 spec 在代码审查后补充读取并纳入以下项目内 skills：
+
+- `.agents/skills/component-refactoring/SKILL.md`
+- `.agents/skills/component-refactoring/references/hook-extraction.md`
+- `.agents/skills/component-refactoring/references/component-splitting.md`
+- `.agents/skills/react-state-management/SKILL.md`
+- `.agents/skills/vercel-react-best-practices/SKILL.md`
+- `.agents/skills/vercel-react-best-practices/rules/rerender-dependencies.md`
+- `.agents/skills/vercel-react-best-practices/rules/client-event-listeners.md`
+- `.agents/skills/vercel-react-best-practices/rules/advanced-event-handler-refs.md`
+- `.agents/skills/vercel-react-best-practices/rules/client-localstorage-schema.md`
+- `.agents/skills/vercel-react-best-practices/rules/async-parallel.md`
+- `.agents/skills/vercel-react-best-practices/rules/js-set-map-lookups.md`
+
+已读取 `.agents/skills/frontend-design/SKILL.md`，但本阶段不做 UI 视觉重设计，因此不把它作为实施约束。
+
+这些 skills 对本阶段的约束如下：
+
+1. 复杂逻辑优先抽 hook 或 service，而不是继续堆在大组件或大 service 中。
+2. 超过 300 行或有多个独立状态组的 React 文件，优先抽 `use-*` hook 或按区域拆组件。本阶段直接适用于 `TiptapEditor` 的协作连接状态，但不要求重写整个编辑器。
+3. React effect 依赖必须收窄到 primitive 值，避免把整个 `user`、配置对象或 provider 对象放入依赖导致重复订阅。
+4. 事件订阅和 WebSocket/Yjs handler 应通过 ref 或稳定 cleanup 管理，避免每次 render 重绑。
+5. localStorage/IndexedDB 相关读取必须 try/catch，并尽量使用带版本或命名空间的 key；不得把不必要的用户对象或敏感字段写入本地存储。
+6. 独立异步操作应使用 `Promise.all` 并行；计数同步、契约检查和测试准备中不能无意义串行化。
+7. 重复成员判断使用 `Set/Map`，尤其适用于 `NoteCounterService` 计算 category/tag 增减集合。
+8. 不引入新的全局状态库。根据 `react-state-management` 的分类，本阶段只需要本地状态、URL 状态和服务器状态调用；不需要 Redux/Zustand/Jotai。
+
 ## 方案选择
 
 采用“风险优先，逐步重构”的方案。
