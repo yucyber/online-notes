@@ -4,12 +4,21 @@ import { User } from '@/types'
 const TOKEN_KEY = 'notes_token'
 const USER_KEY = 'notes_user'
 
+export const AUTH_CHANGED_EVENT = 'notes:auth-changed'
+
+const emitAuthChanged = (): void => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new Event(AUTH_CHANGED_EVENT))
+  }
+}
+
 // 设置token
 export const setToken = (token: string): void => {
   if (typeof window !== 'undefined') {
     localStorage.setItem(TOKEN_KEY, token)
     // Sync to cookie for Server Components (1 day expiration)
     document.cookie = `${TOKEN_KEY}=${token}; path=/; max-age=86400; SameSite=Lax`
+    emitAuthChanged()
   }
 }
 
@@ -34,6 +43,7 @@ export const removeToken = (): void => {
     localStorage.removeItem(TOKEN_KEY)
     localStorage.removeItem(USER_KEY)
     document.cookie = `${TOKEN_KEY}=; path=/; max-age=0`
+    emitAuthChanged()
   }
 }
 

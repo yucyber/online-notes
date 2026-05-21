@@ -29,6 +29,7 @@ import { IndexeddbPersistence } from 'y-indexeddb'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare, Sparkles, FileText, PenTool, Loader2 } from 'lucide-react'
 import { createComment, commentsAPI } from '@/lib/api'
+import { AUTH_CHANGED_EVENT, getToken, getTokenExpiration } from '@/lib/auth'
 import CommentMark from './extensions/CommentMark'
 import FontSize from './extensions/FontSize'
 import StatusPill from './extensions/StatusPill'
@@ -65,13 +66,26 @@ function srgb(x: number) {
   return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
 }
 
+type CollabStatus = 'config-missing' | 'auth-missing' | 'auth-expired' | 'auth-failed' | 'connecting' | 'connected' | 'disconnected'
+
+const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className: string; detail?: string }> = {
+  'config-missing': { label: '协作配置缺失', className: 'text-red-600', detail: '已本地降级' },
+  'auth-missing': { label: '协作需要登录', className: 'text-red-600', detail: '已本地降级' },
+  'auth-expired': { label: '登录已过期，协作已暂停', className: 'text-red-600', detail: '请重新登录后重连' },
+  'auth-failed': { label: '协作鉴权失败', className: 'text-red-600', detail: '请重新登录后重连' },
+  connecting: { label: '连接中', className: 'text-yellow-600' },
+  connected: { label: '已连接', className: 'text-green-600' },
+  disconnected: { label: '已断开', className: 'text-red-600' },
+}
+
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
   const ydoc = useMemo(() => new Y.Doc(), [])
   const room = useMemo(() => `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`,
     [noteId, versionKey],
   )
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
-  const [connStatus, setConnStatus] = useState<'connecting' | 'connected' | 'disconnected'>('connecting')
+  const [connStatus, setConnStatus] = useState<CollabStatus>('connecting')
+  const [authToken, setAuthToken] = useState<string | null>(() => (typeof window !== 'undefined' ? getToken() : null))
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
   const participantsCache = useRef<Array<{ id: string; name?: string }>>([])
   const cacheTimeout = useRef<NodeJS.Timeout>()
@@ -99,14 +113,45 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [ydoc])
 
   useEffect(() => {
+    const refreshToken = () => setAuthToken(getToken())
+    if (typeof window === 'undefined') return
+    window.addEventListener(AUTH_CHANGED_EVENT, refreshToken)
+    window.addEventListener('storage', refreshToken)
+    window.addEventListener('focus', refreshToken)
+    return () => {
+      window.removeEventListener(AUTH_CHANGED_EVENT, refreshToken)
+      window.removeEventListener('storage', refreshToken)
+      window.removeEventListener('focus', refreshToken)
+    }
+  }, [])
+
+  useEffect(() => {
     const yws = process.env.NEXT_PUBLIC_YWS_URL
-    // const yws = 'wss://demos.yjs.dev' 
 
     if (!yws) {
       setLocalMode(true)
       setCollabEnabled(false)
       setProvider(null)
-      setConnStatus('disconnected')
+      setConnStatus('config-missing')
+      return
+    }
+
+    const token = authToken
+    const expiresAt = token ? getTokenExpiration(token) : null
+
+    if (!token) {
+      setLocalMode(true)
+      setCollabEnabled(false)
+      setProvider(null)
+      setConnStatus('auth-missing')
+      return
+    }
+
+    if (!expiresAt || expiresAt <= Date.now()) {
+      setLocalMode(true)
+      setCollabEnabled(false)
+      setProvider(null)
+      setConnStatus('auth-expired')
       return
     }
 
@@ -117,7 +162,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         connect: true,
         maxBackoffTime: 10000,
         disableBc: true,
-        // resyncInterval: 5000, // 移除主动重同步，避免与服务器心跳冲突
+        params: { access_token: token },
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
@@ -128,17 +173,39 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     setProvider(p)
     setConnStatus('connecting')
 
-    // ✅ 增加连接错误和关闭的详细日志
+    const markAuthFailure = (status: CollabStatus) => {
+      setConnStatus(status)
+      setLocalMode(true)
+      setCollabEnabled(false)
+      try { p?.disconnect() } catch { }
+    }
+
     p.on('connection-error', (e: any) => {
       console.error('[Collab] Connection error:', e)
+      const message = String(e?.message || e || '')
+      if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
+        markAuthFailure('auth-failed')
+      }
     })
     p.on('connection-close', (e: any) => {
-      console.warn('[Collab] Connection closed:', e.code, e.reason)
+      console.warn('[Collab] Connection closed:', e?.code, e?.reason)
+      if (e?.code === 1008 || e?.code === 4401 || String(e?.reason || '').includes('401')) {
+        markAuthFailure('auth-failed')
+      }
     })
 
-    // ✅ 修正：status 事件直接返回状态字符串，不是事件对象
+    let tokenExpiryTimer: ReturnType<typeof setTimeout> | null = null
+    if (expiresAt) {
+      tokenExpiryTimer = setTimeout(() => {
+        try { p?.destroy() } catch { }
+        setProvider(null)
+        setLocalMode(true)
+        setCollabEnabled(false)
+        setConnStatus('auth-expired')
+      }, Math.max(0, Math.min(expiresAt - Date.now(), 2_147_483_647)))
+    }
+
     const statusHandler = (status: any) => {
-      // 兼容处理：y-websocket 有时返回对象 {status: 'connected'}，有时直接返回字符串
       const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
       setConnStatus(s)
       setWsDebug((prev) => ({
@@ -151,7 +218,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         setLocalMode(false)
         setCollabEnabled(true)
 
-        // ✅ 重连成功后，重新设置本地用户状态（使用官方原生逻辑）
         const aw = p!.awareness
         aw.setLocalStateField('user', {
           id: user.id,
@@ -160,7 +226,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           timestamp: Date.now()
         })
 
-        // ✅ 恢复缓存的协作者列表
         if (participantsCache.current.length > 0) {
           setParticipants([...participantsCache.current])
         }
@@ -184,7 +249,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     p.on('sync', syncHandler as any)
 
-    // ✅ Debug: 监听 YDoc 更新，确认是否收到数据
     const updateHandler = (update: Uint8Array, origin: any) => {
       console.log('[Collab] YDoc update received:', {
         byteLength: update.byteLength,
@@ -196,7 +260,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
     const aw = p.awareness
 
-    // ✅ 优化的 awareness 更新处理（使用官方原生同步）
     const updateAwareness = () => {
       const entries = Array.from(aw.getStates().entries()) as any[]
       console.log('[Collab] Awareness update:', entries.length, 'entries')
@@ -208,17 +271,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }
       const newParticipants = Array.from(byId.values())
 
-      // ✅ 更新缓存
       participantsCache.current = newParticipants
       setParticipants(newParticipants)
 
-      // ✅ 清除之前的延迟清空定时器
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
       }
     }
 
-    // ✅ 设置初始用户状态
     aw.setLocalStateField('user', {
       id: user.id,
       name: user.name,
@@ -226,23 +286,19 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       timestamp: Date.now()
     })
 
-    // ✅ 监听官方原生的 awareness 更新
     aw.on('update', updateAwareness)
 
     updateAwareness()
 
-    // ✅ 监听 provider 的 destroy 事件（重连时触发）
     const destroyHandler = () => {
-      console.log('🔄 Provider destroy event - keeping collaborators cache for 5s')
-      // ✅ 5秒后再清空缓存，避免重连时立即消失
+      console.log('[Collab] Provider destroy event - keeping collaborators cache for 5s')
       cacheTimeout.current = setTimeout(() => {
-        // ✅ 修正：使用全小写 wsconnected (y-websocket 内部属性)
         if ((p as any).wsconnected === false) {
-          console.log('⏰ Cache timeout - clearing collaborators')
+          console.log('[Collab] Cache timeout - clearing collaborators')
           participantsCache.current = []
           setParticipants([])
         } else {
-          console.log('✅ Reconnected - keeping collaborators')
+          console.log('[Collab] Reconnected - keeping collaborators')
         }
       }, 5000)
     }
@@ -250,7 +306,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
     let failCount = 0
     const degradeTimer = setInterval(() => {
-      // ✅ 修正：使用全小写 wsconnected 和 wsconnecting
       const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
       setWsDebug({
         connecting: Boolean((p as any).wsconnecting),
@@ -260,9 +315,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       if (disconnected) {
         failCount++
         if (failCount >= 2) {
-          // 暂时注释掉降级逻辑，避免因误判导致断开
-          // setLocalMode(true)
-          // setCollabEnabled(false)
           console.warn('[Collab] Connection unstable but keeping retry...')
         }
       } else {
@@ -270,7 +322,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }
     }, 5000)
 
-    // ✅ 应用层心跳：每15秒发送一次 Awareness 更新，防止 Nginx/LoadBalancer 因“无数据传输”而切断连接
     const appHeartbeat = setInterval(() => {
       if (p && (p as any).wsconnected) {
         p.awareness.setLocalStateField('lastPing', Date.now())
@@ -279,6 +330,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
     return () => {
       console.log('[Collab] Disconnecting provider')
+      if (tokenExpiryTimer) clearTimeout(tokenExpiryTimer)
       clearInterval(degradeTimer)
       clearInterval(appHeartbeat)
       if (cacheTimeout.current) {
@@ -291,7 +343,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       aw.off('update', updateAwareness)
       p?.destroy()
     }
-  }, [noteId, versionKey, ydoc]) // 移除 user.id 和 user.name，避免因用户信息变化导致重连
+  }, [noteId, versionKey, ydoc, authToken])
 
   // 单独监听用户信息变化并更新 awareness，不触发重连
   useEffect(() => {
@@ -825,11 +877,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
   if (!editor) return <div className="p-4 text-sm text-gray-500">编辑器加载中…</div>
 
+  const connMeta = COLLAB_STATUS_META[connStatus]
+
   return (
     <div className="space-y-2">
       <div className="flex items-center gap-2">
         <div className="text-xs" aria-live="polite" role="status">
-          连接状态：<span className={connStatus === 'connected' ? 'text-green-600' : connStatus === 'connecting' ? 'text-yellow-600' : 'text-red-600'}>{connStatus}</span>
+          连接状态：<span className={connMeta.className}>{connMeta.label}</span>
+          {connMeta.detail && <span className="ml-2 text-xs text-gray-500">{connMeta.detail}</span>}
           <span className="ml-2 text-[11px] text-gray-500">ws[{wsDebug.connected ? 'on' : wsDebug.connecting ? 'dial' : 'off'}] sync[{wsDebug.synced ? 'ok' : '…'}]</span>
           {localMode && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
           {readOnly && <span className="ml-2 text-xs text-gray-500">只读</span>}
