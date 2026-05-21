@@ -3,11 +3,14 @@ import { MongooseModule } from '@nestjs/mongoose'
 import { MindmapsController } from './mindmaps.controller'
 import { MindmapsService } from './mindmaps.service'
 import { Mindmap, MindmapSchema } from './schemas/mindmap.schema'
+import { Note, NoteSchema } from '../notes/schemas/note.schema'
 
 @Module({
-  imports: [MongooseModule.forFeature([{ name: Mindmap.name, schema: MindmapSchema }])],
+  imports: [MongooseModule.forFeature([
+    { name: Mindmap.name, schema: MindmapSchema },
+    { name: Note.name, schema: NoteSchema },
+  ])],
   controllers: [MindmapsController],
   providers: [MindmapsService],
 })
-export class MindmapsModule {}
-
+export class MindmapsModule { }

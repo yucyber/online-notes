@@ -14,18 +14,17 @@ export class MindmapsController {
       noteId: payload.noteId,
       userId: req.user.id,
       content: payload.content,
-      _id: payload._id
+      _id: payload._id,
     })
   }
 
   @Get(':id')
-  async get(@Param('id') id: string) {
-    return await this.svc.getById(id)
+  async get(@Param('id') id: string, @Req() req: any) {
+    return await this.svc.getById(id, req.user.id)
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Body() payload: { title?: string; content?: any }) {
-    return await this.svc.update(id, payload)
+  async update(@Param('id') id: string, @Req() req: any, @Body() payload: { title?: string; content?: any }) {
+    return await this.svc.update(id, req.user.id, payload)
   }
 }
-

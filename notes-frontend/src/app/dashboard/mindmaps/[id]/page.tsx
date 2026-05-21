@@ -32,15 +32,21 @@ export default function MindmapDetailPage() {
         setMap(data)
         setError('')
       } catch (e: any) {
-        if (e.response?.status === 404) {
+        const status = e.response?.status
+        if (status === 404) {
           try {
-            // 自动创建
-            const newMap = await createMindMap({ _id: id, title: '未命名思维导图' });
-            setMap(newMap);
-            setError('');
-          } catch {
-            setError('创建思维导图失败');
+            const newMap = await createMindMap({ _id: id, title: '未命名思维导图' })
+            setMap(newMap)
+            setError('')
+          } catch (createError: any) {
+            if (createError.response?.status === 409) {
+              setError('思维导图已存在或无权限访问')
+            } else {
+              setError('创建思维导图失败')
+            }
           }
+        } else if (status === 401 || status === 403) {
+          setError('无权限访问该思维导图')
         } else {
           setError('加载思维导图失败')
         }

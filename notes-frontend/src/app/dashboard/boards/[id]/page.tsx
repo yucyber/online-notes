@@ -23,15 +23,21 @@ export default function BoardDetailPage() {
         setBoard(data)
         setError('')
       } catch (e: any) {
-        if (e.response?.status === 404) {
+        const status = e.response?.status
+        if (status === 404) {
           try {
-            // 自动创建
-            const newBoard = await createBoard({ _id: id, title: '未命名画板' });
-            setBoard(newBoard);
-            setError('');
-          } catch {
-            setError('创建画板失败');
+            const newBoard = await createBoard({ _id: id, title: '未命名画板' })
+            setBoard(newBoard)
+            setError('')
+          } catch (createError: any) {
+            if (createError.response?.status === 409) {
+              setError('画板已存在或无权限访问')
+            } else {
+              setError('创建画板失败')
+            }
           }
+        } else if (status === 401 || status === 403) {
+          setError('无权限访问该画板')
         } else {
           setError('加载画板失败')
         }
