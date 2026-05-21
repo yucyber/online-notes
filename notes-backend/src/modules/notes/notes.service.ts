@@ -7,6 +7,8 @@ import { CategoriesService } from '../categories/categories.service';
 import { TagsService } from '../tags/tags.service';
 import { EmbeddingService } from '../semantic/embedding.service';
 import { AiService } from '../ai/ai.service';
+import { NoteAccessService } from './note-access.service';
+import { NoteCounterService } from './note-counter.service';
 import Redis from 'ioredis'
 import { createHash } from 'crypto'
 
@@ -18,6 +20,8 @@ export class NotesService {
     private readonly tagsService: TagsService,
     private readonly embeddingService: EmbeddingService,
     private readonly aiService: AiService,
+    private readonly noteAccess: NoteAccessService,
+    private readonly noteCounter: NoteCounterService,
   ) { }
 
   private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
@@ -40,21 +44,11 @@ export class NotesService {
 
     const savedNote = await createdNote.save();
 
-    // Update category and tag counts
-    if (createNoteDto.categoryId) {
-      await this.categoriesService.incrementNoteCount(createNoteDto.categoryId);
-    }
-    if (createNoteDto.categoryIds && createNoteDto.categoryIds.length > 0) {
-      for (const cid of createNoteDto.categoryIds) {
-        await this.categoriesService.incrementNoteCount(cid)
-      }
-    }
-
-    if (createNoteDto.tags && createNoteDto.tags.length > 0) {
-      for (const tagId of createNoteDto.tags) {
-        await this.tagsService.incrementNoteCount(tagId);
-      }
-    }
+    await this.noteCounter.incrementForCreate({
+      categoryId: createNoteDto.categoryId,
+      categoryIds: createNoteDto.categoryIds,
+      tags: createNoteDto.tags,
+    })
 
     // Async embedding generation
     this.updateEmbedding(savedNote);
@@ -244,16 +238,8 @@ export class NotesService {
   }
 
   async findOne(id: string, userId: string): Promise<Note> {
-    const u = new Types.ObjectId(userId)
     const note = await this.noteModel
-      .findOne({
-        _id: new Types.ObjectId(id),
-        $or: [
-          { userId: u },
-          { acl: { $elemMatch: { userId: u } } },
-          { visibility: 'public' },
-        ],
-      })
+      .findOne(this.noteAccess.readScope(id, userId))
       .populate('categoryId', 'name')
       .populate('tags', 'name')
       .exec();
@@ -266,14 +252,7 @@ export class NotesService {
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
-    const u = new Types.ObjectId(userId)
-    const originalNote = await this.noteModel.findOne({
-      _id: new Types.ObjectId(id),
-      $or: [
-        { userId: u },
-        { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } },
-      ],
-    }).exec();
+    const originalNote = await this.noteModel.findOne(this.noteAccess.writeScope(id, userId)).exec();
 
     if (!originalNote) {
       throw new NotFoundException('笔记不存在');
@@ -312,67 +291,60 @@ export class NotesService {
       this.generateAndSaveSummary(updatedNote);
     }
 
-    // Handle category count changes
-    if (updateNoteDto.categoryId && updateNoteDto.categoryId !== originalNote.categoryId?.toString()) {
-      // Decrement old category count
-      if (originalNote.categoryId) {
-        await this.categoriesService.decrementNoteCount(originalNote.categoryId.toString());
+    // Category count sync — merge single + array fields into one set per side,
+    // so callers passing both don't double-count overlapping ids.
+    const touchingCategoryField =
+      updateNoteDto.categoryId !== undefined || Array.isArray(updateNoteDto.categoryIds)
+    if (touchingCategoryField) {
+      const prev = new Set<string>()
+      if (originalNote.categoryId) prev.add(originalNote.categoryId.toString())
+      for (const cid of (originalNote.categoryIds || [])) prev.add(cid.toString())
+
+      const next = new Set<string>()
+      if (updateNoteDto.categoryId) next.add(updateNoteDto.categoryId)
+      else if (updateNoteDto.categoryId === undefined && originalNote.categoryId) {
+        // categoryId field was not touched — preserve original
+        next.add(originalNote.categoryId.toString())
       }
-      // Increment new category count
-      await this.categoriesService.incrementNoteCount(updateNoteDto.categoryId);
+      if (Array.isArray(updateNoteDto.categoryIds)) {
+        for (const cid of updateNoteDto.categoryIds) if (cid) next.add(cid)
+      } else if (originalNote.categoryIds) {
+        // categoryIds field was not touched — preserve original
+        for (const cid of originalNote.categoryIds) next.add(cid.toString())
+      }
+
+      await this.noteCounter.updateCategories([...prev], [...next])
     }
 
-    if (Array.isArray(updateNoteDto.categoryIds)) {
-      const prev = (originalNote.categoryIds || []).map(id => id.toString())
-      const next = updateNoteDto.categoryIds
-      const toAdd = next.filter(id => !prev.includes(id))
-      const toRemove = prev.filter(id => !next.includes(id))
-      for (const addId of toAdd) await this.categoriesService.incrementNoteCount(addId)
-      for (const rmId of toRemove) await this.categoriesService.decrementNoteCount(rmId)
+    // Tag count sync (previous code forgot this entirely).
+    if (Array.isArray(updateNoteDto.tags)) {
+      await this.noteCounter.updateTags(
+        (originalNote.tags || []).map(t => t.toString()),
+        updateNoteDto.tags,
+      )
     }
 
     return updatedNote;
   }
 
   async remove(id: string, userId: string): Promise<void> {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({
-      _id: new Types.ObjectId(id),
-      $or: [
-        { userId: u },
-        { acl: { $elemMatch: { userId: u, role: 'owner' } } },
-      ],
-    }).exec();
+    const note = await this.noteModel.findOne(this.noteAccess.ownerScope(id, userId)).exec();
 
     if (!note) {
       throw new NotFoundException('笔记不存在');
     }
 
-    const result = await this.noteModel.deleteOne({
-      _id: new Types.ObjectId(id),
-      userId: u,
-    }).exec();
+    const result = await this.noteModel.deleteOne(this.noteAccess.ownerScope(id, userId)).exec();
 
     if (result.deletedCount === 0) {
       throw new NotFoundException('笔记不存在');
     }
 
-    // Update category and tag counts
-    if (note.categoryId) {
-      await this.categoriesService.decrementNoteCount(note.categoryId.toString());
-    }
-
-    if (note.categoryIds && note.categoryIds.length > 0) {
-      for (const cid of note.categoryIds) {
-        await this.categoriesService.decrementNoteCount(cid.toString())
-      }
-    }
-
-    if (note.tags && note.tags.length > 0) {
-      for (const tagId of note.tags) {
-        await this.tagsService.decrementNoteCount(tagId.toString());
-      }
-    }
+    await this.noteCounter.decrementForDelete({
+      categoryId: note.categoryId?.toString(),
+      categoryIds: (note.categoryIds || []).map(cid => cid.toString()),
+      tags: (note.tags || []).map(t => t.toString()),
+    })
   }
 
   async getAcl(id: string, userId: string): Promise<{ visibility: string; acl: any[] }> {
