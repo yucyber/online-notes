@@ -1,4 +1,7 @@
 {
+  "scripts": {
+    "check:api-contract": "node scripts/check-api-contract.mjs"
+  },
   "devDependencies": {
     "ts-node": "^10.9.2"
   },
