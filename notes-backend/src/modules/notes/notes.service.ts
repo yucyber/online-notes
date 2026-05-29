@@ -9,8 +9,7 @@ import { EmbeddingService } from '../semantic/embedding.service';
 import { AiService } from '../ai/ai.service';
 import { NoteAccessService } from './note-access.service';
 import { NoteCounterService } from './note-counter.service';
-import Redis from 'ioredis'
-import { createHash } from 'crypto'
+import { NoteCacheService } from './note-cache.service';
 
 @Injectable()
 export class NotesService {
@@ -22,9 +21,8 @@ export class NotesService {
     private readonly aiService: AiService,
     private readonly noteAccess: NoteAccessService,
     private readonly noteCounter: NoteCounterService,
+    private readonly noteCache: NoteCacheService,
   ) { }
-
-  private redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
 
   async create(createNoteDto: CreateNoteDto, userId: string): Promise<Note> {
     // 1. Sync fallback summary
@@ -95,15 +93,9 @@ export class NotesService {
     const sortBy = (filterDto.sortBy || 'createdAt')
     const sortOrder = (filterDto.sortOrder || 'desc')
 
-    // Read-only cache (TTL 10s)
     const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids }
-    const cacheKey = `notes:list:${userId}:${createHash('sha1').update(JSON.stringify(keyPayload)).digest('hex')}`
-    try {
-      const cached = await this.redis.get(cacheKey)
-      if (cached) {
-        return JSON.parse(cached)
-      }
-    } catch { /* ignore */ }
+    const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload)
+    if (cached) return cached
 
     // Use $and to safely combine multiple conditions including $or clauses
     const andConditions: any[] = [];
@@ -233,7 +225,7 @@ export class NotesService {
       ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
       : undefined
     const resp: any = { items, page, size, total, ...(nextCursor ? { nextCursor } : {}) }
-    try { await this.redis.set(cacheKey, JSON.stringify(resp), 'EX', 300) } catch { /* ignore */ }
+    await this.noteCache.setList(userId, keyPayload, resp)
     return resp
   }
 

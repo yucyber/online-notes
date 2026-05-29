@@ -4,6 +4,7 @@ import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
 import { NoteAccessService } from './note-access.service';
 import { NoteCounterService } from './note-counter.service';
+import { NoteCacheService } from './note-cache.service';
 import { Note, NoteSchema } from './schemas/note.schema';
 import { CategoriesModule } from '../categories/categories.module';
 import { TagsModule } from '../tags/tags.module';
@@ -19,7 +20,7 @@ import { AiModule } from '../ai/ai.module';
     AiModule,
   ],
   controllers: [NotesController],
-  providers: [NotesService, NoteAccessService, NoteCounterService],
+  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService],
   exports: [NotesService, NoteAccessService, NoteCounterService],
 })
 export class NotesModule { }
