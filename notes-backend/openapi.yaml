@@ -1,687 +1,845 @@
 openapi: 3.0.3
 info:
-  title: 在线笔记平台 - 离线自动保存/草稿同步/网络状态/网络诊断 API
-  version: 1.0.0
+  title: 在线笔记平台 API
+  version: 1.1.0
   description: |
-    统一响应格式、3s超时、Token 鉴权与错误码标准的 API 文档。
+    当前文档只描述已经实现并可调用的后端 HTTP API。
     - 统一响应包：`{ code, message, data, requestId, timestamp }`
-    - 全接口默认服务端超时：3s（网关/服务/客户端需一致）
-    - 鉴权：`Authorization: Bearer <JWT>`，网关统一校验并注入 UID
-    - 幂等：写入类接口支持 `Idempotency-Key` 请求头
+    - 鉴权：`Authorization: Bearer <JWT>`
+    - 未实现但有长期价值的接口记录在 `docs/api-contract-drift.md` 的 Planned APIs
 servers:
-  - url: https://api.example.com
-    description: 生产环境
-  - url: https://staging-api.example.com
-    description: 预发布环境
   - url: http://localhost:3001
     description: 本地开发
 tags:
-  - name: Drafts
-    description: 离线自动保存与草稿同步
-  - name: Network
-    description: 网络状态与诊断
+  - name: Health
+    description: 服务健康检查
+  - name: Auth
+    description: 注册、登录与当前用户
+  - name: Notes
+    description: 笔记 CRUD、搜索、推荐、ACL 与锁定
+  - name: Comments
+    description: 笔记评论与回复
+  - name: Versions
+    description: 笔记版本快照与恢复
+  - name: Categories
+    description: 分类管理
+  - name: Tags
+    description: 标签管理
+  - name: Boards
+    description: 画板资源
+  - name: Mindmaps
+    description: 思维导图资源
   - name: Semantic
-    description: 语义检索与混合搜索（关键词+向量）
-  - name: Vector
-    description: 向量索引与嵌入管理（批量/幂等）
+    description: 语义搜索与主题聚类
+  - name: Invitations
+    description: 笔记邀请协作
+  - name: SavedFilters
+    description: 保存筛选器
+  - name: Dashboard
+    description: 仪表盘概览
+  - name: Audit
+    description: 审计日志
+  - name: Notifications
+    description: 通知中心
+  - name: RUM
+    description: 前端运行时指标采集
 paths:
   /api/health:
     get:
-      tags: [Network]
-      summary: 健康检查（免鉴权）
-      description: 返回服务健康最小信息（不包含内网细节）。
+      tags: [Health]
+      summary: 健康检查
       security: []
-      x-timeout-ms: 1000
       responses:
         '200':
-          description: 成功
-          headers:
-            X-Idempotency-Applied:
-              $ref: '#/components/headers/X-Idempotency-Applied'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      status: 'up'
-                      service_name: 'notes'
-                      timestamp: '2025-12-02T12:00:00Z'
-                    requestId: 'health-req'
-                    timestamp: '2025-12-02T12:00:00Z'
+          $ref: '#/components/responses/Ok'
+  /api/auth/register:
+    post:
+      tags: [Auth]
+      summary: 注册用户
+      requestBody:
+        $ref: '#/components/requestBodies/AuthCredentials'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthSession'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/auth/login:
+    post:
+      tags: [Auth]
+      summary: 登录
+      requestBody:
+        $ref: '#/components/requestBodies/AuthCredentials'
+      responses:
+        '200':
+          $ref: '#/components/responses/AuthSession'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/auth/me:
+    get:
+      tags: [Auth]
+      summary: 当前用户
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/UserEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/notes:
     get:
       tags: [Notes]
-      summary: 笔记列表（分页/过滤）
-      description: 返回当前用户可访问范围内的笔记分页列表，支持关键词、分类、标签与时间范围过滤，包含排序参数。
-      operationId: getNotesList
+      summary: 笔记列表
       security:
         - BearerAuth: []
-      x-timeout-ms: 3000
       parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/SearchId'
-        - in: query
-          name: searchMode
-          schema: { type: string, enum: ['keyword','vector','hybrid'], default: 'keyword' }
-          description: 搜索模式（keyword=关键词；vector=向量；hybrid=混合；仅在提供 `keyword` 时有效）
-        - in: query
-          name: page
-          schema: { type: integer, default: 1, minimum: 1 }
-          description: 页码（从1开始）
-        - in: query
-          name: size
-          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
-          description: 每页条数（与 `limit` 等价；推荐使用 `size`）
-        - in: query
-          name: limit
-          schema: { type: integer, minimum: 1, maximum: 100 }
-          description: 每页条数别名（为兼容历史参数，等价于 `size`）
-        - in: query
-          name: sortBy
-          schema: { type: string, default: 'createdAt' }
-          description: 排序字段（默认按创建时间降序）
-        - in: query
-          name: sortOrder
-          schema: { type: string, enum: ['asc','desc'], default: 'desc' }
-          description: 排序方向
-        - $ref: '#/components/parameters/Cursor'
-        - in: query
-          name: keyword
-          schema: { type: string }
-          description: 关键词（标题/内容模糊匹配）
-        - in: query
-          name: categoryId
-          schema: { type: string }
-          description: 单一分类过滤（ID）
-        - in: query
-          name: categoryIds
-          schema:
-            type: array
-            items: { type: string }
-            uniqueItems: true
-          style: form
-          explode: true
-          description: 多分类过滤（可重复）
-        - in: query
-          name: categoriesMode
-          schema: { type: string, enum: ['any','all'] }
-          description: 多分类匹配模式（any=任意匹配；all=全部命中）
-        - in: query
-          name: tagIds
-          schema:
-            type: array
-            items: { type: string }
-            uniqueItems: true
-          style: form
-          explode: true
-          description: 标签过滤（可重复）
-        - in: query
-          name: tagsMode
-          schema: { type: string, enum: ['any','all'] }
-          description: 标签匹配模式（any=任意匹配；all=全部命中）
-        - in: query
-          name: startDate
-          schema: { type: string, format: date-time }
-          description: 更新时间起始（ISO 8601）
-        - in: query
-          name: endDate
-          schema: { type: string, format: date-time }
-          description: 更新时间截止（ISO 8601）
-        - in: query
-          name: status
-          schema: { type: string, enum: ['published','draft'] }
-          description: 状态过滤
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Keyword'
+        - $ref: '#/components/parameters/CategoryId'
+        - $ref: '#/components/parameters/CategoryIds'
+        - $ref: '#/components/parameters/TagIds'
+        - $ref: '#/components/parameters/Status'
       responses:
         '200':
-          description: 成功
+          description: 笔记分页
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      page: 1
-                      size: 20
-                      total: 123
-                      totalPages: 7
-                      hasNext: true
-                      items:
-                        - { id: 'n_1', title: '示例笔记', updatedAt: '2025-12-05T12:00:00Z' }
-                        - { id: 'n_2', title: '另一条笔记', updatedAt: '2025-12-05T11:50:00Z' }
-                    requestId: 'req_notes'
-                    timestamp: '2025-12-05T12:00:00Z'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  /api/v1/drafts/auto-save:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/PaginatedNotes'
     post:
-      tags: [Drafts]
-      summary: 离线自动保存草稿
-      description: 将客户端离线编辑内容按序提交到服务端，保证幂等与版本一致性。
-      operationId: postDraftAutoSave
+      tags: [Notes]
+      summary: 创建笔记
       security:
         - BearerAuth: []
-      x-timeout-ms: 3000
+      requestBody:
+        $ref: '#/components/requestBodies/NoteInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/NoteEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/notes/recommendations:
+    get:
+      tags: [Notes]
+      summary: 推荐笔记
+      security:
+        - BearerAuth: []
       parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/ClientRegion'
-        - $ref: '#/components/parameters/NetworkType'
+        - in: query
+          name: currentNoteId
+          schema: { type: string }
+        - in: query
+          name: limit
+          schema: { type: integer, default: 5 }
+      responses:
+        '200':
+          description: 推荐笔记列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Note'
+  /api/notes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Notes]
+      summary: 笔记详情
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/NoteEnvelope'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    patch:
+      tags: [Notes]
+      summary: 部分更新笔记
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/NoteInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/NoteEnvelope'
+    put:
+      tags: [Notes]
+      summary: 更新笔记
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/NoteInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/NoteEnvelope'
+    delete:
+      tags: [Notes]
+      summary: 删除笔记
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/notes/{id}/acl:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Notes]
+      summary: 读取笔记 ACL
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/AclEnvelope'
+    post:
+      tags: [Notes]
+      summary: 添加协作者
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AclInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/notes/{id}/acl/{userId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - $ref: '#/components/parameters/UserId'
+    patch:
+      tags: [Notes]
+      summary: 更新协作者角色
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AclRoleInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      tags: [Notes]
+      summary: 移除协作者
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/notes/{id}/lock:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Notes]
+      summary: 锁定笔记
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      tags: [Notes]
+      summary: 解锁笔记
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/notes/{id}/comments:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Comments]
+      summary: 评论列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 评论列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Comment'
+    post:
+      tags: [Comments]
+      summary: 创建评论
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/CommentInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/CommentEnvelope'
+  /api/comments/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [Comments]
+      summary: 删除评论
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/comments/{id}/replies:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Comments]
+      summary: 回复评论
+      security:
+        - BearerAuth: []
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/DraftAutoSaveInput'
-            examples:
-              ok:
-                summary: 基本自动保存
-                value:
-                  noteId: 'n_123'
-                  content: '本地编辑内容...'
-                  cursor:
-                    line: 10
-                    column: 3
-                  clientId: 'c_abc'
-                  offlineSequence: 42
-                  version: 7
-                  updatedAt: '2025-12-02T12:00:00Z'
+              type: object
+              required: [text]
+              properties:
+                text: { type: string }
+      responses:
+        '201':
+          $ref: '#/components/responses/CommentEnvelope'
+  /api/notes/{id}/versions:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Versions]
+      summary: 版本列表
+      security:
+        - BearerAuth: []
       responses:
         '200':
-          description: 成功
+          $ref: '#/components/responses/Ok'
+    post:
+      tags: [Versions]
+      summary: 创建版本快照
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          $ref: '#/components/responses/Ok'
+  /api/notes/{id}/versions/{versionNo}/restore:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - in: path
+        name: versionNo
+        required: true
+        schema: { type: integer }
+    post:
+      tags: [Versions]
+      summary: 恢复版本
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/categories:
+    get:
+      tags: [Categories]
+      summary: 分类列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 分类列表
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      draft:
-                        noteId: 'n_123'
-                        version: 8
-                        contentHash: 'sha256:abcd...'
-                        savedAt: '2025-12-02T12:00:01Z'
-                      applied: true
-                    requestId: 'req_001'
-                    timestamp: '2025-12-02T12:00:01Z'
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Category'
+    post:
+      tags: [Categories]
+      summary: 创建分类
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/CategoryInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/CategoryEnvelope'
+  /api/categories/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Categories]
+      summary: 分类详情
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/CategoryEnvelope'
+    patch:
+      tags: [Categories]
+      summary: 更新分类
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/CategoryInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/CategoryEnvelope'
+    delete:
+      tags: [Categories]
+      summary: 删除分类
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/tags:
+    get:
+      tags: [Tags]
+      summary: 标签列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: 标签列表
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Tag'
+    post:
+      tags: [Tags]
+      summary: 创建标签
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/TagInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/TagEnvelope'
+  /api/tags/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Tags]
+      summary: 标签详情
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/TagEnvelope'
+    patch:
+      tags: [Tags]
+      summary: 更新标签
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/TagInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/TagEnvelope'
+    delete:
+      tags: [Tags]
+      summary: 删除标签
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/tags/bulk:
+    post:
+      tags: [Tags]
+      summary: 批量创建标签
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [names]
+              properties:
+                names:
+                  type: array
+                  items: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/tags/merge:
+    post:
+      tags: [Tags]
+      summary: 合并标签
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [sourceIds, targetId]
+              properties:
+                sourceIds:
+                  type: array
+                  items: { type: string }
+                targetId: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/tags/sync:
+    post:
+      tags: [Tags]
+      summary: 同步标签计数
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/v1/boards:
+    post:
+      tags: [Boards]
+      summary: 创建画板
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/ResourceInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/ResourceEnvelope'
         '409':
-          description: 版本冲突（需客户端拉取最新并重试）
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                conflict:
-                  value:
-                    code: 40901
-                    message: 'Version conflict'
-                    data:
-                      serverVersion: 10
-                    requestId: 'req_002'
-                    timestamp: '2025-12-02T12:00:01Z'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+          $ref: '#/components/responses/Conflict'
+  /api/v1/boards/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Boards]
+      summary: 画板详情
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ResourceEnvelope'
+    put:
+      tags: [Boards]
+      summary: 更新画板
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/ResourceInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ResourceEnvelope'
+  /api/v1/mindmaps:
+    post:
+      tags: [Mindmaps]
+      summary: 创建思维导图
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/ResourceInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/ResourceEnvelope'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v1/mindmaps/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Mindmaps]
+      summary: 思维导图详情
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/ResourceEnvelope'
+    put:
+      tags: [Mindmaps]
+      summary: 更新思维导图
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/ResourceInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/ResourceEnvelope'
   /api/v1/semantic/search:
     get:
       tags: [Semantic]
-      summary: 语义检索（支持关键词/向量/混合）
-      description: 根据查询词与可选过滤条件进行语义检索，统一分页与排序，返回打分结果。
-      operationId: getSemanticSearch
+      summary: 语义搜索
       security:
         - BearerAuth: []
-      x-timeout-ms: 3000
       parameters:
-        - $ref: '#/components/parameters/RequestId'
         - in: query
           name: q
-          schema: { type: string, minLength: 1 }
-          required: true
-          description: 查询文本（将用于关键词与向量检索）
+          schema: { type: string }
         - in: query
           name: mode
-          schema: { type: string, enum: ['keyword','vector','hybrid'], default: 'hybrid' }
-          description: 检索模式（默认混合）
-        - in: query
-          name: page
-          schema: { type: integer, default: 1, minimum: 1 }
-          description: 页码（从1开始）
-        - in: query
-          name: limit
-          schema: { type: integer, default: 20, minimum: 1, maximum: 100 }
-          description: 每页条数
-        - in: query
-          name: threshold
-          schema: { type: number, format: float, minimum: 0, maximum: 1 }
-          description: 最小相似度阈值（向量/混合）
-        - in: query
-          name: categoryId
-          schema: { type: string }
-          description: 分类过滤（可选）
-        - in: query
-          name: tagIds
-          schema:
-            type: array
-            items: { type: string }
-            uniqueItems: true
-          style: form
-          explode: true
-          description: 标签过滤（可选，可重复）
-        - in: query
-          name: sortBy
-          schema: { type: string, enum: ['score','updatedAt'], default: 'score' }
-          description: 排序字段（默认按相关性分数）
-        - in: query
-          name: sortOrder
-          schema: { type: string, enum: ['asc','desc'], default: 'desc' }
-          description: 排序方向
+          schema: { type: string, enum: [keyword, vector, hybrid], default: hybrid }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/CategoryId'
+        - $ref: '#/components/parameters/TagIds'
       responses:
         '200':
-          description: 成功
+          description: 语义搜索结果
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      page: 1
-                      limit: 20
-                      total: 42
-                      totalPages: 3
-                      hasNext: true
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
                       data:
-                        - id: 'n_123'
-                          title: '向量检索示例'
-                          preview: '这是一段与查询语义相关的内容...'
-                          score: 0.82
-                          updatedAt: '2025-12-05T12:00:00Z'
-                          matchedSegments:
-                            - text: '相关段落片段'
-                              start: 100
-                              end: 140
-                    requestId: 'req_semantic_001'
-                    timestamp: '2025-12-05T12:00:00Z'
-        '400':
-          description: 参数错误（query 为空或非法）
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                bad_request:
-                  value:
-                    code: 40010
-                    message: 'Invalid query'
-                    data: null
-                    requestId: 'req_semantic_002'
-                    timestamp: '2025-12-05T12:00:00Z'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          description: 向量服务不可用或索引降级
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                unavailable:
-                  value:
-                    code: 50310
-                    message: 'Vector service unavailable'
-                    data: null
-                    requestId: 'req_semantic_003'
-                    timestamp: '2025-12-05T12:00:00Z'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /api/v1/vector/upsert:
-    post:
-      tags: [Vector]
-      summary: 向量嵌入写入/更新（幂等）
-      description: 为笔记内容生成或更新向量嵌入，支持批次与版本控制；需要 `Idempotency-Key`。
-      operationId: postVectorUpsert
-      security:
-        - BearerAuth: []
-      x-timeout-ms: 3000
-      parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VectorUpsertInput'
-            examples:
-              one:
-                value:
-                  noteId: 'n_123'
-                  content: '需要计算向量的纯文本内容'
-                  version: 8
-                  embeddingModel: 'text-embedding-3-large'
-      responses:
-        '200':
-          description: 成功（重复幂等键返回同一结果）
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      noteId: 'n_123'
-                      version: 9
-                      embeddingId: 'emb_abc'
-                      dimensions: 1536
-                      model: 'text-embedding-3-large'
-                      updatedAt: '2025-12-05T12:00:01Z'
-                    requestId: 'req_vector_001'
-                    timestamp: '2025-12-05T12:00:01Z'
-        '409':
-          description: 版本冲突（客户端版本落后）
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                conflict:
-                  value:
-                    code: 40910
-                    message: 'Embedding version conflict'
-                    data:
-                      serverVersion: 10
-                    requestId: 'req_vector_002'
-                    timestamp: '2025-12-05T12:00:01Z'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /api/v1/vector/batch-upsert:
-    post:
-      tags: [Vector]
-      summary: 批量向量嵌入写入（异步受理）
-      description: 批量提交多条笔记内容进行向量计算与入库，超过阈值时返回受理状态与任务ID。
-      operationId: postVectorBatchUpsert
-      security:
-        - BearerAuth: []
-      x-timeout-ms: 3000
-      parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/VectorUpsertBatchInput'
-            examples:
-              batch:
-                value:
-                  items:
-                    - { noteId: 'n_1', content: '...', version: 3 }
-                    - { noteId: 'n_2', content: '...', version: 5 }
-                  embeddingModel: 'text-embedding-3-large'
-      responses:
-        '202':
-          description: 已受理（异步任务）
-          headers:
-            X-Idempotency-Applied:
-              $ref: '#/components/headers/X-Idempotency-Applied'
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                accepted:
-                  value:
-                    code: 0
-                    message: 'Accepted'
-                    data:
-                      jobId: 'job_vec_001'
-                      accepted: 2
-                      skipped: 0
-                      estimatedSeconds: 25
-                    requestId: 'req_vector_003'
-                    timestamp: '2025-12-05T12:00:02Z'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /api/v1/drafts/sync:
-    post:
-      tags: [Drafts]
-      summary: 草稿增量同步
-      description: 客户端批量提交离线增量变更，服务端返回合并后的版本与冲突列表。
-      operationId: postDraftSync
-      security:
-        - BearerAuth: []
-      x-timeout-ms: 3000
-      parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/IdempotencyKey'
-        - $ref: '#/components/parameters/ClientRegion'
-        - $ref: '#/components/parameters/NetworkType'
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/DraftSyncInput'
-            examples:
-              sync:
-                value:
-                  noteId: 'n_123'
-                  clientId: 'c_abc'
-                  baseVersion: 7
-                  changes:
-                    - op: 'insert'
-                      ts: '2025-12-02T12:00:00Z'
-                      payload: { position: 120, text: '新增内容' }
-                    - op: 'delete'
-                      ts: '2025-12-02T12:00:00Z'
-                      payload: { position: 30, length: 5 }
-      responses:
-        '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                merged:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      noteId: 'n_123'
-                      serverVersion: 9
-                      applied: 2
-                      conflicts:
-                        - type: 'range-overlap'
-                          clientChangeIndex: 1
-                          serverHint: '请拉取最新版本进行三方合并'
-                    requestId: 'req_003'
-                    timestamp: '2025-12-02T12:00:02Z'
-        '409':
-          description: 基线版本过旧或存在冲突
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                conflict:
-                  value:
-                    code: 40902
-                    message: 'Base version outdated'
-                    data:
-                      serverVersion: 12
-                    requestId: 'req_004'
-                    timestamp: '2025-12-02T12:00:02Z'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /api/v1/network/status:
+                        $ref: '#/components/schemas/SemanticPage'
+  /api/v1/semantic/topics:
     get:
-      tags: [Network]
-      summary: 网络状态探针
-      description: 返回服务端与依赖的健康状态与基本时延信息。
-      operationId: getNetworkStatus
+      tags: [Semantic]
+      summary: 主题列表
       security:
         - BearerAuth: []
-      x-timeout-ms: 3000
-      parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/ClientRegion'
-        - $ref: '#/components/parameters/NetworkType'
       responses:
         '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      online: true
-                      region: 'ap-sg-1'
-                      serverTime: '2025-12-02T12:00:00Z'
-                      latencyMs: 85
-                      deps:
-                        db: 'healthy'
-                        redis: 'healthy'
-                        mq: 'degraded'
-                    requestId: 'req_005'
-                    timestamp: '2025-12-02T12:00:00Z'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
-  /api/v1/network/diagnostics:
+          $ref: '#/components/responses/Ok'
+  /api/v1/semantic/topics/convert:
     post:
-      tags: [Network]
-      summary: 网络诊断
-      description: 服务端执行网络相关诊断并返回结果，支持指定测试项。
-      operationId: postNetworkDiagnostics
+      tags: [Semantic]
+      summary: 主题转标签
       security:
         - BearerAuth: []
-      x-timeout-ms: 3000
-      parameters:
-        - $ref: '#/components/parameters/RequestId'
-        - $ref: '#/components/parameters/ClientRegion'
-        - $ref: '#/components/parameters/NetworkType'
       requestBody:
         required: true
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/NetworkDiagnosticsInput'
-            examples:
-              run:
-                value:
-                  tests: ['dns', 'tls', 'gateway', 'latency']
-                  targetHost: 'api.example.com'
+              type: object
+              required: [topicName, noteIds]
+              properties:
+                topicName: { type: string }
+                noteIds:
+                  type: array
+                  items: { type: string }
       responses:
         '200':
-          description: 成功
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ApiEnvelope'
-              examples:
-                ok:
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      results:
-                        - test: 'dns'
-                          status: 'ok'
-                          details:
-                            resolver: '8.8.8.8'
-                            resolveMs: 20
-                        - test: 'tls'
-                          status: 'ok'
-                          details:
-                            protocol: 'TLSv1.3'
-                            handshakeMs: 35
-                        - test: 'gateway'
-                          status: 'ok'
-                          details:
-                            hops: 6
-                        - test: 'latency'
-                          status: 'ok'
-                          details:
-                            rttMs: 82
-                    requestId: 'req_006'
-                    timestamp: '2025-12-02T12:00:01Z'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-
+          $ref: '#/components/responses/Ok'
+  /api/invitations/notes/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [Invitations]
+      summary: 笔记邀请列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      tags: [Invitations]
+      summary: 创建邀请
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [role]
+              properties:
+                role: { type: string, enum: [editor, viewer] }
+                inviteeEmail: { type: string }
+                ttlHours: { type: integer }
+      responses:
+        '201':
+          $ref: '#/components/responses/Ok'
+  /api/invitations/mine:
+    get:
+      tags: [Invitations]
+      summary: 我的邀请
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/invitations/{token}:
+    parameters:
+      - in: path
+        name: token
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Invitations]
+      summary: 邀请预览
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    delete:
+      tags: [Invitations]
+      summary: 撤销邀请
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/invitations/{token}/accept:
+    parameters:
+      - in: path
+        name: token
+        required: true
+        schema: { type: string }
+    post:
+      tags: [Invitations]
+      summary: 接受邀请
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/saved-filters:
+    get:
+      tags: [SavedFilters]
+      summary: 保存筛选器列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+    post:
+      tags: [SavedFilters]
+      summary: 创建保存筛选器
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SavedFilter'
+      responses:
+        '201':
+          $ref: '#/components/responses/Ok'
+  /api/saved-filters/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    delete:
+      tags: [SavedFilters]
+      summary: 删除保存筛选器
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/dashboard/overview:
+    get:
+      tags: [Dashboard]
+      summary: 仪表盘概览
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/audit/logs:
+    get:
+      tags: [Audit]
+      summary: 审计日志
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - in: query
+          name: resourceType
+          schema: { type: string }
+        - in: query
+          name: resourceId
+          schema: { type: string }
+        - in: query
+          name: eventType
+          schema: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/notifications:
+    get:
+      tags: [Notifications]
+      summary: 通知列表
+      security:
+        - BearerAuth: []
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+        - in: query
+          name: type
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/notifications/{id}/read:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [Notifications]
+      summary: 标记通知已读
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/rum/collect:
+    post:
+      tags: [RUM]
+      summary: 采集前端运行时指标
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RumEvent'
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+  /api/rum/report:
+    get:
+      tags: [RUM]
+      summary: RUM 报告
+      parameters:
+        - in: query
+          name: date
+          schema: { type: string }
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
 components:
   securitySchemes:
     BearerAuth:
@@ -689,400 +847,383 @@ components:
       scheme: bearer
       bearerFormat: JWT
   parameters:
-    RequestId:
-      name: X-Request-Id
-      in: header
-      required: false
-      description: 客户端生成的请求唯一 ID，用于链路追踪与幂等对账
-      schema:
-        type: string
-        maxLength: 64
-    IdempotencyKey:
-      name: Idempotency-Key
-      in: header
-      required: false
-      description: |
-        幂等键（写入类接口必填），用于防止重复提交并保证一次且仅一次执行：
-        - 键作用域：`tenantId + actorId + endpoint`（同一作用域 24h 内重放返回首个结果）。
-        - 建议格式：`UUIDv4/ULID` 或匹配正则 `^[A-Za-z0-9._-]{8,64}$`。
-        - 服务返回可包含 `X-Idempotency-Applied: true/false` 以指示是否命中历史结果。
-        - 误用/格式不合法返回 `40020`，跨作用域冲突返回 `40920`。
-      schema:
-        type: string
-        maxLength: 64
-        pattern: '^[A-Za-z0-9._-]{1,64}$'
-      x-required-methods: ['POST','PUT','PATCH','DELETE']
-    ClientRegion:
-      name: X-Client-Region
-      in: header
-      required: false
-      description: 客户端所在区域代码，用于就近路由与延迟分析
-      schema:
-        type: string
-        example: ap-sg-1
-    NetworkType:
-      name: X-Network-Type
-      in: header
-      required: false
-      description: 客户端网络类型
-      schema:
-        type: string
-        enum: [wifi, cellular, ethernet, unknown]
-    SearchId:
-      name: X-Search-ID
-      in: header
-      required: false
-      description: 检索会话ID（用于日志关联、缓存命中与去重；与 `X-Request-Id` 区分，建议使用 UUIDv4）。
-      schema:
-        type: string
-        maxLength: 64
-    Cursor:
-      name: cursor
+    Id:
+      in: path
+      name: id
+      required: true
+      schema: { type: string }
+    UserId:
+      in: path
+      name: userId
+      required: true
+      schema: { type: string }
+    Page:
       in: query
-      required: false
-      description: |
-        游标分页的游标参数。不透明字符串；当 `sortBy=createdAt` 时可接受 ISO8601 时间游标。
-        - 无效游标返回 `400`（子码 `40030`）。
-        - 游标仅与稳定排序字段组合使用（如 `createdAt`）。
+      name: page
+      schema: { type: integer, minimum: 1, default: 1 }
+    Size:
+      in: query
+      name: size
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Limit:
+      in: query
+      name: limit
+      schema: { type: integer, minimum: 1, maximum: 100 }
+    Keyword:
+      in: query
+      name: keyword
+      schema: { type: string }
+    CategoryId:
+      in: query
+      name: categoryId
+      schema: { type: string }
+    CategoryIds:
+      in: query
+      name: categoryIds
       schema:
-        type: string
-        maxLength: 256
-  responses:
-    Unauthorized:
-      description: 未授权或 Token 失效
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ApiEnvelope'
-          examples:
-            unauthorized:
-              value:
-                code: 40100
-                message: 'Unauthorized'
-                data: null
-                requestId: 'req_xxx'
-                timestamp: '2025-12-02T12:00:00Z'
-    TooManyRequests:
-      description: 触发限流（令牌桶、网关限流）
-      headers:
-        Retry-After:
-          description: 秒级重试等待时间
-          schema:
-            type: integer
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ApiEnvelope'
-          examples:
-            rate_limited:
-              value:
-                code: 42900
-                message: 'Too Many Requests'
-                data: null
-                requestId: 'req_xxx'
-                timestamp: '2025-12-02T12:00:00Z'
-    ServiceUnavailable:
-      description: 服务降级或依赖不可用
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ApiEnvelope'
-          examples:
-            unavailable:
-              value:
-                code: 50300
-                message: 'Service Unavailable'
-                data: null
-                requestId: 'req_xxx'
-                timestamp: '2025-12-02T12:00:00Z'
-    InternalError:
-      description: 服务内部错误
-      content:
-        application/json:
-          schema:
-            $ref: '#/components/schemas/ApiEnvelope'
-          examples:
-            error:
-              value:
-                code: 50000
-                message: 'Internal Server Error'
-                data: null
-                requestId: 'req_xxx'
-                timestamp: '2025-12-02T12:00:00Z'
-  headers:
-    X-Idempotency-Applied:
-      description: 是否命中幂等历史结果
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+    TagIds:
+      in: query
+      name: tagIds
       schema:
-        type: boolean
-      example: true
-  schemas:
-      ApiEnvelope:
-      type: object
-      description: 统一响应包
-      properties:
-        code:
-          type: integer
-          format: int32
-          description: 业务码（0=成功；非0为错误码）
-          example: 0
-        message:
-          type: string
-          description: 文本描述
-          example: OK
-        data:
-          nullable: true
-          description: 业务数据
-        requestId:
-          type: string
-          description: 请求ID（来自 `X-Request-Id` 或服务端生成）
-          example: req_001
-        timestamp:
-          type: string
-          format: date-time
-          description: 服务端响应时间
-      required: [code, message, requestId, timestamp]
-      x-error-codes:
-        - code: 40000
-          meaning: 参数错误
-        - code: 40010
-          meaning: 语义检索参数错误（q 为空/过短）
-        - code: 40020
-          meaning: 幂等键格式不合法/缺失（写入接口）
-        - code: 40030
-          meaning: 游标无效/过期（分页游标校验失败）
-        - code: 40100
-          meaning: 未授权/Token失效
-        - code: 40300
-          meaning: 禁止访问
-        - code: 40901
-          meaning: 自动保存版本冲突
-        - code: 40902
-          meaning: 同步基线版本过旧
-        - code: 40910
-          meaning: 向量嵌入版本冲突
-        - code: 40920
-          meaning: 幂等键作用域冲突/重复提交（返回首个结果）
-        - code: 42900
-          meaning: 触发限流
-        - code: 50000
-          meaning: 服务内部错误
-        - code: 50300
-          meaning: 服务不可用/降级
-        - code: 50310
-          meaning: 向量服务不可用/索引降级
-    DraftAutoSaveInput:
-      type: object
-      properties:
-        noteId:
-          type: string
-        content:
-          type: string
-        cursor:
-          type: object
-          properties:
-            line:
-              type: integer
-              minimum: 1
-            column:
-              type: integer
-              minimum: 1
-        clientId:
-          type: string
-        offlineSequence:
-          type: integer
-          description: 客户端离线序号，单调递增用于去重与排序
-        version:
-          type: integer
-          description: 客户端当前版本（乐观锁）
-        updatedAt:
-          type: string
-          format: date-time
-      required: [noteId, content, clientId, offlineSequence, version]
-    DraftSyncInput:
-      type: object
-      properties:
-        noteId:
-          type: string
-        clientId:
-          type: string
-        baseVersion:
-          type: integer
-        changes:
-          type: array
-          items:
+        type: array
+        items: { type: string }
+      style: form
+      explode: true
+    Status:
+      in: query
+      name: status
+      schema: { type: string, enum: [published, draft] }
+  requestBodies:
+    AuthCredentials:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [email, password]
+            properties:
+              email: { type: string, format: email }
+              password: { type: string }
+              name: { type: string }
+    NoteInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/NoteInput'
+    CategoryInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Category'
+    TagInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/Tag'
+    AclInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [userId, role]
+            properties:
+              userId: { type: string }
+              role: { type: string, enum: [editor, viewer] }
+    AclRoleInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [role]
+            properties:
+              role: { type: string, enum: [owner, editor, viewer] }
+    CommentInput:
+      required: true
+      content:
+        application/json:
+          schema:
             type: object
             properties:
-              op:
-                type: string
-                enum: [insert, delete, replace, format]
-              ts:
-                type: string
-                format: date-time
-              payload:
-                type: object
-            required: [op, ts]
-      required: [noteId, clientId, baseVersion, changes]
-    SemanticResultItem:
-      type: object
-      properties:
-        id:
-          type: string
-        title:
-          type: string
-        preview:
-          type: string
-        score:
-          type: number
-          format: float
-        updatedAt:
-          type: string
-          format: date-time
-        matchedSegments:
-          type: array
-          items:
-            type: object
-            properties:
-              text: { type: string }
               start: { type: integer }
               end: { type: integer }
-    SemanticSearchList:
-      allOf:
-        - $ref: '#/components/schemas/PaginatedList'
-        - type: object
-          properties:
-            data:
-              type: array
-              items:
-                $ref: '#/components/schemas/SemanticResultItem'
-    VectorUpsertInput:
-      type: object
-      properties:
-        noteId:
-          type: string
-        content:
-          type: string
-          description: 参与嵌入计算的纯文本内容
-        version:
-          type: integer
-          description: 客户端当前内容版本（用于冲突检测）
-        embeddingModel:
-          type: string
-          description: 嵌入模型名称
-      required: [noteId, content, version]
-    VectorUpsertBatchInput:
-      type: object
-      properties:
-        items:
-          type: array
-          minItems: 1
-          maxItems: 100
-          items:
-            type: object
-            properties:
-              noteId: { type: string }
-              content: { type: string }
-              version: { type: integer }
-            required: [noteId, content, version]
-        embeddingModel:
-          type: string
-      required: [items]
-    NetworkDiagnosticsInput:
-      type: object
-      properties:
-        tests:
-          type: array
-          items:
-            type: string
-            enum: [dns, tls, gateway, latency, throughput]
-        targetHost:
-          type: string
-          description: 可选指定目标主机
-      required: [tests]
-
-externalDocs:
-  description: 错误码与测试基线说明
-  url: https://docs.example.com/api-baseline
-                  value:
-                    code: 0
-                    message: 'OK'
-                    data:
-                      page: 1
-                      limit: 20
-                      total: 123
-                      totalPages: 7
-                      hasNext: true
-                      data:
-                        - { id: 'n_1', title: '示例笔记', updatedAt: '2025-12-05T12:00:00Z' }
-                    requestId: 'req_notes'
-                    timestamp: '2025-12-05T12:00:00Z'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '429':
-          $ref: '#/components/responses/TooManyRequests'
-        '503':
-          $ref: '#/components/responses/ServiceUnavailable'
-        '500':
-          $ref: '#/components/responses/InternalError'
-  PaginatedList:
-      type: object
-      properties:
-        data:
-          type: array
-          items:
-            type: object
-        page:
-          type: integer
-          minimum: 1
-        limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-        total:
-          type: integer
-          minimum: 0
-        totalPages:
-          type: integer
-          minimum: 0
-        hasNext:
-          type: boolean
-    CursorPaginatedList:
-      type: object
-      description: 基于游标的分页结果（推荐用于日志/版本等时间序列集合）
-      properties:
-        items:
-          type: array
-          items:
-            type: object
-        limit:
-          type: integer
-          minimum: 1
-          maximum: 100
-        nextCursor:
-          type: string
-          description: 下一页游标（客户端透传即可，服务端生成的不透明值）
-        hasNext:
-          type: boolean
-      required: [items, limit]
-    
-  
-    BadRequest:
-      description: 请求参数错误或格式校验失败
+              text: { type: string }
+              anchor: { type: object }
+              blockId: { type: string }
+    ResourceInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ResourceInput'
+  responses:
+    Ok:
+      description: 成功
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiEnvelope'
-          examples:
-            invalid_cursor:
-              value:
-                code: 40030
-                message: 'Invalid cursor'
-                data: null
-                requestId: 'req_xxx'
-                timestamp: '2025-12-02T12:00:00Z'
-            invalid_idempotency_key:
-              value:
-                code: 40020
-                message: 'Invalid Idempotency-Key'
-                data: null
-                requestId: 'req_xxx'
-                timestamp: '2025-12-02T12:00:00Z'
+    AuthSession:
+      description: 登录态
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AuthSession'
+    UserEnvelope:
+      description: 用户
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/User'
+    NoteEnvelope:
+      description: 笔记
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Note'
+    CategoryEnvelope:
+      description: 分类
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Category'
+    TagEnvelope:
+      description: 标签
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Tag'
+    AclEnvelope:
+      description: ACL
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      visibility: { type: string }
+                      acl:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AclEntry'
+    CommentEnvelope:
+      description: 评论
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Comment'
+    ResourceEnvelope:
+      description: 资源
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/Resource'
+    BadRequest:
+      description: 请求错误
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+    Unauthorized:
+      description: 未认证
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+    NotFound:
+      description: 不存在或无权访问
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+    Conflict:
+      description: 资源冲突
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiEnvelope'
+  schemas:
+    ApiEnvelope:
+      type: object
+      properties:
+        code: { type: integer, example: 0 }
+        message: { type: string, example: OK }
+        data: {}
+        requestId: { type: string }
+        timestamp: { type: string, format: date-time }
+    User:
+      type: object
+      properties:
+        id: { type: string }
+        _id: { type: string }
+        email: { type: string }
+        name: { type: string }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+    AuthSession:
+      type: object
+      properties:
+        token: { type: string }
+        user:
+          $ref: '#/components/schemas/User'
+    NoteInput:
+      type: object
+      properties:
+        title: { type: string }
+        content: { type: string }
+        categoryId: { type: string }
+        categoryIds:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+        status: { type: string, enum: [published, draft] }
+    Note:
+      allOf:
+        - $ref: '#/components/schemas/NoteInput'
+        - type: object
+          properties:
+            id: { type: string }
+            _id: { type: string }
+            summary: { type: string }
+            userId: { type: string }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    PaginatedNotes:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/Note'
+        page: { type: integer }
+        size: { type: integer }
+        total: { type: integer }
+        nextCursor: { type: string }
+    Category:
+      type: object
+      properties:
+        id: { type: string }
+        _id: { type: string }
+        name: { type: string }
+        description: { type: string }
+        color: { type: string }
+        parentId: { type: string, nullable: true }
+        noteCount: { type: integer }
+    Tag:
+      type: object
+      properties:
+        id: { type: string }
+        _id: { type: string }
+        name: { type: string }
+        color: { type: string }
+        noteCount: { type: integer }
+    AclEntry:
+      type: object
+      properties:
+        userId: { type: string }
+        role: { type: string, enum: [owner, editor, viewer] }
+        addedBy: { type: string }
+        addedAt: { type: string, format: date-time }
+    Comment:
+      type: object
+      properties:
+        id: { type: string }
+        noteId: { type: string }
+        text: { type: string }
+        replies:
+          type: array
+          items: { type: object }
+    ResourceInput:
+      type: object
+      properties:
+        _id: { type: string }
+        title: { type: string }
+        noteId: { type: string }
+        content: {}
+    Resource:
+      allOf:
+        - $ref: '#/components/schemas/ResourceInput'
+        - type: object
+          properties:
+            id: { type: string }
+    SemanticPage:
+      type: object
+      properties:
+        page: { type: integer }
+        limit: { type: integer }
+        total: { type: integer }
+        totalPages: { type: integer }
+        hasNext: { type: boolean }
+        data:
+          type: array
+          items:
+            type: object
+            properties:
+              id: { type: string }
+              title: { type: string }
+              preview: { type: string }
+              score: { type: number }
+              updatedAt: { type: string }
+    SavedFilter:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        criteria: { type: object }
+    RumEvent:
+      type: object
+      properties:
+        type: { type: string }
+        name: { type: string }
+        value: { type: number }
+        meta: { type: object }
+        ts: { type: number }
