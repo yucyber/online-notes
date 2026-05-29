@@ -7,6 +7,7 @@ jest.mock('next/navigation', () => {
   return {
     useRouter: () => ({ push: jest.fn() }),
     useSearchParams: () => params,
+    usePathname: () => '/dashboard/notes',
   }
 })
 
@@ -15,6 +16,12 @@ jest.mock('@/lib/api', () => {
     fetchNotes: jest.fn(async () => ({ items: [], page: 1, size: 20, total: 0 })),
     fetchCategories: jest.fn(async () => []),
     fetchTags: jest.fn(async () => []),
+    categoriesAPI: { getAll: jest.fn(async () => []) },
+    tagsAPI: { getAll: jest.fn(async () => []) },
+    savedFiltersAPI: {
+      getAll: jest.fn(async () => []),
+      create: jest.fn(async () => ({})),
+    },
   }
 })
 
@@ -31,7 +38,6 @@ describe('搜索→控制台联动', () => {
 
   afterEach(() => {
     jest.useRealTimers()
-    jest.resetModules()
   })
 
   test('SearchFilterBar 触发 search:trigger 并写入 searchId', async () => {
@@ -84,4 +90,3 @@ describe('搜索→控制台联动', () => {
     })
   })
 })
-
