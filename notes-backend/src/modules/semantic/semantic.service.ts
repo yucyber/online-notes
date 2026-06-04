@@ -3,9 +3,9 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { EmbeddingService } from './embedding.service'
-import { ConfigService } from '@nestjs/config'
 import { TagsService } from '../tags/tags.service'
 import Redis from 'ioredis'
+import { AiService } from '../ai/ai.service'
 
 // Explicitly reference the type definition to ensure ts-node picks it up
 /// <reference path="../../types/ml-kmeans.d.ts" />
@@ -21,7 +21,7 @@ export class SemanticService {
   constructor(
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     private readonly embeddingService: EmbeddingService,
-    private readonly configService: ConfigService,
+    private readonly aiService: AiService,
     private readonly tagsService: TagsService
   ) { }
 
@@ -227,8 +227,7 @@ export class SemanticService {
 
       let topicName = `Topic Group ${clusterId + 1}`;
       try {
-        // Timeout control handled in callCozeToNameTopic or here
-        topicName = await this.callCozeToNameTopic(context);
+        topicName = await this.callAiToNameTopic(context);
       } catch (e) {
         this.logger.warn(`Failed to name topic for cluster ${clusterId}: ${e.message}`);
       }
@@ -254,72 +253,8 @@ export class SemanticService {
     return finalResults;
   }
 
-  private async callCozeToNameTopic(context: string): Promise<string> {
-    const apiKey = this.configService.get<string>('COZE_API_KEY');
-    const botId = this.configService.get<string>('COZE_BOT_ID');
-
-    if (!apiKey || !botId) {
-      this.logger.warn('COZE_API_KEY or COZE_BOT_ID not configured');
-      return 'Uncategorized Topic';
-    }
-
-    const prompt = `
-You are a helpful assistant. 
-Based on the following notes, summarize them into a single short topic phrase (2-6 words).
-Examples: "Frontend Performance", "Travel Plans 2024", "React Hooks Learning".
-Only return the phrase, no quotes or extra text.
-
-Notes:
-${context}
-    `;
-
-    try {
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000); // Increase timeout to 30s
-
-      const response = await fetch('https://api.coze.cn/open_api/v2/chat', {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-          'Accept': '*/*',
-          'Host': 'api.coze.cn',
-          'Connection': 'keep-alive'
-        },
-        body: JSON.stringify({
-          conversation_id: 'topic_discovery_' + Date.now(),
-          bot_id: botId,
-          user: 'system_topic_discovery',
-          query: prompt,
-          stream: false
-        }),
-        signal: controller.signal
-      });
-
-      clearTimeout(timeoutId);
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Coze API error: ${response.status} ${response.statusText} - ${errorText}`);
-      }
-
-      const data = await response.json();
-      // Parse Coze V2 response
-      if (data.messages && data.messages.length > 0) {
-        const answer = data.messages.find((m: any) => m.type === 'answer');
-        if (answer) {
-          return answer.content.trim().replace(/^["']|["']$/g, '');
-        }
-      }
-
-      this.logger.warn(`Coze response parsed but no answer found: ${JSON.stringify(data)}`);
-      return 'General Topic';
-    } catch (error) {
-      if (error.name === 'AbortError') {
-        throw new Error('Coze API timeout (30s)');
-      }
-      throw error;
-    }
+  private async callAiToNameTopic(context: string): Promise<string> {
+    return this.aiService.generateTopicName(context)
   }
 
   async convertToTag(userId: string, topicName: string, noteIds: string[]) {

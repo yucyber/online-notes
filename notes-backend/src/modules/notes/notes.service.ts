@@ -70,7 +70,7 @@ export class NotesService {
   private async updateEmbedding(note: NoteDocument) {
     try {
       const text = `${note.title}\n${note.content}`;
-      // Truncate if too long (Coze might have limits, e.g. 4000 chars)
+      // Truncate before sending content to the embedding provider.
       const truncatedText = text.substring(0, 8000);
       const embedding = await this.embeddingService.generateEmbedding(truncatedText);
 

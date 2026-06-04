@@ -1,6 +1,8 @@
 {
   "scripts": {
-    "check:api-contract": "node scripts/check-api-contract.mjs"
+    "check:api-contract": "node scripts/check-api-contract.mjs",
+    "check:ai-config": "node scripts/check-ai-config.mjs",
+    "check:ai-config:live": "node scripts/check-ai-config.mjs --live"
   },
   "devDependencies": {
     "ts-node": "^10.9.2"

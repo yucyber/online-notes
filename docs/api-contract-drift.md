@@ -34,3 +34,9 @@
 | `/api/v1/assets/:id` | `notes-frontend/src/lib/api.ts` `assetsAPI.getById` | 缺失 | 缺失 | `hide-client-entry` | 前端入口需要返回明确不可用提示，避免静默失败。 |
 | `/api/v1/assets/base64` | `notes-frontend/src/lib/api.ts` `assetsAPI.uploadBase64` | 缺失 | 缺失 | `hide-client-entry` | 前端入口需要返回明确不可用提示，避免静默失败。 |
 | `/api/v1/embeds` | `notes-frontend/src/lib/api.ts` `embedsAPI.create` | 缺失 | 缺失 | `hide-client-entry` | Embed 创建路径返回明确不可用提示，而不是静默失败。 |
+| `/api/ai/mermaid` | `notes-frontend/src/app/api/ai/mermaid/route.ts` | implemented | missing | `document-openapi` | `notes-backend/test/ai-gateway.test.ts` and backend build cover route/service contract. |
+| `/api/ai/mindmap` | `notes-frontend/src/app/api/ai/mindmap/route.ts` | implemented | missing | `document-openapi` | `notes-backend/test/ai-gateway.test.ts` and backend build cover route/service contract. |
+| `/api/ai/pet` | `notes-frontend/src/app/api/ai/pet/route.ts` | implemented | missing | `document-openapi` | `notes-backend/test/ai-gateway.test.ts` and backend build cover the text-only route contract. |
+| `/api/ai/summary` | `notes-frontend/src/app/api/ai/summary/route.ts` | implemented | missing | `document-openapi` | `notes-backend/test/ai-gateway.test.ts` and backend build cover route/service contract. |
+| `/api/ai/writer` | `notes-frontend/src/app/api/ai/writer/route.ts` | implemented | missing | `document-openapi` | `notes-backend/test/ai-gateway.test.ts` and backend build cover the non-stream route contract. |
+| `/api/ai/writer/stream` | `notes-frontend/src/app/api/ai/writer/route.ts` | implemented | missing | `document-openapi` | `notes-backend/test/ai-gateway.test.ts` and backend build cover the stream route contract. |
