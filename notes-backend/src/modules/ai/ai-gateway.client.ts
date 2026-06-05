@@ -1,6 +1,6 @@
 import { Inject, Injectable, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { AiChatOptions, AiProviderConfig, AiRerankResult } from './ai-gateway.types'
+import { AiChatOptions, AiChatRoute, AiProviderConfig, AiRerankResult } from './ai-gateway.types'
 
 type FetchLike = (url: string, init?: any) => Promise<any>
 
@@ -15,6 +15,15 @@ export class AiGatewayClient {
     fetchImpl?: FetchLike,
   ) {
     this.fetchImpl = fetchImpl || ((globalThis.fetch as any).bind(globalThis))
+  }
+
+  describeChatRoute(route: AiChatRoute = 'text'): Pick<AiProviderConfig, 'provider' | 'model'> {
+    const provider = this.resolveChatProviderName(route)
+    const keys = this.chatProviderKeys(route, provider)
+    return {
+      provider,
+      model: this.configService.get<string>(keys.model) || '',
+    }
   }
 
   async chat(options: AiChatOptions): Promise<string> {
@@ -87,26 +96,33 @@ export class AiGatewayClient {
     }).filter((item: AiRerankResult) => Number.isInteger(item.index) && Number.isFinite(item.score))
   }
 
-  private resolveChatProvider(route: 'text' | 'reasoning'): AiProviderConfig {
-    const provider = String(
+  private resolveChatProvider(route: AiChatRoute): AiProviderConfig {
+    const provider = this.resolveChatProviderName(route)
+    return this.readProviderConfig(provider, this.chatProviderKeys(route, provider))
+  }
+
+  private resolveChatProviderName(route: AiChatRoute): string {
+    return String(
       this.configService.get<string>(route === 'reasoning' ? 'AI_REASONING_PROVIDER' : 'AI_TEXT_PROVIDER') ||
       (route === 'reasoning' ? 'mimo' : 'sensenova'),
     ).toLowerCase()
+  }
 
+  private chatProviderKeys(route: AiChatRoute, provider: string) {
     if (provider === 'mimo') {
-      return this.readProviderConfig(provider, {
+      return {
         apiKey: 'MIMO_API_KEY',
         baseUrl: 'MIMO_BASE_URL',
         model: 'MIMO_MODEL',
-      })
+      }
     }
 
     if (provider === 'sensenova') {
-      return this.readProviderConfig(provider, {
+      return {
         apiKey: 'SENSENOVA_API_KEY',
         baseUrl: 'SENSENOVA_BASE_URL',
         model: 'SENSENOVA_TEXT_MODEL',
-      })
+      }
     }
 
     throw new Error(`Unsupported ${route} AI provider: ${provider}`)

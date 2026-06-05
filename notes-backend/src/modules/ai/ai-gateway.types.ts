@@ -15,6 +15,10 @@ export interface AiProviderConfig {
   model: string
 }
 
+export interface AiWorkflowContext {
+  userId?: string
+}
+
 export interface AiRerankResult {
   index: number
   score: number

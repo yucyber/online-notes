@@ -1,12 +1,16 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Logger, Optional } from '@nestjs/common'
 import { AiGatewayClient } from './ai-gateway.client'
-import { AiMermaidInput, AiMindmapInput, AiPetInput, AiWriterInput } from './ai-gateway.types'
+import { AiChatRoute, AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
+import { AiRunService } from './ai-run.service'
 
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name)
 
-  constructor(private readonly gateway: AiGatewayClient) {}
+  constructor(
+    private readonly gateway: AiGatewayClient,
+    @Optional() private readonly aiRuns?: AiRunService,
+  ) {}
 
   async generateSummary(content: string): Promise<string> {
     const cleanContent = this.cleanText(content).slice(0, 3000)
@@ -26,7 +30,7 @@ export class AiService {
     }
   }
 
-  async generateAggregateSummary(notes: any[]): Promise<{ summary: string }> {
+  async generateAggregateSummary(notes: any[], context?: AiWorkflowContext): Promise<{ summary: string }> {
     const formatted = (notes || []).slice(0, 50).map((note: any, index: number) => {
       const title = String(note?.title || `Note ${index + 1}`)
       const updatedAt = note?.updatedAt ? new Date(note.updatedAt).toISOString() : 'unknown time'
@@ -36,77 +40,95 @@ export class AiService {
 
     if (!formatted) return { summary: '' }
 
-    const summary = await this.gateway.chat({
-      route: 'reasoning',
-      system: 'You write concise synthesis summaries for selected notes.',
-      prompt: [
-        'Create a structured Chinese summary for these selected notes.',
-        'Return readable Markdown with sections for key points, decisions, risks, and next actions when applicable.',
-        'Do not mention that you are an AI.',
-        '',
-        formatted,
-      ].join('\n'),
-      maxTokens: 1600,
-      temperature: 0.3,
-    })
+    const summary = await this.withAiRun(
+      { graphName: 'AggregateSummaryGraph', route: 'reasoning', context },
+      () => this.gateway.chat({
+        route: 'reasoning',
+        system: 'You write concise synthesis summaries for selected notes.',
+        prompt: [
+          'Create a structured Chinese summary for these selected notes.',
+          'Return readable Markdown with sections for key points, decisions, risks, and next actions when applicable.',
+          'Do not mention that you are an AI.',
+          '',
+          formatted,
+        ].join('\n'),
+        maxTokens: 1600,
+        temperature: 0.3,
+      }),
+    )
 
     return { summary }
   }
 
-  async generateWriterText(input: AiWriterInput): Promise<string> {
-    return this.gateway.chat({
-      route: 'text',
-      system: 'You are a focused writing assistant. Return only the requested content.',
-      prompt: this.buildWriterPrompt(input),
-      maxTokens: 1200,
-      temperature: 0.5,
-    })
+  async generateWriterText(input: AiWriterInput, context?: AiWorkflowContext): Promise<string> {
+    return this.withAiRun(
+      { graphName: 'WriterGraph', route: 'text', context },
+      () => this.gateway.chat({
+        route: 'text',
+        system: 'You are a focused writing assistant. Return only the requested content.',
+        prompt: this.buildWriterPrompt(input),
+        maxTokens: 1200,
+        temperature: 0.5,
+      }),
+    )
   }
 
-  async streamWriter(input: AiWriterInput): Promise<ReadableStream<Uint8Array>> {
-    return this.gateway.streamChat({
-      route: 'text',
-      system: 'You are a focused writing assistant. Return only the requested content.',
-      prompt: this.buildWriterPrompt(input),
-      maxTokens: 1200,
-      temperature: 0.5,
-    })
+  async streamWriter(input: AiWriterInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
+    return this.withAiRun(
+      { graphName: 'WriterGraph', route: 'text', context },
+      () => this.gateway.streamChat({
+        route: 'text',
+        system: 'You are a focused writing assistant. Return only the requested content.',
+        prompt: this.buildWriterPrompt(input),
+        maxTokens: 1200,
+        temperature: 0.5,
+      }),
+    )
   }
 
-  async generateMindmap(input: AiMindmapInput) {
+  async generateMindmap(input: AiMindmapInput, context?: AiWorkflowContext) {
     const content = input.content
     const scenario = input.scenario || 'generate'
-    const answer = await this.gateway.chat({
-      route: 'reasoning',
-      system: 'You generate valid JSON for mind map data. Return JSON only.',
-      prompt: this.buildMindmapPrompt(scenario, content),
-      maxTokens: 2000,
-      temperature: 0.2,
-    })
+    const answer = await this.withAiRun(
+      { graphName: 'MindmapGenerationGraph', route: 'reasoning', context },
+      () => this.gateway.chat({
+        route: 'reasoning',
+        system: 'You generate valid JSON for mind map data. Return JSON only.',
+        prompt: this.buildMindmapPrompt(scenario, content),
+        maxTokens: 2000,
+        temperature: 0.2,
+      }),
+    )
 
     return this.toLegacyMessages(answer)
   }
 
-  async generateMermaid(input: AiMermaidInput) {
-    const answer = await this.gateway.chat({
-      route: 'reasoning',
-      system: 'You generate Mermaid diagrams. Return Mermaid code only.',
-      prompt: this.buildMermaidPrompt(input.content, input.availableIcons || []),
-      maxTokens: 1800,
-      temperature: 0.2,
-    })
+  async generateMermaid(input: AiMermaidInput, context?: AiWorkflowContext) {
+    const answer = await this.withAiRun(
+      { graphName: 'MermaidGenerationGraph', route: 'reasoning', context },
+      () => this.gateway.chat({
+        route: 'reasoning',
+        system: 'You generate Mermaid diagrams. Return Mermaid code only.',
+        prompt: this.buildMermaidPrompt(input.content, input.availableIcons || []),
+        maxTokens: 1800,
+        temperature: 0.2,
+      }),
+    )
 
     return this.toLegacyMessages(answer)
   }
 
-  async chatPet(input: AiPetInput): Promise<ReadableStream<Uint8Array>> {
-    return this.gateway.streamChat({
-      route: 'text',
-      system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.',
-      prompt: input.message || 'Hello',
-      maxTokens: 1200,
-      temperature: 0.6,
-    })
+  async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
+    return this.withAiRun(
+      { graphName: 'PetChatGraph', route: 'text', context },
+      () => this.gateway.streamChat({
+        route: 'text',
+        system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.',
+        prompt: input.message || 'Hello',
+        maxTokens: 1200,
+        temperature: 0.6,
+      }),
+    )
   }
 
   async generateEmbedding(text: string): Promise<number[]> {
@@ -205,6 +227,66 @@ export class AiService {
           content: content.trim(),
         },
       ],
+    }
+  }
+
+  private async withAiRun<T>(
+    input: { graphName: string; route: AiChatRoute; context?: AiWorkflowContext },
+    execute: () => Promise<T>,
+  ): Promise<T> {
+    const run = await this.startRun(input)
+
+    try {
+      const result = await execute()
+      await this.succeedRun(run?.runId)
+      return result
+    } catch (error) {
+      await this.failRun(run?.runId, error)
+      throw error
+    }
+  }
+
+  private async startRun(input: { graphName: string; route: AiChatRoute; context?: AiWorkflowContext }) {
+    if (!this.aiRuns) return undefined
+
+    const route = this.describeRoute(input.route)
+    try {
+      return await this.aiRuns.start({
+        graphName: input.graphName,
+        userId: input.context?.userId,
+        provider: route.provider,
+        model: route.model,
+      })
+    } catch (error: any) {
+      this.logger.warn(`AI run audit start failed for ${input.graphName}: ${error.message}`)
+      return undefined
+    }
+  }
+
+  private async succeedRun(runId?: string) {
+    if (!runId || !this.aiRuns) return
+    try {
+      await this.aiRuns.succeed(runId)
+    } catch (error: any) {
+      this.logger.warn(`AI run audit success update failed for ${runId}: ${error.message}`)
+    }
+  }
+
+  private async failRun(runId: string | undefined, error: unknown) {
+    if (!runId || !this.aiRuns) return
+    try {
+      await this.aiRuns.fail(runId, error)
+    } catch (auditError: any) {
+      this.logger.warn(`AI run audit failure update failed for ${runId}: ${auditError.message}`)
+    }
+  }
+
+  private describeRoute(route: AiChatRoute): { provider?: string; model?: string } {
+    try {
+      return this.gateway.describeChatRoute(route)
+    } catch (error: any) {
+      this.logger.warn(`AI route description failed for ${route}: ${error.message}`)
+      return { provider: undefined, model: undefined }
     }
   }
 
