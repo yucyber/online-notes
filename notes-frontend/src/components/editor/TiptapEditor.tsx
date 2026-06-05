@@ -69,10 +69,16 @@ function srgb(x: number) {
 type CollabStatus = 'config-missing' | 'auth-missing' | 'auth-expired' | 'auth-failed' | 'connecting' | 'connected' | 'disconnected'
 
 function isIndexedDbPersistenceError(reason: unknown) {
-  const value = reason as { name?: string; message?: string } | null | undefined
+  const value = reason as { name?: string; message?: string; stack?: string } | null | undefined
   const message = String(value?.message || reason || '')
   const name = String(value?.name || '')
-  return /indexeddb/i.test(message) || (name === 'UnknownError' && /internal error/i.test(message))
+  const stack = String(value?.stack || '')
+  const text = `${message}\n${stack}`
+  return (
+    /indexeddb|y-indexeddb|lib0\/indexeddb/i.test(text) ||
+    /^UnknownError:\s*Internal error\.?$/i.test(message.trim()) ||
+    (name === 'UnknownError' && /internal error/i.test(message))
+  )
 }
 
 const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className: string; detail?: string }> = {

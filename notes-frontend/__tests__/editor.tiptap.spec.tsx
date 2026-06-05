@@ -71,4 +71,19 @@ describe('TiptapEditor 全区域输入', () => {
 
     expect(preventDefault).toHaveBeenCalled()
   })
+
+  it('suppresses y-indexeddb internal errors without an IndexedDB suffix', () => {
+    const onSave = jest.fn()
+    render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} />)
+
+    const event = new Event('unhandledrejection') as Event & { reason?: unknown }
+    Object.defineProperty(event, 'reason', {
+      value: new Error('UnknownError: Internal error.'),
+    })
+    const preventDefault = jest.spyOn(event, 'preventDefault')
+
+    window.dispatchEvent(event)
+
+    expect(preventDefault).toHaveBeenCalled()
+  })
 })
