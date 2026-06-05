@@ -13,6 +13,7 @@ import { formatDate, truncateText } from '@/utils'
 import { Trash2, Plus, Edit, FileText, ListChecks, Sparkles, Check } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { AggregateSummaryDialog } from '@/components/ai/AggregateSummaryDialog'
+import { AddToKnowledgeBasePanel } from '@/components/knowledge-bases/AddToKnowledgeBasePanel'
 import dynamic from 'next/dynamic'
 // 延迟加载重组件，减少初始 JS 体积与阻塞，提升 FCP/LCP
 const SearchFilterBar = dynamic(() => import('@/components/SearchFilterBar'), { ssr: false })
@@ -501,14 +502,20 @@ function NotesPageContent() {
           </Button>
 
           {isSelectionMode && selectedNoteIds.size >= 1 && (
-            <Button
-              onClick={handleGenerateSummary}
-              className="animate-in fade-in zoom-in duration-200 text-white"
-              style={{ height: '52px', borderRadius: '18px', background: 'linear-gradient(120deg, #8b5cf6, #d946ef)' }}
-            >
-              <Sparkles className="mr-2 h-4 w-4" />
-              生成摘要 ({selectedNoteIds.size})
-            </Button>
+            <>
+              <AddToKnowledgeBasePanel
+                noteIds={Array.from(selectedNoteIds)}
+                onAdded={() => setSelectedNoteIds(new Set())}
+              />
+              <Button
+                onClick={handleGenerateSummary}
+                className="animate-in fade-in zoom-in duration-200 text-white"
+                style={{ height: '52px', borderRadius: '18px', background: 'linear-gradient(120deg, #8b5cf6, #d946ef)' }}
+              >
+                <Sparkles className="mr-2 h-4 w-4" />
+                生成摘要 ({selectedNoteIds.size})
+              </Button>
+            </>
           )}
 
           {!isSelectionMode && (

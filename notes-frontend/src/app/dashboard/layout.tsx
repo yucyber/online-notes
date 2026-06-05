@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Sun, Moon, ChevronRight } from 'lucide-react'
+import { LayoutDashboard, FileText, Bookmark, Settings, LogOut, Menu, X, Bell, Settings2, Clock, Sun, Moon, ChevronRight, BookOpenCheck } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import { getCurrentUser, isAuthenticated, removeToken } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
@@ -14,6 +14,7 @@ import AIPet from '@/components/ai/AIPet'
 const routeNames: Record<string, string> = {
   dashboard: '工作台',
   notes: '我的笔记',
+  'knowledge-bases': '知识库',
   boards: '看板',
   mindmaps: '思维导图',
   tags: '标签管理',
@@ -191,6 +192,12 @@ export default function DashboardLayout({
       icon: <FileText className="h-5 w-5" />,
       href: '/dashboard/notes',
       hint: '全部记录'
+    },
+    {
+      label: '知识库',
+      icon: <BookOpenCheck className="h-5 w-5" />,
+      href: '/dashboard/knowledge-bases',
+      hint: '边界集合'
     },
     {
       label: '活动日志',

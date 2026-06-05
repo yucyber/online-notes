@@ -69,6 +69,28 @@ export interface NoteFilterParams {
   ids?: string[]
 }
 
+export interface KnowledgeBase {
+  id: string
+  name: string
+  description: string
+  createdAt: string
+  updatedAt: string
+}
+
+export interface KnowledgeBaseNoteLink {
+  id: string
+  knowledgeBaseId: string
+  noteId: string
+  note: {
+    id: string
+    title: string
+    summary?: string
+    createdAt: string
+    updatedAt: string
+  }
+  createdAt: string
+}
+
 export interface SavedFilter {
   id: string
   name: string
