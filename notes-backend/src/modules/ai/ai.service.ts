@@ -2,6 +2,7 @@ import { Injectable, Logger, Optional } from '@nestjs/common'
 import { AiGatewayClient } from './ai-gateway.client'
 import { AiChatRoute, AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
 import { AiRunService } from './ai-run.service'
+import { AggregateSummaryGraph } from './graphs/aggregate-summary.graph'
 
 @Injectable()
 export class AiService {
@@ -10,6 +11,7 @@ export class AiService {
   constructor(
     private readonly gateway: AiGatewayClient,
     @Optional() private readonly aiRuns?: AiRunService,
+    @Optional() private readonly aggregateSummaryGraph?: AggregateSummaryGraph,
   ) {}
 
   async generateSummary(content: string): Promise<string> {
@@ -31,30 +33,12 @@ export class AiService {
   }
 
   async generateAggregateSummary(notes: any[], context?: AiWorkflowContext): Promise<{ summary: string }> {
-    const formatted = (notes || []).slice(0, 50).map((note: any, index: number) => {
-      const title = String(note?.title || `Note ${index + 1}`)
-      const updatedAt = note?.updatedAt ? new Date(note.updatedAt).toISOString() : 'unknown time'
-      const content = this.cleanText(String(note?.content || '')).slice(0, 2000)
-      return `Title: ${title}\nUpdated: ${updatedAt}\nContent:\n${content}`
-    }).join('\n\n---\n\n')
-
-    if (!formatted) return { summary: '' }
+    if (!Array.isArray(notes) || notes.length === 0) return { summary: '' }
+    const graph = this.aggregateSummaryGraph || new AggregateSummaryGraph(this.gateway)
 
     const summary = await this.withAiRun(
       { graphName: 'AggregateSummaryGraph', route: 'reasoning', context },
-      () => this.gateway.chat({
-        route: 'reasoning',
-        system: 'You write concise synthesis summaries for selected notes.',
-        prompt: [
-          'Create a structured Chinese summary for these selected notes.',
-          'Return readable Markdown with sections for key points, decisions, risks, and next actions when applicable.',
-          'Do not mention that you are an AI.',
-          '',
-          formatted,
-        ].join('\n'),
-        maxTokens: 1600,
-        temperature: 0.3,
-      }),
+      () => graph.run(notes),
     )
 
     return { summary }
