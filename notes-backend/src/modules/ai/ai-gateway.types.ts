@@ -41,6 +41,10 @@ export interface AiMermaidInput {
   availableIcons?: string[]
 }
 
+export interface AiKnowledgeGraphInput {
+  knowledgeBaseId: string
+}
+
 export interface AiPetInput {
   message: string
   conversationId?: string

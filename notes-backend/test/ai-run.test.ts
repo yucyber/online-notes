@@ -92,7 +92,7 @@ test('AiService wraps audited workflow calls without changing the public respons
     succeed: async (runId: string) => succeeded.push(runId),
     fail: async (runId: string, error: unknown) => failed.push({ runId, error }),
   }
-  const service = new AiService(gateway as any, runs as any)
+  const service = new AiService(gateway as any, {} as any, runs as any)
 
   const result = await service.generateMermaid(
     { content: '画一个流程图' },

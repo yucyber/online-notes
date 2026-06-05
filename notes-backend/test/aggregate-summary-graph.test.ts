@@ -39,7 +39,7 @@ test('AiService delegates aggregate summaries to AggregateSummaryGraph while pre
   const gateway = {
     describeChatRoute: () => ({ provider: 'mimo', model: 'mimo-v2.5-pro' }),
   }
-  const service = new AiService(gateway as any, undefined, graph as any)
+  const service = new AiService(gateway as any, {} as any, undefined, graph as any)
 
   const result = await service.generateAggregateSummary(notes)
 

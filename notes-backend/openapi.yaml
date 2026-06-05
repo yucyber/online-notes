@@ -112,6 +112,24 @@ paths:
           $ref: '#/components/responses/AiMessagesEnvelope'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/ai/knowledge-graph/proposal:
+    post:
+      tags: [AI]
+      summary: Build a knowledge graph proposal for one knowledge base
+      description: 手动触发单个知识库的图谱 proposal 构建；只返回建议，不写入核心图谱数据。
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiKnowledgeGraphInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/AiKnowledgeGraphProposalEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/ai/pet:
     post:
       tags: [AI]
@@ -1184,6 +1202,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/AiMermaidInput'
+    AiKnowledgeGraphInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiKnowledgeGraphInput'
     AiPetInput:
       required: true
       content:
@@ -1351,6 +1375,17 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/AiSummaryOutput'
+    AiKnowledgeGraphProposalEnvelope:
+      description: 知识图谱 proposal
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/KnowledgeGraphProposal'
     KnowledgeBaseEnvelope:
       description: 知识库
       content:
@@ -1612,6 +1647,48 @@ components:
       type: object
       properties:
         summary: { type: string }
+    AiKnowledgeGraphInput:
+      type: object
+      required: [knowledgeBaseId]
+      properties:
+        knowledgeBaseId: { type: string }
+    KnowledgeGraphProposal:
+      type: object
+      properties:
+        knowledgeBaseId: { type: string }
+        generatedAt: { type: string, format: date-time }
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeGraphProposalNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeGraphProposalEdge'
+        warnings:
+          type: array
+          items: { type: string }
+    KnowledgeGraphProposalNode:
+      type: object
+      properties:
+        id: { type: string }
+        label: { type: string }
+        type: { type: string, enum: [concept, entity, topic, claim] }
+        confidence: { type: number, minimum: 0, maximum: 1 }
+        noteIds:
+          type: array
+          items: { type: string }
+    KnowledgeGraphProposalEdge:
+      type: object
+      properties:
+        id: { type: string }
+        source: { type: string }
+        target: { type: string }
+        relation: { type: string }
+        weight: { type: number, minimum: 0, maximum: 1 }
+        noteIds:
+          type: array
+          items: { type: string }
     SavedFilter:
       type: object
       properties:

@@ -16,7 +16,7 @@ test('AiService repairs invalid Mermaid output once and strips markdown fences',
         : '```mermaid\nflowchart TD\n  A[开始] --> B[结束]\n```'
     },
   }
-  const service = new AiService(gateway as any)
+  const service = new AiService(gateway as any, {} as any)
 
   const result = await service.generateMermaid({ content: '生成开始到结束的流程图' })
 
@@ -35,7 +35,7 @@ test('AiService repairs and normalizes mindmap JSON with stable root and child f
         : '{"nodeData":{"topic":"项目规划","children":[{"topic":"需求分析"}]}}'
     },
   }
-  const service = new AiService(gateway as any)
+  const service = new AiService(gateway as any, {} as any)
 
   const result = await service.generateMindmap({ content: '项目规划', scenario: 'generate' })
   const parsed = JSON.parse(answerContent(result))

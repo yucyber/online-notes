@@ -111,6 +111,44 @@ export class KnowledgeBasesService {
       .filter(Boolean)
   }
 
+  async listGraphNotes(id: string, userId: string) {
+    const kb = await this.requireKnowledgeBase(id, userId)
+    const userObjectId = this.objectId(userId, 'user id')
+    const links = await this.kbNoteModel
+      .find({ knowledgeBaseId: this.idOf(kb), userId: userObjectId })
+      .sort({ createdAt: -1 })
+      .exec()
+
+    const noteIds = links.map((link) => this.idOf(link, 'noteId'))
+    if (noteIds.length === 0) return []
+
+    const notes = await this.noteModel.find({
+      _id: { $in: noteIds },
+      $or: [
+        { userId: userObjectId },
+        { acl: { $elemMatch: { userId: userObjectId } } },
+        { visibility: 'public' },
+      ],
+    }).select('title summary content updatedAt createdAt').exec()
+
+    const noteById = new Map(notes.map((note) => [String(this.idOf(note)), note]))
+    return links
+      .map((link) => {
+        const note = noteById.get(String(this.idOf(link, 'noteId')))
+        if (!note) return null
+        const value = this.toObject(note)
+        return {
+          id: String(value._id),
+          title: value.title || 'Untitled',
+          summary: value.summary || '',
+          content: value.content || '',
+          createdAt: value.createdAt,
+          updatedAt: value.updatedAt,
+        }
+      })
+      .filter(Boolean)
+  }
+
   async removeNote(id: string, noteId: string, userId: string) {
     const kb = await this.requireKnowledgeBase(id, userId)
     await this.kbNoteModel.deleteOne({

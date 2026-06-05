@@ -132,7 +132,7 @@ test('AiService falls back to truncated summary when gateway fails', async () =>
       throw new Error('provider unavailable')
     },
   }
-  const service = new AiService(gateway as any)
+  const service = new AiService(gateway as any, {} as any)
 
   const summary = await service.generateSummary('<p>Hello **world** from a long note.</p>')
 
@@ -143,7 +143,7 @@ test('AiService returns cleaned topic names from the text provider', async () =>
   const gateway = {
     chat: async () => '"Frontend Performance"',
   }
-  const service = new AiService(gateway as any)
+  const service = new AiService(gateway as any, {} as any)
 
   const topic = await service.generateTopicName('notes')
 

@@ -1,8 +1,10 @@
-import { Injectable, Logger, Optional } from '@nestjs/common'
+import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common'
 import { AiGatewayClient } from './ai-gateway.client'
 import { AiChatRoute, AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
 import { AiRunService } from './ai-run.service'
 import { AggregateSummaryGraph } from './graphs/aggregate-summary.graph'
+import { KnowledgeGraphBuildGraph } from './graphs/knowledge-graph-build.graph'
+import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service'
 
 @Injectable()
 export class AiService {
@@ -10,8 +12,10 @@ export class AiService {
 
   constructor(
     private readonly gateway: AiGatewayClient,
+    private readonly knowledgeBases: KnowledgeBasesService,
     @Optional() private readonly aiRuns?: AiRunService,
     @Optional() private readonly aggregateSummaryGraph?: AggregateSummaryGraph,
+    @Optional() private readonly knowledgeGraphBuildGraph?: KnowledgeGraphBuildGraph,
   ) {}
 
   async generateSummary(content: string): Promise<string> {
@@ -42,6 +46,22 @@ export class AiService {
     )
 
     return { summary }
+  }
+
+  async buildKnowledgeGraphProposal(knowledgeBaseId: string, context?: AiWorkflowContext) {
+    const id = String(knowledgeBaseId || '').trim()
+    const userId = context?.userId
+    if (!id) throw new BadRequestException('knowledgeBaseId is required.')
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    if (!this.knowledgeBases) throw new Error('Knowledge base service is not available.')
+
+    const graph = this.knowledgeGraphBuildGraph || new KnowledgeGraphBuildGraph(this.gateway)
+    const notes = await this.knowledgeBases.listGraphNotes(id, userId)
+
+    return this.withAiRun(
+      { graphName: 'KnowledgeGraphBuildGraph', route: 'reasoning', context },
+      () => graph.run({ knowledgeBaseId: id, notes }),
+    )
   }
 
   async generateWriterText(input: AiWriterInput, context?: AiWorkflowContext): Promise<string> {

@@ -2,7 +2,7 @@ import { BadRequestException, Body, Controller, Post, Req, Res, UseGuards } from
 import { AuthGuard } from '@nestjs/passport'
 import type { Request, Response } from 'express'
 import { AiService } from './ai.service'
-import { AiMermaidInput, AiMindmapInput, AiPetInput, AiWriterInput } from './ai-gateway.types'
+import { AiKnowledgeGraphInput, AiMermaidInput, AiMindmapInput, AiPetInput, AiWriterInput } from './ai-gateway.types'
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -36,6 +36,11 @@ export class AiController {
   @Post('mermaid')
   async generateMermaid(@Body() body: AiMermaidInput, @Req() req?: AuthenticatedRequest) {
     return this.aiService.generateMermaid(body, this.aiContext(req))
+  }
+
+  @Post('knowledge-graph/proposal')
+  async buildKnowledgeGraphProposal(@Body() body: AiKnowledgeGraphInput, @Req() req?: AuthenticatedRequest) {
+    return this.aiService.buildKnowledgeGraphProposal(body?.knowledgeBaseId, this.aiContext(req))
   }
 
   @Post('pet')
