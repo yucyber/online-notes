@@ -94,7 +94,7 @@ export class NotesService {
     const sortBy = (filterDto.sortBy || 'createdAt')
     const sortOrder = (filterDto.sortOrder || 'desc')
 
-    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids }
+    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids, previewFieldsVersion: 'content-v1' }
     const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload)
     if (cached) return cached
 
@@ -216,7 +216,7 @@ export class NotesService {
         .skip((page - 1) * size)
         .limit(size)
         .maxTimeMS(300)
-        .select('title summary categoryId categoryIds tags userId status createdAt updatedAt')
+        .select('title summary content categoryId categoryIds tags userId status createdAt updatedAt')
         .lean()
         .exec(),
       this.noteModel.countDocuments(query),

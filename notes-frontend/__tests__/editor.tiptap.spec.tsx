@@ -56,4 +56,19 @@ describe('TiptapEditor 全区域输入', () => {
     const saveBtn = screen.getByRole('button', { name: '保存' })
     expect(saveBtn).toBeDisabled()
   })
+
+  it('suppresses IndexedDB persistence unhandled rejections', () => {
+    const onSave = jest.fn()
+    render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} />)
+
+    const event = new Event('unhandledrejection') as Event & { reason?: unknown }
+    Object.defineProperty(event, 'reason', {
+      value: new Error('UnknownError: Internal error. IndexedDB'),
+    })
+    const preventDefault = jest.spyOn(event, 'preventDefault')
+
+    window.dispatchEvent(event)
+
+    expect(preventDefault).toHaveBeenCalled()
+  })
 })
