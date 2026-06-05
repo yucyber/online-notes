@@ -89,33 +89,41 @@ export class AiService {
   async generateMindmap(input: AiMindmapInput, context?: AiWorkflowContext) {
     const content = input.content
     const scenario = input.scenario || 'generate'
-    const answer = await this.withAiRun(
+    const normalized = await this.withAiRun(
       { graphName: 'MindmapGenerationGraph', route: 'reasoning', context },
-      () => this.gateway.chat({
-        route: 'reasoning',
-        system: 'You generate valid JSON for mind map data. Return JSON only.',
-        prompt: this.buildMindmapPrompt(scenario, content),
-        maxTokens: 2000,
-        temperature: 0.2,
-      }),
+      async () => {
+        const answer = await this.gateway.chat({
+          route: 'reasoning',
+          system: 'You generate valid JSON for mind map data. Return JSON only.',
+          prompt: this.buildMindmapPrompt(scenario, content),
+          maxTokens: 2000,
+          temperature: 0.2,
+        })
+
+        return this.normalizeMindmapOrRepair(answer, scenario, content)
+      },
     )
 
-    return this.toLegacyMessages(answer)
+    return this.toLegacyMessages(JSON.stringify(normalized))
   }
 
   async generateMermaid(input: AiMermaidInput, context?: AiWorkflowContext) {
-    const answer = await this.withAiRun(
+    const code = await this.withAiRun(
       { graphName: 'MermaidGenerationGraph', route: 'reasoning', context },
-      () => this.gateway.chat({
-        route: 'reasoning',
-        system: 'You generate Mermaid diagrams. Return Mermaid code only.',
-        prompt: this.buildMermaidPrompt(input.content, input.availableIcons || []),
-        maxTokens: 1800,
-        temperature: 0.2,
-      }),
+      async () => {
+        const answer = await this.gateway.chat({
+          route: 'reasoning',
+          system: 'You generate Mermaid diagrams. Return Mermaid code only.',
+          prompt: this.buildMermaidPrompt(input.content, input.availableIcons || []),
+          maxTokens: 1800,
+          temperature: 0.2,
+        })
+
+        return this.normalizeMermaidOrRepair(answer, input.content, input.availableIcons || [])
+      },
     )
 
-    return this.toLegacyMessages(answer)
+    return this.toLegacyMessages(code)
   }
 
   async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
@@ -216,6 +224,182 @@ export class AiService {
       '',
       `User request:\n${content}`,
     ].join('\n')
+  }
+
+  private async normalizeMindmapOrRepair(answer: string, scenario: string, content: any) {
+    const normalized = this.normalizeMindmapAnswer(answer)
+    if (normalized) return normalized
+
+    const repaired = await this.gateway.chat({
+      route: 'reasoning',
+      system: 'You repair invalid mind map JSON. Return JSON only.',
+      prompt: this.buildMindmapRepairPrompt(answer, scenario, content),
+      maxTokens: 2000,
+      temperature: 0,
+    })
+    const repairedNormalized = this.normalizeMindmapAnswer(repaired)
+    if (!repairedNormalized) {
+      throw new Error('AI mind map output is invalid after repair.')
+    }
+
+    return repairedNormalized
+  }
+
+  private async normalizeMermaidOrRepair(answer: string, content: string, availableIcons: string[]) {
+    const normalized = this.normalizeMermaidCode(answer)
+    if (normalized) return normalized
+
+    const repaired = await this.gateway.chat({
+      route: 'reasoning',
+      system: 'You repair invalid Mermaid code. Return Mermaid code only.',
+      prompt: this.buildMermaidRepairPrompt(answer, content, availableIcons),
+      maxTokens: 1800,
+      temperature: 0,
+    })
+    const repairedNormalized = this.normalizeMermaidCode(repaired)
+    if (!repairedNormalized) {
+      throw new Error('AI Mermaid output is invalid after repair.')
+    }
+
+    return repairedNormalized
+  }
+
+  private buildMindmapRepairPrompt(answer: string, scenario: string, content: any): string {
+    const serialized = typeof content === 'string' ? content : JSON.stringify(content)
+    return [
+      'Repair this mind map JSON.',
+      'Return valid JSON only. Do not wrap it in Markdown fences.',
+      'Required schema: {"nodeData":{"id":"root","topic":"topic","root":true,"children":[{"id":"root-1","topic":"child topic","children":[]}]},"linkData":{}}.',
+      'Every node must have a non-empty topic, a unique id, and a children array.',
+      '',
+      `Scenario: ${scenario}`,
+      `Original user input:\n${serialized}`,
+      '',
+      `Invalid model output:\n${answer}`,
+    ].join('\n')
+  }
+
+  private buildMermaidRepairPrompt(answer: string, content: string, availableIcons: string[]): string {
+    const iconHint = availableIcons.length > 0
+      ? `\nAvailable custom icon names: ${availableIcons.join(', ')}`
+      : ''
+
+    return [
+      'Repair this Mermaid output.',
+      'Return Mermaid code only. Do not wrap it in Markdown fences and do not add explanations.',
+      'The first non-empty line must start with a Mermaid diagram declaration such as flowchart TD, graph LR, sequenceDiagram, classDiagram, stateDiagram, or erDiagram.',
+      'Use simple compatible syntax.',
+      iconHint,
+      '',
+      `Original user request:\n${content}`,
+      '',
+      `Invalid model output:\n${answer}`,
+    ].join('\n')
+  }
+
+  private normalizeMindmapAnswer(answer: string) {
+    const json = this.extractJsonObject(answer)
+    if (!json) return null
+
+    let parsed: any
+    try {
+      parsed = JSON.parse(json)
+    } catch {
+      return null
+    }
+
+    const rootSource = parsed?.nodeData || parsed?.root || parsed
+    const root = this.normalizeMindmapNode(rootSource, 'root', new Set<string>(), true)
+    if (!root) return null
+
+    return {
+      nodeData: root,
+      linkData: parsed?.linkData && typeof parsed.linkData === 'object' && !Array.isArray(parsed.linkData)
+        ? parsed.linkData
+        : {},
+    }
+  }
+
+  private normalizeMindmapNode(raw: any, fallbackId: string, usedIds: Set<string>, isRoot = false): any | null {
+    if (!raw || typeof raw !== 'object') return null
+    const topic = this.cleanNodeTopic(raw.topic ?? raw.content ?? raw.label ?? raw.name)
+    if (!topic) return null
+
+    const id = isRoot ? 'root' : this.uniqueNodeId(raw.id, fallbackId, usedIds)
+    usedIds.add(id)
+
+    const rawChildren = Array.isArray(raw.children)
+      ? raw.children
+      : Array.isArray(raw.nodes)
+        ? raw.nodes
+        : []
+
+    const children = rawChildren
+      .map((child: any, index: number) => this.normalizeMindmapNode(child, `${id}-${index + 1}`, usedIds))
+      .filter(Boolean)
+
+    const node: any = {
+      id,
+      topic,
+      children,
+    }
+
+    if (isRoot) node.root = true
+    if (raw.data && typeof raw.data === 'object' && !Array.isArray(raw.data)) node.data = raw.data
+    return node
+  }
+
+  private uniqueNodeId(rawId: unknown, fallbackId: string, usedIds: Set<string>): string {
+    const base = String(rawId || fallbackId)
+      .replace(/[^\w-]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 80) || fallbackId
+
+    if (!usedIds.has(base)) return base
+
+    let index = 2
+    while (usedIds.has(`${base}-${index}`)) index += 1
+    return `${base}-${index}`
+  }
+
+  private cleanNodeTopic(value: unknown): string {
+    return String(value || '')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 200)
+  }
+
+  private extractJsonObject(answer: string): string | null {
+    const text = this.stripCodeFence(answer).trim()
+    const firstBrace = text.indexOf('{')
+    const lastBrace = text.lastIndexOf('}')
+    if (firstBrace === -1 || lastBrace <= firstBrace) return null
+    return text.slice(firstBrace, lastBrace + 1)
+  }
+
+  private normalizeMermaidCode(answer: string): string | null {
+    const code = this.stripCodeFence(answer).trim()
+    if (!code || code.includes('```')) return null
+
+    const firstLine = code
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .find((line) => line && !line.startsWith('%%'))
+
+    if (!firstLine || !this.isMermaidDeclaration(firstLine)) return null
+    return code
+  }
+
+  private isMermaidDeclaration(line: string): boolean {
+    return /^(flowchart|graph)\s+(TB|TD|BT|RL|LR)\b/i.test(line) ||
+      /^(sequenceDiagram|classDiagram|classDiagram-v2|stateDiagram|stateDiagram-v2|erDiagram|gantt|journey|pie|mindmap|gitGraph)\b/i.test(line)
+  }
+
+  private stripCodeFence(answer: string): string {
+    return String(answer || '')
+      .replace(/^```(?:json|mermaid)?\s*/i, '')
+      .replace(/\s*```$/i, '')
+      .trim()
   }
 
   private toLegacyMessages(content: string) {
