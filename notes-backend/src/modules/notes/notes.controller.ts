@@ -13,7 +13,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { NotesService } from './notes.service';
-import { CreateNoteDto, UpdateNoteDto, NoteFilterDto } from './dto';
+import { CreateNoteDto, UpdateNoteDto, NoteFilterDto, RecommendationQueryDto } from './dto';
 import { Headers, Res } from '@nestjs/common';
 import type { Response } from 'express'
 import { createHash } from 'crypto'
@@ -36,11 +36,14 @@ export class NotesController {
   @Get('recommendations')
   async getRecommendations(
     @Request() req,
-    @Query('currentNoteId') currentNoteId?: string,
-    @Query('limit') limit: number = 5,
-    @Query() filterDto?: NoteFilterDto,
+    @Query() queryDto: RecommendationQueryDto,
   ) {
-    return this.notesService.getRecommendations(req.user.id, currentNoteId, limit, filterDto);
+    return this.notesService.getRecommendations(
+      req.user.id,
+      queryDto.currentNoteId,
+      queryDto.limit ?? 5,
+      queryDto,
+    );
   }
 
   @Get(':id')

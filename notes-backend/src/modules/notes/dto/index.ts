@@ -185,3 +185,9 @@ export class NoteFilterDto {
   @IsDateString()
   cursor?: string;
 }
+
+export class RecommendationQueryDto extends NoteFilterDto {
+  @IsOptional()
+  @IsMongoId()
+  currentNoteId?: string;
+}

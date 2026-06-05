@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { saveBoard } from '@/lib/api';
 import { Excalidraw, MainMenu, WelcomeScreen, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
-import { getAIMermaidData } from '@/lib/coze';
+import { getAIMermaidData } from '@/lib/ai-gateway';
 import { Sparkles, X, PlusSquare } from 'lucide-react';
 // 引入 Excalidraw 样式，防止 UI 图标显示异常
 import "@excalidraw/excalidraw/index.css";

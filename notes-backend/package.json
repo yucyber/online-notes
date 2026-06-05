@@ -8,7 +8,7 @@
     "start": "node dist/main.js",
     "dev": "nodemon",
     "start:prod": "node dist/main.js",
-    "test:unit": "node --require ts-node/register --require tsconfig-paths/register --test $(find test -name '*.test.ts')"
+    "test:unit": "node scripts/run-unit-tests.mjs"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

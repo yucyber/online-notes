@@ -15,6 +15,8 @@ tags:
     description: 服务健康检查
   - name: Auth
     description: 注册、登录与当前用户
+  - name: AI
+    description: AI gateway endpoints for writing, summaries, diagrams, and chat
   - name: Notes
     description: 笔记 CRUD、搜索、推荐、ACL 与锁定
   - name: Comments
@@ -52,6 +54,97 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+  /api/ai/writer:
+    post:
+      tags: [AI]
+      summary: Generate AI writing text
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiWriterInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/AiWriterEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/ai/writer/stream:
+    post:
+      tags: [AI]
+      summary: Stream AI writing text
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiWriterInput'
+      responses:
+        '200':
+          description: Plain text chunks streamed as server-sent text
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/ai/mindmap:
+    post:
+      tags: [AI]
+      summary: Generate, expand, or optimize mind map data
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiMindmapInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/AiMessagesEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/ai/mermaid:
+    post:
+      tags: [AI]
+      summary: Generate Mermaid diagram code
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiMermaidInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/AiMessagesEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/ai/pet:
+    post:
+      tags: [AI]
+      summary: Stream text-only AI pet chat
+      description: The current provider route supports text chat only. Image chat returns 400.
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiPetInput'
+      responses:
+        '200':
+          description: Plain text chunks streamed as server-sent text
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/ai/summary:
+    post:
+      tags: [AI]
+      summary: Generate an aggregate summary for selected notes
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiSummaryInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/AiSummaryEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/auth/register:
     post:
       tags: [Auth]
@@ -964,6 +1057,36 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ResourceInput'
+    AiWriterInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiWriterInput'
+    AiMindmapInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiMindmapInput'
+    AiMermaidInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiMermaidInput'
+    AiPetInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiPetInput'
+    AiSummaryInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiSummaryInput'
   responses:
     Ok:
       description: 成功
@@ -1065,6 +1188,39 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/Resource'
+    AiWriterEnvelope:
+      description: AI writing result
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiWriterOutput'
+    AiMessagesEnvelope:
+      description: AI legacy message wrapper
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiMessagesOutput'
+    AiSummaryEnvelope:
+      description: AI summary result
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiSummaryOutput'
     BadRequest:
       description: 请求错误
       content:
@@ -1213,6 +1369,71 @@ components:
               preview: { type: string }
               score: { type: number }
               updatedAt: { type: string }
+    AiWriterInput:
+      type: object
+      required: [context, type]
+      properties:
+        prompt: { type: string }
+        context: { type: string }
+        type: { type: string, enum: [continue, polish, summary] }
+    AiWriterOutput:
+      type: object
+      properties:
+        text: { type: string }
+    AiMindmapInput:
+      type: object
+      required: [content]
+      properties:
+        content: {}
+        scenario: { type: string, enum: [generate, expand, optimize], default: generate }
+    AiMermaidInput:
+      type: object
+      required: [content]
+      properties:
+        content: { type: string }
+        availableIcons:
+          type: array
+          items: { type: string }
+    AiPetInput:
+      type: object
+      required: [message]
+      properties:
+        message: { type: string }
+        conversationId: { type: string }
+    AiSummaryInput:
+      type: object
+      required: [notes]
+      properties:
+        notes:
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/AiSummaryNoteInput'
+    AiSummaryNoteInput:
+      type: object
+      additionalProperties: true
+      properties:
+        title: { type: string }
+        content: { type: string }
+        updatedAt: { type: string, format: date-time }
+    AiLegacyMessage:
+      type: object
+      required: [role, type, content]
+      properties:
+        role: { type: string, example: assistant }
+        type: { type: string, example: answer }
+        content: { type: string }
+    AiMessagesOutput:
+      type: object
+      properties:
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiLegacyMessage'
+    AiSummaryOutput:
+      type: object
+      properties:
+        summary: { type: string }
     SavedFilter:
       type: object
       properties:

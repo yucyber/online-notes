@@ -1,15 +1,31 @@
 # 在线笔记 AI 能力总体方案与业务路线图
 
 日期：2026-06-02
+状态更新：2026-06-04
+
+## 0. 当前落地状态
+
+截至 2026-06-04，P0 AI provider 迁移已经完成：
+
+- 后端已新增统一 `AiGatewayClient` 和 `AiController`。
+- 前端 `/api/ai/*` 已改为代理后端 `/api/ai/*`，不再直连 Coze。
+- 文本生成默认走 SenseNova `deepseek-v4-flash`。
+- 推理/长上下文默认走 MiMo `mimo-v2.5-pro`。
+- embedding 和 reranker 默认走 SiliconFlow Qwen。
+- Coze、Zhipu、ModelArk 不再作为当前主链路或 fallback。
+- AI Pet 当前只保留文本聊天；图片聊天等待 MiMo omni 或其他视觉模型接入后再恢复。
+- 6 个后端 AI endpoint 已补入 `notes-backend/openapi.yaml`。
+
+本文后续涉及 Coze/Zhipu 的描述若出现在“历史现状”“迁移前问题”语境中，仅作为迁移背景保留，不代表当前实现。
 
 ## 1. 方案目标
 
-本方案面向当前 `online-notes` 项目的真实业务功能，目标不是简单替换模型供应商，而是把当前散落在前端 BFF、后端 service、Coze Workflow、Zhipu Embedding 中的 AI 能力，逐步升级为一套可配置、可诊断、可审计、可回退、可扩展的 AI 能力体系。
+本方案面向当前 `online-notes` 项目的真实业务功能，目标不是简单替换模型供应商，而是把历史上散落在前端 BFF、后端 service、Coze Workflow、Zhipu Embedding 中的 AI 能力，逐步升级为一套可配置、可诊断、可审计、可回退、可扩展的 AI 能力体系。
 
 核心目标：
 
 1. 让现有 AI 功能恢复稳定可用，解决 key 过期、余额不足、public key 暴露和 provider 绑定过深的问题。
-2. 支持 MiMo、DeepSeek、Coze、Zhipu 或未来模型供应商的可切换接入。
+2. 支持 MiMo、DeepSeek/SenseNova、SiliconFlow 或未来模型供应商的可切换接入；Coze/Zhipu 只作为历史迁移背景保留。
 3. 用 LangGraph 承接真正有业务状态、多步骤校验、失败重试、人工确认的工作流。
 4. 为未来 OpenClaw-like agent、function calling、tools、长期会话、自动整理和外部资料导入预留边界。
 5. 保持核心笔记、权限、协作链路安全可控，不让 agent 直接绕过业务权限修改用户数据。
@@ -20,31 +36,33 @@
 
 | 业务能力 | 当前入口 | 当前实现 | 主要问题 |
 | --- | --- | --- | --- |
-| AI 续写/润色/摘要 | `notes-frontend/src/lib/ai-writer.ts` -> `/api/ai/writer` | 前端 BFF 调 Coze chat stream | 模型硬绑定 Coze，缺少 provider fallback，提示词和流式解析分散 |
-| AI 宠物助手 | `notes-frontend/src/components/ai/AIPet.tsx` / `ChatWindow.tsx` -> `/api/ai/pet` | Coze v3 chat，支持图片上传 | 缺少用户级 tool 权限和真实业务工具，目前偏聊天 |
-| 多笔记聚合摘要 | `AggregateSummaryDialog` -> `/api/ai/summary` | Coze Workflow | live 检查 401，workflow 权限/ID 易失效，不可本地审计 |
-| 思维导图生成 | `dashboard/mindmaps/[id]/page.tsx` -> `getAIMindMapData` -> `/api/ai/mindmap` | Coze 生成 JSON，前端解析兜底 | JSON schema 不稳定，失败后主要靠前端 fallback |
-| 画板 Mermaid 生成 | `DrawnixBoard.tsx` -> `getAIMermaidData` -> `/api/ai/mermaid` | Coze 生成 Mermaid，再转 Excalidraw | Mermaid 语法和素材映射缺少自动校验/修复 |
-| 单篇笔记摘要 | `NotesService.generateAndSaveSummary` -> `AiService.generateSummary` | 后端异步 Coze 摘要，失败 fallback 截断正文 | 与 NotesService 耦合，provider 不可切，状态不可观察 |
-| embedding / 语义搜索 | `EmbeddingService.generateEmbedding` + `SemanticService.searchVector` | Zhipu `embedding-2` + MongoDB `$vectorSearch` | live 检查 429 余额不足；embedding provider 不可切 |
+| AI 续写/润色/摘要 | `notes-frontend/src/lib/ai-writer.ts` -> `/api/ai/writer` | Next BFF 代理后端 `/api/ai/writer/stream`，由 AI Gateway 路由 SenseNova/MiMo | 仍需沉淀提示词版本和可观测指标 |
+| AI 宠物助手 | `notes-frontend/src/components/ai/AIPet.tsx` / `ChatWindow.tsx` -> `/api/ai/pet` | 后端 AI Gateway 文本流式聊天 | 图片聊天已暂停，需接入视觉模型后恢复 |
+| 多笔记聚合摘要 | `AggregateSummaryDialog` -> `/api/ai/summary` | 后端 `AiService.generateAggregateSummary` 走 reasoning provider | 后续可升级为 `AggregateSummaryGraph` |
+| 思维导图生成 | `dashboard/mindmaps/[id]/page.tsx` -> `getAIMindMapData` -> `/api/ai/mindmap` | `notes-frontend/src/lib/ai-gateway.ts` 代理后端 AI Gateway | JSON schema 仍需更强校验和修复链路 |
+| 画板 Mermaid 生成 | `DrawnixBoard.tsx` -> `getAIMermaidData` -> `/api/ai/mermaid` | AI Gateway 生成 Mermaid，再转 Excalidraw | Mermaid 语法和素材映射缺少自动校验/修复 |
+| 单篇笔记摘要 | `NotesService.generateAndSaveSummary` -> `AiService.generateSummary` | 后端异步 AI Gateway 摘要，失败 fallback 截断正文 | 仍需摘要状态和重试观测 |
+| embedding / 语义搜索 | `EmbeddingService.generateEmbedding` + `SemanticService.searchVector` | SiliconFlow `Qwen/Qwen3-Embedding-8B` + MongoDB `$vectorSearch` | 需要补向量重建和 reranker 落地链路 |
 | 智能推荐 | `SmartRecommendations` -> `/notes/recommendations` | 后端优先向量，失败回退 tag/recent/draft | 推荐逻辑在 `NotesService`，和 embedding 状态耦合 |
-| 主题发现/转标签 | `/v1/semantic/topics` / `topics/convert` | embedding + kmeans + Coze 命名 | 可用但依赖 embedding 与 Coze topic 命名 |
+| 主题发现/转标签 | `/v1/semantic/topics` / `topics/convert` | SiliconFlow embedding + kmeans + AI Gateway topic 命名 | 可用，但仍需知识库边界和人工审批 |
 
 ### 2.2 当前配置检查结果
 
 已新增 `npm run check:ai-config` 和 `npm run check:ai-config:live`。
 
-2026-06-02 live 结果：
+2026-06-04 live 结果：
 
-- Coze bot：OK，`COZE_API_KEY + COZE_BOT_ID` 普通 bot 路径可用。
-- Coze summary workflow：FAIL，HTTP 401，provider code `4100 authentication is invalid`。
-- Zhipu embedding：FAIL，HTTP 429，provider code `1113`，余额或资源包不可用。
+- MiMo chat：OK。
+- SenseNova DeepSeek chat：OK。
+- SiliconFlow model catalog：OK。
+- SiliconFlow Qwen embedding：OK，返回 4096 维向量。
+- SiliconFlow Qwen reranker：OK。
 
 结论：
 
-- 普通 Coze bot 暂时可作为 fallback。
-- Coze Workflow 不应继续作为聚合摘要主链路。
-- Zhipu embedding 在充值前不可用，但 key 格式和服务连通性基本成立。
+- 当前主链路不依赖 Coze Workflow。
+- 当前 embedding 不依赖 Zhipu。
+- Coze/Zhipu/ModelArk 配置已从当前 provider fallback 中移除。
 
 ## 3. 业务线拆分
 
@@ -67,8 +85,8 @@
 
 推荐技术路线：
 
-- P0：用 AI Gateway 替换 `/api/ai/writer` 的直连 Coze。
-- P0：默认模型可用 DeepSeek/MiMo，Coze 作为 fallback。
+- P0：已用 AI Gateway 替换 `/api/ai/writer` 的直连 Coze。
+- P0：默认模型使用 SenseNova DeepSeek 和 MiMo，不再把 Coze 作为 fallback。
 - P1：为写作引入轻量会话状态，但不需要 LangGraph。
 - P1：把“保存为新版本/插入到编辑器”做成用户确认动作。
 
@@ -84,7 +102,7 @@
 当前场景：
 
 - 分类/标签筛选。
-- 主题发现：基于 embedding 聚类，Coze 命名 topic。
+- 主题发现：基于 embedding 聚类，AI Gateway text provider 命名 topic。
 - 主题转标签：把 topic 批量转成 tag。
 - 推荐笔记：基于向量、标签和最近笔记回退。
 
@@ -106,7 +124,7 @@
 
 推荐 embedding/reranker 路线：
 
-- P0：接入硅基流动 `Qwen/Qwen3-Embedding-8B`，替换或并存当前 Zhipu embedding。
+- P0：已接入硅基流动 `Qwen/Qwen3-Embedding-8B`，替换历史 Zhipu embedding。
 - P0：抽象 `EmbeddingProvider`，不要让业务代码依赖某个供应商的 token 格式。
 - P0.5：预留 `RerankerProvider`，先把接口和配置位留好。
 - P1：接入 Qwen reranker 或同类 reranker，用于 RAG、相似笔记、重复检测和图谱边权重重排。
@@ -335,8 +353,8 @@ Provider：
 - `SenseNovaDeepSeekProvider`
 - `SiliconFlowQwenEmbeddingProvider`
 - `SiliconFlowQwenRerankerProvider`
-- `CozeProvider`
-- `ZhipuEmbeddingProvider`
+- historical only: `CozeProvider`
+- historical only: `ZhipuEmbeddingProvider`
 - future: `OpenAICompatibleProvider`
 
 当前计划中的 key 来源：
@@ -345,8 +363,8 @@ Provider：
 - DeepSeek：使用商汤 SenseNova key 和 baseURL。
 - Qwen embedding：使用硅基流动 `Qwen/Qwen3-Embedding-8B`。
 - Qwen reranker：使用硅基流动 `Qwen/Qwen3-Reranker-8B`，P0.5/P1 接入。
-- Coze：保留为临时 fallback，不再作为新 workflow 的主路径。
-- Zhipu：保留兼容，但不再作为唯一 embedding 方案。
+- Coze：已从当前 provider fallback 中移除，仅保留历史迁移记录。
+- Zhipu：已从当前 embedding 主链路中移除，仅保留历史迁移记录。
 
 模型路由：
 
@@ -359,7 +377,7 @@ Provider：
 | Mermaid | DeepSeek | MiMo |
 | RAG 最终回答 | DeepSeek | MiMo 长上下文 |
 | 知识图谱抽取 | MiMo | DeepSeek |
-| embedding | 硅基流动 `Qwen/Qwen3-Embedding-8B` | Zhipu embedding-2 |
+| embedding | 硅基流动 `Qwen/Qwen3-Embedding-8B` | 暂无；需要显式重新评估 |
 | rerank | 硅基流动 `Qwen/Qwen3-Reranker-8B` | later: bge-reranker |
 
 ### 4.2 LangGraph Workflow Layer
@@ -369,7 +387,7 @@ Provider：
 P0 Graph：
 
 - `AggregateSummaryGraph`
-  - 是什么：替代当前 Coze Workflow 的多笔记摘要流程。
+  - 是什么：承接已经从历史 Coze Workflow 迁出的多笔记摘要流程。
   - 为什么用：多笔记摘要需要清洗、分块、单篇摘要、合并、结构化输出和失败降级，不适合散落在一个 route handler 中。
   - 场景：选中多篇笔记生成复盘、周报、项目总结、学习摘要。
 - `MindmapGenerationGraph`
@@ -521,10 +539,10 @@ updatedAt
 3. SenseNova DeepSeekProvider 接入，使用商汤 key。
 4. SiliconFlow QwenEmbeddingProvider 接入，使用 `Qwen/Qwen3-Embedding-8B`。
 5. 预留 SiliconFlow QwenRerankerProvider 配置位和接口。
-6. CozeProvider 保留为 fallback。
-7. ZhipuEmbeddingProvider 保留兼容，但不再作为唯一 embedding 方案。
+6. CozeProvider 不进入当前 P0/P1 fallback，仅作为历史适配器记录。
+7. ZhipuEmbeddingProvider 不进入当前 P0/P1 embedding 路由，仅作为历史适配器记录。
 8. 替换 `/api/ai/writer`、`/api/ai/mindmap`、`/api/ai/mermaid`、`/api/ai/summary` 的散落调用。
-9. 用 LangGraph 替换 Coze summary workflow。
+9. 用 LangGraph 承接聚合摘要 workflow，延续已替换的 Coze summary 场景。
 10. Mindmap JSON 和 Mermaid 增加校验与修复。
 11. `KnowledgeGraphBuildGraph` 最小版：只针对单个知识库，手动触发，生成 proposal，不自动写核心笔记。
 12. 扩展 `check:ai-config` 到 MiMo、SenseNova DeepSeek、SiliconFlow Qwen embedding/reranker。
@@ -532,7 +550,7 @@ updatedAt
 
 验收：
 
-- Coze Workflow 401 不再影响聚合摘要主功能。
+- 历史 Coze Workflow 401 不再影响聚合摘要主功能。
 - `check:ai-config` 能检查当前启用 provider。
 - 前端 AI 写作、摘要、导图、Mermaid 至少都有一个可用 provider。
 - 某个知识库可以生成最小知识图谱 proposal。
@@ -546,7 +564,7 @@ updatedAt
 
 1. RAG 笔记问答，带引用来源。
 2. 自动标签/分类建议，用户确认后写入。
-3. 主题发现从单纯 kmeans + Coze 命名升级为可解释 proposal。
+3. 主题发现从单纯 kmeans + AI Gateway 命名升级为可解释 proposal。
 4. 重复笔记检测和合并建议。
 5. 知识图谱持久化：node、edge、graph run、community。
 6. reranker 正式进入 RAG、相似笔记和图谱边权重。
@@ -612,7 +630,7 @@ updatedAt
 - 接入 SenseNova DeepSeek provider。
 - 接入 SiliconFlow Qwen embedding provider。
 - 预留 SiliconFlow Qwen reranker provider。
-- Coze 保留 fallback。
+- Coze 不保留 fallback；如未来需要必须重新审批并接入后端 provider。
 - 扩展配置检查。
 - 跑 dry-run 和 live check，先确认所有 key 可用。
 
@@ -628,7 +646,7 @@ updatedAt
 
 ### Phase 3：聚合摘要 LangGraph
 
-替换当前 `/api/ai/summary` 对 Coze Workflow 的依赖。
+承接 `/api/ai/summary` 已经从历史 Coze Workflow 迁出的摘要能力。
 
 流程：
 
@@ -726,7 +744,7 @@ Agent 不允许直接修改核心笔记、标签、分类、画板、导图。�
 推荐路线：
 
 1. P0 先完成 AI Gateway 和 provider 可切换。
-2. 用 LangGraph 替换 Coze Workflow，这是当前最明确的高价值落点。
+2. 用 LangGraph 承接聚合摘要 workflow，这是当前最明确的高价值落点。
 3. Mindmap/Mermaid 生成引入校验修复，提升可用性。
 4. P1 再做 RAG、工具调用、知识整理和会话。
 5. P2 才引入 OpenClaw-like agent runtime，用于外部自动化，不进入核心业务写链路。

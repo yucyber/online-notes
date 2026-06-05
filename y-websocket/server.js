@@ -3,6 +3,7 @@ const WebSocket = require('ws')
 const http = require('http')
 const jwt = require('jsonwebtoken')
 const utils = require('y-websocket/bin/utils')
+const { redactRequestUrl } = require('./url-utils')
 const setupWSConnection = utils.setupWSConnection
 const docs = utils.docs
 
@@ -15,7 +16,7 @@ const wss = new WebSocket.Server({ noServer: true })
 
 wss.on('connection', (conn, req) => {
     console.log('Connection established from', req.socket.remoteAddress)
-    console.log('Request URL:', req.url)
+    console.log('Request URL:', redactRequestUrl(req.url))
 
     // 简单的存活检测
     conn.isAlive = true

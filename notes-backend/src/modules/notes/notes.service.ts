@@ -61,7 +61,7 @@ export class NotesService {
     this.aiService.generateSummary(note.content)
       .then(summary => {
         if (summary) {
-          this.noteModel.updateOne({ _id: note._id }, { summary }).exec();
+          this.noteModel.updateOne({ _id: note._id }, { summary }, { timestamps: false }).exec();
         }
       })
       .catch(err => console.error(`Failed to generate summary for note ${note._id}`, err));
@@ -78,7 +78,8 @@ export class NotesService {
         // Use updateOne to avoid version conflicts and unnecessary overhead
         await this.noteModel.updateOne(
           { _id: note._id },
-          { $set: { embedding: embedding } }
+          { $set: { embedding: embedding } },
+          { timestamps: false },
         );
       }
     } catch (error) {

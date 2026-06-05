@@ -83,6 +83,17 @@ export class SemanticController {
 
       return this.semantic.search(String(q || ''), { mode, page: Number(page || 1), limit: Number(limit || 10), threshold: Number(threshold || 0), categoryId, tagIds: tagArray, tagsMode, categoriesMode })
     }
+
+    return this.semantic.search(String(q || ''), {
+      mode: mode || 'keyword',
+      page: Number(page || 1),
+      limit: Number(limit || 10),
+      threshold: Number(threshold || 0),
+      categoryId,
+      tagIds: tagArray,
+      tagsMode,
+      categoriesMode,
+    })
   }
 
   @Get('topics')
