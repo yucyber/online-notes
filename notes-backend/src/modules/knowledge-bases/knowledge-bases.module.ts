@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { NotesModule } from '../notes/notes.module'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
@@ -9,7 +9,7 @@ import { KnowledgeBaseNote, KnowledgeBaseNoteSchema } from './schemas/knowledge-
 
 @Module({
   imports: [
-    NotesModule,
+    forwardRef(() => NotesModule),
     MongooseModule.forFeature([
       { name: KnowledgeBase.name, schema: KnowledgeBaseSchema },
       { name: KnowledgeBaseNote.name, schema: KnowledgeBaseNoteSchema },

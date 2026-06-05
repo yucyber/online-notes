@@ -72,13 +72,13 @@ export default function LoginPage() {
   }
 
   // 开发便捷：支持通过查询参数自动登录（仅在客户端首次渲染后执行）
-  // URL示例：/login?auto=1&email=user@example.com&password=password123
+  // URL示例：/login?auto=1&email=user@example.com&password=pswd123
   useEffect(() => {
     if (autoAttemptedRef.current) return
     const auto = searchParams.get('auto')
     if (auto === '1') {
       const email = searchParams.get('email') || 'user@example.com'
-      const password = searchParams.get('password') || 'password123'
+      const password = searchParams.get('password') || 'pswd123'
       // 预填表单值，便于用户观察
       form.setValue('email', email)
       form.setValue('password', password)

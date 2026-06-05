@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { SemanticController } from './semantic.controller'
 import { SemanticService } from './semantic.service'
@@ -11,7 +11,7 @@ import { AiModule } from '../ai/ai.module'
   imports: [
     MongooseModule.forFeature([{ name: Note.name, schema: NoteSchema }]),
     TagsModule,
-    AiModule
+    forwardRef(() => AiModule)
   ],
   controllers: [SemanticController],
   providers: [SemanticService, EmbeddingService],

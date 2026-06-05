@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
@@ -16,8 +16,8 @@ import { AiModule } from '../ai/ai.module';
     MongooseModule.forFeature([{ name: Note.name, schema: NoteSchema }]),
     CategoriesModule,
     TagsModule,
-    SemanticModule,
-    AiModule,
+    forwardRef(() => SemanticModule),
+    forwardRef(() => AiModule),
   ],
   controllers: [NotesController],
   providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService],
