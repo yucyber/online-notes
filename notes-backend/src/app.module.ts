@@ -19,6 +19,7 @@ import { RumModule } from './modules/rum/rum.module';
 import { BoardsModule } from './modules/boards/boards.module';
 import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
 import { AiModule } from './modules/ai/ai.module';
+import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.module';
 
 @Module({
   imports: [
@@ -51,6 +52,7 @@ import { AiModule } from './modules/ai/ai.module';
     BoardsModule,
     MindmapsModule,
     AiModule,
+    KnowledgeBasesModule,
   ],
 })
 export class AppModule { }

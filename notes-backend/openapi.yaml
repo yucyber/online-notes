@@ -37,6 +37,8 @@ tags:
     description: 笔记邀请协作
   - name: SavedFilters
     description: 保存筛选器
+  - name: KnowledgeBases
+    description: 知识库边界与笔记归属
   - name: Dashboard
     description: 仪表盘概览
   - name: Audit
@@ -850,6 +852,113 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+  /api/knowledge-bases:
+    get:
+      tags: [KnowledgeBases]
+      summary: 知识库列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeBaseListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    post:
+      tags: [KnowledgeBases]
+      summary: 创建知识库
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/KnowledgeBaseInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/KnowledgeBaseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/knowledge-bases/{id}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    patch:
+      tags: [KnowledgeBases]
+      summary: 更新知识库
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/KnowledgeBaseUpdateInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeBaseEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    delete:
+      tags: [KnowledgeBases]
+      summary: 删除知识库
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/notes:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [KnowledgeBases]
+      summary: 知识库笔记列表
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeBaseNoteListEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    post:
+      tags: [KnowledgeBases]
+      summary: 加入笔记到知识库
+      description: 只能加入当前用户可读的笔记，避免知识图谱跨知识库或跨权限混入。
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/KnowledgeBaseNoteInput'
+      responses:
+        '201':
+          $ref: '#/components/responses/KnowledgeBaseNoteEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/notes/{noteId}:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - in: path
+        name: noteId
+        required: true
+        schema: { type: string }
+    delete:
+      tags: [KnowledgeBases]
+      summary: 从知识库移除笔记
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/dashboard/overview:
     get:
       tags: [Dashboard]
@@ -1087,6 +1196,27 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/AiSummaryInput'
+    KnowledgeBaseInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/KnowledgeBaseInput'
+    KnowledgeBaseUpdateInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/KnowledgeBaseUpdateInput'
+    KnowledgeBaseNoteInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            type: object
+            required: [noteId]
+            properties:
+              noteId: { type: string }
   responses:
     Ok:
       description: 成功
@@ -1221,6 +1351,54 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/AiSummaryOutput'
+    KnowledgeBaseEnvelope:
+      description: 知识库
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/KnowledgeBase'
+    KnowledgeBaseListEnvelope:
+      description: 知识库列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeBase'
+    KnowledgeBaseNoteEnvelope:
+      description: 知识库笔记关联
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/KnowledgeBaseNote'
+    KnowledgeBaseNoteListEnvelope:
+      description: 知识库笔记列表
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/KnowledgeBaseNote'
     BadRequest:
       description: 请求错误
       content:
@@ -1440,6 +1618,40 @@ components:
         id: { type: string }
         name: { type: string }
         criteria: { type: object }
+    KnowledgeBaseInput:
+      type: object
+      required: [name]
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+    KnowledgeBaseUpdateInput:
+      type: object
+      properties:
+        name: { type: string, minLength: 1, maxLength: 80 }
+        description: { type: string, maxLength: 500 }
+    KnowledgeBase:
+      allOf:
+        - $ref: '#/components/schemas/KnowledgeBaseInput'
+        - type: object
+          properties:
+            id: { type: string }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+    KnowledgeBaseNote:
+      type: object
+      properties:
+        id: { type: string }
+        knowledgeBaseId: { type: string }
+        noteId: { type: string }
+        note:
+          type: object
+          properties:
+            id: { type: string }
+            title: { type: string }
+            summary: { type: string }
+            createdAt: { type: string, format: date-time }
+            updatedAt: { type: string, format: date-time }
+        createdAt: { type: string, format: date-time }
     RumEvent:
       type: object
       properties:
