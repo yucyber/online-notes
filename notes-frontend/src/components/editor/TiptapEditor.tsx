@@ -81,6 +81,39 @@ function isIndexedDbPersistenceError(reason: unknown) {
   )
 }
 
+function preflightIndexedDbPersistence(name: string): Promise<boolean> {
+  if (typeof window === 'undefined' || !window.indexedDB) return Promise.resolve(false)
+
+  return new Promise((resolve) => {
+    let settled = false
+    const settle = (value: boolean) => {
+      if (settled) return
+      settled = true
+      resolve(value)
+    }
+
+    try {
+      const request = window.indexedDB.open(name)
+
+      request.onupgradeneeded = () => {
+        const db = request.result
+        if (!db.objectStoreNames.contains('updates')) db.createObjectStore('updates', { autoIncrement: true })
+        if (!db.objectStoreNames.contains('custom')) db.createObjectStore('custom')
+      }
+      request.onerror = () => settle(false)
+      request.onblocked = () => settle(false)
+      request.onsuccess = () => {
+        const db = request.result
+        const ok = db.objectStoreNames.contains('updates') && db.objectStoreNames.contains('custom')
+        try { db.close() } catch { }
+        settle(ok)
+      }
+    } catch {
+      settle(false)
+    }
+  })
+}
+
 const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className: string; detail?: string }> = {
   'config-missing': { label: '协作配置缺失', className: 'text-red-600', detail: '已本地降级' },
   'auth-missing': { label: '协作需要登录', className: 'text-red-600', detail: '已本地降级' },
@@ -396,41 +429,56 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       } catch { }
     }
 
-    try {
-      // 使用独立前缀避免与其他项目冲突
-      persistence = new IndexeddbPersistence(`online-notes:${room}`, ydoc)
-    } catch (e) {
-      console.warn('[Collab] Failed to init IndexedDB persistence', e)
-      return cleanup
-    }
-
-    const dbPromise = (persistence as any)?._db
-    if (dbPromise && typeof dbPromise.catch === 'function') {
-      dbPromise.catch((e: unknown) => {
-        if (!cancelled) console.warn('[Collab] IndexedDB open failed; continuing without local Y.Doc cache', e)
+    const persistenceName = `online-notes:${room}`
+    const startPersistence = async () => {
+      const canUseIndexedDb = await preflightIndexedDbPersistence(persistenceName).catch((e) => {
+        if (!isIndexedDbPersistenceError(e)) console.warn('[Collab] IndexedDB preflight failed', e)
+        return false
       })
-    }
+      if (cancelled) return
+      if (!canUseIndexedDb) {
+        console.warn('[Collab] IndexedDB unavailable; continuing without local Y.Doc cache')
+        return
+      }
 
-    persistence.whenSynced
-      .then(() => {
-        if (cancelled) return
-        setIdbSynced(true)
+      try {
+        // 使用独立前缀避免与其他项目冲突
+        persistence = new IndexeddbPersistence(persistenceName, ydoc)
+      } catch (e) {
+        console.warn('[Collab] Failed to init IndexedDB persistence', e)
+        return
+      }
 
-        // 如果本地确实有内容，打个标记避免后续 initialHTML seed 覆盖
-        try {
-          const frag = ydoc.getXmlFragment('prosemirror') as any
-          const hasContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
-          if (hasContent) {
-            const meta = ydoc.getMap('meta')
-            if (!meta.get('seeded')) {
-              meta.set('seeded', { by: 'indexeddb', at: Date.now() })
+      const dbPromise = (persistence as any)?._db
+      if (dbPromise && typeof dbPromise.catch === 'function') {
+        dbPromise.catch((e: unknown) => {
+          if (!cancelled) console.warn('[Collab] IndexedDB open failed; continuing without local Y.Doc cache', e)
+        })
+      }
+
+      persistence.whenSynced
+        .then(() => {
+          if (cancelled) return
+          setIdbSynced(true)
+
+          // 如果本地确实有内容，打个标记避免后续 initialHTML seed 覆盖
+          try {
+            const frag = ydoc.getXmlFragment('prosemirror') as any
+            const hasContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
+            if (hasContent) {
+              const meta = ydoc.getMap('meta')
+              if (!meta.get('seeded')) {
+                meta.set('seeded', { by: 'indexeddb', at: Date.now() })
+              }
             }
-          }
-        } catch { }
-      })
-      .catch((e) => {
-        console.warn('[Collab] IndexedDB whenSynced failed', e)
-      })
+          } catch { }
+        })
+        .catch((e) => {
+          console.warn('[Collab] IndexedDB whenSynced failed', e)
+        })
+    }
+
+    void startPersistence()
 
     return cleanup
   }, [room, ydoc])

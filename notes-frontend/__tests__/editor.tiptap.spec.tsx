@@ -1,6 +1,9 @@
 import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
+const mockIndexeddbPersistenceConstructor = jest.fn()
+const mockIndexeddbPersistenceDestroy = jest.fn()
+
 jest.mock('y-websocket', () => {
   class WebsocketProvider {
     awareness = {
@@ -26,7 +29,10 @@ jest.mock('y-websocket', () => {
 jest.mock('y-indexeddb', () => ({
   IndexeddbPersistence: class {
     whenSynced = Promise.resolve()
-    destroy = jest.fn()
+    destroy = mockIndexeddbPersistenceDestroy
+    constructor(public name: string, public doc: any) {
+      mockIndexeddbPersistenceConstructor(name, doc)
+    }
   },
 }))
 
@@ -34,7 +40,21 @@ import TiptapEditor from '@/components/editor/TiptapEditor'
 
 describe('TiptapEditor 全区域输入', () => {
   const user = { id: 'u1', name: 'User One' }
-  beforeEach(() => { (process as any).env.NEXT_PUBLIC_YWS_URL = '' })
+  const originalIndexedDB = Object.getOwnPropertyDescriptor(window, 'indexedDB')
+  beforeEach(() => {
+    ;(process as any).env.NEXT_PUBLIC_YWS_URL = ''
+    mockIndexeddbPersistenceConstructor.mockClear()
+    mockIndexeddbPersistenceDestroy.mockClear()
+    installIndexedDbMock()
+  })
+
+  afterEach(() => {
+    if (originalIndexedDB) {
+      Object.defineProperty(window, 'indexedDB', originalIndexedDB)
+    } else {
+      Reflect.deleteProperty(window, 'indexedDB')
+    }
+  })
 
   it('容器空白点击聚焦并在文末输入', () => {
     const onSave = jest.fn()
@@ -107,4 +127,60 @@ describe('TiptapEditor 全区域输入', () => {
       window.removeEventListener('unhandledrejection', overlayListener)
     }
   })
+
+  it('skips y-indexeddb persistence when IndexedDB preflight fails', async () => {
+    installIndexedDbMock({ failOpen: true })
+    const onSave = jest.fn()
+
+    render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} />)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(mockIndexeddbPersistenceConstructor).not.toHaveBeenCalled()
+  })
+
+  it('starts y-indexeddb persistence when IndexedDB preflight passes', async () => {
+    const onSave = jest.fn()
+
+    render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} />)
+
+    await new Promise((resolve) => setTimeout(resolve, 20))
+
+    expect(mockIndexeddbPersistenceConstructor).toHaveBeenCalledWith('online-notes:note:n1', expect.anything())
+  })
 })
+
+function installIndexedDbMock(options: { failOpen?: boolean } = {}) {
+  const indexedDB = {
+    open: jest.fn(() => {
+      const request: any = {}
+      setTimeout(() => {
+        if (options.failOpen) {
+          request.error = new Error('UnknownError: Internal error.')
+          request.onerror?.({ target: request })
+          return
+        }
+
+        const storeNames = new Set<string>()
+        const db = {
+          objectStoreNames: {
+            contains: (name: string) => storeNames.has(name),
+          },
+          createObjectStore: (name: string) => {
+            storeNames.add(name)
+          },
+          close: jest.fn(),
+        }
+        request.result = db
+        request.onupgradeneeded?.({ target: request })
+        request.onsuccess?.({ target: request })
+      }, 0)
+      return request
+    }),
+  }
+
+  Object.defineProperty(window, 'indexedDB', {
+    configurable: true,
+    value: indexedDB,
+  })
+}
