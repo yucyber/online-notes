@@ -91,6 +91,33 @@ export interface KnowledgeBaseNoteLink {
   createdAt: string
 }
 
+export type KnowledgeGraphNodeType = 'concept' | 'entity' | 'topic' | 'claim'
+
+export interface KnowledgeGraphNode {
+  id: string
+  label: string
+  type: KnowledgeGraphNodeType
+  confidence: number
+  noteIds: string[]
+}
+
+export interface KnowledgeGraphEdge {
+  id: string
+  source: string
+  target: string
+  relation: string
+  weight: number
+  noteIds: string[]
+}
+
+export interface KnowledgeGraphProposal {
+  knowledgeBaseId: string
+  generatedAt: string
+  nodes: KnowledgeGraphNode[]
+  edges: KnowledgeGraphEdge[]
+  warnings: string[]
+}
+
 export interface SavedFilter {
   id: string
   name: string

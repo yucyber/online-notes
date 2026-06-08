@@ -8,6 +8,9 @@ const mockKnowledgeBasesAPI = {
   getNotes: jest.fn(),
   addNote: jest.fn(),
   removeNote: jest.fn(),
+  buildGraphProposal: jest.fn(),
+  getGraph: jest.fn(),
+  saveGraph: jest.fn(),
 }
 
 const mockToast = {
@@ -45,6 +48,27 @@ const linkedNote = {
   createdAt: '2026-06-03T00:00:00.000Z',
 }
 
+const graphProposal = {
+  knowledgeBaseId: 'kb-1',
+  generatedAt: '2026-06-05T00:00:00.000Z',
+  nodes: [
+    { id: 'kg_concept_attention', label: 'Attention', type: 'concept', confidence: 0.92, noteIds: ['note-1'] },
+    { id: 'kg_topic_graphs', label: 'Graphs', type: 'topic', confidence: 0.8, noteIds: ['note-1'] },
+  ],
+  edges: [
+    { id: 'edge-1', source: 'kg_concept_attention', target: 'kg_topic_graphs', relation: 'supports', weight: 0.74, noteIds: ['note-1'] },
+  ],
+  warnings: ['Low evidence edge kept for review.'],
+}
+
+const emptyGraph = {
+  knowledgeBaseId: 'kb-1',
+  generatedAt: '2026-06-05T00:00:00.000Z',
+  nodes: [],
+  edges: [],
+  warnings: [],
+}
+
 describe('knowledge base frontend entry', () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -59,6 +83,9 @@ describe('knowledge base frontend entry', () => {
     })
     mockKnowledgeBasesAPI.addNote.mockResolvedValue(linkedNote)
     mockKnowledgeBasesAPI.removeNote.mockResolvedValue({ ok: true })
+    mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue(graphProposal)
+    mockKnowledgeBasesAPI.getGraph.mockResolvedValue(emptyGraph)
+    mockKnowledgeBasesAPI.saveGraph.mockResolvedValue({ ...graphProposal, warnings: [] })
   })
 
   test('lists knowledge bases, creates one, and removes a note from the selected base', async () => {
@@ -108,6 +135,44 @@ describe('knowledge base frontend entry', () => {
       expect(mockKnowledgeBasesAPI.addNote).toHaveBeenNthCalledWith(2, 'kb-1', 'note-2')
     })
     expect(mockToast.success).toHaveBeenCalledWith('已加入知识库，重复笔记会自动保持一份')
+  })
+
+  test('builds and renders a graph proposal for the selected knowledge base', async () => {
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+
+    expect(await screen.findByText('Transformer Notes')).toBeInTheDocument()
+
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    await waitFor(() => {
+      expect(mockKnowledgeBasesAPI.buildGraphProposal).toHaveBeenCalledWith('kb-1')
+    })
+    expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
+    expect(screen.getAllByText('Graphs').length).toBeGreaterThan(0)
+    expect(screen.getByText('supports')).toBeInTheDocument()
+    expect(screen.getByText('Low evidence edge kept for review.')).toBeInTheDocument()
+  })
+
+  test('saves a generated graph proposal to the selected knowledge base', async () => {
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+
+    expect(await screen.findByText('Transformer Notes')).toBeInTheDocument()
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+    expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
+
+    fireEvent.click(screen.getByTestId('save-graph-proposal'))
+
+    await waitFor(() => {
+      expect(mockKnowledgeBasesAPI.saveGraph).toHaveBeenCalledWith('kb-1', {
+        nodes: graphProposal.nodes,
+        edges: graphProposal.edges,
+      })
+    })
+    expect(await screen.findByText('已保存图谱')).toBeInTheDocument()
   })
 
   test('shows empty states when no knowledge base exists', async () => {

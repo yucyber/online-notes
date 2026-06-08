@@ -10,6 +10,7 @@ import {
   Tag,
   KnowledgeBase,
   KnowledgeBaseNoteLink,
+  KnowledgeGraphProposal,
   DashboardOverview,
   SavedFilter,
   CreateSavedFilterDto,
@@ -602,6 +603,16 @@ export const knowledgeBasesAPI = {
 
   removeNote: (id: string, noteId: string) =>
     api.delete(`/knowledge-bases/${id}/notes/${noteId}`).then(res => res as unknown as { ok: boolean }),
+
+  buildGraphProposal: (id: string) =>
+    api.post<KnowledgeGraphProposal>('/ai/knowledge-graph/proposal', { knowledgeBaseId: id }, { timeout: 60000 })
+      .then(res => res as unknown as KnowledgeGraphProposal),
+
+  getGraph: (id: string) =>
+    api.get<KnowledgeGraphProposal>(`/knowledge-bases/${id}/graph`).then(res => res as unknown as KnowledgeGraphProposal),
+
+  saveGraph: (id: string, payload: Pick<KnowledgeGraphProposal, 'nodes' | 'edges'>) =>
+    api.put<KnowledgeGraphProposal>(`/knowledge-bases/${id}/graph`, payload).then(res => res as unknown as KnowledgeGraphProposal),
 }
 
 // 仪表盘相关 API

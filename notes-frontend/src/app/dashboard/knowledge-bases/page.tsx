@@ -2,14 +2,14 @@
 
 import { FormEvent, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { BookOpenCheck, FileText, Loader2, PlusCircle, RefreshCcw, Trash2 } from 'lucide-react'
+import { BookOpenCheck, FileText, Loader2, Network, PlusCircle, RefreshCcw, Save, Sparkles, Trash2 } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { knowledgeBasesAPI } from '@/lib/api'
 import { formatDate } from '@/utils'
-import type { KnowledgeBase, KnowledgeBaseNoteLink } from '@/types'
+import type { KnowledgeBase, KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
 
 const emptyForm = {
   name: '',
@@ -34,11 +34,21 @@ export default function KnowledgeBasesPage() {
   const [loadingLinks, setLoadingLinks] = useState(false)
   const [saving, setSaving] = useState(false)
   const [removingNoteId, setRemovingNoteId] = useState('')
+  const [graphProposal, setGraphProposal] = useState<KnowledgeGraphProposal | null>(null)
+  const [savedGraph, setSavedGraph] = useState<KnowledgeGraphProposal | null>(null)
+  const [buildingGraph, setBuildingGraph] = useState(false)
+  const [loadingGraph, setLoadingGraph] = useState(false)
+  const [savingGraph, setSavingGraph] = useState(false)
   const [error, setError] = useState('')
 
   const selectedKnowledgeBase = useMemo(
     () => knowledgeBases.find((item) => item.id === selectedId) || null,
     [knowledgeBases, selectedId],
+  )
+  const visibleGraph = graphProposal || savedGraph
+  const graphNodeLabels = useMemo(
+    () => new Map((visibleGraph?.nodes || []).map((node) => [node.id, node.label])),
+    [visibleGraph],
   )
 
   const loadKnowledgeBases = async () => {
@@ -78,12 +88,32 @@ export default function KnowledgeBasesPage() {
     }
   }
 
+  const loadGraph = async (knowledgeBaseId: string) => {
+    if (!knowledgeBaseId) {
+      setSavedGraph(null)
+      return
+    }
+
+    try {
+      setLoadingGraph(true)
+      const graph = await knowledgeBasesAPI.getGraph(knowledgeBaseId)
+      setSavedGraph(graph)
+    } catch (err) {
+      console.error('Failed to load knowledge base graph', err)
+      setSavedGraph(null)
+    } finally {
+      setLoadingGraph(false)
+    }
+  }
+
   useEffect(() => {
     loadKnowledgeBases()
   }, [])
 
   useEffect(() => {
+    setGraphProposal(null)
     loadLinks(selectedId)
+    loadGraph(selectedId)
   }, [selectedId])
 
   const handleSubmit = async (event: FormEvent) => {
@@ -122,6 +152,40 @@ export default function KnowledgeBasesPage() {
       setError(getErrorMessage(err, '移除笔记失败，请稍后重试'))
     } finally {
       setRemovingNoteId('')
+    }
+  }
+
+  const handleBuildGraphProposal = async () => {
+    if (!selectedId || links.length === 0) return
+    try {
+      setBuildingGraph(true)
+      setError('')
+      const proposal = await knowledgeBasesAPI.buildGraphProposal(selectedId)
+      setGraphProposal(proposal)
+    } catch (err) {
+      console.error('Failed to build knowledge graph proposal', err)
+      setError(getErrorMessage(err, '知识图谱提案生成失败，请稍后重试'))
+    } finally {
+      setBuildingGraph(false)
+    }
+  }
+
+  const handleSaveGraph = async () => {
+    if (!selectedId || !graphProposal) return
+    try {
+      setSavingGraph(true)
+      setError('')
+      const saved = await knowledgeBasesAPI.saveGraph(selectedId, {
+        nodes: graphProposal.nodes,
+        edges: graphProposal.edges,
+      })
+      setSavedGraph(saved)
+      setGraphProposal(null)
+    } catch (err) {
+      console.error('Failed to save knowledge graph', err)
+      setError(getErrorMessage(err, '知识图谱保存失败，请稍后重试'))
+    } finally {
+      setSavingGraph(false)
     }
   }
 
@@ -247,6 +311,112 @@ export default function KnowledgeBasesPage() {
             </div>
           </CardHeader>
           <CardContent className="pt-6">
+            {selectedId && (
+              <div
+                className="mb-6 rounded-xl border p-4"
+                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}
+              >
+                <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--on-surface)' }}>
+                      <Network className="h-4 w-4" />
+                      {visibleGraph && (
+                        <span className="rounded-full border px-2 py-0.5 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                          {graphProposal ? '待保存提案' : '已保存图谱'}
+                        </span>
+                      )}
+                      知识图谱提案
+                    </div>
+                    <p className="mt-1 text-xs" style={{ color: 'var(--text-muted)' }}>
+                      当前边界内 {links.length} 篇笔记，生成结果只作为待确认草稿。
+                    </p>
+                  </div>
+                  {graphProposal && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      data-testid="save-graph-proposal"
+                      onClick={handleSaveGraph}
+                      disabled={savingGraph}
+                    >
+                      {savingGraph ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+                      保存图谱
+                    </Button>
+                  )}
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    data-testid="build-graph-proposal"
+                    onClick={handleBuildGraphProposal}
+                    disabled={buildingGraph || loadingLinks || loadingGraph || links.length === 0}
+                  >
+                    {buildingGraph ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+                    生成提案
+                  </Button>
+                </div>
+
+                {links.length === 0 ? (
+                  <div className="mt-4 rounded-lg border border-dashed p-4 text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                    加入笔记后才能构建图谱，空知识库不会触发 AI 请求。
+                  </div>
+                ) : visibleGraph ? (
+                  <div className="mt-4 grid gap-4 lg:grid-cols-2">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        Nodes
+                      </p>
+                      <div className="mt-2 flex flex-wrap gap-2">
+                        {visibleGraph.nodes.length === 0 ? (
+                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无节点</span>
+                        ) : (
+                          visibleGraph.nodes.map((node) => (
+                            <span
+                              key={node.id}
+                              className="rounded-full border px-3 py-1 text-xs"
+                              style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-0)' }}
+                              title={`${node.type} · ${Math.round(node.confidence * 100)}%`}
+                            >
+                              {node.label}
+                            </span>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide" style={{ color: 'var(--text-muted)' }}>
+                        Edges
+                      </p>
+                      <div className="mt-2 space-y-2">
+                        {visibleGraph.edges.length === 0 ? (
+                          <span className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无关系</span>
+                        ) : (
+                          visibleGraph.edges.slice(0, 6).map((edge) => (
+                            <div key={edge.id} className="rounded-lg border px-3 py-2 text-xs" style={{ borderColor: 'var(--border)' }}>
+                              <span style={{ color: 'var(--on-surface)' }}>{graphNodeLabels.get(edge.source) || edge.source}</span>
+                              <span className="mx-2" style={{ color: 'var(--text-muted)' }}>{edge.relation}</span>
+                              <span style={{ color: 'var(--on-surface)' }}>{graphNodeLabels.get(edge.target) || edge.target}</span>
+                            </div>
+                          ))
+                        )}
+                      </div>
+                    </div>
+                    {visibleGraph.warnings.length > 0 && (
+                      <div className="lg:col-span-2 rounded-lg border px-3 py-2 text-xs text-amber-800" style={{ borderColor: '#fde68a', background: '#fffbeb' }}>
+                        {visibleGraph.warnings.map((warning) => (
+                          <p key={warning}>{warning}</p>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="mt-4 rounded-lg border border-dashed p-4 text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
+                    生成后会在这里预览节点、关系和需要人工复核的提示。
+                  </div>
+                )}
+              </div>
+            )}
             {!selectedId ? (
               <div className="rounded-xl border border-dashed p-8 text-center text-sm" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                 创建或选择知识库后，这里会显示纳入的笔记。
