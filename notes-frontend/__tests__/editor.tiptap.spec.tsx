@@ -86,4 +86,25 @@ describe('TiptapEditor 全区域输入', () => {
 
     expect(preventDefault).toHaveBeenCalled()
   })
+
+  it('keeps IndexedDB persistence errors away from later runtime overlay listeners', () => {
+    const overlayListener = jest.fn()
+    window.addEventListener('unhandledrejection', overlayListener)
+    const onSave = jest.fn()
+
+    try {
+      render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} />)
+
+      const event = new Event('unhandledrejection') as Event & { reason?: unknown }
+      Object.defineProperty(event, 'reason', {
+        value: new Error('UnknownError: Internal error.'),
+      })
+
+      window.dispatchEvent(event)
+
+      expect(overlayListener).not.toHaveBeenCalled()
+    } finally {
+      window.removeEventListener('unhandledrejection', overlayListener)
+    }
+  })
 })

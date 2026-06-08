@@ -378,13 +378,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       if (!isIndexedDbPersistenceError(event.reason)) return
       console.warn('[Collab] IndexedDB persistence unavailable; continuing without local Y.Doc cache', event.reason)
       event.preventDefault()
+      event.stopImmediatePropagation()
     }
 
-    window.addEventListener('unhandledrejection', handleUnhandledRejection)
+    window.addEventListener('unhandledrejection', handleUnhandledRejection, true)
 
     const cleanup = () => {
       cancelled = true
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection)
+      window.removeEventListener('unhandledrejection', handleUnhandledRejection, true)
       try {
         const destroyed = persistence?.destroy()
         if (destroyed && typeof (destroyed as Promise<void>).catch === 'function') {
