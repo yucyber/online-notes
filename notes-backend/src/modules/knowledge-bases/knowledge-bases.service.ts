@@ -1,11 +1,13 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteAccessService } from '../notes/note-access.service'
-import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, UpdateKnowledgeBaseDto } from './dto'
+import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, SaveKnowledgeGraphDto, UpdateKnowledgeBaseDto } from './dto'
 import { KnowledgeBase, KnowledgeBaseDocument } from './schemas/knowledge-base.schema'
 import { KnowledgeBaseNote, KnowledgeBaseNoteDocument } from './schemas/knowledge-base-note.schema'
+import { KnowledgeGraphEdge, KnowledgeGraphEdgeDocument } from './schemas/knowledge-graph-edge.schema'
+import { KnowledgeGraphNode, KnowledgeGraphNodeDocument } from './schemas/knowledge-graph-node.schema'
 
 @Injectable()
 export class KnowledgeBasesService {
@@ -14,6 +16,8 @@ export class KnowledgeBasesService {
     @InjectModel(KnowledgeBaseNote.name) private readonly kbNoteModel: Model<KnowledgeBaseNoteDocument>,
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     private readonly noteAccess: NoteAccessService,
+    @Optional() @InjectModel(KnowledgeGraphNode.name) private readonly graphNodeModel?: Model<KnowledgeGraphNodeDocument>,
+    @Optional() @InjectModel(KnowledgeGraphEdge.name) private readonly graphEdgeModel?: Model<KnowledgeGraphEdgeDocument>,
   ) {}
 
   async create(input: CreateKnowledgeBaseDto, userId: string) {
@@ -149,6 +153,53 @@ export class KnowledgeBasesService {
       .filter(Boolean)
   }
 
+  async getGraph(id: string, userId: string) {
+    const kb = await this.requireKnowledgeBase(id, userId)
+    const scope = {
+      knowledgeBaseId: this.idOf(kb),
+      userId: this.objectId(userId, 'user id'),
+    }
+    const [nodes, edges] = await Promise.all([
+      this.requireGraphNodeModel().find(scope).sort({ createdAt: 1 }).exec(),
+      this.requireGraphEdgeModel().find(scope).sort({ createdAt: 1 }).exec(),
+    ])
+
+    return {
+      knowledgeBaseId: String(scope.knowledgeBaseId),
+      generatedAt: this.latestGraphTimestamp(nodes, edges),
+      nodes: nodes.map((node) => this.serializeKnowledgeGraphNode(node)),
+      edges: edges.map((edge) => this.serializeKnowledgeGraphEdge(edge)),
+      warnings: [],
+    }
+  }
+
+  async replaceGraph(id: string, input: SaveKnowledgeGraphDto, userId: string) {
+    const kb = await this.requireKnowledgeBase(id, userId)
+    const knowledgeBaseId = this.idOf(kb)
+    const userObjectId = this.objectId(userId, 'user id')
+    const scope = { knowledgeBaseId, userId: userObjectId }
+    const allowedNoteIds = await this.listKnowledgeBaseNoteIds(knowledgeBaseId, userObjectId)
+    const allowedNoteIdSet = new Set(allowedNoteIds.map(String))
+    const nodes = this.normalizeGraphNodes(input?.nodes || [], scope, allowedNoteIdSet)
+    const nodeIds = new Set(nodes.map((node) => node.nodeId))
+    const nodeNoteIds = new Map(nodes.map((node) => [node.nodeId, node.noteIds.map(String)]))
+    const edges = this.normalizeGraphEdges(input?.edges || [], scope, allowedNoteIdSet, nodeIds, nodeNoteIds)
+
+    await this.requireGraphEdgeModel().deleteMany(scope).exec()
+    await this.requireGraphNodeModel().deleteMany(scope).exec()
+
+    const savedNodes = nodes.length > 0 ? await this.requireGraphNodeModel().insertMany(nodes) : []
+    const savedEdges = edges.length > 0 ? await this.requireGraphEdgeModel().insertMany(edges) : []
+
+    return {
+      knowledgeBaseId: String(knowledgeBaseId),
+      generatedAt: this.latestGraphTimestamp(savedNodes, savedEdges),
+      nodes: savedNodes.map((node) => this.serializeKnowledgeGraphNode(node)),
+      edges: savedEdges.map((edge) => this.serializeKnowledgeGraphEdge(edge)),
+      warnings: [],
+    }
+  }
+
   async removeNote(id: string, noteId: string, userId: string) {
     const kb = await this.requireKnowledgeBase(id, userId)
     await this.kbNoteModel.deleteOne({
@@ -157,6 +208,71 @@ export class KnowledgeBasesService {
       userId: this.objectId(userId, 'user id'),
     }).exec()
     return { ok: true }
+  }
+
+  private async listKnowledgeBaseNoteIds(knowledgeBaseId: Types.ObjectId, userId: Types.ObjectId) {
+    const links = await this.kbNoteModel
+      .find({ knowledgeBaseId, userId })
+      .sort({ createdAt: -1 })
+      .exec()
+    return links.map((link) => this.idOf(link, 'noteId'))
+  }
+
+  private normalizeGraphNodes(nodes: SaveKnowledgeGraphDto['nodes'], scope: { knowledgeBaseId: Types.ObjectId; userId: Types.ObjectId }, allowedNoteIds: Set<string>) {
+    const seen = new Set<string>()
+    return (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
+      const nodeId = this.cleanGraphId(node?.id, 160)
+      const label = this.cleanText(node?.label, 160)
+      const noteIds = this.normalizeGraphNoteIds(node?.noteIds, allowedNoteIds)
+      if (!nodeId || !label || noteIds.length === 0 || seen.has(nodeId)) return []
+      seen.add(nodeId)
+      return [{
+        ...scope,
+        nodeId,
+        label,
+        type: this.normalizeGraphNodeType(node?.type),
+        confidence: this.clampNumber(node?.confidence, 0.75),
+        noteIds: noteIds.map((noteId) => new Types.ObjectId(noteId)),
+      }]
+    })
+  }
+
+  private normalizeGraphEdges(
+    edges: SaveKnowledgeGraphDto['edges'],
+    scope: { knowledgeBaseId: Types.ObjectId; userId: Types.ObjectId },
+    allowedNoteIds: Set<string>,
+    nodeIds: Set<string>,
+    nodeNoteIds: Map<string, string[]>,
+  ) {
+    const seen = new Set<string>()
+    return (Array.isArray(edges) ? edges : []).flatMap((edge) => {
+      const source = this.cleanGraphId(edge?.source, 160)
+      const target = this.cleanGraphId(edge?.target, 160)
+      if (!source || !target || source === target || !nodeIds.has(source) || !nodeIds.has(target)) return []
+      const relation = this.cleanText(edge?.relation, 120) || 'related to'
+      const edgeId = this.cleanGraphId(edge?.id, 200) || `${source}:${target}:${relation}`
+      if (seen.has(edgeId)) return []
+      const explicitNoteIds = this.normalizeGraphNoteIds(edge?.noteIds, allowedNoteIds)
+      const fallbackNoteIds = this.unique([...(nodeNoteIds.get(source) || []), ...(nodeNoteIds.get(target) || [])])
+      const noteIds = explicitNoteIds.length > 0 ? explicitNoteIds : fallbackNoteIds
+      if (noteIds.length === 0) return []
+      seen.add(edgeId)
+      return [{
+        ...scope,
+        edgeId,
+        source,
+        target,
+        relation,
+        weight: this.clampNumber(edge?.weight, 0.6),
+        noteIds: noteIds.map((noteId) => new Types.ObjectId(noteId)),
+      }]
+    })
+  }
+
+  private normalizeGraphNoteIds(noteIds: unknown, allowedNoteIds: Set<string>) {
+    return this.unique((Array.isArray(noteIds) ? noteIds : [])
+      .map((noteId) => String(noteId || '').trim())
+      .filter((noteId) => allowedNoteIds.has(noteId)))
   }
 
   private async requireKnowledgeBase(id: string, userId: string) {
@@ -197,6 +313,39 @@ export class KnowledgeBasesService {
     }
   }
 
+  private serializeKnowledgeGraphNode(node: any) {
+    const value = this.toObject(node)
+    return {
+      id: String(value.nodeId),
+      label: value.label,
+      type: this.normalizeGraphNodeType(value.type),
+      confidence: this.clampNumber(value.confidence, 0.75),
+      noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
+    }
+  }
+
+  private serializeKnowledgeGraphEdge(edge: any) {
+    const value = this.toObject(edge)
+    return {
+      id: String(value.edgeId),
+      source: String(value.source),
+      target: String(value.target),
+      relation: value.relation || 'related to',
+      weight: this.clampNumber(value.weight, 0.6),
+      noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
+    }
+  }
+
+  private latestGraphTimestamp(nodes: any[], edges: any[]) {
+    const timestamps = [...(nodes || []), ...(edges || [])]
+      .map((item) => this.toObject(item)?.updatedAt || this.toObject(item)?.createdAt)
+      .filter(Boolean)
+      .map((value) => new Date(value).getTime())
+      .filter((value) => Number.isFinite(value))
+    if (timestamps.length === 0) return new Date().toISOString()
+    return new Date(Math.max(...timestamps)).toISOString()
+  }
+
   private toObject(doc: any) {
     return typeof doc?.toObject === 'function' ? doc.toObject() : doc
   }
@@ -216,5 +365,38 @@ export class KnowledgeBasesService {
 
   private cleanDescription(value?: string) {
     return String(value || '').trim()
+  }
+
+  private cleanGraphId(value: unknown, maxLength: number) {
+    return String(value || '').trim().slice(0, maxLength)
+  }
+
+  private cleanText(value: unknown, maxLength: number) {
+    return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength)
+  }
+
+  private normalizeGraphNodeType(value: unknown) {
+    const type = String(value || '').trim().toLowerCase()
+    return type === 'entity' || type === 'topic' || type === 'claim' ? type : 'concept'
+  }
+
+  private clampNumber(value: unknown, fallback: number) {
+    const numeric = Number(value)
+    if (!Number.isFinite(numeric)) return fallback
+    return Math.max(0, Math.min(1, numeric))
+  }
+
+  private unique(values: string[]) {
+    return Array.from(new Set(values.filter(Boolean)))
+  }
+
+  private requireGraphNodeModel() {
+    if (!this.graphNodeModel) throw new Error('Knowledge graph node model is not configured')
+    return this.graphNodeModel
+  }
+
+  private requireGraphEdgeModel() {
+    if (!this.graphEdgeModel) throw new Error('Knowledge graph edge model is not configured')
+    return this.graphEdgeModel
   }
 }

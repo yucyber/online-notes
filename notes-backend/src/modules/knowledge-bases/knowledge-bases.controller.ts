@@ -1,6 +1,6 @@
-import { Body, Controller, Delete, Get, Param, Patch, Post, Request, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Patch, Post, Put, Request, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
-import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, UpdateKnowledgeBaseDto } from './dto'
+import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, SaveKnowledgeGraphDto, UpdateKnowledgeBaseDto } from './dto'
 import { KnowledgeBasesService } from './knowledge-bases.service'
 
 @UseGuards(AuthGuard('jwt'))
@@ -36,6 +36,16 @@ export class KnowledgeBasesController {
   @Get(':id/notes')
   listNotes(@Param('id') id: string, @Request() req) {
     return this.service.listNotes(id, req.user.id)
+  }
+
+  @Get(':id/graph')
+  getGraph(@Param('id') id: string, @Request() req) {
+    return this.service.getGraph(id, req.user.id)
+  }
+
+  @Put(':id/graph')
+  replaceGraph(@Param('id') id: string, @Body() body: SaveKnowledgeGraphDto, @Request() req) {
+    return this.service.replaceGraph(id, body, req.user.id)
   }
 
   @Delete(':id/notes/:noteId')

@@ -958,6 +958,38 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/graph:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    get:
+      tags: [KnowledgeBases]
+      summary: 获取知识库图谱
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeGraphEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+    put:
+      tags: [KnowledgeBases]
+      summary: 保存知识库图谱
+      description: 按当前用户和知识库边界替换图谱，只保留知识库内笔记引用。
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/KnowledgeGraphInput'
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeGraphEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/knowledge-bases/{id}/notes/{noteId}:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1241,6 +1273,12 @@ components:
             required: [noteId]
             properties:
               noteId: { type: string }
+    KnowledgeGraphInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/KnowledgeGraphInput'
   responses:
     Ok:
       description: 成功
@@ -1377,6 +1415,17 @@ components:
                     $ref: '#/components/schemas/AiSummaryOutput'
     AiKnowledgeGraphProposalEnvelope:
       description: 知识图谱 proposal
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/KnowledgeGraphProposal'
+    KnowledgeGraphEnvelope:
+      description: 知识库图谱
       content:
         application/json:
           schema:
@@ -1652,6 +1701,18 @@ components:
       required: [knowledgeBaseId]
       properties:
         knowledgeBaseId: { type: string }
+    KnowledgeGraphInput:
+      type: object
+      required: [nodes, edges]
+      properties:
+        nodes:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeGraphProposalNode'
+        edges:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeGraphProposalEdge'
     KnowledgeGraphProposal:
       type: object
       properties:

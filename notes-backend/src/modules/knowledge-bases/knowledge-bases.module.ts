@@ -6,6 +6,8 @@ import { KnowledgeBasesController } from './knowledge-bases.controller'
 import { KnowledgeBasesService } from './knowledge-bases.service'
 import { KnowledgeBase, KnowledgeBaseSchema } from './schemas/knowledge-base.schema'
 import { KnowledgeBaseNote, KnowledgeBaseNoteSchema } from './schemas/knowledge-base-note.schema'
+import { KnowledgeGraphEdge, KnowledgeGraphEdgeSchema } from './schemas/knowledge-graph-edge.schema'
+import { KnowledgeGraphNode, KnowledgeGraphNodeSchema } from './schemas/knowledge-graph-node.schema'
 
 @Module({
   imports: [
@@ -13,6 +15,8 @@ import { KnowledgeBaseNote, KnowledgeBaseNoteSchema } from './schemas/knowledge-
     MongooseModule.forFeature([
       { name: KnowledgeBase.name, schema: KnowledgeBaseSchema },
       { name: KnowledgeBaseNote.name, schema: KnowledgeBaseNoteSchema },
+      { name: KnowledgeGraphNode.name, schema: KnowledgeGraphNodeSchema },
+      { name: KnowledgeGraphEdge.name, schema: KnowledgeGraphEdgeSchema },
       { name: Note.name, schema: NoteSchema },
     ]),
   ],
