@@ -20,6 +20,16 @@ export class NoteAccessService {
     }
   }
 
+  /** Restrict a candidate id set to notes the user can read. */
+  readableNotesQuery(noteIds: Types.ObjectId[], userId: string) {
+    return {
+      $and: [
+        { _id: { $in: noteIds } },
+        this.readableFilter(userId),
+      ],
+    }
+  }
+
   readScope(noteId: string, userId: string) {
     const noteObjectId = this.objectId(noteId, 'note id')
     return {

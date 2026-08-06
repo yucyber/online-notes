@@ -4,6 +4,13 @@ import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteAccessService } from '../notes/note-access.service'
 import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, SaveKnowledgeGraphDto, UpdateKnowledgeBaseDto } from './dto'
+import {
+  clampUnitInterval,
+  normalizeKnowledgeGraphNodeType,
+  normalizeKnowledgeGraphNoteIds,
+  resolveKnowledgeGraphEdgeNoteIds,
+  uniqueStrings,
+} from './knowledge-graph-normalize'
 import { KnowledgeBase, KnowledgeBaseDocument } from './schemas/knowledge-base.schema'
 import { KnowledgeBaseNote, KnowledgeBaseNoteDocument } from './schemas/knowledge-base-note.schema'
 import { KnowledgeGraphEdge, KnowledgeGraphEdgeDocument } from './schemas/knowledge-graph-edge.schema'
@@ -87,26 +94,7 @@ export class KnowledgeBasesService {
   }
 
   async listNotes(id: string, userId: string) {
-    const kb = await this.requireKnowledgeBase(id, userId)
-    const userObjectId = this.objectId(userId, 'user id')
-    const links = await this.kbNoteModel
-      .find({ knowledgeBaseId: this.idOf(kb), userId: userObjectId })
-      .sort({ createdAt: -1 })
-      .exec()
-
-    const noteIds = links.map((link) => this.idOf(link, 'noteId'))
-    if (noteIds.length === 0) return []
-
-    const notes = await this.noteModel.find({
-      _id: { $in: noteIds },
-      $or: [
-        { userId: userObjectId },
-        { acl: { $elemMatch: { userId: userObjectId } } },
-        { visibility: 'public' },
-      ],
-    }).select('title summary updatedAt createdAt').exec()
-
-    const noteById = new Map(notes.map((note) => [String(this.idOf(note)), note]))
+    const { links, noteById } = await this.listLinkedNotes(id, userId, { includeContent: false })
     return links
       .map((link) => {
         const note = noteById.get(String(this.idOf(link, 'noteId')))
@@ -116,26 +104,7 @@ export class KnowledgeBasesService {
   }
 
   async listGraphNotes(id: string, userId: string) {
-    const kb = await this.requireKnowledgeBase(id, userId)
-    const userObjectId = this.objectId(userId, 'user id')
-    const links = await this.kbNoteModel
-      .find({ knowledgeBaseId: this.idOf(kb), userId: userObjectId })
-      .sort({ createdAt: -1 })
-      .exec()
-
-    const noteIds = links.map((link) => this.idOf(link, 'noteId'))
-    if (noteIds.length === 0) return []
-
-    const notes = await this.noteModel.find({
-      _id: { $in: noteIds },
-      $or: [
-        { userId: userObjectId },
-        { acl: { $elemMatch: { userId: userObjectId } } },
-        { visibility: 'public' },
-      ],
-    }).select('title summary content updatedAt createdAt').exec()
-
-    const noteById = new Map(notes.map((note) => [String(this.idOf(note)), note]))
+    const { links, noteById } = await this.listLinkedNotes(id, userId, { includeContent: true })
     return links
       .map((link) => {
         const note = noteById.get(String(this.idOf(link, 'noteId')))
@@ -210,6 +179,30 @@ export class KnowledgeBasesService {
     return { ok: true }
   }
 
+  private async listLinkedNotes(id: string, userId: string, opts: { includeContent: boolean }) {
+    const kb = await this.requireKnowledgeBase(id, userId)
+    const userObjectId = this.objectId(userId, 'user id')
+    const links = await this.kbNoteModel
+      .find({ knowledgeBaseId: this.idOf(kb), userId: userObjectId })
+      .sort({ createdAt: -1 })
+      .exec()
+
+    const noteIds = links.map((link) => this.idOf(link, 'noteId'))
+    if (noteIds.length === 0) {
+      return { links, noteById: new Map<string, any>() }
+    }
+
+    const select = opts.includeContent
+      ? 'title summary content updatedAt createdAt'
+      : 'title summary updatedAt createdAt'
+    const notes = await this.noteModel
+      .find(this.noteAccess.readableNotesQuery(noteIds, userId))
+      .select(select)
+      .exec()
+    const noteById = new Map(notes.map((note) => [String(this.idOf(note)), note]))
+    return { links, noteById }
+  }
+
   private async listKnowledgeBaseNoteIds(knowledgeBaseId: Types.ObjectId, userId: Types.ObjectId) {
     const links = await this.kbNoteModel
       .find({ knowledgeBaseId, userId })
@@ -223,15 +216,15 @@ export class KnowledgeBasesService {
     return (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
       const nodeId = this.cleanGraphId(node?.id, 160)
       const label = this.cleanText(node?.label, 160)
-      const noteIds = this.normalizeGraphNoteIds(node?.noteIds, allowedNoteIds)
+      const noteIds = normalizeKnowledgeGraphNoteIds(node?.noteIds, allowedNoteIds)
       if (!nodeId || !label || noteIds.length === 0 || seen.has(nodeId)) return []
       seen.add(nodeId)
       return [{
         ...scope,
         nodeId,
         label,
-        type: this.normalizeGraphNodeType(node?.type),
-        confidence: this.clampNumber(node?.confidence, 0.75),
+        type: normalizeKnowledgeGraphNodeType(node?.type),
+        confidence: clampUnitInterval(node?.confidence, 0.75),
         noteIds: noteIds.map((noteId) => new Types.ObjectId(noteId)),
       }]
     })
@@ -252,9 +245,8 @@ export class KnowledgeBasesService {
       const relation = this.cleanText(edge?.relation, 120) || 'related to'
       const edgeId = this.cleanGraphId(edge?.id, 200) || `${source}:${target}:${relation}`
       if (seen.has(edgeId)) return []
-      const explicitNoteIds = this.normalizeGraphNoteIds(edge?.noteIds, allowedNoteIds)
-      const fallbackNoteIds = this.unique([...(nodeNoteIds.get(source) || []), ...(nodeNoteIds.get(target) || [])])
-      const noteIds = explicitNoteIds.length > 0 ? explicitNoteIds : fallbackNoteIds
+      const fallbackNoteIds = uniqueStrings([...(nodeNoteIds.get(source) || []), ...(nodeNoteIds.get(target) || [])])
+      const noteIds = resolveKnowledgeGraphEdgeNoteIds(edge?.noteIds, allowedNoteIds, fallbackNoteIds)
       if (noteIds.length === 0) return []
       seen.add(edgeId)
       return [{
@@ -263,16 +255,10 @@ export class KnowledgeBasesService {
         source,
         target,
         relation,
-        weight: this.clampNumber(edge?.weight, 0.6),
+        weight: clampUnitInterval(edge?.weight, 0.6),
         noteIds: noteIds.map((noteId) => new Types.ObjectId(noteId)),
       }]
     })
-  }
-
-  private normalizeGraphNoteIds(noteIds: unknown, allowedNoteIds: Set<string>) {
-    return this.unique((Array.isArray(noteIds) ? noteIds : [])
-      .map((noteId) => String(noteId || '').trim())
-      .filter((noteId) => allowedNoteIds.has(noteId)))
   }
 
   private async requireKnowledgeBase(id: string, userId: string) {
@@ -318,8 +304,8 @@ export class KnowledgeBasesService {
     return {
       id: String(value.nodeId),
       label: value.label,
-      type: this.normalizeGraphNodeType(value.type),
-      confidence: this.clampNumber(value.confidence, 0.75),
+      type: normalizeKnowledgeGraphNodeType(value.type),
+      confidence: clampUnitInterval(value.confidence, 0.75),
       noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
     }
   }
@@ -331,7 +317,7 @@ export class KnowledgeBasesService {
       source: String(value.source),
       target: String(value.target),
       relation: value.relation || 'related to',
-      weight: this.clampNumber(value.weight, 0.6),
+      weight: clampUnitInterval(value.weight, 0.6),
       noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
     }
   }
@@ -373,21 +359,6 @@ export class KnowledgeBasesService {
 
   private cleanText(value: unknown, maxLength: number) {
     return String(value || '').trim().replace(/\s+/g, ' ').slice(0, maxLength)
-  }
-
-  private normalizeGraphNodeType(value: unknown) {
-    const type = String(value || '').trim().toLowerCase()
-    return type === 'entity' || type === 'topic' || type === 'claim' ? type : 'concept'
-  }
-
-  private clampNumber(value: unknown, fallback: number) {
-    const numeric = Number(value)
-    if (!Number.isFinite(numeric)) return fallback
-    return Math.max(0, Math.min(1, numeric))
-  }
-
-  private unique(values: string[]) {
-    return Array.from(new Set(values.filter(Boolean)))
   }
 
   private requireGraphNodeModel() {
