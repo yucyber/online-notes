@@ -6,12 +6,14 @@ import { EmbeddingService } from './embedding.service'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
 import { TagsModule } from '../tags/tags.module'
 import { AiModule } from '../ai/ai.module'
+import { NotesModule } from '../notes/notes.module'
 
 @Module({
   imports: [
     MongooseModule.forFeature([{ name: Note.name, schema: NoteSchema }]),
     TagsModule,
-    forwardRef(() => AiModule)
+    forwardRef(() => AiModule),
+    forwardRef(() => NotesModule),
   ],
   controllers: [SemanticController],
   providers: [SemanticService, EmbeddingService],

@@ -32,8 +32,9 @@ test('SemanticController returns keyword search results for keyword mode', async
     data: [{ id: 'note-1', title: 'Updated', preview: 'Updated body', score: 0, updatedAt: '2026-06-04' }],
   }
   const semantic = {
-    search: async (q: string, opts: any) => {
+    search: async (q: string, userId: string, opts: any) => {
       assert.equal(q, 'Updated')
+      assert.equal(userId, 'user-1')
       assert.equal(opts.mode, 'keyword')
       assert.equal(opts.limit, 5)
       return expected
@@ -41,7 +42,13 @@ test('SemanticController returns keyword search results for keyword mode', async
   }
   const controller = new SemanticController(semantic as any)
 
-  const result = await controller.search({}, 'Updated', 'keyword', undefined, 5)
+  const result = await controller.search(
+    { user: { id: 'user-1' } },
+    'Updated',
+    'keyword',
+    undefined,
+    5,
+  )
 
   assert.deepEqual(result, expected)
 })

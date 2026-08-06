@@ -67,6 +67,7 @@ export interface NoteFilterParams {
   endDate?: string
   status?: 'published' | 'draft'
   ids?: string[]
+  searchMode?: 'text' | 'regex'
 }
 
 export interface KnowledgeBase {

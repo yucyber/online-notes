@@ -8,16 +8,23 @@ export class NoteAccessService {
     return new Types.ObjectId(id)
   }
 
-  readScope(noteId: string, userId: string) {
-    const noteObjectId = this.objectId(noteId, 'note id')
+  /** List-level readable filter (owner / ACL member / public). */
+  readableFilter(userId: string) {
     const userObjectId = this.objectId(userId, 'user id')
     return {
-      _id: noteObjectId,
       $or: [
         { userId: userObjectId },
         { acl: { $elemMatch: { userId: userObjectId } } },
         { visibility: 'public' },
       ],
+    }
+  }
+
+  readScope(noteId: string, userId: string) {
+    const noteObjectId = this.objectId(noteId, 'note id')
+    return {
+      _id: noteObjectId,
+      ...this.readableFilter(userId),
     }
   }
 

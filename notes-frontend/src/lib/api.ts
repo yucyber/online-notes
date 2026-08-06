@@ -243,6 +243,7 @@ export const notesAPI = {
       if (params.startDate) sp.set('startDate', params.startDate)
       if (params.endDate) sp.set('endDate', params.endDate)
       if (params.status) sp.set('status', params.status)
+      if (params.searchMode) sp.set('searchMode', params.searchMode)
       if (params.ids && params.ids.length > 0) {
         // Join with comma to keep URL shorter and consistent with TopicClusters navigation
         sp.set('ids', params.ids.join(','))
@@ -409,6 +410,7 @@ export const semanticAPI = {
       .then(res => res as unknown as SemanticSearchPage)
       .catch(async (error) => {
         const status = error?.response?.status
+        // Resilience only: notes list is already access-scoped on the backend (same ACL as notes.findAll).
         if (status === 404 || status === 503) {
           try {
             document.dispatchEvent(new CustomEvent('rum', { detail: { type: 'ui:search_fallback', name: 'SearchFallback', value: 1, meta: { mode: opts?.mode || 'hybrid', status } } }))
@@ -416,11 +418,18 @@ export const semanticAPI = {
           } catch { }
           const page = Number(opts?.page || 1)
           const limit = Number(opts?.limit || 10)
-          const list = await notesAPI.getAll({ keyword: q, page, size: limit, categoryId: opts?.categoryId, tagIds: opts?.tagIds })
+          const list = await notesAPI.getAll({
+            keyword: q,
+            page,
+            size: limit,
+            categoryId: opts?.categoryId,
+            tagIds: opts?.tagIds,
+            searchMode: 'regex',
+          })
           const items = (list.items || []).map((n: any) => ({
             id: String(n.id || n._id || ''),
             title: String(n.title || ''),
-            preview: String(n.content || '').slice(0, 220),
+            preview: String(n.content || n.preview || '').slice(0, 220),
             score: 0,
             updatedAt: String(n.updatedAt || ''),
           }))

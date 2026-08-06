@@ -15,6 +15,17 @@ test('NoteAccessService.objectId rejects invalid ids with BadRequest', () => {
   assert.throws(() => svc.objectId('not-an-objectid', 'note id'), /note id is invalid/)
 })
 
+test('NoteAccessService.readableFilter builds owner/acl/public clauses', () => {
+  const svc = new NoteAccessService()
+  const userId = new Types.ObjectId()
+  const query: any = svc.readableFilter(String(userId))
+
+  assert.equal(query.$or.length, 3)
+  assert.equal(String(query.$or[0].userId), String(userId))
+  assert.equal(String(query.$or[1].acl.$elemMatch.userId), String(userId))
+  assert.equal(query.$or[2].visibility, 'public')
+})
+
 test('NoteAccessService.readScope builds owner/acl/public clauses', () => {
   const svc = new NoteAccessService()
   const noteId = new Types.ObjectId()
