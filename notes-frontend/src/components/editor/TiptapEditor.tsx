@@ -1,40 +1,15 @@
 'use client'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
-import StarterKit from '@tiptap/starter-kit'
-import Underline from '@tiptap/extension-underline'
-import Link from '@tiptap/extension-link'
-import Image from '@tiptap/extension-image'
-import Table from '@tiptap/extension-table'
-import TableRow from '@tiptap/extension-table-row'
-import TableCell from '@tiptap/extension-table-cell'
-import TableHeader from '@tiptap/extension-table-header'
-import HorizontalRule from '@tiptap/extension-horizontal-rule'
-import TextAlign from '@tiptap/extension-text-align'
-import Color from '@tiptap/extension-color'
-import TextStyle from '@tiptap/extension-text-style'
-import Highlight from '@tiptap/extension-highlight'
-import Subscript from '@tiptap/extension-subscript'
-import Superscript from '@tiptap/extension-superscript'
-import TaskList from '@tiptap/extension-task-list'
-import TaskItem from '@tiptap/extension-task-item'
-import ListItem from '@tiptap/extension-list-item'
-import Heading from '@tiptap/extension-heading'
-import Placeholder from '@tiptap/extension-placeholder'
-import Collaboration from '@tiptap/extension-collaboration'
-import CollaborationCursor from '@tiptap/extension-collaboration-cursor'
 import * as Y from 'yjs'
-import { WebsocketProvider } from 'y-websocket'
-import { IndexeddbPersistence } from 'y-indexeddb'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare, Sparkles, FileText, PenTool, Loader2 } from 'lucide-react'
-import { createComment, commentsAPI } from '@/lib/api'
-import { AUTH_CHANGED_EVENT, getToken, getTokenExpiration } from '@/lib/auth'
-import CommentMark from './extensions/CommentMark'
-import FontSize from './extensions/FontSize'
-import StatusPill from './extensions/StatusPill'
-import ResourceEmbed from './extensions/ResourceEmbed'
+import { commentsAPI } from '@/lib/api'
 import { streamAIWriter } from '@/lib/ai-writer'
+import { createTiptapExtensions } from './tiptap-extensions'
+import { COLLAB_STATUS_META, colorFromString, hexToRgb, sanitizeHTML, srgb } from './tiptap-utils'
+import { useTiptapCollab } from './useTiptapCollab'
+import { useTiptapPersistence } from './useTiptapPersistence'
 
 type Props = {
   noteId: string
@@ -50,94 +25,22 @@ type Props = {
   updatedAt?: string
 }
 
-function colorFromString(s: string) {
-  let hash = 0
-  for (let i = 0; i < s.length; i++) hash = s.charCodeAt(i) + ((hash << 5) - hash)
-  const c = (hash & 0x00ffffff).toString(16).toUpperCase()
-  return '#' + '00000'.substring(0, 6 - c.length) + c
-}
-function hexToRgb(hex: string) {
-  const h = hex.replace('#', '')
-  const bigint = parseInt(h, 16)
-  return { r: (bigint >> 16) & 255, g: (bigint >> 8) & 255, b: bigint & 255 }
-}
-function srgb(x: number) {
-  x /= 255
-  return x <= 0.03928 ? x / 12.92 : Math.pow((x + 0.055) / 1.055, 2.4)
-}
-
-type CollabStatus = 'config-missing' | 'auth-missing' | 'auth-expired' | 'auth-failed' | 'connecting' | 'connected' | 'disconnected'
-
-function isIndexedDbPersistenceError(reason: unknown) {
-  const value = reason as { name?: string; message?: string; stack?: string } | null | undefined
-  const message = String(value?.message || reason || '')
-  const name = String(value?.name || '')
-  const stack = String(value?.stack || '')
-  const text = `${message}\n${stack}`
-  return (
-    /indexeddb|y-indexeddb|lib0\/indexeddb/i.test(text) ||
-    /^UnknownError:\s*Internal error\.?$/i.test(message.trim()) ||
-    (name === 'UnknownError' && /internal error/i.test(message))
-  )
-}
-
-function preflightIndexedDbPersistence(name: string): Promise<boolean> {
-  if (typeof window === 'undefined' || !window.indexedDB) return Promise.resolve(false)
-
-  return new Promise((resolve) => {
-    let settled = false
-    const settle = (value: boolean) => {
-      if (settled) return
-      settled = true
-      resolve(value)
-    }
-
-    try {
-      const request = window.indexedDB.open(name)
-
-      request.onupgradeneeded = () => {
-        const db = request.result
-        if (!db.objectStoreNames.contains('updates')) db.createObjectStore('updates', { autoIncrement: true })
-        if (!db.objectStoreNames.contains('custom')) db.createObjectStore('custom')
-      }
-      request.onerror = () => settle(false)
-      request.onblocked = () => settle(false)
-      request.onsuccess = () => {
-        const db = request.result
-        const ok = db.objectStoreNames.contains('updates') && db.objectStoreNames.contains('custom')
-        try { db.close() } catch { }
-        settle(ok)
-      }
-    } catch {
-      settle(false)
-    }
-  })
-}
-
-const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className: string; detail?: string }> = {
-  'config-missing': { label: '协作配置缺失', className: 'text-red-600', detail: '已本地降级' },
-  'auth-missing': { label: '协作需要登录', className: 'text-red-600', detail: '已本地降级' },
-  'auth-expired': { label: '登录已过期，协作已暂停', className: 'text-red-600', detail: '请重新登录后重连' },
-  'auth-failed': { label: '协作鉴权失败', className: 'text-red-600', detail: '请重新登录后重连' },
-  connecting: { label: '连接中', className: 'text-yellow-600' },
-  connected: { label: '已连接', className: 'text-green-600' },
-  disconnected: { label: '已断开', className: 'text-red-600' },
-}
-
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
   const ydoc = useMemo(() => new Y.Doc(), [])
   const room = useMemo(() => `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`,
     [noteId, versionKey],
   )
-  const [provider, setProvider] = useState<WebsocketProvider | null>(null)
-  const [connStatus, setConnStatus] = useState<CollabStatus>('connecting')
-  const [authToken, setAuthToken] = useState<string | null>(() => (typeof window !== 'undefined' ? getToken() : null))
-  const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
-  const participantsCache = useRef<Array<{ id: string; name?: string }>>([])
-  const cacheTimeout = useRef<NodeJS.Timeout>()
-  const [collabEnabled, setCollabEnabled] = useState(true)
-  const [localMode, setLocalMode] = useState(false)
-  const [wsDebug, setWsDebug] = useState<{ connecting: boolean; connected: boolean; synced: boolean }>({ connecting: false, connected: false, synced: false })
+  const {
+    provider,
+    connStatus,
+    participants,
+    collabEnabled,
+    localMode,
+    wsDebug,
+    reconnect,
+  } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
+  const { idbSynced } = useTiptapPersistence(room, ydoc)
+
   const injectBusyRef = useRef(false)
   const lastInjectedHTMLRef = useRef<string>('')
   const migratedOnceRef = useRef(false)
@@ -145,7 +48,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const onContentChangeRef = useRef<typeof onContentChange | null>(onContentChange)
   const onSaveRef = useRef<typeof onSave | null>(onSave)
   const [aiWritingType, setAiWritingType] = useState<null | 'continue' | 'polish' | 'summary'>(null)
-  const [idbSynced, setIdbSynced] = useState(false)
 
   useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
   useEffect(() => { onContentChangeRef.current = onContentChange }, [onContentChange])
@@ -153,405 +55,15 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const suppressSelectionRef = useRef(false)
   const lastSelectionRef = useRef<{ from: number; to: number }>({ from: -1, to: -1 })
   const selectionDebounceRef = useRef<number | null>(null)
-  // 基于协同场景的撤销/重做管理器（仅协同启用时使用）
-  const undoManager = useMemo(() => {
-    try { return new (Y as any).UndoManager(ydoc) } catch { return null }
-  }, [ydoc])
-
-  useEffect(() => {
-    const refreshToken = () => setAuthToken(getToken())
-    if (typeof window === 'undefined') return
-    window.addEventListener(AUTH_CHANGED_EVENT, refreshToken)
-    window.addEventListener('storage', refreshToken)
-    window.addEventListener('focus', refreshToken)
-    return () => {
-      window.removeEventListener(AUTH_CHANGED_EVENT, refreshToken)
-      window.removeEventListener('storage', refreshToken)
-      window.removeEventListener('focus', refreshToken)
-    }
-  }, [])
-
-  useEffect(() => {
-    const yws = process.env.NEXT_PUBLIC_YWS_URL
-
-    if (!yws) {
-      setLocalMode(true)
-      setCollabEnabled(false)
-      setProvider(null)
-      setConnStatus('config-missing')
-      return
-    }
-
-    const token = authToken
-    const expiresAt = token ? getTokenExpiration(token) : null
-
-    if (!token) {
-      setLocalMode(true)
-      setCollabEnabled(false)
-      setProvider(null)
-      setConnStatus('auth-missing')
-      return
-    }
-
-    if (!expiresAt || expiresAt <= Date.now()) {
-      setLocalMode(true)
-      setCollabEnabled(false)
-      setProvider(null)
-      setConnStatus('auth-expired')
-      return
-    }
-
-    let p: WebsocketProvider | null = null
-    try {
-      console.log('[Collab] Connecting:', { url: yws, room })
-      p = new WebsocketProvider(yws, room, ydoc, {
-        connect: true,
-        maxBackoffTime: 10000,
-        disableBc: true,
-        params: { access_token: token },
-      })
-    } catch (e) {
-      console.error('[Collab] Failed to create provider:', e)
-      setLocalMode(true)
-      return
-    }
-
-    setProvider(p)
-    setConnStatus('connecting')
-
-    const markAuthFailure = (status: CollabStatus) => {
-      setConnStatus(status)
-      setLocalMode(true)
-      setCollabEnabled(false)
-      try { p?.disconnect() } catch { }
-    }
-
-    p.on('connection-error', (e: any) => {
-      console.error('[Collab] Connection error:', e)
-      const message = String(e?.message || e || '')
-      if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
-        markAuthFailure('auth-failed')
-      }
-    })
-    p.on('connection-close', (e: any) => {
-      console.warn('[Collab] Connection closed:', e?.code, e?.reason)
-      if (e?.code === 1008 || e?.code === 4401 || String(e?.reason || '').includes('401')) {
-        markAuthFailure('auth-failed')
-      }
-    })
-
-    let tokenExpiryTimer: ReturnType<typeof setTimeout> | null = null
-    if (expiresAt) {
-      tokenExpiryTimer = setTimeout(() => {
-        try { p?.destroy() } catch { }
-        setProvider(null)
-        setLocalMode(true)
-        setCollabEnabled(false)
-        setConnStatus('auth-expired')
-      }, Math.max(0, Math.min(expiresAt - Date.now(), 2_147_483_647)))
-    }
-
-    const statusHandler = (status: any) => {
-      const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
-      setConnStatus(s)
-      setWsDebug((prev) => ({
-        ...prev,
-        connected: s === 'connected',
-        connecting: s === 'connecting'
-      }))
-
-      if (s === 'connected') {
-        setLocalMode(false)
-        setCollabEnabled(true)
-
-        const aw = p!.awareness
-        aw.setLocalStateField('user', {
-          id: user.id,
-          name: user.name,
-          clientId: aw.clientID,
-          timestamp: Date.now()
-        })
-
-        if (participantsCache.current.length > 0) {
-          setParticipants([...participantsCache.current])
-        }
-
-        try {
-          const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_status', meta: { status: s }, ts: Date.now() } })
-          document.dispatchEvent(evt)
-        } catch { }
-      }
-    }
-
-    p.on('status', statusHandler)
-
-    const syncHandler = (synced: boolean) => {
-      console.log('[Collab] Sync status changed:', synced)
-      setWsDebug((prev) => ({ ...prev, synced }))
-      try {
-        const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'ws_sync', meta: { synced }, ts: Date.now() } })
-        document.dispatchEvent(evt)
-      } catch { }
-    }
-    p.on('sync', syncHandler as any)
-
-    const updateHandler = (update: Uint8Array, origin: any) => {
-      console.log('[Collab] YDoc update received:', {
-        byteLength: update.byteLength,
-        origin: origin?.constructor?.name || origin,
-        isLocal: origin === null || origin === p
-      })
-    }
-    ydoc.on('update', updateHandler)
-
-    const aw = p.awareness
-
-    const updateAwareness = () => {
-      const entries = Array.from(aw.getStates().entries()) as any[]
-      console.log('[Collab] Awareness update:', entries.length, 'entries')
-      const byId = new Map<string, { id: string; name?: string }>()
-      for (const [clientId, s] of entries) {
-        const uid = String(s?.user?.id || s?.user?.name || clientId)
-        const name = s?.user?.name
-        if (!byId.has(uid)) byId.set(uid, { id: uid, name })
-      }
-      const newParticipants = Array.from(byId.values())
-
-      participantsCache.current = newParticipants
-      setParticipants(newParticipants)
-
-      if (cacheTimeout.current) {
-        clearTimeout(cacheTimeout.current)
-      }
-    }
-
-    aw.setLocalStateField('user', {
-      id: user.id,
-      name: user.name,
-      clientId: aw.clientID,
-      timestamp: Date.now()
-    })
-
-    aw.on('update', updateAwareness)
-
-    updateAwareness()
-
-    const destroyHandler = () => {
-      console.log('[Collab] Provider destroy event - keeping collaborators cache for 5s')
-      cacheTimeout.current = setTimeout(() => {
-        if ((p as any).wsconnected === false) {
-          console.log('[Collab] Cache timeout - clearing collaborators')
-          participantsCache.current = []
-          setParticipants([])
-        } else {
-          console.log('[Collab] Reconnected - keeping collaborators')
-        }
-      }, 5000)
-    }
-    p.on('destroy', destroyHandler)
-
-    let failCount = 0
-    const degradeTimer = setInterval(() => {
-      const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
-      setWsDebug({
-        connecting: Boolean((p as any).wsconnecting),
-        connected: Boolean((p as any).wsconnected),
-        synced: Boolean((p as any).synced)
-      })
-      if (disconnected) {
-        failCount++
-        if (failCount >= 2) {
-          console.warn('[Collab] Connection unstable but keeping retry...')
-        }
-      } else {
-        failCount = 0
-      }
-    }, 5000)
-
-    const appHeartbeat = setInterval(() => {
-      if (p && (p as any).wsconnected) {
-        p.awareness.setLocalStateField('lastPing', Date.now())
-      }
-    }, 15000)
-
-    return () => {
-      console.log('[Collab] Disconnecting provider')
-      if (tokenExpiryTimer) clearTimeout(tokenExpiryTimer)
-      clearInterval(degradeTimer)
-      clearInterval(appHeartbeat)
-      if (cacheTimeout.current) {
-        clearTimeout(cacheTimeout.current)
-      }
-      p?.off('status', statusHandler)
-      p?.off('sync', syncHandler as any)
-      p?.off('destroy', destroyHandler)
-      ydoc.off('update', updateHandler)
-      aw.off('update', updateAwareness)
-      p?.destroy()
-    }
-  }, [noteId, versionKey, ydoc, authToken])
-
-  // 单独监听用户信息变化并更新 awareness，不触发重连
-  useEffect(() => {
-    if (provider && provider.awareness) {
-      provider.awareness.setLocalStateField('user', {
-        id: user.id,
-        name: user.name,
-        clientId: provider.awareness.clientID,
-        timestamp: Date.now()
-      })
-    }
-  }, [user.id, user.name, provider])
-
-  // IndexedDB 持久化：保证断网/刷新后仍能恢复 Y.Doc（富文本协同离线能力）
-  useEffect(() => {
-    let cancelled = false
-    let persistence: IndexeddbPersistence | null = null
-    const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
-      if (!isIndexedDbPersistenceError(event.reason)) return
-      console.warn('[Collab] IndexedDB persistence unavailable; continuing without local Y.Doc cache', event.reason)
-      event.preventDefault()
-      event.stopImmediatePropagation()
-    }
-
-    window.addEventListener('unhandledrejection', handleUnhandledRejection, true)
-
-    const cleanup = () => {
-      cancelled = true
-      window.removeEventListener('unhandledrejection', handleUnhandledRejection, true)
-      try {
-        const destroyed = persistence?.destroy()
-        if (destroyed && typeof (destroyed as Promise<void>).catch === 'function') {
-          ;(destroyed as Promise<void>).catch((e) => {
-            if (!isIndexedDbPersistenceError(e)) console.warn('[Collab] Failed to destroy IndexedDB persistence', e)
-          })
-        }
-      } catch { }
-    }
-
-    const persistenceName = `online-notes:${room}`
-    const startPersistence = async () => {
-      const canUseIndexedDb = await preflightIndexedDbPersistence(persistenceName).catch((e) => {
-        if (!isIndexedDbPersistenceError(e)) console.warn('[Collab] IndexedDB preflight failed', e)
-        return false
-      })
-      if (cancelled) return
-      if (!canUseIndexedDb) {
-        console.warn('[Collab] IndexedDB unavailable; continuing without local Y.Doc cache')
-        return
-      }
-
-      try {
-        // 使用独立前缀避免与其他项目冲突
-        persistence = new IndexeddbPersistence(persistenceName, ydoc)
-      } catch (e) {
-        console.warn('[Collab] Failed to init IndexedDB persistence', e)
-        return
-      }
-
-      const dbPromise = (persistence as any)?._db
-      if (dbPromise && typeof dbPromise.catch === 'function') {
-        dbPromise.catch((e: unknown) => {
-          if (!cancelled) console.warn('[Collab] IndexedDB open failed; continuing without local Y.Doc cache', e)
-        })
-      }
-
-      persistence.whenSynced
-        .then(() => {
-          if (cancelled) return
-          setIdbSynced(true)
-
-          // 如果本地确实有内容，打个标记避免后续 initialHTML seed 覆盖
-          try {
-            const frag = ydoc.getXmlFragment('prosemirror') as any
-            const hasContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
-            if (hasContent) {
-              const meta = ydoc.getMap('meta')
-              if (!meta.get('seeded')) {
-                meta.set('seeded', { by: 'indexeddb', at: Date.now() })
-              }
-            }
-          } catch { }
-        })
-        .catch((e) => {
-          console.warn('[Collab] IndexedDB whenSynced failed', e)
-        })
-    }
-
-    void startPersistence()
-
-    return cleanup
-  }, [room, ydoc])
 
   const editor = useEditor({
-    extensions: [
-      // 协同模式下必须关闭默认 history，避免与 Collaboration 冲突
-      StarterKit.configure({ history: false, heading: false, listItem: false, horizontalRule: false }),
-      Underline,
-      Link.configure({ autolink: true, openOnClick: true, HTMLAttributes: { rel: 'noopener noreferrer' } }),
-      Image.configure({ inline: false }),
-      Table.configure({ resizable: true }),
-      TableRow,
-      TableHeader,
-      TableCell,
-      HorizontalRule,
-      // 对齐扩展：应用到标题与段落
-      TextAlign.configure({ types: ['heading', 'paragraph'] }),
-      FontSize,
-      TextStyle,
-      StatusPill,
-      ResourceEmbed,
-      Color,
-      Highlight,
-      Subscript,
-      Superscript,
-      TaskList,
-      TaskItem,
-      ListItem,
-      Heading,
-      Placeholder.configure({ placeholder: '开始写作…' }),
-      CommentMark,
-      ...(collabEnabled
-        ? [
-          // Collaboration 绑定到 ydoc：即使 WS 还没连上，也能在本地 doc 上编辑 + IndexedDB 持久化
-          Collaboration.configure({ document: ydoc }),
-          ...(provider
-            ? [
-              CollaborationCursor.configure({
-                provider: provider as any,
-                // 传递color字段
-                user: { ...user, color: colorFromString(user.name || user.id || 'user') },
-                render: (u) => {
-                  // 直接使用u.color，减少重复计算
-                  const color = u.color || colorFromString(u.name || u.id || 'user')
-                  const el = document.createElement('span')
-                  el.className = 'rounded px-1 text-xs'
-                  el.style.backgroundColor = color
-                  const { r, g, b } = hexToRgb(color)
-                  const lum = 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b)
-                  el.style.color = lum > 0.5 ? '#111827' : '#FFFFFF'
-                  el.style.boxShadow = 'inset 0 0 0 1px rgba(0,0,0,0.15)'
-                  el.textContent = u.name || '用户'
-                  el.setAttribute('aria-hidden', 'true')
-                  el.setAttribute('role', 'presentation')
-                  return el
-                },
-              }),
-            ]
-            : []),
-        ]
-        : []),
-    ],
+    extensions: createTiptapExtensions({ collabEnabled, ydoc, provider, user }),
     content: ((collabEnabled && !versionKey) ? undefined : (initialHTML || '<p></p>')),
-    // 使 .ProseMirror 在容器内占满高度，消除底部空白不可点击/不可输入区
     editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
-    // 本地降级时仍保持可编辑（仅关闭协同），避免工具栏操作无效
     editable: !readOnly,
-    // 禁用SSR立即渲染，避免hydration mismatch警告
     immediatelyRender: false,
   }, [provider, collabEnabled])
 
-  // 监听来自大纲的跳转请求
   useEffect(() => {
     if (!editor) return
     const handler = (e: Event) => {
@@ -573,20 +85,16 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
         if (foundPos !== -1) {
           try {
-            // 尝试获取 DOM 节点并平滑滚动
-            // 优先使用 nodeDOM 获取精确的块级元素
             const dom = editor.view.nodeDOM(foundPos) as HTMLElement
-            // 降级使用 domAtPos
             const targetDom = dom || (editor.view.domAtPos(foundPos).node as HTMLElement)
 
             if (targetDom && targetDom.scrollIntoView) {
               targetDom.scrollIntoView({ behavior: 'smooth', block: 'center' })
             } else {
-              // 降级方案：使用 Tiptap 命令
               editor.commands.setTextSelection(foundPos)
               editor.commands.scrollIntoView()
             }
-          } catch (e) {
+          } catch {
             editor.commands.setTextSelection(foundPos)
             editor.commands.scrollIntoView()
           }
@@ -597,7 +105,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     return () => document.removeEventListener('editor:scrollToHeading', handler)
   }, [editor])
 
-  // 监听来自 MindMap 页面的插入消息
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
@@ -661,9 +168,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     editor.on('selectionUpdate', handler)
     return () => { editor.off('selectionUpdate', handler) }
-  }, [editor])
+  }, [editor, noteId])
 
-  // 内容变化回调，用于右侧大纲同步
   useEffect(() => {
     if (!editor) return
     let lastHtml = ''
@@ -676,7 +182,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       } catch { }
     }
     editor.on('update', updateHandler)
-    // Initial call
     try {
       const html = editor.getHTML()
       lastHtml = html
@@ -685,9 +190,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     return () => { editor.off('update', updateHandler) }
   }, [editor])
 
-  // ✅ 修复：当连接成功且服务器文档为空时，使用 initialHTML 初始化
-  // 另外，如果 initialHTML 看起来是“干净的 HTML”（包含 h1/ul 等），而当前编辑器内容是“脏的 Markdown”（以 # 开头），则强制覆盖
-  // 增强：如果传入的 updatedAt 比 Yjs 中记录的 lastUpdatedAt 新，说明发生了外部更新（如版本恢复），强制覆盖
   useEffect(() => {
     if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>' && provider) {
       const timer = setTimeout(() => {
@@ -695,31 +197,25 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const meta = ydoc.getMap('meta')
           const clientId = provider.awareness.clientID
 
-          // 如果本地（IndexedDB）已经恢复出内容，优先保留本地内容，不做 seed 覆盖
           let hasLocalDocContent = false
           try {
             const frag = ydoc.getXmlFragment('prosemirror') as any
             hasLocalDocContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
           } catch { }
 
-          // 检查当前内容是否是“脏 Markdown”
           const currentText = editor.getText().trim()
           const isDirtyMarkdown = currentText.startsWith('# ') || currentText.startsWith('## ')
           const isCleanHTML = initialHTML.includes('<h') || initialHTML.includes('<ul') || initialHTML.includes('<ol')
 
-          // 检查时间戳
           const lastUpdatedAt = meta.get('lastUpdatedAt') as number | undefined
           const serverUpdatedAt = updatedAt ? new Date(updatedAt).getTime() : 0
-          const isExternalUpdate = serverUpdatedAt > (lastUpdatedAt || 0) + 1000 // 1s 容差
+          const isExternalUpdate = serverUpdatedAt > (lastUpdatedAt || 0) + 1000
 
           ydoc.transact(() => {
-            // 默认只在“文档为空”时 seed；除非明确是外部版本恢复（updatedAt 更新）才强制覆盖
             const shouldSeed = (!meta.get('seeded') && !hasLocalDocContent) || ((isDirtyMarkdown && isCleanHTML) && !hasLocalDocContent)
             if (shouldSeed || isExternalUpdate) {
               meta.set('seeded', { by: clientId, at: Date.now() })
               if (serverUpdatedAt > 0) meta.set('lastUpdatedAt', serverUpdatedAt)
-
-              // 原子化写入，避免并发重复
               editor.commands.setContent(initialHTML)
               console.log('[Collab] seeded/repaired by', clientId, { isExternalUpdate, serverUpdatedAt, lastUpdatedAt })
             } else {
@@ -732,7 +228,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt, idbSynced])
+  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt, idbSynced, ydoc])
 
   useEffect(() => {
     if (!editor) return
@@ -780,7 +276,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           if (p && !(p as any).synced) {
             const once = (synced: boolean) => { if (synced) { try { apply() } finally { try { (p as any).off('sync', once) } catch { } } } }
             try { (p as any).on('sync', once) } catch { /* ignore */ }
-            // 超时兜底：若 800ms 内仍未完成首次同步，则直接应用本地内容，避免编辑区空白
             setTimeout(() => {
               try {
                 const synced = Boolean((p as any).synced)
@@ -798,7 +293,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     return () => { document.removeEventListener('editor:setContent', setHandler as any) }
   }, [editor, provider, collabEnabled, ydoc])
 
-  // 悬浮提示：鼠标移入评论标记时在编辑器内显示提示框
   useEffect(() => {
     const card = document.getElementById('editor-card')
     const tip = document.getElementById('comment-tooltip') as HTMLDivElement | null
@@ -887,11 +381,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           }).run()
         }
       }
-      else if (cmd === 'embedPlaceholder') {
-        const type = String((payload && payload.type) || 'embed')
-        const label = String((payload && payload.label) || `占位：${type}`)
-        chain.insertContent(`<div class=\"embed-placeholder\" data-type=\"${type}\">${label}</div>`).run()
-      }
       else if (cmd === 'status') {
         const text = String((payload && payload.text) || '状态：进行中')
         chain.insertStatusPill({ label: text, variant: 'inprogress' })
@@ -908,20 +397,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     return () => { document.removeEventListener('tiptap:exec', execHandler as any) }
   }, [editor])
 
-  useEffect(() => {
-    return () => {
-      try {
-        if (process.env.NODE_ENV === 'production') {
-          provider?.destroy()
-          ydoc?.destroy()
-        } else {
-          ; (provider as any)?.disconnect?.()
-        }
-      } catch { }
-    }
-  }, [provider, ydoc])
-
-  // 监听评论标记事件，在当前选区范围内应用 CommentMark
   useEffect(() => {
     if (!editor) return
     const handler = (e: any) => {
@@ -995,20 +470,17 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           })}
           {participants.length === 0 && <span className="text-xs text-gray-400">无在线协作者</span>}
         </div>
-        <Button size="sm" variant="outline" onClick={() => { try { provider?.connect() } catch { }; setLocalMode(false); setCollabEnabled(true) }}>重连</Button>
+        <Button size="sm" variant="outline" onClick={reconnect}>重连</Button>
         <Button size="sm" variant="outline" disabled={readOnly || localMode} onClick={async () => { if (readOnly || localMode) return; const html = editor.getHTML(); await onSave(html) }}>保存</Button>
       </div>
       <div
         id="editor-card"
         className={`border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${className || ''}`}
-        // 使容器点击空白区域也可将光标移动到文末，解决下半区域无法输入/无法聚焦的问题
         onMouseDown={(e) => {
           try {
             if (!editor || !editor.isEditable) return
-            // 仅在点击容器自身（而非编辑内容或菜单）时触发
             if (e.target === e.currentTarget) {
               e.preventDefault()
-              // 聚焦并将选区移动到文档末尾
               const endPos = editor.state.doc.content.size
               editor.chain().focus().setTextSelection(endPos).run()
             }
@@ -1032,7 +504,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             onClick={() => {
               if (!editor) return
               const { from } = editor.state.selection
-              // 获取前文 500 字符
               const context = editor.state.doc.textBetween(Math.max(0, from - 500), from, '\n')
 
               setAiWritingType('continue')
@@ -1056,7 +527,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           editor={editor}
           pluginKey="bubble-menu"
           shouldShow={({ editor: ed, state }) => {
-            // 修复：本地降级(localMode)不应屏蔽气泡工具条，仅在只读态隐藏
             if (readOnly) return false
             const { from, to } = state.selection
             return ed.isEditable && ed.isFocused && from !== to
@@ -1095,9 +565,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
                 const context = editor.state.doc.textBetween(from, to, '\n')
 
                 setAiWritingType('polish')
-                // 先清空选区内容，准备接收流式输入
-                // 或者保留选区，等第一个 chunk 回来再替换？
-                // 更好的体验是：保留选区，等流开始时替换
                 let isFirstChunk = true
 
                 streamAIWriter({
@@ -1130,7 +597,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
                 const context = editor.state.doc.textBetween(from, to, '\n')
 
                 setAiWritingType('summary')
-                // 摘要插入到选区下方
                 editor.chain().focus().setTextSelection(to).insertContent('\n\n> **摘要**：').run()
 
                 streamAIWriter({
@@ -1166,39 +632,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             </Button>
           </div>
         </BubbleMenu>
-        {/* 让 ProseMirror 填满容器高度，点击任意空白处可聚焦 */}
         <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', padding: 12, background: 'var(--surface-1)', color: 'var(--on-surface)' }} />
-        {/* 悬浮提示容器 */}
         <div id="comment-tooltip" style={{ position: 'absolute', pointerEvents: 'none', display: 'none', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.1)', transition: 'opacity 300ms ease-in-out' }}>已添加评论，打开右侧面板查看</div>
       </div>
     </div>
   )
-}
-const sanitizeHTML = (html: string) => {
-  try {
-    const parser = new DOMParser()
-    const doc = parser.parseFromString(html, 'text/html')
-    const dangerousTags = ['style', 'script', 'link', 'meta', 'title', 'iframe', 'object', 'embed']
-    dangerousTags.forEach(tag => Array.from(doc.getElementsByTagName(tag)).forEach(el => el.remove()))
-    const all = doc.body.querySelectorAll('*')
-    all.forEach(el => {
-      // 修复：只移除危险的style属性，保留协作光标（collaboration-cursor）的style
-      const className = el.getAttribute('class') || ''
-      if (!className.includes('collaboration-cursor') && !className.includes('rounded')) {
-        el.removeAttribute('style')
-      }
-      Array.from(el.attributes).forEach(attr => {
-        const name = attr.name.toLowerCase()
-        if (name.startsWith('on')) el.removeAttribute(attr.name)
-      })
-    })
-    const cleaned = doc.body.innerHTML || ''
-    const looksPlain = !/[<][a-zA-Z]/.test(cleaned)
-    if (looksPlain) {
-      const text = doc.body.textContent || ''
-      const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-      return `<p>${escaped}</p>`
-    }
-    return cleaned
-  } catch { return html }
 }
