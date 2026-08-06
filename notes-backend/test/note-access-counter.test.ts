@@ -51,6 +51,18 @@ test('NoteAccessService.readScope builds owner/acl/public clauses', () => {
   assert.equal(query.$or[2].visibility, 'public')
 })
 
+test('NoteAccessService.memberScope excludes public visibility', () => {
+  const svc = new NoteAccessService()
+  const noteId = new Types.ObjectId()
+  const userId = new Types.ObjectId()
+  const query: any = svc.memberScope(String(noteId), String(userId))
+
+  assert.equal(String(query._id), String(noteId))
+  assert.equal(query.$or.length, 2)
+  assert.equal(String(query.$or[0].userId), String(userId))
+  assert.equal(String(query.$or[1].acl.$elemMatch.userId), String(userId))
+})
+
 test('NoteAccessService.writeScope restricts ACL to owner+editor', () => {
   const svc = new NoteAccessService()
   const noteId = new Types.ObjectId()

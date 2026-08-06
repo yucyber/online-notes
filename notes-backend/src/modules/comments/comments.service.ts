@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Comment, CommentDocument } from './schemas/comment.schema'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
+import { NoteAccessService } from '../notes/note-access.service'
 import { AuditService } from '../audit/audit.service'
 
 @Injectable()
@@ -10,6 +11,7 @@ export class CommentsService {
   constructor(
     @InjectModel(Comment.name) private commentModel: Model<CommentDocument>,
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
+    private readonly noteAccess: NoteAccessService,
     private readonly audit: AuditService,
   ) {}
 
@@ -24,8 +26,7 @@ export class CommentsService {
     limit: number = 50,
     cursor?: string,
   ) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }, { visibility: 'public' }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.readScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     const filter: any = { noteId: note._id }
     if (blockId) filter.blockId = blockId
@@ -44,7 +45,7 @@ export class CommentsService {
 
   async create(noteId: string, userId: string, start: number | undefined, end: number | undefined, text: string, requestId?: string, anchor?: any, blockId?: string) {
     const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.memberScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     if (!text?.trim()) throw new BadRequestException('文本为空')
     if ((start === undefined || end === undefined) && !anchor) throw new BadRequestException('缺少范围或锚点')

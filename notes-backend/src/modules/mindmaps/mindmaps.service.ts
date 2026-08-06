@@ -3,12 +3,14 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Mindmap } from './schemas/mindmap.schema'
 import { Note } from '../notes/schemas/note.schema'
+import { NoteAccessService } from '../notes/note-access.service'
 
 @Injectable()
 export class MindmapsService {
   constructor(
     @InjectModel(Mindmap.name) private readonly model: Model<Mindmap>,
     @InjectModel(Note.name) private readonly noteModel: Model<Note>,
+    private readonly noteAccess: NoteAccessService,
   ) { }
 
   private parseObjectId(id: string | Types.ObjectId, label: string) {
@@ -28,14 +30,11 @@ export class MindmapsService {
 
   private async canReadSourceNote(noteId: Types.ObjectId | undefined, userObjectId: Types.ObjectId) {
     if (!noteId) return false
-    const note = await this.noteModel.findOne({
-      _id: noteId,
-      $or: [
-        { userId: userObjectId },
-        { acl: { $elemMatch: { userId: userObjectId } } },
-        { visibility: 'public' },
-      ],
-    }).select('_id').lean().exec()
+    const note = await this.noteModel
+      .findOne(this.noteAccess.readScope(String(noteId), String(userObjectId)))
+      .select('_id')
+      .lean()
+      .exec()
     return Boolean(note)
   }
 

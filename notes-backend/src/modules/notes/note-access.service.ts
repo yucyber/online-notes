@@ -38,6 +38,19 @@ export class NoteAccessService {
     }
   }
 
+  /** Owner or any ACL member (no public). Used for collab actions like commenting / viewing ACL. */
+  memberScope(noteId: string, userId: string) {
+    const noteObjectId = this.objectId(noteId, 'note id')
+    const userObjectId = this.objectId(userId, 'user id')
+    return {
+      _id: noteObjectId,
+      $or: [
+        { userId: userObjectId },
+        { acl: { $elemMatch: { userId: userObjectId } } },
+      ],
+    }
+  }
+
   writeScope(noteId: string, userId: string) {
     const noteObjectId = this.objectId(noteId, 'note id')
     const userObjectId = this.objectId(userId, 'user id')

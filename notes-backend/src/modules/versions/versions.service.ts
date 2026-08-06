@@ -1,8 +1,9 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteVersion, NoteVersionDocument } from './schemas/note-version.schema'
+import { NoteAccessService } from '../notes/note-access.service'
 import { AuditService } from '../audit/audit.service'
 
 @Injectable()
@@ -10,12 +11,12 @@ export class VersionsService {
   constructor(
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
     @InjectModel(NoteVersion.name) private versionModel: Model<NoteVersionDocument>,
+    private readonly noteAccess: NoteAccessService,
     private readonly audit: AuditService,
   ) { }
 
   async list(noteId: string, userId: string) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }, { visibility: 'public' }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.readScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('笔记不存在')
     const items = await this.versionModel.find({ noteId: note._id }).sort({ versionNo: -1 }).exec()
     return items
@@ -23,7 +24,7 @@ export class VersionsService {
 
   async snapshot(noteId: string, userId: string, name?: string, requestId?: string) {
     const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.writeScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     const last = await this.versionModel.findOne({ noteId: note._id }).sort({ versionNo: -1 }).exec()
     const nextNo = (last?.versionNo || 0) + 1
@@ -34,8 +35,7 @@ export class VersionsService {
   }
 
   async restore(noteId: string, versionNo: number, userId: string, requestId?: string) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: 'owner' } } }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.ownerScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     const v = await this.versionModel.findOne({ noteId: note._id, versionNo }).exec()
     if (!v) throw new NotFoundException('版本不存在')

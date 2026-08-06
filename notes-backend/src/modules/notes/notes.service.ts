@@ -107,15 +107,7 @@ export class NotesService {
     }
 
     // 1. Base condition: Access scope
-    const u = new Types.ObjectId(userId)
-    const accessScope = {
-      $or: [
-        { userId: u },
-        { acl: { $elemMatch: { userId: u } } },
-        { visibility: 'public' },
-      ],
-    }
-    andConditions.push(accessScope)
+    andConditions.push(this.noteAccess.readableFilter(userId))
 
     // 2. Keyword Search：新增 `$text` 分支（默认正则）
     if (keyword) {
@@ -341,8 +333,7 @@ export class NotesService {
   }
 
   async getAcl(id: string, userId: string): Promise<{ visibility: string; acl: any[] }> {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.memberScope(id, userId)).exec()
     if (!note) {
       throw new NotFoundException('笔记不存在')
     }
@@ -403,7 +394,7 @@ export class NotesService {
   async lockNote(id: string, userId: string) {
     try {
       const u = new Types.ObjectId(userId)
-      const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
+      const note = await this.noteModel.findOne(this.noteAccess.writeScope(id, userId)).exec()
       if (!note) throw new NotFoundException('无权限')
         ; (note as any).editingBy = u
         ; (note as any).lockedAt = new Date()

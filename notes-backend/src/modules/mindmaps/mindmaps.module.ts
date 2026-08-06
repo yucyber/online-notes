@@ -1,15 +1,19 @@
-import { Module } from '@nestjs/common'
+import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { MindmapsController } from './mindmaps.controller'
 import { MindmapsService } from './mindmaps.service'
 import { Mindmap, MindmapSchema } from './schemas/mindmap.schema'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
+import { NotesModule } from '../notes/notes.module'
 
 @Module({
-  imports: [MongooseModule.forFeature([
-    { name: Mindmap.name, schema: MindmapSchema },
-    { name: Note.name, schema: NoteSchema },
-  ])],
+  imports: [
+    MongooseModule.forFeature([
+      { name: Mindmap.name, schema: MindmapSchema },
+      { name: Note.name, schema: NoteSchema },
+    ]),
+    forwardRef(() => NotesModule),
+  ],
   controllers: [MindmapsController],
   providers: [MindmapsService],
 })
