@@ -312,20 +312,20 @@
 | 验收 | proposal + save graph 单测通过 |
 | 引用核查 | `PUT .../graph` 与 `/ai/knowledge-graph/proposal` |
 
-### B09 — NoteCache / Redis（暂缓）
+### B09 — NoteCache / Redis（已完成）
 
 | 字段 | 内容 |
 | --- | --- |
 | 类别 | Boundary |
-| 位置 | `note-cache.service.ts`；semantic `new Redis(...)` |
-| 现象 | NoteCache 薄但有意抽离且有单测；内联不减少 Redis 连接分裂 |
-| 建议动作 | **默认保留 NoteCacheService**。可选专项：共享 `RedisCache`（notes + semantic）。**不做默认内联** |
-| 单一真相源 | 若做共享：新建 Redis 基础设施模块；否则维持现状 |
-| 风险 | 低（不动）/ 中（共享 Redis） |
-| 建议波次 | **暂缓** |
+| 位置 | `note-cache.service.ts`；`semantic.service.ts`；`idempotency.interceptor.ts`；`main.ts` |
+| 现象 | 多处各自 `new Redis(...)`，连接分裂 |
+| 建议动作 | 共享 `@Global() RedisModule` + `REDIS_CLIENT` token；幂等拦截器改 DI 注册 |
+| 单一真相源 | `src/common/redis/redis.module.ts` |
+| 风险 | 中 |
+| 建议波次 | 绿场专项 |
 | 依赖 | 无 |
-| 验收 | — |
-| 引用核查 | 仅 list 用 NoteCache；semantic 自建连接 |
+| 验收 | 后端单测 65 pass；仅 `redis.module.ts` 一处 `new Redis` |
+| 引用核查 | NoteCache / semantic / idempotency / ws rate limiter 均注入共享 client |
 
 ### B10 — 跨模块 ACL 全量统一（暂缓）
 
@@ -400,7 +400,7 @@
 
 | ID | 位置 | 说明 |
 | --- | --- | --- |
-| S03 | `notes/page.tsx` | 列表页拆分 |
+| S03 | `notes/page.tsx` | 列表页拆分（**已完成**：`useNotesPage` + `NotesListCard` + utils） |
 | S04 | `categories/page.tsx` | 分类页拆分 |
 | S06 | `dashboard/layout.tsx` | 布局拆分 |
 | S07 | `DrawnixBoard.tsx` | 画板拆分 |
@@ -468,9 +468,9 @@
 | --- | --- |
 | D07 | ~~双表面有真实调用~~ → 已收敛为 `boardsAPI` / `mindmapsAPI` 一套 |
 | B03 | ~~契约大爆炸~~ → 已改为 `{ content }`，去掉 `messages[]` / `toLegacyMessages` |
-| B09 | 内联收益低；共享 Redis 另开专项（仍待做） |
+| B09 | ~~内联收益低~~ → 已共享 `RedisModule` + `REDIS_CLIENT` |
 | B10 | ~~只通过 B04 试点~~ → 已扩到 comments/versions/boards/mindmaps/notes |
-| S03/S04/S06/S07/S09/S10 | 整洁债（绿场可继续做，非功能阻塞） |
+| S04/S06/S07/S09/S10 | 整洁债（绿场可继续做，非功能阻塞） |
 
 ### 一览（执行流水线）
 
@@ -480,8 +480,8 @@ PR2:  B05 → B06
 PR3:  B01 → B02 → B07
 PR4:  B08 → B04
 结构: S02 → S01 → S08 → S05
-暂缓: B09 S03 S04 S06 S07 S09 S10
-（D07 / B03 / B10 已在绿场前提下完成）
+暂缓: S04 S06 S07 S09 S10
+（D07 / B03 / B10 / B09 / S03 已在绿场前提下完成）
 ```
 
 ---
@@ -505,4 +505,4 @@ PR4:  B08 → B04
 | 修订 | 按两轮审核合并：契约决策变更、队列去重、B05 前置、B09/B03/D07 暂缓、Wave 3 砍到收紧相关、最终勾选定稿 |
 | 基线提交 | `c3f0056` |
 | 引用核查 | ripgrep + 关键文件精读 |
-| 下一步 | 收紧 + 多数暂缓项已落地；剩余 B09（Redis 共享）与 S* 整洁债 |
+| 下一步 | 收紧主线已完成；剩余 S04/S06/S07/S09/S10 整洁债按需 |

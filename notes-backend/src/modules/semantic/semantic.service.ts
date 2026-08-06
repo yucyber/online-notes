@@ -1,11 +1,12 @@
-import { Injectable, Logger } from '@nestjs/common'
+import { Injectable, Inject, Logger } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
+import Redis from 'ioredis'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteAccessService } from '../notes/note-access.service'
+import { REDIS_CLIENT } from '../../common/redis/redis.constants'
 import { EmbeddingService } from './embedding.service'
 import { TagsService } from '../tags/tags.service'
-import Redis from 'ioredis'
 import { AiService } from '../ai/ai.service'
 
 // Explicitly reference the type definition to ensure ts-node picks it up
@@ -28,7 +29,6 @@ export type SemanticSearchOpts = {
 @Injectable()
 export class SemanticService {
   private readonly logger = new Logger(SemanticService.name);
-  private redisClient: Redis | null = null;
 
   constructor(
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
@@ -36,14 +36,8 @@ export class SemanticService {
     private readonly aiService: AiService,
     private readonly tagsService: TagsService,
     private readonly noteAccess: NoteAccessService,
+    @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) { }
-
-  private get redis(): Redis {
-    if (!this.redisClient) {
-      this.redisClient = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
-    }
-    return this.redisClient
-  }
 
   async searchVector(query: string, userId: string): Promise<any[]> {
     const vector = await this.embeddingService.generateEmbedding(query);

@@ -1,19 +1,21 @@
-import { Injectable } from '@nestjs/common'
+import { Inject, Injectable, Optional } from '@nestjs/common'
 import { createHash } from 'crypto'
 import Redis from 'ioredis'
+import { REDIS_CLIENT } from '../../common/redis/redis.constants'
 
 type RedisClient = Pick<Redis, 'get' | 'set'>
 
 @Injectable()
 export class NoteCacheService {
-  private redis?: Redis
   private readonly listTtlSeconds = 300
 
+  constructor(@Optional() @Inject(REDIS_CLIENT) private readonly injectedRedis?: Redis) {}
+
   protected getClient(): RedisClient {
-    if (!this.redis) {
-      this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
+    if (!this.injectedRedis) {
+      throw new Error('Redis client is not configured')
     }
-    return this.redis
+    return this.injectedRedis
   }
 
   buildListKey(userId: string, payload: Record<string, unknown>): string {

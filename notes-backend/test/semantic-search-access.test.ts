@@ -31,12 +31,15 @@ test('SemanticService.search always ANDs NoteAccess readableFilter', async () =>
     },
   }
 
+  const fakeRedis = { get: async () => null, set: async () => 'OK', setnx: async () => 1, expire: async () => 1, del: async () => 1 } as any
+
   const svc = new SemanticService(
     noteModel as any,
     {} as any,
     {} as any,
     {} as any,
     new NoteAccessService(),
+    fakeRedis,
   )
 
   await svc.search('JWT auth', String(userId), { mode: 'keyword', page: 1, limit: 10 })
@@ -63,12 +66,15 @@ test('SemanticService.search does not omit access scope when category filters pr
     },
   }
 
+  const fakeRedis = { get: async () => null, set: async () => 'OK', setnx: async () => 1, expire: async () => 1, del: async () => 1 } as any
+
   const svc = new SemanticService(
     noteModel as any,
     {} as any,
     {} as any,
     {} as any,
     new NoteAccessService(),
+    fakeRedis,
   )
 
   const page = await svc.search('测试', String(userId), {

@@ -1,15 +1,13 @@
-import { CallHandler, ExecutionContext, Injectable, NestInterceptor, HttpException, HttpStatus } from '@nestjs/common'
+import { CallHandler, ExecutionContext, Inject, Injectable, NestInterceptor, HttpException, HttpStatus } from '@nestjs/common'
 import { Observable } from 'rxjs'
 import { tap } from 'rxjs/operators'
 import Redis from 'ioredis'
 import { createHash } from 'crypto'
+import { REDIS_CLIENT } from '../redis/redis.constants'
 
 @Injectable()
 export class IdempotencyInterceptor implements NestInterceptor {
-  private redis: Redis
-  constructor() {
-    this.redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
-  }
+  constructor(@Inject(REDIS_CLIENT) private readonly redis: Redis) {}
 
   async intercept(context: ExecutionContext, next: CallHandler): Promise<Observable<any>> {
     const ctx = context.switchToHttp()

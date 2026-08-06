@@ -1,6 +1,10 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { RedisModule } from './common/redis/redis.module';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { ApiEnvelopeInterceptor } from './common/interceptors/api-envelope.interceptor';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { NotesModule } from './modules/notes/notes.module';
@@ -27,6 +31,7 @@ import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.
       isGlobal: true,
       envFilePath: '.env',
     }),
+    RedisModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -53,6 +58,10 @@ import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.
     MindmapsModule,
     AiModule,
     KnowledgeBasesModule,
+  ],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ApiEnvelopeInterceptor },
   ],
 })
 export class AppModule { }

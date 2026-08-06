@@ -1,13 +1,12 @@
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { ApiEnvelopeInterceptor } from './common/interceptors/api-envelope.interceptor'
 import { ApiExceptionFilter } from './common/filters/api-exception.filter'
-import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor'
 import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { JwtWsAdapter } from './ws/jwt-ws.adapter';
+import { REDIS_CLIENT } from './common/redis/redis.constants';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -57,12 +56,9 @@ async function bootstrap() {
     transform: true,
   }));
   // Global response envelope & exception handling
-  // 顺序：先幂等拦截器（缓存最终包），再统一响应包拦截器
-  app.useGlobalInterceptors(new IdempotencyInterceptor())
-  app.useGlobalInterceptors(new ApiEnvelopeInterceptor())
   app.useGlobalFilters(new ApiExceptionFilter())
 
-  const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
+  const redis = app.get<Redis>(REDIS_CLIENT)
   const msgLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:msg:user', points: 300, duration: 60 })
   const connLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:conn:ip', points: 100, duration: 60 })
   app.useWebSocketAdapter(new JwtWsAdapter(app, app.get(JwtService), msgLimiter, connLimiter, redis))
