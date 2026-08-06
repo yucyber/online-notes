@@ -28,7 +28,7 @@ export default function VersionsPage() {
     await restoreVersion(noteId, no)
     await load()
     try { sessionStorage.setItem('restoredVersion', String(no)) } catch { }
-    router.push(`/dashboard/notes/${noteId}/edit?restored=${no}`)
+    router.push(`/dashboard/notes/${noteId}?restored=${no}`)
   }
   return (
     <Suspense>

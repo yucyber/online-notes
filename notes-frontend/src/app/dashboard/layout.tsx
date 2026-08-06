@@ -46,7 +46,7 @@ export default function DashboardLayout({
   const [unreadCount, setUnreadCount] = useState(0)
   const [isDark, setIsDark] = useState<boolean>(typeof document !== 'undefined' ? document.documentElement.classList.contains('dark') : false)
   // 详情/编辑/新建路由判定：在这些路由隐藏左侧导航
-  // 匹配：/dashboard/notes/new、/dashboard/notes/[id]、/dashboard/notes/[id]/edit
+  // 匹配：/dashboard/notes/new、/dashboard/notes/[id]（含旧 /edit 书签）
   const isNotesFocusedRoute = Boolean(
     pathname && /^\/dashboard\/notes\/(new|[^/]+(?:\/edit)?)/.test(pathname)
   )

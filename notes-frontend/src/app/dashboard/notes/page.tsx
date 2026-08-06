@@ -704,7 +704,7 @@ function NotesPageContent() {
                           </Link>
                         </CardTitle>
                         <div className="flex items-center gap-1 ml-2 flex-shrink-0">
-                          <Link href={`/dashboard/notes/${note.id}/edit`} className="p-2 rounded-lg transition-all duration-200" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }} title="编辑">
+                          <Link href={`/dashboard/notes/${note.id}`} className="p-2 rounded-lg transition-all duration-200" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }} title="编辑">
                             <Edit className="h-4 w-4" />
                           </Link>
                           <button onClick={() => setPendingDeleteId(note.id)} className="p-2 rounded-lg transition-all duration-200" style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }} title="删除">
