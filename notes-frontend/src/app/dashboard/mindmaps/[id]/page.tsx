@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
-import { getMindMap, createMindMap } from '@/lib/api'
+import { mindmapsAPI } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
 import { useAI } from '@/context/AIContext'
@@ -28,14 +28,14 @@ export default function MindmapDetailPage() {
     const load = async () => {
       try {
         setLoading(true)
-        const data = await getMindMap(id)
+        const data = await mindmapsAPI.get(id)
         setMap(data)
         setError('')
       } catch (e: any) {
         const status = e.response?.status
         if (status === 404) {
           try {
-            const newMap = await createMindMap({ _id: id, title: '未命名思维导图' })
+            const newMap = await mindmapsAPI.create({ _id: id, title: '未命名思维导图' })
             setMap(newMap)
             setError('')
           } catch (createError: any) {

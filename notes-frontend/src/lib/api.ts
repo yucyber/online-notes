@@ -16,16 +16,7 @@ export {
 export { savedFiltersAPI, categoriesAPI, tagsAPI } from './api/taxonomy'
 export { knowledgeBasesAPI } from './api/knowledge-bases'
 export { dashboardAPI } from './api/dashboard'
-export {
-  boardsAPI,
-  mindmapsAPI,
-  createMindMap,
-  saveMindMap,
-  getMindMap,
-  createBoard,
-  saveBoard,
-  getBoard,
-} from './api/boards-mindmaps'
+export { boardsAPI, mindmapsAPI } from './api/boards-mindmaps'
 export { networkAPI } from './api/network'
 
 import { authAPI } from './api/auth'

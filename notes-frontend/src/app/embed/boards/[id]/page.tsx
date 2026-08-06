@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import { getBoard } from '@/lib/api'
+import { boardsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 
 const DrawnixBoard = dynamic(() => import('@/components/board/DrawnixBoard'), { ssr: false })
@@ -20,7 +20,7 @@ export default function BoardEmbedPage() {
         const load = async () => {
             try {
                 setLoading(true)
-                const data = await getBoard(id)
+                const data = await boardsAPI.get(id)
                 setBoard(data)
                 setError('')
             } catch (e) {

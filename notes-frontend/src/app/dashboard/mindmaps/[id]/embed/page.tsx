@@ -1,7 +1,7 @@
 "use client"
 import { useEffect, useState } from 'react'
 import { useParams, useSearchParams } from 'next/navigation'
-import { getMindMap } from '@/lib/api'
+import { mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 
 const MindElixirMap = dynamic(() => import('@/components/mindmap/MindElixirMap'), { ssr: false })
@@ -20,7 +20,7 @@ export default function MindmapEmbedPage() {
         const load = async () => {
             try {
                 setLoading(true)
-                const data = await getMindMap(id)
+                const data = await mindmapsAPI.get(id)
                 setMap(data)
                 setError('')
             } catch {

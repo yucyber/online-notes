@@ -4,7 +4,7 @@ import MindElixir from 'mind-elixir';
 // 引入样式文件，修复 UI 显示异常
 import 'mind-elixir/style';
 import { useAI } from '@/context/AIContext';
-import { saveMindMap } from '@/lib/api';
+import { mindmapsAPI } from '@/lib/api';
 
 interface MindElixirMapProps {
     id: string;
@@ -228,7 +228,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
                 console.error('Failed to refresh Mind Map:', e);
             }
 
-            saveMindMap(id, cleanData); // 保存到后端
+            mindmapsAPI.save(id, cleanData); // 保存到后端
             setMindMapData(null); // 清空 AI 数据，避免重复应用
         }
     }, [mindMapData, mindElixirInstance, id, setMindMapData]);
@@ -236,7 +236,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
     const handleSave = () => {
         if (mindElixirInstance) {
             const data = mindElixirInstance.getData();
-            saveMindMap(id, data).then(() => {
+            mindmapsAPI.save(id, data).then(() => {
                 alert('保存成功');
             }).catch(err => {
                 console.error('保存失败', err);

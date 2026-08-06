@@ -1020,7 +1020,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
                   setShowInsertMenu(false)
                   try {
-                    const res = await boardsAPI.create('画板', id)
+                    const res = await boardsAPI.create({ title: '画板', noteId: id })
                     document.dispatchEvent(new CustomEvent('tiptap:exec', {
                       detail: {
                         cmd: 'insertResource',
@@ -1032,7 +1032,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
                   setShowInsertMenu(false)
                   try {
-                    const res = await mindmapsAPI.create('思维导图', id)
+                    const res = await mindmapsAPI.create({ title: '思维导图', noteId: id })
                     // 使用 insertResource 命令直接插入卡片
                     document.dispatchEvent(new CustomEvent('tiptap:exec', {
                       detail: {

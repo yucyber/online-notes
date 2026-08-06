@@ -1,6 +1,6 @@
 'use client';
 import React, { useState, useEffect } from 'react';
-import { saveBoard } from '@/lib/api';
+import { boardsAPI } from '@/lib/api';
 import { Excalidraw, MainMenu, WelcomeScreen, convertToExcalidrawElements } from "@excalidraw/excalidraw";
 import { parseMermaidToExcalidraw } from "@excalidraw/mermaid-to-excalidraw";
 import { getAIMermaidData } from '@/lib/ai-client';
@@ -297,7 +297,7 @@ const DrawnixBoard: React.FC<DrawnixBoardProps> = ({ id, initialData, readonly =
                 libraryItems,
             };
 
-            await saveBoard(id, content);
+            await boardsAPI.save(id, content);
             // alert('保存成功'); // 移除弹窗，体验更好
         } catch (err) {
             console.error('保存失败', err);
