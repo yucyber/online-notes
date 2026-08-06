@@ -2,8 +2,8 @@ import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { AiService } from '../src/modules/ai/ai.service'
 
-function answerContent(result: any): string {
-  return result.messages[0].content
+function answerContent(result: any): any {
+  return result.content
 }
 
 test('AiService repairs invalid Mermaid output once and strips markdown fences', async () => {
@@ -38,7 +38,7 @@ test('AiService repairs and normalizes mindmap JSON with stable root and child f
   const service = new AiService(gateway as any, {} as any)
 
   const result = await service.generateMindmap({ content: '项目规划', scenario: 'generate' })
-  const parsed = JSON.parse(answerContent(result))
+  const parsed = answerContent(result)
 
   assert.equal(prompts.length, 2)
   assert.match(prompts[1], /Repair this mind map JSON/)

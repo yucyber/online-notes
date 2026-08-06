@@ -109,7 +109,7 @@ export class AiService {
       },
     )
 
-    return this.toLegacyMessages(JSON.stringify(normalized))
+    return { content: normalized }
   }
 
   async generateMermaid(input: AiMermaidInput, context?: AiWorkflowContext) {
@@ -128,7 +128,7 @@ export class AiService {
       },
     )
 
-    return this.toLegacyMessages(code)
+    return { content: code }
   }
 
   async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
@@ -390,18 +390,6 @@ export class AiService {
   private isMermaidDeclaration(line: string): boolean {
     return /^(flowchart|graph)\s+(TB|TD|BT|RL|LR)\b/i.test(line) ||
       /^(sequenceDiagram|classDiagram|classDiagram-v2|stateDiagram|stateDiagram-v2|erDiagram|gantt|journey|pie|mindmap|gitGraph)\b/i.test(line)
-  }
-
-  private toLegacyMessages(content: string) {
-    return {
-      messages: [
-        {
-          role: 'assistant',
-          type: 'answer',
-          content: content.trim(),
-        },
-      ],
-    }
   }
 
   private async withAiRun<T>(

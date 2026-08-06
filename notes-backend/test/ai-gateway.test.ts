@@ -151,7 +151,7 @@ test('AiService returns cleaned topic names from the text provider', async () =>
 })
 
 test('AiController forwards mindmap requests to AiService', async () => {
-  const expected = { messages: [{ role: 'assistant', type: 'answer', content: '{"nodeData":{"id":"root"}}' }] }
+  const expected = { content: { nodeData: { id: 'root' } } }
   const service = {
     generateMindmap: async (body: any) => {
       assert.deepEqual(body, { content: 'AI Gateway', scenario: 'generate' })
