@@ -42,6 +42,9 @@ out/
 **/.next/
 next-env.d.ts
 
+# Lighthouse / local audit artifacts
+*.report.html
+
 # NestJS (backend)
 notes-backend/dist/
 notes-backend/tsconfig.tsbuildinfo

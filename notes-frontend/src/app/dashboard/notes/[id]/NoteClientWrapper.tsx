@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
-import { deleteNote, fetchNoteById, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI, assetsAPI } from '@/lib/api'
+import { deleteNote, fetchNoteById, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import { CommentsPanel } from '@/components/collab/CommentsPanel'
@@ -389,24 +389,6 @@ export default function NoteClientWrapper({ id, initialData, initialContent }: N
                                                         }))
                                                     } catch { }
                                                 }}>思维导图</button>
-
-                                                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
-                                                    setShowInsertMenu(false)
-                                                    try {
-                                                        const input = document.createElement('input'); input.type = 'file'
-                                                        input.onchange = async () => {
-                                                            const f = input.files?.[0]; if (!f) return
-                                                            const reader = new FileReader(); reader.onload = async () => {
-                                                                const dataUri = String(reader.result || '')
-                                                                const r = await assetsAPI.uploadBase64(f.name, dataUri, id)
-                                                                const href = r?.url || dataUri
-                                                                document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } }))
-                                                            }
-                                                            reader.readAsDataURL(f)
-                                                        }
-                                                        input.click()
-                                                    } catch { }
-                                                }}>附件</button>
                                             </div>
                                         </div>
                                     )}

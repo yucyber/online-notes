@@ -628,28 +628,7 @@ export const dashboardAPI = {
     api.post('/v1/semantic/topics/convert', { topicName, noteIds }).then(res => res as unknown as { tag: Tag; updated: number }),
 }
 
-// 资产/嵌入/画板/思维导图（轻量接口，后端 /api/v1 前缀）
-// assets 与 embeds 的后端目前未实现（见 docs/api-contract-drift.md），
-// 调用方应捕获 'feature-unavailable' 并显示明确不可用提示，避免静默失败。
-class FeatureUnavailableError extends Error {
-  readonly code = 'feature-unavailable'
-  constructor(message: string) {
-    super(message)
-    this.name = 'FeatureUnavailableError'
-  }
-}
-
-export const assetsAPI = {
-  uploadBase64: (_filename: string, _dataUri: string, _noteId?: string): Promise<{ id: string; url: string; filename: string }> => {
-    // path: '/v1/assets/base64'
-    return Promise.reject(new FeatureUnavailableError('附件上传暂不可用'))
-  },
-  getById: (_id: string): Promise<{ id: string; url: string; filename: string }> => {
-    // path: '/v1/assets/:id'
-    return Promise.reject(new FeatureUnavailableError('附件读取暂不可用'))
-  },
-}
-
+// 画板/思维导图（轻量接口，后端 /api/v1 前缀）
 export const boardsAPI = {
   create: (title: string, noteId?: string) => api.post('/v1/boards', { title, noteId }).then(res => res as unknown as { id: string; title: string }),
   get: (id: string) => api.get(`/v1/boards/${id}`).then(res => res as unknown as { id: string; title: string }),
@@ -658,13 +637,6 @@ export const boardsAPI = {
 export const mindmapsAPI = {
   create: (title: string, noteId?: string) => api.post('/v1/mindmaps', { title, noteId }).then(res => res as unknown as { id: string; title: string }),
   get: (id: string) => api.get(`/v1/mindmaps/${id}`).then(res => res as unknown as { id: string; title: string }),
-}
-
-export const embedsAPI = {
-  create: (_noteId: string, _type: 'asset' | 'board' | 'mindmap' | 'link', _targetId?: string, _sourceUrl?: string): Promise<{ id: string; type: string; targetId?: string; sourceUrl?: string; html?: string }> => {
-    // path: '/v1/embeds'
-    return Promise.reject(new FeatureUnavailableError('Embed 创建暂不可用'))
-  },
 }
 
 // 网络状态相关 API
@@ -711,12 +683,8 @@ export const deleteTag = tagsAPI.delete
 export const fetchDashboardOverview = dashboardAPI.getOverview
 export const fetchTopics = dashboardAPI.getTopics
 export const convertTopicToTag = dashboardAPI.convertTopicToTag
-export const fetchAcl = aclAPI.get
-export const createInvitation = invitationsAPI.create
-export const listInvitations = invitationsAPI.list
 export const previewInvitation = invitationsAPI.preview
 export const acceptInvitation = invitationsAPI.accept
-export const revokeInvitation = invitationsAPI.revoke
 export const listMyInvitations = invitationsAPI.mine
 export const listNotifications = notificationsAPI.list
 export const markNotificationRead = notificationsAPI.markRead
@@ -726,7 +694,6 @@ export const restoreVersion = versionsAPI.restore
 export const listAuditLogs = auditAPI.list
 export const listComments = commentsAPI.list
 export const createComment = commentsAPI.create
-export const replyComment = commentsAPI.reply
 export const lockNote = noteLockAPI.lock
 export const unlockNote = noteLockAPI.unlock
 

@@ -3,12 +3,11 @@ import { proxyStream } from '../_proxy'
 
 export async function POST(request: Request) {
   try {
-    const formData = await request.formData()
-    const message = String(formData.get('message') || '')
-    const conversationId = String(formData.get('conversationId') || '')
-    const image = formData.get('image') as File | null
+    const body = await request.json()
+    const message = String(body?.message || '')
+    const conversationId = String(body?.conversationId || '')
 
-    if (image && image.size > 0) {
+    if (body?.image) {
       return NextResponse.json(
         { error: 'Image chat is not supported after the AI provider migration. Please send text only for now.' },
         { status: 400 },
