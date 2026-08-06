@@ -5,7 +5,7 @@ import { getMindMap, createMindMap } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
 import { useAI } from '@/context/AIContext'
-import { getAIMindMapData } from '@/lib/ai-gateway'
+import { getAIMindMapData } from '@/lib/ai-client'
 
 const MindElixirMap = dynamic(() => import('@/components/mindmap/MindElixirMap'), { ssr: false })
 

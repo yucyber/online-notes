@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { AiGatewayClient } from '../ai-gateway.client'
+import { parseJsonObject } from '../ai-output'
 
 export type KnowledgeGraphNodeType = 'concept' | 'entity' | 'topic' | 'claim'
 
@@ -88,7 +89,7 @@ export class KnowledgeGraphBuildGraph {
       temperature: 0.2,
     })
 
-    return this.normalizeProposal(knowledgeBaseId, notes, this.parseJson(answer))
+    return this.normalizeProposal(knowledgeBaseId, notes, parseJsonObject(answer))
   }
 
   private prepareNotes(notes: KnowledgeGraphBuildInput['notes']): PreparedGraphNote[] {
@@ -122,15 +123,6 @@ export class KnowledgeGraphBuildGraph {
         `Content: ${note.content}`,
       ].filter(Boolean).join('\n')).join('\n\n---\n\n'),
     ].join('\n')
-  }
-
-  private parseJson(answer: string): any {
-    const raw = String(answer || '').trim()
-    const unfenced = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-    const start = unfenced.indexOf('{')
-    const end = unfenced.lastIndexOf('}')
-    if (start < 0 || end < start) throw new Error('AI knowledge graph output is not JSON.')
-    return JSON.parse(unfenced.slice(start, end + 1))
   }
 
   private normalizeProposal(knowledgeBaseId: string, notes: PreparedGraphNote[], raw: any): KnowledgeGraphProposal {

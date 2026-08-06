@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common'
 import { AiGatewayClient } from './ai-gateway.client'
 import { AiChatRoute, AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
+import { extractJsonObject, stripCodeFence } from './ai-output'
 import { AiRunService } from './ai-run.service'
 import { AggregateSummaryGraph } from './graphs/aggregate-summary.graph'
 import { KnowledgeGraphBuildGraph } from './graphs/knowledge-graph-build.graph'
@@ -302,7 +303,7 @@ export class AiService {
   }
 
   private normalizeMindmapAnswer(answer: string) {
-    const json = this.extractJsonObject(answer)
+    const json = extractJsonObject(answer)
     if (!json) return null
 
     let parsed: any
@@ -373,16 +374,8 @@ export class AiService {
       .slice(0, 200)
   }
 
-  private extractJsonObject(answer: string): string | null {
-    const text = this.stripCodeFence(answer).trim()
-    const firstBrace = text.indexOf('{')
-    const lastBrace = text.lastIndexOf('}')
-    if (firstBrace === -1 || lastBrace <= firstBrace) return null
-    return text.slice(firstBrace, lastBrace + 1)
-  }
-
   private normalizeMermaidCode(answer: string): string | null {
-    const code = this.stripCodeFence(answer).trim()
+    const code = stripCodeFence(answer).trim()
     if (!code || code.includes('```')) return null
 
     const firstLine = code
@@ -397,13 +390,6 @@ export class AiService {
   private isMermaidDeclaration(line: string): boolean {
     return /^(flowchart|graph)\s+(TB|TD|BT|RL|LR)\b/i.test(line) ||
       /^(sequenceDiagram|classDiagram|classDiagram-v2|stateDiagram|stateDiagram-v2|erDiagram|gantt|journey|pie|mindmap|gitGraph)\b/i.test(line)
-  }
-
-  private stripCodeFence(answer: string): string {
-    return String(answer || '')
-      .replace(/^```(?:json|mermaid)?\s*/i, '')
-      .replace(/\s*```$/i, '')
-      .trim()
   }
 
   private toLegacyMessages(content: string) {
