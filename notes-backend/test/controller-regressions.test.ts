@@ -52,3 +52,40 @@ test('SemanticController returns keyword search results for keyword mode', async
 
   assert.deepEqual(result, expected)
 })
+
+test('SemanticController forwards vector search options and returns a SemanticPage', async () => {
+  const expected = {
+    page: 2,
+    limit: 3,
+    total: 4,
+    totalPages: 2,
+    hasNext: false,
+    data: [{ id: 'note-4', title: 'Graph', preview: 'body', score: 0.9, updatedAt: '2026-06-04' }],
+  }
+  const semantic = {
+    searchVector: async (q: string, userId: string, opts: any) => {
+      assert.equal(q, 'graph')
+      assert.equal(userId, 'user-1')
+      assert.equal(opts.page, 2)
+      assert.equal(opts.limit, 3)
+      assert.equal(opts.categoryId, 'cat-1')
+      assert.deepEqual(opts.tagIds, ['tag-1'])
+      return expected
+    },
+    search: async () => { throw new Error('vector result should be returned directly') },
+  }
+  const controller = new SemanticController(semantic as any)
+
+  const result = await controller.search(
+    { user: { id: 'user-1' } },
+    'graph',
+    'vector',
+    2,
+    3,
+    undefined,
+    'cat-1',
+    'tag-1',
+  )
+
+  assert.deepEqual(result, expected)
+})

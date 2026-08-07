@@ -1,5 +1,5 @@
 import axios from 'axios'
-import { getToken, removeToken } from '../auth'
+import { removeStoredUser } from '../auth'
 
 const api = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api',
@@ -7,7 +7,7 @@ const api = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 3000,
-  withCredentials: false,
+  withCredentials: true,
 })
 
 const RUM_ENDPOINT = process.env.NEXT_PUBLIC_RUM_ENDPOINT || ''
@@ -37,10 +37,6 @@ api.interceptors.request.use(
           ; (config as any).__searchId = sid
       }
     } catch { }
-    const token = getToken()
-    if (token) {
-      config.headers.Authorization = `Bearer ${token}`
-    }
     ; (config as any).__startTime = Date.now()
     const enableLogs = (process.env.NEXT_PUBLIC_ENABLE_API_LOGS ?? '').toString() !== 'false' && process.env.NODE_ENV !== 'production'
     if (enableLogs && typeof config.url === 'string' && config.url.includes('/notes')) {
@@ -104,7 +100,7 @@ api.interceptors.response.use(
       const skip = Boolean((error.config as any)?.meta?.skipAuthRedirect) || String(error.config?.headers?.['X-Skip-Auth-Redirect'] || '') === '1'
       const whitelisted = whitelist.some(r => r.test(path)) || skip
       if (!whitelisted) {
-        removeToken()
+        removeStoredUser()
         if (typeof window !== 'undefined') {
           window.location.href = '/login'
         }
@@ -138,5 +134,13 @@ api.interceptors.response.use(
     return Promise.reject(error)
   }
 )
+
+export async function getTyped<T>(url: string, params?: any): Promise<T> {
+  return api.get(url, { params }) as unknown as Promise<T>
+}
+
+export async function postTyped<T>(url: string, body?: any): Promise<T> {
+  return api.post(url, body) as unknown as Promise<T>
+}
 
 export default api

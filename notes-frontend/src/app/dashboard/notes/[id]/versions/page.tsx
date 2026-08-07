@@ -2,7 +2,7 @@
 import { listVersions, snapshotVersion, restoreVersion, fetchNoteById } from '@/lib/api'
 import { useRouter, useParams } from 'next/navigation'
 import { Button } from '@/components/ui/button'
-import { Suspense, useEffect, useState } from 'react'
+import { Suspense, useCallback, useEffect, useState } from 'react'
 
 export default function VersionsPage() {
   const params = useParams()
@@ -10,14 +10,14 @@ export default function VersionsPage() {
   const router = useRouter()
   const [versions, setVersions] = useState<any[]>([])
   const [note, setNote] = useState<any>(null)
-  const load = async () => {
+  const load = useCallback(async () => {
     if (!noteId) return
     const v = await listVersions(noteId)
     setVersions(v || [])
     const n = await fetchNoteById(noteId)
     setNote(n)
-  }
-  useEffect(() => { load() }, [noteId])
+  }, [noteId])
+  useEffect(() => { load() }, [noteId, load])
   const snapshot = async () => {
     const name = window.prompt('请输入版本名称（可选）')
     if (name === null) return

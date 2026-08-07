@@ -73,23 +73,10 @@ export class SemanticController {
 
     if (mode === 'vector' || mode === 'hybrid') {
       try {
-        const results = await this.semantic.searchVector(String(q || ''), userId);
+        const results = await this.semantic.searchVector(String(q || ''), userId, baseOpts);
 
-        if (results.length > 0) {
-          return {
-            page: Number(page || 1),
-            limit: Number(limit || 10),
-            total: results.length,
-            totalPages: 1,
-            hasNext: false,
-            data: results.map(item => ({
-              id: item._id,
-              title: item.title,
-              preview: item.content.substring(0, 200),
-              score: item.score,
-              updatedAt: item.updatedAt
-            }))
-          }
+        if (results.data.length > 0) {
+          return results
         }
       } catch (err) {
         console.error('Vector search failed:', err);
@@ -103,7 +90,7 @@ export class SemanticController {
           total: 0,
           totalPages: 1,
           hasNext: false,
-          data: []
+          data: [],
         }
       }
 

@@ -7,6 +7,8 @@ import Redis from 'ioredis';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { JwtWsAdapter } from './ws/jwt-ws.adapter';
 import { REDIS_CLIENT } from './common/redis/redis.constants';
+import * as cookieParser from 'cookie-parser';
+import { json } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -20,10 +22,14 @@ async function bootstrap() {
     .split(',')
     .map((x) => x.trim());
 
-  // Support regex patterns for dynamic Vercel preview URLs
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // 生产环境不使用默认正则，必须显式配置 CORS_ALLOWED_PATTERNS
   const allowedPatterns = process.env.CORS_ALLOWED_PATTERNS
     ? process.env.CORS_ALLOWED_PATTERNS.split(',').map(p => new RegExp(p.trim()))
-    : [/^https:\/\/.*\.vercel\.app$/];
+    : isProduction
+      ? [] // 生产环境默认不匹配任何 preview 域名
+      : [/^https:\/\/.*\.vercel\.app$/]; // 开发环境保留
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -48,6 +54,10 @@ async function bootstrap() {
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Request-ID', 'Idempotency-Key', 'If-Match', 'If-None-Match', 'X-Search-ID', 'x-search-id', 'X-Skip-Auth-Redirect', 'x-skip-auth-redirect'],
     exposedHeaders: ['X-Request-Id', 'ETag', 'X-Idempotency-Applied', 'X-Trace-Id'],
   })
+
+  app.use(cookieParser());
+  // 限制请求体大小，防止超大正文导致内存压力
+  app.use(json({ limit: '2mb' }));
 
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({

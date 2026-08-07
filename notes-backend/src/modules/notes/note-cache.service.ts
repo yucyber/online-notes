@@ -18,6 +18,7 @@ export class NoteCacheService {
     return this.injectedRedis
   }
 
+  // payload 包含全部筛选条件，对它做 SHA1 可以区分任意筛选组合，同时把 key 长度限定在常量范围内。
   buildListKey(userId: string, payload: Record<string, unknown>): string {
     const hash = createHash('sha1').update(JSON.stringify(payload)).digest('hex')
     return `notes:list:${userId}:${hash}`
@@ -36,7 +37,7 @@ export class NoteCacheService {
     try {
       await this.getClient().set(this.buildListKey(userId, payload), JSON.stringify(value), 'EX', this.listTtlSeconds)
     } catch {
-      // Cache failures must not affect notes list reads.
+      // 缓存写入失败不能阻断笔记列表读取；降级为直接查库即可。
     }
   }
 }

@@ -63,7 +63,7 @@ export default function MindmapDetailPage() {
       setIsAILoading(true);
       const data = await getAIMindMapData(prompt);
       setMindMapData(data);
-    } catch (e) {
+    } catch {
       alert('AI 生成失败，请检查配置或重试');
     } finally {
       setIsAILoading(false);

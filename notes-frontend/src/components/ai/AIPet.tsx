@@ -9,7 +9,9 @@ export default function AIPet() {
 
     return (
         <>
-            <div
+            <button
+                type="button"
+                aria-label="切换 AI 助手"
                 className="fixed bottom-6 right-6 z-50 cursor-pointer group"
                 onClick={() => setIsOpen(!isOpen)}
             >
@@ -23,7 +25,7 @@ export default function AIPet() {
                         <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 border-2 border-white dark:border-gray-900"></span>
                     </span>
                 </div>
-            </div>
+            </button>
             <ChatWindow isOpen={isOpen} onClose={() => setIsOpen(false)} />
         </>
     );

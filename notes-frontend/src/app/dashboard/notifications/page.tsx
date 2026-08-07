@@ -1,7 +1,7 @@
 'use client'
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { listMyInvitations, listNotifications, markNotificationRead, previewInvitation, acceptInvitation } from '@/lib/api'
+import { listMyInvitations, listNotifications, markNotificationRead } from '@/lib/api'
 import { usePaginationSync } from '@/hooks/usePaginationSync'
 import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
 import { Button } from '@/components/ui/button'
@@ -11,15 +11,15 @@ export default function NotificationsPage() {
   const [invites, setInvites] = useState<any[]>([])
   const [notes, setNotes] = useState<{ items: any[]; page: number; size: number; total: number } | null>(null)
   const { page, size, setPage, setSize } = usePaginationSync({ page: 1, size: 20 })
-  const load = async () => {
+  const load = useCallback(async () => {
     try {
       const iv = await listMyInvitations('pending')
       setInvites(iv || [])
       const ns = await listNotifications(page, size, undefined, 'unread')
       setNotes(ns)
     } catch {}
-  }
-  useEffect(() => { load() }, [page, size])
+  }, [page, size])
+  useEffect(() => { void load() }, [load])
 
   const accept = async (tokenHashOrToken: string) => {
     try {

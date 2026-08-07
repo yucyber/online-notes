@@ -1,10 +1,14 @@
 import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { JwtModule } from '@nestjs/jwt';
+import { ConfigModule, ConfigService } from '@nestjs/config';
 import { NotesController } from './notes.controller';
 import { NotesService } from './notes.service';
 import { NoteAccessService } from './note-access.service';
 import { NoteCounterService } from './note-counter.service';
 import { NoteCacheService } from './note-cache.service';
+import { NoteRecommendationService } from './note-recommendation.service';
+import { NoteDerivedService } from './note-derived.service';
 import { Note, NoteSchema } from './schemas/note.schema';
 import { CategoriesModule } from '../categories/categories.module';
 import { TagsModule } from '../tags/tags.module';
@@ -18,9 +22,16 @@ import { AiModule } from '../ai/ai.module';
     TagsModule,
     forwardRef(() => SemanticModule),
     forwardRef(() => AiModule),
+    JwtModule.registerAsync({
+      imports: [ConfigModule],
+      useFactory: async (configService: ConfigService) => ({
+        secret: configService.get<string>('JWT_SECRET'),
+      }),
+      inject: [ConfigService],
+    }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService],
+  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService],
   exports: [NotesService, NoteAccessService, NoteCounterService],
 })
 export class NotesModule { }

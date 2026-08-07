@@ -1,6 +1,6 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { toast } from 'react-hot-toast'
@@ -14,7 +14,9 @@ import {
   fetchNotes,
   fetchTags,
 } from '@/lib/api'
-import { extractId } from './notes-page-utils'
+import { extractId, parseNotesPagination } from './notes-page-utils'
+import { buildNotesQueryParams } from './useNotesQuery'
+import { removeNoteById, toggleIdInSet } from './useNotesBulkActions'
 
 export function useNotesPage() {
   const searchParams = useSearchParams()
@@ -28,9 +30,13 @@ export function useNotesPage() {
   const [categoryMap, setCategoryMap] = useState<Record<string, string>>({})
   const [tagMap, setTagMap] = useState<Record<string, string>>({})
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
-  const [page, setPage] = useState(1)
-  const [size, setSize] = useState(10)
+  const initialPagination = parseNotesPagination(searchParams)
+  const [page, setPage] = useState(initialPagination.page)
+  const [size, setSize] = useState(initialPagination.size)
   const [total, setTotal] = useState(0)
+  // 保存最新 total 供加载 effect 派发事件时读取，避免把 total 加入 deps 触发重复请求
+  const totalRef = useRef(total)
+  totalRef.current = total
   const [isSelectionMode, setIsSelectionMode] = useState(false)
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   const [showSummaryDialog, setShowSummaryDialog] = useState(false)
@@ -38,6 +44,13 @@ export function useNotesPage() {
   const [summaryLoading, setSummaryLoading] = useState(false)
 
   useEffect(() => {
+    const next = parseNotesPagination(searchParams)
+    setPage((current) => current === next.page ? current : next.page)
+    setSize((current) => current === next.size ? current : next.size)
+  }, [searchParams])
+
+  useEffect(() => {
+    // 每次筛选条件变化产生新的 AbortController；前一次未完成的请求被取消，防止慢响应覆盖最新结果。
     const controller = new AbortController()
     let aborted = false
     controller.signal.addEventListener('abort', () => {
@@ -53,18 +66,7 @@ export function useNotesPage() {
 
         const sp = searchParams
         const isNlq = sp.get('nlq') === '1'
-        const params: NoteFilterParams = {
-          keyword: sp.get('keyword') || undefined,
-          categoryId: sp.get('categoryId') || undefined,
-          categoryIds: sp.getAll('categoryIds').length > 0 ? sp.getAll('categoryIds') : undefined,
-          categoriesMode: (sp.get('categoriesMode') as 'any' | 'all') || undefined,
-          tagIds: sp.getAll('tagIds').length > 0 ? sp.getAll('tagIds') : undefined,
-          tagsMode: (sp.get('tagsMode') as 'any' | 'all') || undefined,
-          startDate: sp.get('startDate') || undefined,
-          endDate: sp.get('endDate') || undefined,
-          status: (sp.get('status') as 'published' | 'draft') || undefined,
-          ids: sp.get('ids') ? sp.get('ids')?.split(',').filter(Boolean) : undefined,
-        }
+        const params: NoteFilterParams = buildNotesQueryParams(sp)
 
         if (isNlq && (params.keyword || '')) {
           const mode = (sp.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid'
@@ -122,7 +124,7 @@ export function useNotesPage() {
               detail: {
                 searchId: sid,
                 ok: true,
-                count: Number(total || 0),
+                count: Number(totalRef.current || 0),
                 duration,
                 query: nextQuery,
                 time: new Date().toISOString(),
@@ -135,7 +137,7 @@ export function useNotesPage() {
                 type: 'ui:search_results',
                 name: 'SearchResults',
                 value: duration,
-                meta: { searchId: sid, count: Number(total || 0) },
+                meta: { searchId: sid, count: Number(totalRef.current || 0) },
               },
             }),
           )
@@ -299,12 +301,7 @@ export function useNotesPage() {
   }
 
   const toggleNoteSelection = (id: string) => {
-    setSelectedNoteIds((prev) => {
-      const next = new Set(prev)
-      if (next.has(id)) next.delete(id)
-      else next.add(id)
-      return next
-    })
+    setSelectedNoteIds((prev) => toggleIdInSet(prev, id))
   }
 
   const handleGenerateSummary = async () => {
@@ -362,7 +359,7 @@ export function useNotesPage() {
   const handleDelete = async (id: string) => {
     try {
       await deleteNote(id)
-      setNotes((prev) => prev.filter((note) => note.id !== id))
+      setNotes((prev) => removeNoteById(prev, id))
     } catch (err) {
       setError('删除失败，请重试')
       console.error('Failed to delete note:', err)

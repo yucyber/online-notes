@@ -57,11 +57,14 @@ export function NotesListCard({
         {isSelectionMode && (
           <>
             <div
+              role="button"
+              tabIndex={0}
               className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
               onClick={(e) => {
                 e.stopPropagation()
                 onToggleSelection(note.id)
               }}
+              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleSelection(note.id) } }}
             />
             <div className="absolute top-4 left-4 z-20 pointer-events-none">
               <div

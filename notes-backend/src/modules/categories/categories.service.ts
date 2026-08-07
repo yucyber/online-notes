@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Category, CategoryDocument } from './schemas/category.schema';
 import { CreateCategoryDto, UpdateCategoryDto } from './dto';
+import { assertOwnedByUser } from '../taxonomy/taxonomy-ownership';
 
 @Injectable()
 export class CategoriesService {
@@ -34,7 +35,7 @@ export class CategoriesService {
   }
 
   async create(createCategoryDto: CreateCategoryDto, userId: string): Promise<Category> {
-    // Check if category name already exists for this user
+    // 分类名只要求在当前用户空间内唯一，不影响其他用户使用同名分类。
     const existingCategory = await this.categoryModel.findOne({
       name: createCategoryDto.name,
       userId: new Types.ObjectId(userId),
@@ -73,8 +74,12 @@ export class CategoriesService {
     return category;
   }
 
+  async assertOwnedIds(ids: string[], userId: string): Promise<void> {
+    await assertOwnedByUser(ids, userId, this.categoryModel, '分类')
+  }
+
   async update(id: string, updateCategoryDto: UpdateCategoryDto, userId: string): Promise<Category> {
-    // Check if category name already exists for this user (excluding current category)
+    // 重命名时排除自身，同时仍把唯一性限制在当前用户空间内。
     if (updateCategoryDto.name) {
       const existingCategory = await this.categoryModel.findOne({
         name: updateCategoryDto.name,

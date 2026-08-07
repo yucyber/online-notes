@@ -3,6 +3,15 @@ import type { Note } from '@/types'
 export const extractId = <T extends { id?: string; _id?: string }>(entity?: T | null) =>
   entity?.id || (entity as { _id?: string })?._id || ''
 
+export function parseNotesPagination(searchParams: { get(name: string): string | null }) {
+  const rawPage = Number.parseInt(searchParams.get('page') || '', 10)
+  const rawSize = Number.parseInt(searchParams.get('size') || '', 10)
+  return {
+    page: Number.isFinite(rawPage) ? Math.max(1, rawPage) : 1,
+    size: Number.isFinite(rawSize) ? Math.min(100, Math.max(1, rawSize)) : 10,
+  }
+}
+
 export const getCategoryLabel = (note: Note, categoryMap: Record<string, string>) => {
   if (note.category && typeof note.category !== 'string') {
     const directName = note.category.name

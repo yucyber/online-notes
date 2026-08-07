@@ -3,7 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import type * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
-import { AUTH_CHANGED_EVENT, getToken, getTokenExpiration } from '@/lib/auth'
+import { notesAPI } from '@/lib/api/notes'
 import type { CollabStatus } from './tiptap-utils'
 
 type CollabUser = { id: string; name: string }
@@ -20,7 +20,8 @@ export function useTiptapCollab(opts: {
   userRef.current = user
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<CollabStatus>('connecting')
-  const [authToken, setAuthToken] = useState<string | null>(() => (typeof window !== 'undefined' ? getToken() : null))
+  const [roomTicket, setRoomTicket] = useState<string | null>(null)
+  const [ticketError, setTicketError] = useState<string | null>(null)
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
   const participantsCache = useRef<Array<{ id: string; name?: string }>>([])
   const cacheTimeout = useRef<ReturnType<typeof setTimeout>>()
@@ -33,17 +34,23 @@ export function useTiptapCollab(opts: {
   })
 
   useEffect(() => {
-    const refreshToken = () => setAuthToken(getToken())
-    if (typeof window === 'undefined') return
-    window.addEventListener(AUTH_CHANGED_EVENT, refreshToken)
-    window.addEventListener('storage', refreshToken)
-    window.addEventListener('focus', refreshToken)
-    return () => {
-      window.removeEventListener(AUTH_CHANGED_EVENT, refreshToken)
-      window.removeEventListener('storage', refreshToken)
-      window.removeEventListener('focus', refreshToken)
-    }
-  }, [])
+    if (!noteId) return
+    let cancelled = false
+    notesAPI.getRoomTicket(noteId)
+      .then((data) => {
+        if (!cancelled && data?.ticket) {
+          setRoomTicket(data.ticket)
+          setTicketError(null)
+        }
+      })
+      .catch((err: any) => {
+        if (!cancelled) {
+          console.error('[Collab] Failed to get room ticket:', err)
+          setTicketError(err?.message || 'ticket-failed')
+        }
+      })
+    return () => { cancelled = true }
+  }, [noteId])
 
   useEffect(() => {
     const yws = process.env.NEXT_PUBLIC_YWS_URL
@@ -56,22 +63,13 @@ export function useTiptapCollab(opts: {
       return
     }
 
-    const token = authToken
-    const expiresAt = token ? getTokenExpiration(token) : null
-
-    if (!token) {
-      setLocalMode(true)
-      setCollabEnabled(false)
-      setProvider(null)
-      setConnStatus('auth-missing')
-      return
-    }
-
-    if (!expiresAt || expiresAt <= Date.now()) {
-      setLocalMode(true)
-      setCollabEnabled(false)
-      setProvider(null)
-      setConnStatus('auth-expired')
+    if (!roomTicket) {
+      if (ticketError) {
+        setLocalMode(true)
+        setCollabEnabled(false)
+        setProvider(null)
+        setConnStatus('auth-failed')
+      }
       return
     }
 
@@ -82,7 +80,7 @@ export function useTiptapCollab(opts: {
         connect: true,
         maxBackoffTime: 10000,
         disableBc: true,
-        params: { access_token: token },
+        params: { access_token: roomTicket },
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
@@ -113,17 +111,6 @@ export function useTiptapCollab(opts: {
         markAuthFailure('auth-failed')
       }
     })
-
-    let tokenExpiryTimer: ReturnType<typeof setTimeout> | null = null
-    if (expiresAt) {
-      tokenExpiryTimer = setTimeout(() => {
-        try { p?.destroy() } catch { }
-        setProvider(null)
-        setLocalMode(true)
-        setCollabEnabled(false)
-        setConnStatus('auth-expired')
-      }, Math.max(0, Math.min(expiresAt - Date.now(), 2_147_483_647)))
-    }
 
     const statusHandler = (status: any) => {
       const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
@@ -245,6 +232,7 @@ export function useTiptapCollab(opts: {
       }
     }, 5000)
 
+    // 心跳每 15s 更新 awareness，防止服务端因闲置关闭 WebSocket 连接。
     const appHeartbeat = setInterval(() => {
       if (p && (p as any).wsconnected) {
         p.awareness.setLocalStateField('lastPing', Date.now())
@@ -253,7 +241,6 @@ export function useTiptapCollab(opts: {
 
     return () => {
       console.log('[Collab] Disconnecting provider')
-      if (tokenExpiryTimer) clearTimeout(tokenExpiryTimer)
       clearInterval(degradeTimer)
       clearInterval(appHeartbeat)
       if (cacheTimeout.current) {
@@ -266,7 +253,7 @@ export function useTiptapCollab(opts: {
       aw.off('update', updateAwareness)
       p?.destroy()
     }
-  }, [noteId, versionKey, ydoc, authToken])
+  }, [noteId, versionKey, ydoc, roomTicket, room, ticketError])
 
   useEffect(() => {
     if (provider && provider.awareness) {

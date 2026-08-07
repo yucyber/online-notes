@@ -1,4 +1,4 @@
-import api from './client'
+import api, { getTyped, postTyped } from './client'
 import type { Note, CreateNoteDto, UpdateNoteDto, NoteFilterParams } from '@/types'
 
 const NOTES_CACHE_TTL_MS = 10_000
@@ -120,10 +120,10 @@ export const notesAPI = {
   },
 
   getById: (id: string) =>
-    api.get<Note>(`/notes/${id}`).then(res => res as unknown as Note),
+    getTyped<Note>(`/notes/${id}`),
 
   create: (note: CreateNoteDto) =>
-    api.post<Note>('/notes', note).then(res => res as unknown as Note),
+    postTyped<Note>('/notes', note),
 
   update: (id: string, note: UpdateNoteDto) =>
     api.put<Note>(`/notes/${id}`, note).then(res => res as unknown as Note),
@@ -199,4 +199,7 @@ export const notesAPI = {
     writeSessionCache(key, data as any)
     return data as unknown as { items: Note[]; page: number; size: number; total: number }
   },
+
+  getRoomTicket: (noteId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> =>
+    api.post(`/notes/${noteId}/room-ticket`).then((res: any) => res),
 }

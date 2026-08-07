@@ -11,6 +11,7 @@ import {
   resolveKnowledgeGraphEdgeNoteIds,
   uniqueStrings,
 } from './knowledge-graph-normalize'
+import { KnowledgeGraphService } from './knowledge-graph.service'
 import { KnowledgeBase, KnowledgeBaseDocument } from './schemas/knowledge-base.schema'
 import { KnowledgeBaseNote, KnowledgeBaseNoteDocument } from './schemas/knowledge-base-note.schema'
 import { KnowledgeGraphEdge, KnowledgeGraphEdgeDocument } from './schemas/knowledge-graph-edge.schema'
@@ -25,7 +26,12 @@ export class KnowledgeBasesService {
     private readonly noteAccess: NoteAccessService,
     @Optional() @InjectModel(KnowledgeGraphNode.name) private readonly graphNodeModel?: Model<KnowledgeGraphNodeDocument>,
     @Optional() @InjectModel(KnowledgeGraphEdge.name) private readonly graphEdgeModel?: Model<KnowledgeGraphEdgeDocument>,
-  ) {}
+    @Optional() private readonly injectedGraphService?: KnowledgeGraphService,
+  ) {
+    this.graphService = injectedGraphService || new KnowledgeGraphService()
+  }
+
+  private readonly graphService: KnowledgeGraphService
 
   async create(input: CreateKnowledgeBaseDto, userId: string) {
     const created = await this.kbModel.create({
@@ -63,13 +69,18 @@ export class KnowledgeBasesService {
 
   async remove(id: string, userId: string) {
     const kb = await this.requireKnowledgeBase(id, userId)
-    await this.kbNoteModel.deleteMany({ knowledgeBaseId: this.idOf(kb), userId: this.objectId(userId, 'user id') }).exec()
-    await this.kbModel.deleteOne({ _id: this.idOf(kb), userId: this.objectId(userId, 'user id') }).exec()
+    const userObjectId = this.objectId(userId, 'user id')
+    const scope = { knowledgeBaseId: this.idOf(kb), userId: userObjectId }
+    // 先清理关联和图谱，再删除知识库主体，避免主体消失后留下孤儿数据。
+    await this.kbNoteModel.deleteMany(scope).exec()
+    await this.graphService.remove(scope, this.requireGraphNodeModel(), this.requireGraphEdgeModel())
+    await this.kbModel.deleteOne({ _id: this.idOf(kb), userId: userObjectId }).exec()
     return { ok: true }
   }
 
   async addNote(id: string, noteId: string, userId: string) {
     const kb = await this.requireKnowledgeBase(id, userId)
+    // 知识库归当前用户所有，但其中可以引用该用户有权读取的共享或公开笔记。
     const note = await this.noteModel
       .findOne(this.noteAccess.readScope(noteId, userId))
       .select('title updatedAt createdAt')
@@ -154,19 +165,21 @@ export class KnowledgeBasesService {
     const nodeNoteIds = new Map(nodes.map((node) => [node.nodeId, node.noteIds.map(String)]))
     const edges = this.normalizeGraphEdges(input?.edges || [], scope, allowedNoteIdSet, nodeIds, nodeNoteIds)
 
-    await this.requireGraphEdgeModel().deleteMany(scope).exec()
-    await this.requireGraphNodeModel().deleteMany(scope).exec()
-
-    const savedNodes = nodes.length > 0 ? await this.requireGraphNodeModel().insertMany(nodes) : []
-    const savedEdges = edges.length > 0 ? await this.requireGraphEdgeModel().insertMany(edges) : []
-
-    return {
-      knowledgeBaseId: String(knowledgeBaseId),
-      generatedAt: this.latestGraphTimestamp(savedNodes, savedEdges),
-      nodes: savedNodes.map((node) => this.serializeKnowledgeGraphNode(node)),
-      edges: savedEdges.map((edge) => this.serializeKnowledgeGraphEdge(edge)),
-      warnings: [],
-    }
+    return this.graphService.replace({
+      connectionOwner: this.kbModel,
+      scope,
+      nodes,
+      edges,
+      nodeModel: this.requireGraphNodeModel(),
+      edgeModel: this.requireGraphEdgeModel(),
+      serialize: (savedNodes, savedEdges) => ({
+        knowledgeBaseId: String(knowledgeBaseId),
+        generatedAt: this.latestGraphTimestamp(savedNodes, savedEdges),
+        nodes: savedNodes.map((node) => this.serializeKnowledgeGraphNode(node)),
+        edges: savedEdges.map((edge) => this.serializeKnowledgeGraphEdge(edge)),
+        warnings: [],
+      }),
+    })
   }
 
   async removeNote(id: string, noteId: string, userId: string) {
@@ -195,6 +208,7 @@ export class KnowledgeBasesService {
     const select = opts.includeContent
       ? 'title summary content updatedAt createdAt'
       : 'title summary updatedAt createdAt'
+    // 关联创建后权限可能变化，因此每次读取都重新套用 NoteAccessService，并自然过滤已失权笔记。
     const notes = await this.noteModel
       .find(this.noteAccess.readableNotesQuery(noteIds, userId))
       .select(select)
@@ -212,6 +226,7 @@ export class KnowledgeBasesService {
   }
 
   private normalizeGraphNodes(nodes: SaveKnowledgeGraphDto['nodes'], scope: { knowledgeBaseId: Types.ObjectId; userId: Types.ObjectId }, allowedNoteIds: Set<string>) {
+    // 图谱节点只能引用当前知识库已关联的笔记，不能借保存图谱写入任意 noteId。
     const seen = new Set<string>()
     return (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
       const nodeId = this.cleanGraphId(node?.id, 160)
@@ -237,6 +252,7 @@ export class KnowledgeBasesService {
     nodeIds: Set<string>,
     nodeNoteIds: Map<string, string[]>,
   ) {
+    // 边必须连接本次提交中存在的节点；缺少 noteIds 时才继承两端节点的来源笔记。
     const seen = new Set<string>()
     return (Array.isArray(edges) ? edges : []).flatMap((edge) => {
       const source = this.cleanGraphId(edge?.source, 160)
@@ -370,4 +386,5 @@ export class KnowledgeBasesService {
     if (!this.graphEdgeModel) throw new Error('Knowledge graph edge model is not configured')
     return this.graphEdgeModel
   }
+
 }

@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getCurrentUser, removeToken } from '@/lib/auth'
+import { getCurrentUser, logout } from '@/lib/auth'
 import type { User } from '@/types'
 import { LogOut, User as UserIcon, Bell, Settings } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
@@ -27,8 +27,7 @@ export default function SettingsPage() {
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
-      removeToken()
-      router.replace('/login')
+      void logout().then(() => router.replace('/login'))
     }
   }
 

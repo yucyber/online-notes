@@ -1,8 +1,10 @@
 import { BadRequestException, Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
+import { Throttle } from '@nestjs/throttler'
 import type { Request, Response } from 'express'
 import { AiService } from './ai.service'
-import { AiKnowledgeGraphInput, AiMermaidInput, AiMindmapInput, AiPetInput, AiWriterInput } from './ai-gateway.types'
+import { AiKnowledgeGraphInput, AiMermaidInput, AiMindmapInput, AiPetInput } from './ai-gateway.types'
+import { AiWriterDto, AiSummaryDto } from './dto'
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -12,18 +14,19 @@ type AuthenticatedRequest = Request & {
   }
 }
 
+@Throttle({ short: { ttl: 60_000, limit: 30 } })
 @UseGuards(AuthGuard('jwt'))
 @Controller('ai')
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
   @Post('writer')
-  async generateWriter(@Body() body: AiWriterInput, @Req() req?: AuthenticatedRequest) {
+  async generateWriter(@Body() body: AiWriterDto, @Req() req?: AuthenticatedRequest) {
     return { text: await this.aiService.generateWriterText(body, this.aiContext(req)) }
   }
 
   @Post('writer/stream')
-  async streamWriter(@Body() body: AiWriterInput, @Res() res: Response, @Req() req?: AuthenticatedRequest) {
+  async streamWriter(@Body() body: AiWriterDto, @Res() res: Response, @Req() req?: AuthenticatedRequest) {
     const stream = await this.aiService.streamWriter(body, this.aiContext(req))
     return this.writeTextStream(stream, res)
   }
@@ -54,7 +57,7 @@ export class AiController {
   }
 
   @Post('summary')
-  async generateSummary(@Body() body: { notes: any[] }, @Req() req?: AuthenticatedRequest) {
+  async generateSummary(@Body() body: AiSummaryDto, @Req() req?: AuthenticatedRequest) {
     if (!Array.isArray(body?.notes) || body.notes.length === 0) {
       throw new BadRequestException('Please provide at least one note.')
     }

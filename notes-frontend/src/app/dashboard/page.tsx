@@ -1,9 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { fetchDashboardOverview, fetchTags } from '@/lib/api'
-import type { DashboardOverview, Tag } from '@/types'
+import type { DashboardOverview } from '@/types'
 import { formatDate, truncateText } from '@/utils'
 import { Button } from '@/components/ui/button'
 import {
@@ -39,7 +39,7 @@ export default function DashboardPage() {
     return tag.name || (id ? (tagMap[id] || '') : '')
   }
 
-  const loadOverview = async () => {
+  const loadOverview = useCallback(async () => {
     try {
       setLoading(true)
       setError('')
@@ -62,11 +62,11 @@ export default function DashboardPage() {
       setError('获取仪表盘数据失败，请稍后重试')
       setLoading(false)
     }
-  }
+  }, [])
 
   useEffect(() => {
-    loadOverview()
-  }, [])
+    void loadOverview()
+  }, [loadOverview])
 
   const statCards = [
     {

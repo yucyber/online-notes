@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchCategories, fetchTags, updateNote, createTag, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import { marked } from 'marked'
 import { htmlToMarkdown } from '@/utils/markdown-converter'
 import dynamic from 'next/dynamic'
@@ -11,12 +11,15 @@ const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'
   loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
 })
 import { Button } from '@/components/ui/button'
-import { ArrowLeft, ChevronLeft, ChevronRight, Users, ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
-import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
-import { CommentsPanel } from '@/components/collab/CommentsPanel'
 import { getCurrentUser } from '@/lib/auth'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
+import { NoteEditorDrawers } from '@/components/editor/NoteEditorDrawers'
+import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
+import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
+import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
+import { useNoteSave } from '@/components/editor/useNoteSave'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export interface NoteEditorShellProps {
@@ -48,21 +51,26 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
   const commentsDrawerRef = useRef<HTMLDivElement>(null)
-  const lastFocusRef = useRef<HTMLElement | null>(null)
   const [toc, setToc] = useState<Array<{ id: string; text: string; level: number }>>([])
-  const [currentHeadingId, setCurrentHeadingId] = useState<string>('')
-  const [showSidebar, setShowSidebar] = useState(true)
-  const [isFullscreen, setIsFullscreen] = useState(false)
-  const editorContainerRef = useRef<HTMLDivElement>(null)
-  const [showInsertMenu, setShowInsertMenu] = useState(false)
-  const [showLinkDialog, setShowLinkDialog] = useState(false)
-  const [linkHref, setLinkHref] = useState('https://')
+  const {
+    editorContainerRef,
+    isFullscreen,
+    linkHref,
+    setIsFullscreen,
+    setLinkHref,
+    setShowInsertMenu,
+    setShowLinkDialog,
+    setShowSidebar,
+    showInsertMenu,
+    showLinkDialog,
+    showSidebar,
+  } = useNoteEditorPage()
   const [showMeta, setShowMeta] = useState(true)
   useEffect(() => {
     const open = () => setShowLinkDialog(true)
     document.addEventListener('open:link-dialog', open as any)
     return () => { document.removeEventListener('open:link-dialog', open as any) }
-  }, [])
+  }, [setShowLinkDialog])
 
   // 生成 Markdown 大纲
   const extractHeadingsFromMarkdown = useCallback((md: string) => {
@@ -178,6 +186,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [showCommentsDrawer])
 
   // 全屏切换：事件监听与状态同步
+  // 监听器只注册一次，通过 ref 读取最新的 handler/state，避免重复绑定
+  const handleToggleFullscreenRef = useRef<() => void>(() => {})
+  const isFullscreenRef = useRef(isFullscreen)
+  isFullscreenRef.current = isFullscreen
+  const noteIdRef = useRef(id)
+  noteIdRef.current = id
   useEffect(() => {
     const onFsChange = () => {
       const active = Boolean(document.fullscreenElement)
@@ -212,22 +226,22 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         if (document.fullscreenElement) {
           e.stopPropagation()
           try { document.exitFullscreen() } catch { }
-        } else if (isFullscreen) {
+        } else if (isFullscreenRef.current) {
           setIsFullscreen(false)
           document.body.style.overflow = ''
         }
       }
       if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
         e.preventDefault()
-        handleToggleFullscreen()
+        handleToggleFullscreenRef.current()
       }
     }
     document.addEventListener('fullscreenchange', onFsChange)
-    const onToggle = () => { handleToggleFullscreen() }
+    const onToggle = () => { handleToggleFullscreenRef.current() }
     document.addEventListener('editor:toggleFullscreen', onToggle as any)
     document.addEventListener('keydown', onKey)
     const onCommentsHover = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50) }
-    const onCommentsOpen = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50); try { document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: id, strategy: 'context' } })) } catch { } }
+    const onCommentsOpen = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50); try { document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: noteIdRef.current, strategy: 'context' } })) } catch { } }
     document.addEventListener('comments:hover', onCommentsHover as any)
     document.addEventListener('comments:open', onCommentsOpen as any)
     return () => {
@@ -237,7 +251,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       document.removeEventListener('comments:hover', onCommentsHover as any)
       document.removeEventListener('comments:open', onCommentsOpen as any)
     }
-  }, [])
+  }, [setIsFullscreen, setShowSidebar, setShowCommentsDrawer])
 
   const handleToggleFullscreen = () => {
     const target = editorContainerRef.current || document.documentElement
@@ -261,6 +275,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       }
     }, 200)
   }
+  // 同步到 ref，供只注册一次的全屏事件监听器读取最新实现
+  handleToggleFullscreenRef.current = handleToggleFullscreen
 
 
 
@@ -379,33 +395,17 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     )
   }
 
-  const addTagsByNames = async (names: string[]) => {
-    const trimmed = Array.from(new Set(names.map(n => n.trim()).filter(Boolean)))
-    if (trimmed.length === 0) return
-    const mapByName = new Map<string, Tag>()
-    tags.forEach(t => mapByName.set(String(t.name).toLowerCase(), t))
-    const resultIds: string[] = []
-    for (const name of trimmed) {
-      const key = name.toLowerCase()
-      const hit = mapByName.get(key)
-      if (hit) {
-        const id = hit.id || (hit as unknown as { _id?: string })?._id || ''
-        if (id) resultIds.push(id)
-        continue
-      }
-      try {
-        const created = await createTag(name)
-        const id = created.id || (created as unknown as { _id?: string })?._id || ''
-        if (id) {
-          resultIds.push(id)
-          setTags(prev => [{ ...created, id }, ...prev])
-        }
-      } catch { }
-    }
-    if (resultIds.length > 0) {
-      setSelectedTags(prev => Array.from(new Set([...prev, ...resultIds])))
-    }
-  }
+  const { handleSave, handleSaveDraft, addTagsByNames } = useNoteSave({
+    id,
+    selectedCategory,
+    auxCategoryIds,
+    selectedTags,
+    categories,
+    tags,
+    editorMode,
+    setNote: (updater) => setNote(prev => updater(prev)),
+    setTags,
+  })
 
   const childrenByParent = (() => {
     const m: Record<string, Category[]> = {}
@@ -457,68 +457,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         )}
       </div>
     )
-  }
-
-  const handleSave = async (title: string, content: string) => {
-    try {
-      const auxNames = auxCategoryIds
-        .map(id => categories.find(c => (c.id || (c as unknown as { _id?: string })?._id) === id)?.name)
-        .filter((n): n is string => Boolean(n))
-      if (auxNames.length > 0) {
-        await addTagsByNames(auxNames)
-      }
-      const updatedNote = await updateNote(id, {
-        title: title.trim(),
-        content: content.trim(),
-        categoryId: selectedCategory || undefined,
-        categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
-        tags: selectedTags,
-        status: 'published', // 显式设置为已发布
-      })
-      setNote(updatedNote)
-      try {
-        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_ok', meta: { noteId: id, size: (content || '').length, mode: editorMode } } })
-        document.dispatchEvent(evt)
-      } catch { }
-    } catch (error) {
-      console.error('Failed to update note:', error)
-      try {
-        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_error', meta: { noteId: id, message: String((error as any)?.message || error), mode: editorMode } } })
-        document.dispatchEvent(evt)
-      } catch { }
-      throw new Error('保存失败，请重试')
-    }
-  }
-
-  const handleSaveDraft = async (title: string, content: string) => {
-    try {
-      const auxNames = auxCategoryIds
-        .map(id => categories.find(c => (c.id || (c as unknown as { _id?: string })?._id) === id)?.name)
-        .filter((n): n is string => Boolean(n))
-      if (auxNames.length > 0) {
-        await addTagsByNames(auxNames)
-      }
-      const updatedNote = await updateNote(id, {
-        title: title.trim(),
-        content: content.trim(),
-        categoryId: selectedCategory || undefined,
-        categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
-        tags: selectedTags,
-        status: 'draft',
-      })
-      setNote(updatedNote)
-      try {
-        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_draft_ok', meta: { noteId: id, size: (content || '').length, mode: editorMode } } })
-        document.dispatchEvent(evt)
-      } catch { }
-    } catch (error) {
-      console.error('Failed to update draft note:', error)
-      try {
-        const evt = new CustomEvent('rum', { detail: { type: 'network', name: 'note_save_draft_error', meta: { noteId: id, message: String((error as any)?.message || error), mode: editorMode } } })
-        document.dispatchEvent(evt)
-      } catch { }
-      throw new Error('保存草稿失败，请重试')
-    }
   }
 
   const handleModeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
@@ -584,71 +522,21 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   return (
     <div className="space-y-6 mx-auto w-full max-w-[1400px] px-4">
 
-      {/* 顶部固定工具栏（语雀风格） */}
-      <div className="sticky top-0 z-40 backdrop-blur border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
-        <div className="flex items-center justify-between px-4 py-2">
-          <div className="flex items-center gap-4">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={handleBack}
-              className="text-gray-500 hover:text-gray-700"
-            >
-              <ArrowLeft className="h-4 w-4" />
-            </Button>
-            <span className="text-sm" style={{ color: 'var(--on-surface)' }}>编辑笔记</span>
-            <div className="hidden md:flex items-center gap-3 ml-2">
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>编辑器</span>
-              <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={handleModeChange} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
-                <option value="rich">富文本（协同）</option>
-                <option value="markdown">Markdown</option>
-              </select>
-              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>可见性</span>
-              <select
-                className="rounded border px-2 py-1 text-xs"
-                style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                value={(note as any)?.visibility || 'private'}
-                onChange={async (e) => {
-                  try {
-                    await updateNote(id, { visibility: e.target.value as any })
-                    await loadNote()
-                  } catch { }
-                }}
-              >
-                <option value="private">仅自己</option>
-                <option value="org">组织内</option>
-                <option value="public">公开只读</option>
-              </select>
-            </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              aria-pressed={!showSidebar}
-              onClick={() => setShowSidebar(s => !s)}
-              className="hover:bg-[var(--surface-2)]"
-            >
-              {showSidebar ? (
-                <span className="inline-flex items-center gap-1"><ChevronRight className="h-4 w-4" /> 隐藏侧栏</span>
-              ) : (
-                <span className="inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> 显示侧栏</span>
-              )}
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon"
-              aria-label="协作"
-              title="协作"
-              onClick={() => setShowCollabDrawer(true)}
-              className="hover:bg-[var(--surface-2)]"
-            >
-              <Users className="h-5 w-5" />
-              <span className="sr-only">协作</span>
-            </Button>
-          </div>
-        </div>
-      </div>
+      <NoteEditorHeader
+        note={note}
+        editorMode={editorMode}
+        showSidebar={showSidebar}
+        onBack={handleBack}
+        onModeChange={handleModeChange}
+        onVisibilityChange={async (visibility) => {
+          try {
+            await updateNote(id, { visibility: visibility as any })
+            await loadNote()
+          } catch { }
+        }}
+        onToggleSidebar={() => setShowSidebar((current) => !current)}
+        onOpenCollab={() => setShowCollabDrawer(true)}
+      />
       {error && (
         <div
           className="p-4 text-sm text-red-600"
@@ -673,9 +561,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         }}
       >
         <div
+          role="button"
+          tabIndex={0}
           className="flex items-center justify-between px-6 py-3 cursor-pointer select-none"
           style={{ borderBottom: showMeta ? '1px solid var(--border)' : 'none' }}
           onClick={() => setShowMeta(!showMeta)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMeta(!showMeta) } }}
         >
           <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>笔记属性</span>
           <button className="text-gray-500 hover:text-gray-700">
@@ -880,112 +771,18 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             />
           )}
         </div>
-        {showSidebar && !isFullscreen && (
-          <div className="lg:col-span-2 xl:col-span-3">
-            <div className="sticky top-20 space-y-3">
-              <div className="rounded-lg border bg-white">
-                <div className="px-4 py-2 border-b text-sm font-medium">大纲</div>
-                <div className="p-3">
-                  {toc.length === 0 ? (
-                    <div className="text-xs text-gray-400">暂无标题</div>
-                  ) : (
-                    <div className="space-y-1">
-                      {toc.map((h) => (
-                        <button
-                          key={h.id}
-                          onClick={() => {
-                            const el = document.getElementById(h.id)
-                            if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' })
-                          }}
-                          className={`w-full text-left text-xs rounded px-3 py-2 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-blue-500 ${currentHeadingId === h.id ? 'text-blue-600' : 'text-gray-700'}`}
-                          style={{ paddingLeft: `${(h.level - 1) * 12}px` }}
-                        >
-                          {h.text}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              </div>
-              <div className="rounded-lg border bg-white">
-                <div className="px-4 py-2 border-b text-sm font-medium flex items-center justify-between">
-                  <span>快速操作</span>
-                  <a href={`/dashboard/notes/${id}/versions`} className="text-xs text-blue-600">版本</a>
-                </div>
-                <div className="p-3 text-xs text-gray-500">
-                  在上方工具栏打开“协作抽屉”查看评论与协作者。
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
+        <NoteEditorMetadataPanel id={id} toc={toc} showSidebar={showSidebar} isFullscreen={isFullscreen} />
       </div>
 
-      {/* 右侧协作抽屉（不包含评论内容） */}
-      {showCollabDrawer && (
-        <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
-          <div
-            className="absolute inset-0 bg-black/20"
-            role="button"
-            tabIndex={0}
-            onClick={() => setShowCollabDrawer(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') setShowCollabDrawer(false)
-            }}
-          />
-          <div className="absolute right-0 top-0 h-full w-[360px] bg-white border-l shadow-xl">
-            <div className="flex items-center justify-between px-4 py-2 border-b">
-              <div className="text-sm font-medium">协作</div>
-              <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCollabDrawer(false)}>关闭</button>
-            </div>
-            <div className="p-4 space-y-4 overflow-auto h-full">
-              <div className="rounded-lg border">
-                <div className="px-3 py-2 border-b text-xs font-medium">协作者</div>
-                <div className="p-3">
-                  <CollaboratorsPanel noteId={id} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-      {/* 右侧评论抽屉（独立） */}
-      {showCommentsDrawer && (
-        <div className="fixed inset-0 z-50" aria-modal="true" role="dialog" aria-labelledby="comments-drawer-title">
-          <div
-            className="absolute inset-0 bg-black/20"
-            role="button"
-            tabIndex={0}
-            onClick={() => setShowCommentsDrawer(false)}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') setShowCommentsDrawer(false)
-            }}
-          />
-          <div
-            ref={commentsDrawerRef}
-            id="comments-drawer"
-            className="absolute right-0 top-0 h-full w-[380px] bg-white border-l shadow-xl"
-            style={{
-              borderRadius: 0,
-              transform: 'translateX(0)',
-              transition: 'transform 300ms ease-in-out',
-            }}
-          >
-            <div className="flex items-center justify-between px-4 py-2 border-b">
-              <div id="comments-drawer-title" className="text-sm font-medium">划词评论</div>
-              <div className="text-xs text-gray-500">选区：{selection.start}–{selection.end}（长度 {Math.max(0, selection.end - selection.start)}）</div>
-              <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={() => setShowCommentsDrawer(false)}>关闭</button>
-            </div>
-            <div className="p-4 overflow-auto h-full">
-              <div className="rounded-lg border" style={{ borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)' }}>
-                <div className="p-3">
-                  <CommentsPanel noteId={id} selection={selection} />
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
+      <NoteEditorDrawers
+        id={id}
+        selection={selection}
+        showCollabDrawer={showCollabDrawer}
+        showCommentsDrawer={showCommentsDrawer}
+        commentsDrawerRef={commentsDrawerRef as React.RefObject<HTMLDivElement>}
+        onCloseCollab={() => setShowCollabDrawer(false)}
+        onCloseComments={() => setShowCommentsDrawer(false)}
+      />
       {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
       <button
         aria-label="打开协作抽屉"

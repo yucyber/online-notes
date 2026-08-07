@@ -1,10 +1,18 @@
 'use client';
-import React, { useEffect, useRef, useState } from 'react';
+import React, { useEffect, useRef } from 'react';
 import MindElixir from 'mind-elixir';
 // 引入样式文件，修复 UI 显示异常
 import 'mind-elixir/style';
 import { useAI } from '@/context/AIContext';
 import { mindmapsAPI } from '@/lib/api';
+import {
+    buildMindElixirOptions,
+    cloneMindElixirData,
+    decorateMindElixirImages,
+    normalizeMindElixirData,
+    transformAiMindMapData,
+} from './mind-elixir-factory';
+import { useMindElixirMap } from './useMindElixirMap';
 
 interface MindElixirMapProps {
     id: string;
@@ -13,72 +21,24 @@ interface MindElixirMapProps {
 }
 
 const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly = false }) => {
-    const containerRef = useRef<HTMLDivElement>(null);
-    const [mindElixirInstance, setMindElixirInstance] = useState<any>(null);
+    const { containerRef, handleSave, mindElixirInstance, setMindElixirInstance } = useMindElixirMap(id);
     const { mindMapData, setMindMapData } = useAI();
+
+    // 保存最新的 props，供只运行一次的初始化 effect 读取
+    const initialDataRef = useRef(initialData)
+    initialDataRef.current = initialData
+    const readonlyRef = useRef(readonly)
+    readonlyRef.current = readonly
 
     useEffect(() => {
         if (!containerRef.current) return;
+        const initialContainer = containerRef.current;
 
         // 清理容器，防止 React Strict Mode 下重复渲染
         containerRef.current.innerHTML = '';
 
-        const DEFAULT_DATA = {
-            nodeData: {
-                id: 'root',
-                topic: '新建思维导图',
-                root: true,
-                children: []
-            },
-            linkData: {}
-        };
-
-        // 确保 initialData 是有效的 MindElixir 数据结构
-        let data = DEFAULT_DATA;
-        if (initialData && typeof initialData === 'object') {
-            if (initialData.nodeData) {
-                data = initialData;
-            } else if (initialData.root) {
-                // 兼容旧格式或 AI 生成格式
-                data = {
-                    nodeData: {
-                        id: 'root',
-                        topic: initialData.root.topic || '新建思维导图',
-                        root: true,
-                        children: initialData.root.children || []
-                    },
-                    linkData: {}
-                };
-            }
-        }
-
-        // Deep clone data to avoid mutation and ensure valid JSON
-        let safeData = DEFAULT_DATA;
-        try {
-            if (data) {
-                const stringified = JSON.stringify(data);
-                if (stringified) {
-                    safeData = JSON.parse(stringified);
-                } else {
-                    console.warn('JSON.stringify returned undefined for data:', data);
-                }
-            }
-        } catch (e) {
-            console.error('Data sanitization failed:', e);
-        }
-
-        const options = {
-            el: containerRef.current,
-            direction: (MindElixir.LEFT || 2) as 0 | 1 | 2,
-            data: safeData,
-            draggable: !readonly,
-            contextMenu: !readonly,
-            toolBar: !readonly,
-            nodeMenu: !readonly,
-            keypress: !readonly,
-            editable: !readonly,
-            locale: 'zh_CN' as any
-        };
+        const safeData = cloneMindElixirData(normalizeMindElixirData(initialDataRef.current));
+        const options = buildMindElixirOptions(containerRef.current, safeData, readonlyRef.current, MindElixir.LEFT || 2);
 
         console.log('Initializing MindElixir with options:', options);
 
@@ -88,28 +48,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
             // 扩展渲染逻辑：支持图片显示
             me.bus.addListener('operation', (operation: any) => {
                 if (operation.name === 'finishRender') {
-                    // 尝试匹配 MindElixir 的节点元素 (兼容 v5+ 的 me-tp 和旧版的 .mind-elixir-node)
-                    const topicNodes = containerRef.current?.querySelectorAll('me-tp, .mind-elixir-node');
-
-                    topicNodes?.forEach((node) => {
-                        // 获取节点 ID
-                        const id = node.getAttribute('data-nodeid');
-                        if (!id) return;
-
-                        // @ts-expect-error: MindElixir types are incomplete
-                        const nodeData = me.nodeDataMap[id];
-                        if (nodeData?.data?.image) {
-                            // 防止重复添加图片
-                            if (node.querySelector('img')) return;
-
-                            const img = document.createElement('img');
-                            img.src = nodeData.data.image;
-                            img.style.maxWidth = '120px';
-                            img.style.display = 'block';
-                            img.style.marginTop = '5px';
-                            node.appendChild(img);
-                        }
-                    });
+                    decorateMindElixirImages(containerRef.current, me);
                 }
             });
 
@@ -124,88 +63,28 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
         // 实际项目中可以监听操作事件
 
         return () => {
-            // Cleanup if needed
+            initialContainer.innerHTML = '';
         };
-    }, []);
+    }, [containerRef, setMindElixirInstance]);
 
     // 当 AI 生成数据时，更新导图
     useEffect(() => {
         if (mindMapData && mindElixirInstance) {
-            let newData;
-
-            // Check if data is already in MindElixir format (has nodeData)
-            if ((mindMapData as any).nodeData) {
-                newData = mindMapData;
-            } else {
-                // 转换 AI 数据格式到 MindElixir 格式
-                // 假设 AI 返回 { root: "Topic", nodes: [...] }
-                const transformNode = (node: any): any => ({
-                    topic: node.content,
-                    id: node.id || 'node_' + Math.random().toString(36).substr(2, 9),
-                    children: node.children ? node.children.map(transformNode) : []
-                });
-
-                newData = {
-                    nodeData: {
-                        topic: mindMapData.root || 'AI Result',
-                        id: 'root',
-                        children: (mindMapData.nodes || []).map(transformNode)
-                    },
-                    linkData: {}
-                };
-            }
-
-            // 深度克隆数据，确保没有 undefined 值，防止 JSON 错误
-            let cleanData;
-            try {
-                cleanData = JSON.parse(JSON.stringify(newData));
-            } catch (e) {
-                console.error('JSON serialization failed:', e);
-                cleanData = {
-                    nodeData: { id: 'root', topic: 'Error', root: true, children: [] },
-                    linkData: {}
-                };
-            }
+            const cleanData = cloneMindElixirData(transformAiMindMapData(mindMapData));
 
             try {
                 // 重新初始化前必须清理容器，防止工具栏重复和 DOM 堆叠
                 if (containerRef.current) {
                     containerRef.current.innerHTML = '';
 
-                    const options = {
-                        el: containerRef.current,
-                        direction: (MindElixir.LEFT || 2) as 0 | 1 | 2,
-                        data: cleanData,
-                        draggable: true,
-                        contextMenu: true,
-                        toolBar: true,
-                        nodeMenu: true,
-                        keypress: true,
-                        locale: 'zh_CN' as any
-                    };
+                    const options = buildMindElixirOptions(containerRef.current, cleanData, false, MindElixir.LEFT || 2);
 
                     const me = new MindElixir(options);
 
                     // 扩展渲染逻辑：支持图片显示
                     me.bus.addListener('operation', (operation: any) => {
                         if (operation.name === 'finishRender') {
-                            const nodeElements = containerRef.current?.querySelectorAll('me-tp');
-                            nodeElements?.forEach((node) => {
-                                const id = node.getAttribute('data-nodeid');
-                                if (!id) return;
-
-                                // @ts-expect-error: MindElixir types are incomplete
-                                const nodeData = me.nodeDataMap[id];
-                                if (nodeData?.data?.image) {
-                                    if (node.querySelector('img')) return;
-                                    const img = document.createElement('img');
-                                    img.src = nodeData.data.image;
-                                    img.style.maxWidth = '120px';
-                                    img.style.display = 'block';
-                                    img.style.marginTop = '5px';
-                                    node.appendChild(img);
-                                }
-                            });
+                            decorateMindElixirImages(containerRef.current, me);
                         }
                     });
 
@@ -231,19 +110,7 @@ const MindElixirMap: React.FC<MindElixirMapProps> = ({ id, initialData, readonly
             mindmapsAPI.save(id, cleanData); // 保存到后端
             setMindMapData(null); // 清空 AI 数据，避免重复应用
         }
-    }, [mindMapData, mindElixirInstance, id, setMindMapData]);
-
-    const handleSave = () => {
-        if (mindElixirInstance) {
-            const data = mindElixirInstance.getData();
-            mindmapsAPI.save(id, data).then(() => {
-                alert('保存成功');
-            }).catch(err => {
-                console.error('保存失败', err);
-                alert('保存失败');
-            });
-        }
-    };
+    }, [mindMapData, mindElixirInstance, id, setMindMapData, containerRef, setMindElixirInstance]);
 
     return (
         <div className="h-full flex flex-col">

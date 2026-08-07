@@ -1,5 +1,5 @@
 import api from './client'
-import { getToken } from '../auth'
+import { getStoredUser } from '../auth'
 
 export const aclAPI = {
   get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as { visibility: string; acl: { userId: string; role: string }[] }),
@@ -29,8 +29,8 @@ export const auditAPI = {
 
 export const notificationsAPI = {
   list: (page: number = 1, size: number = 20, type?: string, status?: string) => {
-    const token = getToken()
-    if (!token) {
+    const user = getStoredUser()
+    if (!user) {
       return Promise.resolve({ items: [], page, size, total: 0 }) as Promise<{ items: any[]; page: number; size: number; total: number }>
     }
     return api

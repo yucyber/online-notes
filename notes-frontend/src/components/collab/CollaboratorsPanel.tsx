@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { aclAPI, invitationsAPI } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -17,15 +17,17 @@ export function CollaboratorsPanel({ noteId }: { noteId: string }) {
     try {
       const iv = await invitationsAPI.list(noteId)
       setInvites(iv || [])
-    } catch (e: any) {
+    } catch {
       // 非所有者视角：邀请列表不可见
       setInvites([])
     }
   }
-  useEffect(() => { load() }, [noteId])
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => { void loadRef.current() }, [noteId])
   useEffect(() => {
-    const timer = setInterval(() => { load().catch(() => { }) }, 5000)
-    const onVis = () => { if (document.visibilityState === 'visible') load().catch(() => { }) }
+    const timer = setInterval(() => { loadRef.current().catch(() => { }) }, 5000)
+    const onVis = () => { if (document.visibilityState === 'visible') loadRef.current().catch(() => { }) }
     document.addEventListener('visibilitychange', onVis)
     return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVis) }
   }, [noteId])
@@ -34,7 +36,7 @@ export function CollaboratorsPanel({ noteId }: { noteId: string }) {
       const hasPending = invites.some(v => v.status === 'pending')
       if (!hasPending && lastInvite) setLastInvite(null)
     }
-  }, [invites])
+  }, [invites, lastInvite])
   const sendInvite = async () => {
     if (!email) return
     const created = await invitationsAPI.create(noteId, role, email, 24)

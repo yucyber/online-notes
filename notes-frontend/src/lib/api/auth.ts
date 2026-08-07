@@ -1,14 +1,13 @@
-import api from './client'
+import { getTyped, postTyped } from './client'
 import type { User, LoginCredentials } from '@/types'
 
-// 认证相关API
 export const authAPI = {
   login: (credentials: LoginCredentials) =>
-    api.post<{ token: string; user: User }>('/auth/login', credentials).then(res => res as unknown as { token: string; user: User }),
+    postTyped<{ user: User }>('/auth/login', credentials),
 
   register: (data: LoginCredentials) =>
-    api.post<{ token: string; user: User }>('/auth/register', data).then(res => res as unknown as { token: string; user: User }),
+    postTyped<{ user: User }>('/auth/register', data),
 
   getCurrentUser: () =>
-    api.get<User>('/auth/me').then(res => res as unknown as User),
+    getTyped<User>('/auth/me'),
 }

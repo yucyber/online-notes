@@ -3,13 +3,14 @@ import { useEffect, useMemo, useState, useRef } from 'react'
 import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
 import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
-import { Bold, Italic, Underline as UnderlineIcon, MessageSquare, Sparkles, FileText, PenTool, Loader2 } from 'lucide-react'
-import { commentsAPI } from '@/lib/api'
-import { streamAIWriter } from '@/lib/ai-writer'
+import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
 import { createTiptapExtensions } from './tiptap-extensions'
 import { COLLAB_STATUS_META, colorFromString, hexToRgb, sanitizeHTML, srgb } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
 import { useTiptapPersistence } from './useTiptapPersistence'
+import { useTiptapEditorBridge } from './useTiptapEditorBridge'
+import { useTiptapCommentMarks } from './useTiptapCommentMarks'
+import { TiptapAiActions } from './TiptapAiActions'
 
 type Props = {
   noteId: string
@@ -44,25 +45,25 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const injectBusyRef = useRef(false)
   const lastInjectedHTMLRef = useRef<string>('')
   const migratedOnceRef = useRef(false)
-  const onSelectionChangeRef = useRef<typeof onSelectionChange | null>(onSelectionChange)
-  const onContentChangeRef = useRef<typeof onContentChange | null>(onContentChange)
-  const onSaveRef = useRef<typeof onSave | null>(onSave)
+  const { onSelectionChangeRef, onContentChangeRef, onSaveRef } = useTiptapEditorBridge({
+    onSelectionChange,
+    onContentChange,
+    onSave,
+  })
   const [aiWritingType, setAiWritingType] = useState<null | 'continue' | 'polish' | 'summary'>(null)
-
-  useEffect(() => { onSelectionChangeRef.current = onSelectionChange }, [onSelectionChange])
-  useEffect(() => { onContentChangeRef.current = onContentChange }, [onContentChange])
-  useEffect(() => { onSaveRef.current = onSave }, [onSave])
   const suppressSelectionRef = useRef(false)
   const lastSelectionRef = useRef<{ from: number; to: number }>({ from: -1, to: -1 })
   const selectionDebounceRef = useRef<number | null>(null)
-
   const editor = useEditor({
     extensions: createTiptapExtensions({ collabEnabled, ydoc, provider, user }),
+    // 协作模式且非版本回溯时，Yjs 是正文真相源，不能用 initialHTML 覆盖编辑器内容；
+    // 版本回溯或协作未启用时才需要将 HTML 设为初始内容。
     content: ((collabEnabled && !versionKey) ? undefined : (initialHTML || '<p></p>')),
     editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
     editable: !readOnly,
     immediatelyRender: false,
   }, [provider, collabEnabled])
+  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef })
 
   useEffect(() => {
     if (!editor) return
@@ -168,7 +169,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     editor.on('selectionUpdate', handler)
     return () => { editor.off('selectionUpdate', handler) }
-  }, [editor, noteId])
+  }, [editor, noteId, onSelectionChangeRef])
 
   useEffect(() => {
     if (!editor) return
@@ -188,7 +189,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       onContentChangeRef.current?.(html)
     } catch { }
     return () => { editor.off('update', updateHandler) }
-  }, [editor])
+  }, [editor, onContentChangeRef])
 
   useEffect(() => {
     if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>' && provider) {
@@ -395,46 +396,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     document.addEventListener('tiptap:exec', execHandler as any)
     return () => { document.removeEventListener('tiptap:exec', execHandler as any) }
-  }, [editor])
-
-  useEffect(() => {
-    if (!editor) return
-    const handler = (e: any) => {
-      try {
-        const { start, end, commentId } = (e as CustomEvent).detail || {}
-        if (typeof start === 'number' && typeof end === 'number') {
-          suppressSelectionRef.current = true
-          editor.chain().focus().setTextSelection({ from: start, to: end }).setMark('commentMark', { commentId: commentId || `local-${Date.now()}` }).run()
-          setTimeout(() => { suppressSelectionRef.current = false }, 120)
-        }
-      } catch { }
-    }
-    document.addEventListener('comments:mark', handler as any)
-    return () => { document.removeEventListener('comments:mark', handler as any) }
-  }, [editor])
-
-  useEffect(() => {
-    if (!editor) return
-    const applied = new Set<string>()
-    const replayHandler = async (e: any) => {
-      const detail = (e as CustomEvent).detail || {}
-      if (!detail || detail.noteId !== noteId) return
-      const list = await commentsAPI.list(noteId)
-      const items = Array.isArray(detail.ids) ? list.filter((c: any) => detail.ids.includes(String(c._id || c.id))) : list
-      const ranges = items.filter((c: any) => typeof c.start === 'number' && typeof c.end === 'number' && c.start < c.end).sort((a: any, b: any) => a.start - b.start)
-      for (const c of ranges) {
-        const cid = String(c._id || c.id || c.commentId)
-        if (applied.has(cid)) continue
-        suppressSelectionRef.current = true
-        editor.chain().focus().setTextSelection({ from: c.start, to: c.end }).setMark('commentMark', { commentId: cid }).run()
-        setTimeout(() => { suppressSelectionRef.current = false }, 120)
-        applied.add(cid)
-      }
-      try { document.dispatchEvent(new CustomEvent('comments:list:update', { detail: { noteId, comments: items } })) } catch { }
-    }
-    document.addEventListener('comments:replay', replayHandler as any)
-    return () => { document.removeEventListener('comments:replay', replayHandler as any) }
-  }, [editor, noteId])
+  }, [editor, onSaveRef])
 
   if (!editor) return <div className="p-4 text-sm text-gray-500">编辑器加载中…</div>
 
@@ -496,31 +458,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             return $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0
           }}
         >
-          <Button
-            variant="ghost"
-            size="sm"
-            className="flex items-center gap-1 bg-white shadow-md border"
-            disabled={!!aiWritingType || readOnly}
-            onClick={() => {
-              if (!editor) return
-              const { from } = editor.state.selection
-              const context = editor.state.doc.textBetween(Math.max(0, from - 500), from, '\n')
-
-              setAiWritingType('continue')
-              streamAIWriter({
-                context,
-                type: 'continue',
-                onChunk: (text) => {
-                  editor.chain().focus().insertContent(text).run()
-                },
-                onDone: () => setAiWritingType(null),
-                onError: () => setAiWritingType(null)
-              })
-            }}
-          >
-            {aiWritingType === 'continue' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
-            AI 续写
-          </Button>
+          <TiptapAiActions
+            editor={editor}
+            readOnly={readOnly}
+            aiWritingType={aiWritingType}
+            setAiWritingType={setAiWritingType}
+            mode="continue"
+          />
         </FloatingMenu>
 
         <BubbleMenu
@@ -554,67 +498,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
             <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
 
-            <Button
-              aria-label="AI 润色"
-              title="AI 润色"
-              size="icon"
-              variant="ghost"
-              disabled={readOnly || !!aiWritingType}
-              onClick={() => {
-                const { from, to } = editor.state.selection
-                const context = editor.state.doc.textBetween(from, to, '\n')
-
-                setAiWritingType('polish')
-                let isFirstChunk = true
-
-                streamAIWriter({
-                  context,
-                  type: 'polish',
-                  onChunk: (text) => {
-                    if (isFirstChunk) {
-                      editor.chain().focus().deleteSelection().insertContent(text).run()
-                      isFirstChunk = false
-                    } else {
-                      editor.chain().focus().insertContent(text).run()
-                    }
-                  },
-                  onDone: () => setAiWritingType(null),
-                  onError: () => setAiWritingType(null)
-                })
-              }}
-            >
-              {aiWritingType === 'polish' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-purple-500" />}
-            </Button>
-
-            <Button
-              aria-label="AI 摘要"
-              title="生成摘要"
-              size="icon"
-              variant="ghost"
-              disabled={readOnly || !!aiWritingType}
-              onClick={() => {
-                const { from, to } = editor.state.selection
-                const context = editor.state.doc.textBetween(from, to, '\n')
-
-                setAiWritingType('summary')
-                editor.chain().focus().setTextSelection(to).insertContent('\n\n> **摘要**：').run()
-
-                streamAIWriter({
-                  context,
-                  type: 'summary',
-                  onChunk: (text) => {
-                    editor.chain().focus().insertContent(text).run()
-                  },
-                  onDone: () => {
-                    editor.chain().focus().insertContent('\n\n').run()
-                    setAiWritingType(null)
-                  },
-                  onError: () => setAiWritingType(null)
-                })
-              }}
-            >
-              {aiWritingType === 'summary' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4 text-blue-500" />}
-            </Button>
+            <TiptapAiActions
+              editor={editor}
+              readOnly={readOnly}
+              aiWritingType={aiWritingType}
+              setAiWritingType={setAiWritingType}
+              mode="selection"
+            />
 
             <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
             <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={readOnly} onClick={() => {

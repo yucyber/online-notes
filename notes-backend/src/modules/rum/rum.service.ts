@@ -6,16 +6,29 @@ type DayStats = { count: number; sum: number }
 @Injectable()
 export class RumService {
     private store = new Map<string, Map<string, DayStats>>()
+    private readonly MAX_DAYS = 7
 
     collect(ev: RumEvent) {
         const ts = ev.ts ?? Date.now()
         const d = new Date(ts)
         const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
         const key = `${ev.type}:${ev.name || ''}`
-        if (!this.store.has(dateKey)) this.store.set(dateKey, new Map())
+        if (!this.store.has(dateKey)) {
+            this.store.set(dateKey, new Map())
+            this.evictOldEntries()
+        }
         const day = this.store.get(dateKey)!
         const cur = day.get(key) || { count: 0, sum: 0 }
         day.set(key, { count: cur.count + 1, sum: cur.sum + Number(ev.value || 0) })
+    }
+
+    private evictOldEntries() {
+        if (this.store.size <= this.MAX_DAYS) return
+        const sortedKeys = Array.from(this.store.keys()).sort()
+        while (this.store.size > this.MAX_DAYS && sortedKeys.length > 0) {
+            const oldest = sortedKeys.shift()!
+            this.store.delete(oldest)
+        }
     }
 
     report(date?: string) {
@@ -28,4 +41,3 @@ export class RumService {
         return { date: dateKey, metrics: entries }
     }
 }
-

@@ -74,6 +74,7 @@ export default function OutlinePanel({ html }: { html: string }) {
         role="treeitem"
         aria-level={n.level}
         aria-current={currentId === n.id ? 'true' : undefined}
+        aria-selected={currentId === n.id}
         onClick={() => scrollTo(n.id, n.index)}
         onKeyDown={(e) => onKey(e, n.id, n.index)}
         className={`

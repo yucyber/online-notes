@@ -39,25 +39,38 @@ export class SemanticService {
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
   ) { }
 
-  async searchVector(query: string, userId: string): Promise<any[]> {
+  async searchVector(query: string, userId: string, opts: SemanticSearchOpts = {}): Promise<SemanticPage> {
+    const page = Math.max(1, Number(opts.page || 1))
+    const limit = Math.max(1, Math.min(100, Number(opts.limit || 10)))
+    const threshold = Number(opts.threshold ?? 0)
     const vector = await this.embeddingService.generateEmbedding(query);
     if (!vector || vector.length === 0) {
-      return [];
+      return { page, limit, total: 0, totalPages: 1, hasNext: false, data: [] }
     }
 
-    return this.noteModel.aggregate([
+    const accessAnd: any[] = [this.noteAccess.readableFilter(userId)]
+    if (opts.categoryId) accessAnd.push({ categoryId: opts.categoryId })
+    if (Array.isArray(opts.tagIds) && opts.tagIds.length > 0) {
+      accessAnd.push(opts.tagsMode === 'any'
+        ? { tags: { $in: opts.tagIds } }
+        : { tags: { $all: opts.tagIds } })
+    }
+
+    // Atlas vectorSearch cannot reliably express the ACL/public $or filter on every
+    // deployed index version, so retrieve a bounded candidate window and enforce the
+    // complete readable scope in the following match stage.
+    const candidateLimit = Math.min(1000, Math.max(100, page * limit * 10))
+    const items = await this.noteModel.aggregate([
       {
         $vectorSearch: {
           index: 'vector_index',
           path: 'embedding',
           queryVector: vector,
-          numCandidates: 100,
-          limit: 10,
-          filter: {
-            userId: { $eq: new Types.ObjectId(userId) }
-          }
+          numCandidates: Math.max(100, candidateLimit * 10),
+          limit: candidateLimit,
         }
       },
+      { $match: { $and: accessAnd } },
       {
         $project: {
           title: 1,
@@ -66,7 +79,22 @@ export class SemanticService {
           updatedAt: 1
         }
       }
-    ]).exec();
+    ]).exec()
+
+    let mapped: SemanticItem[] = (items || []).map((n: any) => ({
+      id: String(n._id || n.id || ''),
+      title: String(n.title || ''),
+      preview: String(n.content || '').slice(0, 220),
+      score: Number(n.score || 0),
+      updatedAt: String(n.updatedAt || ''),
+    }))
+    if (threshold > 0) mapped = mapped.filter((item) => item.score >= threshold)
+
+    const total = mapped.length
+    const start = (page - 1) * limit
+    const data = mapped.slice(start, start + limit)
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    return { page, limit, total, totalPages, hasNext: page < totalPages, data }
   }
 
   async search(q: string, userId: string, opts: SemanticSearchOpts = {}): Promise<SemanticPage> {
@@ -82,6 +110,7 @@ export class SemanticService {
     }
 
     const isCJK = !!q && /[\u4e00-\u9fff]/.test(q)
+    // CJK \u4e0d\u652f\u6301 MongoDB $text \u5168\u6587\u7d22\u5f15\uff0c\u6539\u7528\u6b63\u5219\u5206\u8bcd\u5339\u914d\u3002
     const useText = !!q && !isCJK && (opts.mode === 'keyword' || opts.mode === 'vector' || opts.mode === 'hybrid')
     let items: any[] = []
     let total = 0
