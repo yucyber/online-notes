@@ -82,6 +82,7 @@ describe('TiptapEditor collaboration auth', () => {
 
     render(<TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />)
 
+    await waitFor(() => expect(mockGetRoomTicket).toHaveBeenCalledWith('n1'))
     expect(await screen.findByText('协作配置缺失')).toBeInTheDocument()
     expect((WebsocketProvider as any).instances).toHaveLength(0)
   })
