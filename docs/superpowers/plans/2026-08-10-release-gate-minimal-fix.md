@@ -367,6 +367,8 @@ Expected: 所有门禁退出码 0，工作区干净，最近提交包含设计�
 - 定向 Jest 原命令因单文件 coverage 触发全局阈值而退出 1，已改为 `--coverage=false`；完整 coverage 门禁仍由全量 Jest 承担。
 - 独立审查发现 room-ticket 漏写 Cookie 鉴权，提交 `f2c21e6` 已补充 `CookieAuth`，并在该提交后重新运行全部门禁，退出码均为 0。
 - 未执行项：外部 AI live、依赖 audit、y-websocket 运行时 smoke、浏览器 E2E。
+- 验收复扫追加的 Task 4–7 已完成：定向协作测试 3/3、契约语义测试 2/2，最终全量门禁通过。
+- 安装 `yaml` 时 npm 摘要显示 1 low / 1 high；为控制范围未运行自动修复，完整 audit 仍保留为独立待办。
 
 ---
 
@@ -379,7 +381,7 @@ Expected: 所有门禁退出码 0，工作区干净，最近提交包含设计�
 - Consumes: `notesAPI.getRoomTicket('n1')` 的成功 Promise。
 - Produces: 能证明 ticket 请求已完成后仍因缺少 `NEXT_PUBLIC_YWS_URL` 而降级的回归测试。
 
-- [ ] **Step 1: 收紧配置缺失断言并观察失败**
+- [x] **Step 1: 收紧配置缺失断言并观察失败**
 
 在 `renders readable status when websocket url is missing` 中加入：
 
@@ -398,7 +400,7 @@ npx.cmd jest --runInBand --coverage=false __tests__/editor.tiptap.auth.spec.tsx
 
 Expected: 当前实现下测试通过；该补充属于断言完整性修正，不要求生产代码变化。如果断言失败，先确认 ticket effect 是否执行，不修改业务时序来迎合测试。
 
-- [ ] **Step 2: 提交测试强化**
+- [x] **Step 2: 提交测试强化**
 
 ```powershell
 git add notes-frontend/__tests__/editor.tiptap.auth.spec.tsx
@@ -419,7 +421,7 @@ git commit -m "test(协作): 强化配置缺失场景断言" -m "确认 room-tic
 - Consumes: `notes-backend/openapi.yaml` 的完整 OpenAPI document。
 - Produces: `validateReleaseGateOperations(document)`；对 logout 和 room-ticket 的 method、status、security、参数与 schema 进行结构化验证。
 
-- [ ] **Step 1: 安装 YAML parser**
+- [x] **Step 1: 安装 YAML parser**
 
 Run:
 
@@ -429,7 +431,7 @@ npm.cmd install --save-dev yaml@^2.9.0
 
 Expected: 根目录 `devDependencies` 新增 `yaml`，lockfile 同步更新；不引入生产运行时依赖。
 
-- [ ] **Step 2: 先写失败的语义验证测试**
+- [x] **Step 2: 先写失败的语义验证测试**
 
 创建 `scripts/check-api-contract.test.mjs`，用 `node:test` 构造最小 OpenAPI document，分别删除以下字段并断言 validator 抛错：
 
@@ -461,7 +463,7 @@ node --test scripts/check-api-contract.test.mjs
 
 Expected: FAIL，因为 validator 尚未导出。
 
-- [ ] **Step 3: 实现结构化解析和 validator**
+- [x] **Step 3: 实现结构化解析和 validator**
 
 在 `scripts/check-api-contract.mjs` 中：
 
@@ -475,7 +477,7 @@ export function validateReleaseGateOperations(document) {
 
 `main()` 使用 `YAML.parse(readFileSync(OPENAPI_FILE, 'utf8'))`，先执行现有 drift 检查，再调用 validator。通过 `if (import.meta.url === pathToFileURL(process.argv[1]).href) main()` 避免测试 import 时直接执行 CLI。
 
-- [ ] **Step 4: 验证 semantic tests 和正式门禁**
+- [x] **Step 4: 验证 semantic tests 和正式门禁**
 
 Run:
 
@@ -484,9 +486,9 @@ node --test scripts/check-api-contract.test.mjs
 npm.cmd run check:api-contract
 ```
 
-Expected: semantic tests 全部通过；正式门禁输出 0 drift rows 并退出 0。
+Expected: semantic tests 全部通过；正式门禁在 Task 6 收紧真实 schema 前先因 `LogoutEnvelope` 缺失而失败，Task 6 完成后输出 0 drift rows 并退出 0。
 
-- [ ] **Step 5: 提交语义门禁**
+- [x] **Step 5: 提交语义门禁**
 
 ```powershell
 git add package.json package-lock.json scripts/check-api-contract.mjs scripts/check-api-contract.test.mjs
@@ -504,7 +506,7 @@ git commit -m "test(openapi): 增加发布接口语义门禁" -m "路径集合�
 - Consumes: Task 5 的 `validateReleaseGateOperations(document)`。
 - Produces: `LogoutEnvelope`、`LogoutResult`，以及强制包含 `data` 的 `RoomTicketEnvelope`。
 
-- [ ] **Step 1: 运行语义门禁确认当前 schema 失败**
+- [x] **Step 1: 运行语义门禁确认当前 schema 失败**
 
 Run:
 
@@ -514,7 +516,7 @@ npm.cmd run check:api-contract
 
 Expected: FAIL，指出 logout 缺少 typed `data.message`，或 room-ticket envelope 未将 `data` 标为 required。
 
-- [ ] **Step 2: 补充精确响应 schema**
+- [x] **Step 2: 补充精确响应 schema**
 
 将 logout 200 response 改为 `#/components/responses/LogoutEnvelope`，并新增：
 
@@ -547,7 +549,7 @@ Expected: FAIL，指出 logout 缺少 typed `data.message`，或 room-ticket env
 
 同时在 `RoomTicketEnvelope` 的扩展 object 中加入 `required: [data]`；保留 `RoomTicket.required: [ticket, role, expiresIn]`。
 
-- [ ] **Step 3: 验证并提交 schema**
+- [x] **Step 3: 验证并提交 schema**
 
 Run:
 
@@ -574,14 +576,14 @@ git commit -m "docs(openapi): 收紧发布接口响应结构" -m "明确 logout 
 - Consumes: Task 4–6 的最新验证输出。
 - Produces: 不再同时出现“待 shell 恢复”和“已通过”的一致验收报告。
 
-- [ ] **Step 1: 修订历史状态而非删除历史证据**
+- [x] **Step 1: 修订历史状态而非删除历史证据**
 
 - 将 9.1 中 room-ticket、HttpOnly Cookie、Throttler 的“待安装/待回归”改为当前状态，并引用 9.5 的验证数字。
 - 将 9.2 的依赖 audit 保持“未验证”，不得写成已通过。
 - 将 9.4 标题改为“历史待办（截至 2026-08-07）”，在标题下说明完成状态以 9.5 和本次补漏验收为准。
 - 新增 9.6，记录语义门禁测试数量、定向协作测试 3/3，以及最新全量门禁结果。
 
-- [ ] **Step 2: 执行最终全量验证**
+- [x] **Step 2: 执行最终全量验证**
 
 Run:
 
@@ -595,7 +597,7 @@ cd ../notes-frontend; npm.cmd run type-check; npm.cmd run lint; npm.cmd run ci:t
 
 Expected: 所有命令退出码 0；报告只记录本次实际取得的数字。外部 AI live、audit、runtime smoke 和 browser E2E 继续明确为未验证。
 
-- [ ] **Step 3: 提交报告和最终检查**
+- [x] **Step 3: 提交报告和最终检查**
 
 ```powershell
 git add "docs/代码安全-重复逻辑-功能验收扫描报告-2026-08-07.md"
