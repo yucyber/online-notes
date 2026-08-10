@@ -139,7 +139,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed bottom-24 right-6 w-96 h-[600px] bg-white dark:bg-gray-800 rounded-xl shadow-2xl flex flex-col border border-gray-200 dark:border-gray-700 z-50 overflow-hidden animate-in fade-in slide-in-from-bottom-10 duration-300">
+        <div className="fixed bottom-20 left-3 right-3 z-50 flex h-[min(600px,calc(100dvh-6rem))] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in slide-in-from-bottom-10 duration-300 dark:border-gray-700 dark:bg-gray-800 sm:bottom-24 sm:left-auto sm:right-6 sm:w-96">
             <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-primary/5">
                 <div className="flex items-center gap-2">
                     <Bot className="w-5 h-5 text-primary" />

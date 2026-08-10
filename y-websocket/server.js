@@ -4,6 +4,7 @@ const http = require('http')
 const jwt = require('jsonwebtoken')
 const utils = require('y-websocket/bin/utils')
 const { redactRequestUrl } = require('./url-utils')
+const { installReadOnlyGuard } = require('./read-only')
 const setupWSConnection = utils.setupWSConnection
 const docs = utils.docs
 
@@ -45,7 +46,9 @@ wss.on('connection', (conn, req) => {
     }
 
     try {
+        const restoreConnectionHandler = installReadOnlyGuard(conn, req.user?.role)
         setupWSConnection(conn, req, { gc: true })
+        restoreConnectionHandler()
 
         // 监听消息接收，确认数据流
         conn.on('message', (message) => {

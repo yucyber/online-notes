@@ -1,12 +1,13 @@
 'use client'
 
 import Link from 'next/link'
-import { Check, Edit, Trash2 } from 'lucide-react'
+import { Check, Edit, Eye, Trash2 } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import type { Note } from '@/types'
 import { formatDate, truncateText } from '@/utils'
 import { getCategoryLabel } from './notes-page-utils'
 import { SummaryPreview } from './SummaryPreview'
+import { canWriteNote } from '@/components/editor/note-permissions'
 
 type NotesListCardProps = {
   note: Note
@@ -18,6 +19,7 @@ type NotesListCardProps = {
   onRequestDelete: (id: string) => void
   resolveTagId: (tag: string | { id?: string; _id?: string }) => string
   resolveTagLabel: (tag: string | { name?: string; id?: string; _id?: string }) => string
+  currentUserId: string
 }
 
 export function NotesListCard({
@@ -30,8 +32,10 @@ export function NotesListCard({
   onRequestDelete,
   resolveTagId,
   resolveTagLabel,
+  currentUserId,
 }: NotesListCardProps) {
   const categoryLabel = getCategoryLabel(note, categoryMap)
+  const writable = canWriteNote(note, currentUserId)
 
   return (
     <Card
@@ -96,18 +100,18 @@ export function NotesListCard({
               href={`/dashboard/notes/${note.id}`}
               className="p-2 rounded-lg transition-all duration-200"
               style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }}
-              title="编辑"
+              title={writable ? '编辑' : '查看'}
             >
-              <Edit className="h-4 w-4" />
+              {writable ? <Edit className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
             </Link>
-            <button
+            {writable && <button
               onClick={() => onRequestDelete(note.id)}
               className="p-2 rounded-lg transition-all duration-200"
               style={{ backgroundColor: 'var(--surface-2)', color: 'var(--text-muted)' }}
               title="删除"
             >
               <Trash2 className="h-4 w-4" />
-            </button>
+            </button>}
           </div>
         </div>
       </CardHeader>

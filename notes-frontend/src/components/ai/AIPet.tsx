@@ -12,12 +12,13 @@ export default function AIPet() {
             <button
                 type="button"
                 aria-label="切换 AI 助手"
-                className="fixed bottom-6 right-6 z-50 cursor-pointer group"
+                title="打开 AI 助手"
+                className="group fixed bottom-4 right-4 z-50 cursor-pointer sm:bottom-6 sm:right-6"
                 onClick={() => setIsOpen(!isOpen)}
             >
                 <div className="relative">
-                    <div className="w-14 h-14 bg-blue-600 hover:bg-blue-700 rounded-full shadow-lg flex items-center justify-center text-white transition-transform transform group-hover:scale-110 group-hover:-translate-y-1 duration-300">
-                        <Bot size={32} />
+                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg transition duration-200 group-hover:-translate-y-0.5 group-hover:bg-blue-700 group-hover:shadow-xl sm:h-14 sm:w-14">
+                        <Bot className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
                     {/* Online Status Indicator */}
                     <span className="absolute top-0 right-0 flex h-3 w-3">

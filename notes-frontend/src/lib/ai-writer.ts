@@ -34,6 +34,16 @@ export const streamAIWriter = async ({
             throw new Error(`AI request failed: ${response.statusText}`);
         }
 
+        const contentType = response.headers.get('content-type') || '';
+        if (contentType.includes('application/json')) {
+            const payload = await response.json();
+            const text = payload?.data?.text ?? payload?.text;
+            if (typeof text !== 'string') throw new Error(payload?.message || payload?.error || 'AI response has no text');
+            onChunk(text);
+            onDone?.();
+            return;
+        }
+
         const reader = response.body?.getReader();
         if (!reader) throw new Error('No response body');
 

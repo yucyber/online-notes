@@ -57,19 +57,22 @@ test('AiGatewayClient routes text chat to SenseNova by default', async () => {
   assert.equal(calls[0].headers.Authorization, 'Bearer sensenova-secret')
 })
 
-test('AiGatewayClient routes reasoning chat to MiMo', async () => {
+test('AiGatewayClient routes reasoning chat to SenseNova by default', async () => {
   const calls: Array<{ url: string; body: any }> = []
   const fetchImpl = async (url: any, init: any) => {
     calls.push({ url: String(url), body: JSON.parse(init.body) })
-    return jsonResponse({ choices: [{ message: { content: 'OK from MiMo' } }] })
+    return jsonResponse({ choices: [{ message: { content: 'OK from SenseNova reasoning' } }] })
   }
-  const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
+  const client = new AiGatewayClient(
+    createConfig({ AI_REASONING_PROVIDER: undefined }) as any,
+    fetchImpl as any,
+  )
 
   const result = await client.chat({ route: 'reasoning', prompt: 'think', maxTokens: 16 })
 
-  assert.equal(result, 'OK from MiMo')
-  assert.equal(calls[0].url, 'https://mimo.example/v1/chat/completions')
-  assert.equal(calls[0].body.model, 'mimo-v2.5-pro')
+  assert.equal(result, 'OK from SenseNova reasoning')
+  assert.equal(calls[0].url, 'https://sensenova.example/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'deepseek-v4-flash')
 })
 
 test('AiGatewayClient reports missing config without leaking existing secrets', async () => {

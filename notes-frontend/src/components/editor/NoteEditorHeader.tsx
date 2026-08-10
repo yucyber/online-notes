@@ -11,6 +11,7 @@ type Props = {
   onVisibilityChange: (visibility: string) => void | Promise<void>
   onToggleSidebar: () => void
   onOpenCollab: () => void
+  readOnly?: boolean
 }
 
 export function NoteEditorHeader({
@@ -22,6 +23,7 @@ export function NoteEditorHeader({
   onVisibilityChange,
   onToggleSidebar,
   onOpenCollab,
+  readOnly = false,
 }: Props) {
   return (
     <div className="sticky top-0 z-40 backdrop-blur border-b" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
@@ -30,7 +32,7 @@ export function NoteEditorHeader({
           <Button variant="ghost" size="icon" onClick={onBack} className="text-gray-500 hover:text-gray-700">
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <span className="text-sm" style={{ color: 'var(--on-surface)' }}>{"编辑笔记"}</span>
+          <span className="text-sm" style={{ color: 'var(--on-surface)' }}>{readOnly ? '查看笔记' : '编辑笔记'}</span>
           <div className="hidden md:flex items-center gap-3 ml-2">
             <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{"编辑器"}</span>
             <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={onModeChange} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}>
@@ -42,6 +44,7 @@ export function NoteEditorHeader({
               className="rounded border px-2 py-1 text-xs"
               style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
               value={(note as any)?.visibility || 'private'}
+              disabled={readOnly}
               onChange={(event) => onVisibilityChange(event.target.value)}
             >
               <option value="private">{"仅自己"}</option>
@@ -58,7 +61,7 @@ export function NoteEditorHeader({
               <span className="inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> {"显示侧栏"}</span>
             )}
           </Button>
-          <Button variant="ghost" size="icon" aria-label={"编辑笔记"} title={"编辑器"} onClick={onOpenCollab} className="hover:bg-[var(--surface-2)]">
+          <Button variant="ghost" size="icon" aria-label="打开协作" title="协作" onClick={onOpenCollab} className="hover:bg-[var(--surface-2)]">
             <Users className="h-5 w-5" />
             <span className="sr-only">{"协作"}</span>
           </Button>

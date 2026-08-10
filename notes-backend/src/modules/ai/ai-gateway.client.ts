@@ -101,12 +101,11 @@ export class AiGatewayClient {
     return this.readProviderConfig(provider, this.chatProviderKeys(route, provider))
   }
 
-  // 路由策略：text 走 AI_TEXT_PROVIDER（默认 sensenova），reasoning 走 AI_REASONING_PROVIDER（默认 mimo）。
-  // 两条路由可分别配置不同 API key 和 model，满足文案生成与推理型任务的成本要求不同。
+  // text 与 reasoning 默认共用 SenseNova，避免本地聊天依赖另一套失效凭据；仍保留显式切换 provider 的能力。
   private resolveChatProviderName(route: AiChatRoute): string {
     return String(
       this.configService.get<string>(route === 'reasoning' ? 'AI_REASONING_PROVIDER' : 'AI_TEXT_PROVIDER') ||
-      (route === 'reasoning' ? 'mimo' : 'sensenova'),
+      'sensenova',
     ).toLowerCase()
   }
 

@@ -11,11 +11,13 @@ import { AggregateSummaryDialog } from '@/components/ai/AggregateSummaryDialog'
 import { AddToKnowledgeBasePanel } from '@/components/knowledge-bases/AddToKnowledgeBasePanel'
 import { NotesListCard } from '@/components/notes/NotesListCard'
 import { useNotesPage } from '@/components/notes/useNotesPage'
+import { getCurrentUser } from '@/lib/auth'
 
 const SearchFilterBar = dynamic(() => import('@/components/SearchFilterBar'), { ssr: false })
 const SmartRecommendations = dynamic(() => import('@/components/SmartRecommendations'), { ssr: false })
 
 function NotesPageContent() {
+  const currentUserId = getCurrentUser()?.id || ''
   const {
     searchParams,
     notes,
@@ -275,6 +277,7 @@ function NotesPageContent() {
                   onRequestDelete={setPendingDeleteId}
                   resolveTagId={resolveTagId}
                   resolveTagLabel={resolveTagLabel}
+                  currentUserId={currentUserId}
                 />
               ))}
             </div>
