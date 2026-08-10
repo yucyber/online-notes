@@ -27,3 +27,18 @@
 ## 详细说明
 
 参见 `docs/superpowers/specs/2026-08-07-code-comment-clarity-design.md`。
+
+# Git 工作流规范
+
+## 提交信息
+
+- Commit message 统一使用**中文**撰写。
+- 格式：`类型(范围): 简述`，如 `fix(backend): 修复登录态丢失问题`。
+- 正文换行后补充原因和关键改动，不复述代码 diff。
+
+## 分支命名
+
+- 新分支格式：`类型-中文简述-YYYYMMDD`，如 `feat-笔记搜索-20260810`。
+- `类型` 用英文小写：`feat` / `fix` / `chore` / `refactor` / `docs` / `test`。
+- 中文简述要**简洁明了**，用连字符分隔多个词，如 `优化缓存策略`、`修复权限校验`。
+- 日期取创建分支当天的日期。
