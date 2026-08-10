@@ -113,10 +113,10 @@ Run:
 
 ```powershell
 cd notes-frontend
-npm.cmd run ci:test -- --runInBand __tests__/editor.tiptap.auth.spec.tsx
+npx.cmd jest --runInBand --coverage=false __tests__/editor.tiptap.auth.spec.tsx
 ```
 
-Expected: PASS，3 tests passed，0 failed。
+Expected: PASS，3 tests passed，0 failed。定向验证关闭 coverage，完整 coverage 门禁由 Task 3 执行；否则单文件覆盖率会触发全局阈值并造成假失败。
 
 - [ ] **Step 6: 提交测试迁移**
 
@@ -177,6 +177,7 @@ Expected: FAIL，报告 `/api/auth/logout` 和 `/api/notes/:id/room-ticket` 未�
       tags: [Notes]
       summary: 签发笔记协作房间短时票据
       security:
+        - CookieAuth: []
         - BearerAuth: []
       responses:
         '201':
@@ -188,6 +189,15 @@ Expected: FAIL，报告 `/api/auth/logout` 和 `/api/notes/:id/room-ticket` 未�
 ```
 
 NestJS `@Post` 未显式设置状态码，因此契约使用 `201`。
+
+在 `components.securitySchemes` 中补充 Cookie 鉴权声明；两个 security requirement 并列表示 Cookie 或 Bearer 任一方式均可：
+
+```yaml
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: notes_token
+```
 
 - [ ] **Step 4: 定义响应 envelope 和 schema**
 

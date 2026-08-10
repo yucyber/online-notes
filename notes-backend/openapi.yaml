@@ -362,6 +362,7 @@ paths:
       tags: [Notes]
       summary: 签发笔记协作房间短时票据
       security:
+        - CookieAuth: []
         - BearerAuth: []
       responses:
         '201':
@@ -1120,6 +1121,10 @@ components:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    CookieAuth:
+      type: apiKey
+      in: cookie
+      name: notes_token
   parameters:
     Id:
       in: path
