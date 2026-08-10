@@ -1,6 +1,8 @@
 #!/usr/bin/env node
 import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { pathToFileURL } from 'node:url'
+import YAML from 'yaml'
 
 const REGISTRY = 'docs/api-contract-drift.md'
 const CLIENT_FILE = 'notes-frontend/src/lib/api.ts'
@@ -12,6 +14,47 @@ const ALLOWED_DECISIONS = new Set([
   'mark-planned-or-remove',
   'document-openapi',
 ])
+
+function assertContract(condition, field) {
+  if (!condition) throw new Error(`OpenAPI release gate: missing or invalid ${field}`)
+}
+
+function responseDataSchema(response) {
+  const allOf = response?.content?.['application/json']?.schema?.allOf
+  return Array.isArray(allOf) ? allOf.find(item => item?.type === 'object' && item?.properties?.data) : null
+}
+
+export function validateReleaseGateOperations(document) {
+  const logout = document?.paths?.['/api/auth/logout']?.post
+  assertContract(logout, 'logout POST')
+  assertContract(logout.responses?.['200']?.$ref === '#/components/responses/LogoutEnvelope', 'LogoutEnvelope')
+
+  const logoutEnvelope = document?.components?.responses?.LogoutEnvelope
+  const logoutData = responseDataSchema(logoutEnvelope)
+  assertContract(logoutData?.required?.includes('data'), 'LogoutEnvelope.data')
+  assertContract(logoutData?.properties?.data?.$ref === '#/components/schemas/LogoutResult', 'LogoutResult')
+  const logoutResult = document?.components?.schemas?.LogoutResult
+  assertContract(logoutResult?.required?.includes('message') && logoutResult?.properties?.message?.type === 'string', 'LogoutResult.message')
+
+  const roomPath = document?.paths?.['/api/notes/{id}/room-ticket']
+  const roomTicket = roomPath?.post
+  assertContract(roomTicket, 'room-ticket POST')
+  assertContract(roomPath.parameters?.some(parameter => parameter?.$ref === '#/components/parameters/Id'), 'room-ticket Id parameter')
+  assertContract(roomTicket.security?.some(requirement => 'CookieAuth' in requirement), 'CookieAuth')
+  assertContract(roomTicket.security?.some(requirement => 'BearerAuth' in requirement), 'BearerAuth')
+  assertContract(document?.components?.securitySchemes?.CookieAuth?.in === 'cookie', 'CookieAuth scheme')
+  assertContract(roomTicket.responses?.['201']?.$ref === '#/components/responses/RoomTicketEnvelope', 'RoomTicketEnvelope response')
+
+  const roomEnvelope = document?.components?.responses?.RoomTicketEnvelope
+  assertContract(roomEnvelope, 'RoomTicketEnvelope')
+  const roomData = responseDataSchema(roomEnvelope)
+  assertContract(roomData?.required?.includes('data'), 'RoomTicketEnvelope.data')
+  assertContract(roomData?.properties?.data?.$ref === '#/components/schemas/RoomTicket', 'RoomTicket schema reference')
+
+  const roomSchema = document?.components?.schemas?.RoomTicket
+  const required = new Set(roomSchema?.required || [])
+  assertContract(['ticket', 'role', 'expiresIn'].every(field => required.has(field)), 'RoomTicket required fields')
+}
 
 function normalizeBraces(p) {
   return p
@@ -142,6 +185,8 @@ function parseApprovedNonContractPaths() {
 }
 
 function main() {
+  const openApiDocument = YAML.parse(readFileSync(OPENAPI_FILE, 'utf8'))
+  validateReleaseGateOperations(openApiDocument)
   const clientPaths = extractClientPaths()
   const backendPaths = extractBackendPaths()
   const openApiPaths = extractOpenApiPaths()
@@ -201,4 +246,6 @@ function main() {
   console.log(`API contract drift register OK: ${drift.length} drift rows`)
 }
 
-main()
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main()
+}

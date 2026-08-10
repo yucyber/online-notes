@@ -5,7 +5,8 @@
     "check:ai-config:live": "node scripts/check-ai-config.mjs --live"
   },
   "devDependencies": {
-    "ts-node": "^10.9.2"
+    "ts-node": "^10.9.2",
+    "yaml": "^2.9.0"
   },
   "dependencies": {
     "@types/ws": "^8.18.1",
