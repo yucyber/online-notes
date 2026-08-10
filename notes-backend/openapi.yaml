@@ -187,6 +187,13 @@ paths:
           $ref: '#/components/responses/AuthSession'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/auth/logout:
+    post:
+      tags: [Auth]
+      summary: 退出登录并清除认证 Cookie
+      responses:
+        '200':
+          $ref: '#/components/responses/Ok'
   /api/auth/me:
     get:
       tags: [Auth]
@@ -348,6 +355,21 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+  /api/notes/{id}/room-ticket:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+    post:
+      tags: [Notes]
+      summary: 签发笔记协作房间短时票据
+      security:
+        - BearerAuth: []
+      responses:
+        '201':
+          $ref: '#/components/responses/RoomTicketEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/notes/{id}/lock:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1319,6 +1341,17 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/Note'
+    RoomTicketEnvelope:
+      description: 协作房间短时票据
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/RoomTicket'
     CategoryEnvelope:
       description: 分类
       content:
@@ -1555,6 +1588,20 @@ components:
             userId: { type: string }
             createdAt: { type: string, format: date-time }
             updatedAt: { type: string, format: date-time }
+    RoomTicket:
+      type: object
+      required: [ticket, role, expiresIn]
+      properties:
+        ticket:
+          type: string
+          description: 仅用于指定笔记 Yjs 房间的短时 JWT
+        role:
+          type: string
+          enum: [writer, reader]
+        expiresIn:
+          type: integer
+          description: 有效期，单位为秒
+          example: 300
     PaginatedNotes:
       type: object
       properties:
