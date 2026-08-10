@@ -1705,6 +1705,8 @@ git commit -m "fix(lint): resolve all 20 lint warnings"
 
 ## Task 18: P2 — i18n 文案迁移（登录/Dashboard/编辑器）
 
+> **延期说明（2026-08-10）：** 项目短期内不做多语言，此任务暂缓执行。`check-i18n.mjs` 仍保留在 CI 中作为未来迁移的基线检测，但当前 52 处 JSX 中文字面量违规不阻塞发布。待多语言需求正式启动后再恢复迁移。
+
 **Files:**
 - Modify: `notes-frontend/messages/zh-CN.json`
 - Modify: `notes-frontend/messages/en.json`
