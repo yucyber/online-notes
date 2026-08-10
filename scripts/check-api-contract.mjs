@@ -40,9 +40,14 @@ export function validateReleaseGateOperations(document) {
   const roomTicket = roomPath?.post
   assertContract(roomTicket, 'room-ticket POST')
   assertContract(roomPath.parameters?.some(parameter => parameter?.$ref === '#/components/parameters/Id'), 'room-ticket Id parameter')
+  const idParameter = document?.components?.parameters?.Id
+  assertContract(idParameter?.name === 'id' && idParameter?.in === 'path' && idParameter?.required === true && idParameter?.schema?.type === 'string', 'Id parameter definition')
   assertContract(roomTicket.security?.some(requirement => 'CookieAuth' in requirement), 'CookieAuth')
   assertContract(roomTicket.security?.some(requirement => 'BearerAuth' in requirement), 'BearerAuth')
-  assertContract(document?.components?.securitySchemes?.CookieAuth?.in === 'cookie', 'CookieAuth scheme')
+  const cookieAuth = document?.components?.securitySchemes?.CookieAuth
+  assertContract(cookieAuth?.type === 'apiKey' && cookieAuth?.in === 'cookie' && cookieAuth?.name === 'notes_token', 'CookieAuth scheme')
+  const bearerAuth = document?.components?.securitySchemes?.BearerAuth
+  assertContract(bearerAuth?.type === 'http' && bearerAuth?.scheme === 'bearer', 'BearerAuth scheme')
   assertContract(roomTicket.responses?.['201']?.$ref === '#/components/responses/RoomTicketEnvelope', 'RoomTicketEnvelope response')
 
   const roomEnvelope = document?.components?.responses?.RoomTicketEnvelope
@@ -54,6 +59,9 @@ export function validateReleaseGateOperations(document) {
   const roomSchema = document?.components?.schemas?.RoomTicket
   const required = new Set(roomSchema?.required || [])
   assertContract(['ticket', 'role', 'expiresIn'].every(field => required.has(field)), 'RoomTicket required fields')
+  const roleValues = roomSchema?.properties?.role?.enum || []
+  assertContract(roomSchema?.properties?.ticket?.type === 'string' && roomSchema?.properties?.expiresIn?.type === 'integer', 'RoomTicket field types')
+  assertContract(roleValues.length === 2 && roleValues.includes('writer') && roleValues.includes('reader'), 'RoomTicket role enum')
 }
 
 function normalizeBraces(p) {

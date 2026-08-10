@@ -19,6 +19,9 @@ function createValidDocument() {
       },
     },
     components: {
+      parameters: {
+        Id: { name: 'id', in: 'path', required: true, schema: { type: 'string' } },
+      },
       securitySchemes: {
         CookieAuth: { type: 'apiKey', in: 'cookie', name: 'notes_token' },
         BearerAuth: { type: 'http', scheme: 'bearer' },
@@ -84,9 +87,14 @@ test('rejects release-gate operation drift', () => {
     ['room-ticket Id parameter', (doc) => { doc.paths['/api/notes/{id}/room-ticket'].parameters = [] }],
     ['CookieAuth', (doc) => { doc.paths['/api/notes/{id}/room-ticket'].post.security = [{ BearerAuth: [] }] }],
     ['BearerAuth', (doc) => { doc.paths['/api/notes/{id}/room-ticket'].post.security = [{ CookieAuth: [] }] }],
+    ['CookieAuth scheme', (doc) => { doc.components.securitySchemes.CookieAuth.name = 'wrong_cookie' }],
+    ['BearerAuth scheme', (doc) => { doc.components.securitySchemes.BearerAuth.scheme = 'basic' }],
+    ['Id parameter definition', (doc) => { doc.components.parameters = { Id: { name: 'wrong', in: 'query', required: false, schema: { type: 'number' } } } }],
     ['RoomTicketEnvelope', (doc) => { delete doc.components.responses.RoomTicketEnvelope }],
     ['RoomTicketEnvelope.data', (doc) => { doc.components.responses.RoomTicketEnvelope.content['application/json'].schema.allOf[1].required = [] }],
     ['RoomTicket required fields', (doc) => { doc.components.schemas.RoomTicket.required = ['ticket'] }],
+    ['RoomTicket field types', (doc) => { doc.components.schemas.RoomTicket.properties.expiresIn.type = 'string' }],
+    ['RoomTicket role enum', (doc) => { doc.components.schemas.RoomTicket.properties.role.enum = ['writer'] }],
   ]
 
   for (const [message, mutate] of cases) {
