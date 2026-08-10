@@ -1,6 +1,7 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { JwtService } from '@nestjs/jwt';
 import { Note, NoteDocument } from './schemas/note.schema';
 import { CreateNoteDto, UpdateNoteDto, NoteFilterDto } from './dto';
 import { CategoriesService } from '../categories/categories.service';
@@ -10,6 +11,8 @@ import { AiService } from '../ai/ai.service';
 import { NoteAccessService } from './note-access.service';
 import { NoteCounterService } from './note-counter.service';
 import { NoteCacheService } from './note-cache.service';
+import { NoteRecommendationService } from './note-recommendation.service';
+import { NoteDerivedService } from './note-derived.service';
 
 @Injectable()
 export class NotesService {
@@ -22,21 +25,34 @@ export class NotesService {
     private readonly noteAccess: NoteAccessService,
     private readonly noteCounter: NoteCounterService,
     private readonly noteCache: NoteCacheService,
-  ) { }
+    @Optional() private readonly noteRecommendations?: NoteRecommendationService,
+    @Optional() noteDerived?: NoteDerivedService,
+    @Optional() private readonly jwtService?: JwtService,
+  ) {
+    this.noteDerived = noteDerived || new NoteDerivedService(noteModel, embeddingService, aiService)
+  }
+
+  private readonly noteDerived: NoteDerivedService
 
   async create(createNoteDto: CreateNoteDto, userId: string): Promise<Note> {
-    // 1. Sync fallback summary
-    const cleanContent = createNoteDto.content
-      .replace(/<[^>]+>/g, '')
-      .replace(/[#*`_~>\[\]()]/g, '')
-      .trim();
-    const fallbackSummary = cleanContent.substring(0, 200) + (cleanContent.length > 200 ? '...' : '');
+    const categoryIds = Array.from(new Set([
+      ...(createNoteDto.categoryId ? [createNoteDto.categoryId] : []),
+      ...(createNoteDto.categoryIds || []),
+    ]))
+    const tagIds = createNoteDto.tags || []
+    // 先验证分类和标签归属，再创建引用，避免跨用户挂接领域数据。
+    await this.categoriesService.assertOwnedIds(categoryIds, userId)
+    await this.tagsService.assertOwnedIds(tagIds, userId)
+
+    // 同步写入可立即展示的兜底摘要；AI 摘要稍后成功时再覆盖它。
+    const fallbackSummary = this.noteDerived.buildFallbackSummary(createNoteDto.content)
 
     const createdNote = new this.noteModel({
       ...createNoteDto,
       summary: fallbackSummary,
       userId: new Types.ObjectId(userId),
       tags: createNoteDto.tags ? createNoteDto.tags.map(tag => new Types.ObjectId(tag)) : [],
+      categoryId: createNoteDto.categoryId ? new Types.ObjectId(createNoteDto.categoryId) : undefined,
       categoryIds: createNoteDto.categoryIds ? createNoteDto.categoryIds.map(id => new Types.ObjectId(id)) : undefined,
     });
 
@@ -48,43 +64,23 @@ export class NotesService {
       tags: createNoteDto.tags,
     })
 
-    // Async embedding generation
+    // embedding 和 AI 摘要属于派生数据，失败不能阻断笔记创建主流程。
     this.updateEmbedding(savedNote);
-
-    // Async AI summary generation
     this.generateAndSaveSummary(savedNote);
 
     return savedNote;
   }
 
-  private generateAndSaveSummary(note: NoteDocument) {
-    this.aiService.generateSummary(note.content)
-      .then(summary => {
-        if (summary) {
-          this.noteModel.updateOne({ _id: note._id }, { summary }, { timestamps: false }).exec();
-        }
-      })
-      .catch(err => console.error(`Failed to generate summary for note ${note._id}`, err));
+  async refreshDerivedFields(note: NoteDocument): Promise<void> {
+    await this.noteDerived.refresh(note)
   }
 
-  private async updateEmbedding(note: NoteDocument) {
-    try {
-      const text = `${note.title}\n${note.content}`;
-      // Truncate before sending content to the embedding provider.
-      const truncatedText = text.substring(0, 8000);
-      const embedding = await this.embeddingService.generateEmbedding(truncatedText);
+  private generateAndSaveSummary(note: NoteDocument, expectedContent = String(note.content || '')) {
+    return this.noteDerived.generateAndSaveSummary(note, expectedContent)
+  }
 
-      if (embedding && embedding.length > 0) {
-        // Use updateOne to avoid version conflicts and unnecessary overhead
-        await this.noteModel.updateOne(
-          { _id: note._id },
-          { $set: { embedding: embedding } },
-          { timestamps: false },
-        );
-      }
-    } catch (error) {
-      console.error(`Failed to update embedding for note ${note._id}:`, error);
-    }
+  private async updateEmbedding(note: NoteDocument, expectedTitle = String(note.title || ''), expectedContent = String(note.content || '')) {
+    return this.noteDerived.updateEmbedding(note, expectedTitle, expectedContent)
   }
 
   async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
@@ -98,40 +94,32 @@ export class NotesService {
     const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload)
     if (cached) return cached
 
-    // Use $and to safely combine multiple conditions including $or clauses
+    // 所有筛选都放进同一个 $and，确保 keyword 等内部 $or 不会冲掉最前面的访问范围。
     const andConditions: any[] = [];
 
-    // 0. IDs Filter
     if (ids && ids.length > 0) {
       andConditions.push({ _id: { $in: ids.map(id => new Types.ObjectId(id)) } });
     }
 
-    // 1. Base condition: Access scope
-    const u = new Types.ObjectId(userId)
-    const accessScope = {
-      $or: [
-        { userId: u },
-        { acl: { $elemMatch: { userId: u } } },
-        { visibility: 'public' },
-      ],
-    }
-    andConditions.push(accessScope)
+    // 权限条件是列表查询的固定基线，后续任何筛选和分页都只能在此范围内收窄。
+    andConditions.push(this.noteAccess.readableFilter(userId))
 
-    // 2. Keyword Search：新增 `$text` 分支（默认正则）
+    // text 模式使用 MongoDB 文本索引；默认 regex 保留现有的部分匹配体验。
     if (keyword) {
       if (searchMode === 'text') {
         andConditions.push({ $text: { $search: keyword } })
       } else {
+        const escaped = keyword.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
         andConditions.push({
           $or: [
-            { title: { $regex: keyword, $options: 'i' } },
-            { content: { $regex: keyword, $options: 'i' } },
+            { title: { $regex: escaped, $options: 'i' } },
+            { content: { $regex: escaped, $options: 'i' } },
           ],
         });
       }
     }
 
-    // 3. Category Filter (Handle both ObjectId and String storage)
+    // 同时匹配 ObjectId 和 String，兼容早期数据中的分类 ID 存储格式。
     if (categoryId) {
       andConditions.push({
         $or: [
@@ -155,7 +143,7 @@ export class NotesService {
       })
     }
 
-    // 4. Tags Filter
+    // 多标签默认要求全部命中；显式 tagsMode=any 时才放宽为任一命中。
     if (tagIds && tagIds.length > 0) {
       const tags = Array.isArray(tagIds) ? tagIds : [tagIds];
       const objectIds = tags.filter(Boolean).map(id => new Types.ObjectId(id));
@@ -172,7 +160,6 @@ export class NotesService {
       });
     }
 
-    // 5. Date Range
     if (startDate || endDate) {
       const dateQuery: any = {};
       if (startDate) {
@@ -181,16 +168,15 @@ export class NotesService {
       if (endDate) {
         dateQuery.$lte = new Date(endDate);
       }
-      // 与排序字段对齐：当 sortBy=createdAt 时使用 createdAt；否则沿用 updatedAt
+      // 日期范围跟随排序字段，避免列表按更新时间排序却按创建时间过滤。
       andConditions.push({ [sortBy === 'createdAt' ? 'createdAt' : 'updatedAt']: dateQuery });
     }
 
-    // 6. Status Filter
     if (status) {
       andConditions.push({ status });
     }
 
-    // 7. Cursor（基于 createdAt 的时间游标；当提供 cursor 时优先游标分页）
+    // 当前游标只表达 createdAt；拒绝其他排序字段，避免返回看似成功但顺序错误的分页结果。
     if (cursor) {
       const c = new Date(cursor)
       if (isNaN(c.getTime())) {
@@ -200,13 +186,11 @@ export class NotesService {
       if (sortBy === 'createdAt') {
         andConditions.push({ createdAt: sortOrder === 'desc' ? { $lt: c } : { $gt: c } })
       } else {
-        // 非默认字段的游标暂不支持；返回400以避免误用
         const { HttpException, HttpStatus } = require('@nestjs/common')
         throw new HttpException('cursor only supports sortBy=createdAt', HttpStatus.BAD_REQUEST)
       }
     }
 
-    // Construct final query
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
 
     const [items, total] = await Promise.all([
@@ -221,7 +205,7 @@ export class NotesService {
         .exec(),
       this.noteModel.countDocuments(query),
     ])
-    // 提供游标信息以便前端在深分页场景改用基于时间的 seek 分页，降低跳页成本
+    // 返回时间游标供深分页切换为 seek 模式，避免页码越深时 skip 成本持续增加。
     const nextCursor = (sortBy === 'createdAt' && items.length > 0)
       ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
       : undefined
@@ -245,25 +229,38 @@ export class NotesService {
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
-    const originalNote = await this.noteModel.findOne(this.noteAccess.writeScope(id, userId)).exec();
+    // 可见性影响所有读者，只有 owner 能改；正文等普通内容仍允许 editor 修改。
+    const noteScope = updateNoteDto.visibility !== undefined
+      ? this.noteAccess.ownerScope(id, userId)
+      : this.noteAccess.writeScope(id, userId)
+    const originalNote = await this.noteModel.findOne(noteScope).exec();
 
     if (!originalNote) {
       throw new NotFoundException('笔记不存在');
     }
 
-    // Sync fallback summary if content changes
-    if (updateNoteDto.content) {
-      const cleanContent = updateNoteDto.content
-        .replace(/<[^>]+>/g, '')
-        .replace(/[#*`_~>\[\]()]/g, '')
-        .trim();
-      updateNoteDto['summary'] = cleanContent.substring(0, 200) + (cleanContent.length > 200 ? '...' : '');
+    const categoryIds = Array.from(new Set([
+      ...(updateNoteDto.categoryId ? [updateNoteDto.categoryId] : []),
+      ...(updateNoteDto.categoryIds || []),
+    ]))
+    if (updateNoteDto.categoryId !== undefined || updateNoteDto.categoryIds !== undefined) {
+      await this.categoriesService.assertOwnedIds(categoryIds, userId)
+    }
+    if (updateNoteDto.tags !== undefined) {
+      await this.tagsService.assertOwnedIds(updateNoteDto.tags, userId)
+    }
+
+    const updatePayload: Record<string, any> = { ...updateNoteDto }
+
+    // 即使正文被显式清空也要同步刷新兜底摘要，不能遗留旧内容摘要。
+    if (updatePayload.content !== undefined) {
+      updatePayload.summary = this.noteDerived.buildFallbackSummary(updatePayload.content)
     }
 
     const updatedNote = await this.noteModel
       .findOneAndUpdate(
-        { _id: new Types.ObjectId(id) },
-        updateNoteDto,
+        noteScope,
+        updatePayload,
         { new: true, runValidators: true },
       )
       .populate('categoryId', 'name')
@@ -274,46 +271,44 @@ export class NotesService {
       throw new NotFoundException('笔记不存在');
     }
 
-    // Async embedding generation if content or title changed
-    if (updateNoteDto.title || updateNoteDto.content) {
+    // 派生字段异步刷新，不延长保存请求；服务内部会防止旧任务覆盖更新后的正文。
+    if (updatePayload.title !== undefined || updatePayload.content !== undefined) {
       this.updateEmbedding(updatedNote);
     }
 
-    // Async AI summary generation if content changed
-    if (updateNoteDto.content) {
+    if (updatePayload.content !== undefined) {
       this.generateAndSaveSummary(updatedNote);
     }
 
-    // Category count sync — merge single + array fields into one set per side,
-    // so callers passing both don't double-count overlapping ids.
+    // 单分类和多分类字段先合并成集合再算差异，避免同一分类在两个字段中重复计数。
     const touchingCategoryField =
-      updateNoteDto.categoryId !== undefined || Array.isArray(updateNoteDto.categoryIds)
+      updatePayload.categoryId !== undefined || Array.isArray(updatePayload.categoryIds)
     if (touchingCategoryField) {
       const prev = new Set<string>()
       if (originalNote.categoryId) prev.add(originalNote.categoryId.toString())
       for (const cid of (originalNote.categoryIds || [])) prev.add(cid.toString())
 
       const next = new Set<string>()
-      if (updateNoteDto.categoryId) next.add(updateNoteDto.categoryId)
-      else if (updateNoteDto.categoryId === undefined && originalNote.categoryId) {
-        // categoryId field was not touched — preserve original
+      if (updatePayload.categoryId) next.add(updatePayload.categoryId)
+      else if (updatePayload.categoryId === undefined && originalNote.categoryId) {
+        // 未提交该字段时保留旧值；undefined 表示“未修改”，不是“清空”。
         next.add(originalNote.categoryId.toString())
       }
-      if (Array.isArray(updateNoteDto.categoryIds)) {
-        for (const cid of updateNoteDto.categoryIds) if (cid) next.add(cid)
+      if (Array.isArray(updatePayload.categoryIds)) {
+        for (const cid of updatePayload.categoryIds) if (cid) next.add(cid)
       } else if (originalNote.categoryIds) {
-        // categoryIds field was not touched — preserve original
+        // 多分类字段同样区分未提交和显式空数组。
         for (const cid of originalNote.categoryIds) next.add(cid.toString())
       }
 
       await this.noteCounter.updateCategories([...prev], [...next])
     }
 
-    // Tag count sync (previous code forgot this entirely).
-    if (Array.isArray(updateNoteDto.tags)) {
+    // 只在请求明确提交 tags 时同步计数，避免局部更新误清现有标签。
+    if (Array.isArray(updatePayload.tags)) {
       await this.noteCounter.updateTags(
         (originalNote.tags || []).map(t => t.toString()),
-        updateNoteDto.tags,
+        updatePayload.tags,
       )
     }
 
@@ -321,6 +316,7 @@ export class NotesService {
   }
 
   async remove(id: string, userId: string): Promise<void> {
+    // 删除会影响整篇笔记及领域计数，因此只接受 owner 范围。
     const note = await this.noteModel.findOne(this.noteAccess.ownerScope(id, userId)).exec();
 
     if (!note) {
@@ -341,8 +337,7 @@ export class NotesService {
   }
 
   async getAcl(id: string, userId: string): Promise<{ visibility: string; acl: any[] }> {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.memberScope(id, userId)).exec()
     if (!note) {
       throw new NotFoundException('笔记不存在')
     }
@@ -365,8 +360,6 @@ export class NotesService {
     }
     ; (note as any).acl = acl
     await note.save()
-    // audit
-    try { const { AuditService } = require('../audit/audit.service'); } catch { }
     return { ok: true }
   }
 
@@ -403,14 +396,14 @@ export class NotesService {
   async lockNote(id: string, userId: string) {
     try {
       const u = new Types.ObjectId(userId)
-      const note = await this.noteModel.findOne({ _id: new Types.ObjectId(id), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
+      const note = await this.noteModel.findOne(this.noteAccess.writeScope(id, userId)).exec()
       if (!note) throw new NotFoundException('无权限')
         ; (note as any).editingBy = u
         ; (note as any).lockedAt = new Date()
       await note.save()
       return { ok: true }
     } catch (e) {
-      // Ignore ParallelSaveError (common in dev mode with React StrictMode)
+      // React StrictMode 在开发环境可能重复触发锁请求；并行保存冲突可视为锁已写入。
       if (e.name === 'ParallelSaveError') {
         return { ok: true }
       }
@@ -424,8 +417,7 @@ export class NotesService {
       const u = new Types.ObjectId(userId)
       const note = await this.noteModel.findById(id).exec()
       if (!note) throw new NotFoundException('笔记不存在')
-      // Allow unlock if user is owner OR user is the one who locked it
-      // Also handle case where editingBy is null/undefined
+      // 只有创建者或当前加锁者能解锁；ACL editor 不能解除他人的编辑占用。
       const isLocker = (note as any).editingBy && (note as any).editingBy.toString() === u.toString();
       const isOwner = note.userId.toString() === u.toString();
 
@@ -435,12 +427,12 @@ export class NotesService {
         await note.save()
         return { ok: true }
       }
-      // If not locked by anyone, it's fine
+      // 未加锁时解锁保持幂等，调用方无需额外查询锁状态。
       if (!(note as any).editingBy) return { ok: true }
 
       throw new NotFoundException('无权限')
     } catch (e) {
-      // Ignore ParallelSaveError
+      // 与加锁一致，把 StrictMode 导致的并行保存视为幂等成功。
       if (e.name === 'ParallelSaveError') {
         return { ok: true }
       }
@@ -450,162 +442,36 @@ export class NotesService {
   }
 
   async getRecommendations(userId: string, currentNoteId?: string, limit: number = 5, context?: NoteFilterDto): Promise<Note[]> {
-    console.log('Recommendations request', { userId, currentNoteId, limit, context })
-    const userObjectId = new Types.ObjectId(userId);
-    let recommendations: Note[] = [];
-    const excludeIds: Types.ObjectId[] = [];
-    const ctx = context || {}
+    if (!this.noteRecommendations) throw new Error('Note recommendation service is not available.')
+    return this.noteRecommendations.getRecommendations(userId, currentNoteId, limit, context)
+  }
 
-    const andConditions: any[] = [{ userId: userObjectId }]
-    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode } = ctx
+  async generateRoomTicket(noteId: string, userId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> {
+    if (!this.jwtService) throw new NotFoundException('JwtService not available')
 
-    if (keyword) {
-      if (searchMode === 'text') {
-        andConditions.push({ $text: { $search: keyword } })
-      } else {
-        andConditions.push({
-          $or: [
-            { title: { $regex: keyword, $options: 'i' } },
-            { content: { $regex: keyword, $options: 'i' } },
-          ],
-        })
-      }
-    }
-
-    if (categoryId) {
-      andConditions.push({
-        $or: [
-          { categoryId: new Types.ObjectId(categoryId) },
-          { categoryId: categoryId },
-        ],
-      })
-    }
-
-    if (tagIds && tagIds.length > 0) {
-      const tags = Array.isArray(tagIds) ? tagIds : [tagIds]
-      const objectIds = tags.filter(Boolean).map(id => new Types.ObjectId(id))
-      const stringIds = tags.filter(Boolean)
-      const isAll = tagsMode === 'all' || (tags.length > 1 && !tagsMode)
-      const op = isAll ? '$all' : '$in'
-      andConditions.push({
-        $or: [
-          { tags: { [op]: objectIds } },
-          { tags: { [op]: stringIds } },
-        ],
-      })
-    }
-
-    if (startDate || endDate) {
-      const dateQuery: any = {}
-      if (startDate) dateQuery.$gte = new Date(startDate)
-      if (endDate) dateQuery.$lte = new Date(endDate)
-      andConditions.push({ updatedAt: dateQuery })
-    }
-
-    if (status) {
-      andConditions.push({ status })
-    } else {
-      andConditions.push({ status: 'published' })
-    }
-
-    if (currentNoteId) {
-      try {
-        // Select embedding explicitly if it's not selected by default
-        const currentNote = await this.noteModel.findById(currentNoteId).select('+embedding').exec();
-
-        if (currentNote) {
-          excludeIds.push(currentNote._id as Types.ObjectId);
-
-          // 1. Strategy: Vector Search (Semantic Similarity)
-          // If the current note has an embedding, find semantically similar notes
-          if (currentNote.embedding && currentNote.embedding.length > 0) {
-            try {
-              const vectorResults = await this.noteModel.aggregate([
-                {
-                  $vectorSearch: {
-                    index: 'vector_index',
-                    path: 'embedding',
-                    queryVector: currentNote.embedding,
-                    numCandidates: 50,
-                    limit: limit,
-                    filter: {
-                      userId: { $eq: userObjectId }
-                    }
-                  }
-                },
-                {
-                  $match: {
-                    _id: { $ne: currentNote._id },
-                    status: 'published'
-                  }
-                },
-                {
-                  $project: {
-                    title: 1, content: 1, categoryId: 1, categoryIds: 1, tags: 1, userId: 1, status: 1, createdAt: 1, updatedAt: 1,
-                    score: { $meta: 'vectorSearchScore' }
-                  }
-                }
-              ]).exec();
-
-              recommendations.push(...(vectorResults as any[]));
-              vectorResults.forEach(r => excludeIds.push(r._id));
-            } catch (err) {
-              console.warn('[Recommendations] Vector search failed, falling back to tags', err);
-            }
-          }
-
-          // 2. Strategy: Tag Search (Fallback or Supplement)
-          // If we still need more recommendations, use tags
-          if (recommendations.length < limit && currentNote.tags && currentNote.tags.length > 0) {
-            const base = { $and: andConditions }
-            const relatedNotes = await this.noteModel.find({
-              ...base,
-              _id: { $nin: excludeIds },
-              tags: { $in: currentNote.tags },
-            })
-              .limit(limit - recommendations.length)
-              .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
-              .lean()
-              .exec();
-
-            recommendations.push(...relatedNotes);
-            relatedNotes.forEach(note => excludeIds.push(note._id as Types.ObjectId));
-          }
-        }
-      } catch (error) {
-        console.error('Recommendations currentNote branch error', error)
-      }
-    }
-
-    if (recommendations.length < limit) {
-      const base = { $and: andConditions }
-      const recentNotes = await this.noteModel.find({
-        ...base,
-        _id: { $nin: excludeIds },
-      })
-        .sort({ createdAt: -1 })
-        .limit(limit - recommendations.length)
-        .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
-        .lean()
-        .exec();
-
-      recommendations.push(...recentNotes);
-      recentNotes.forEach(note => excludeIds.push(note._id as Types.ObjectId));
-    }
-
-    const drafts = await this.noteModel.find({
-      userId: userObjectId,
-      status: 'draft',
-      _id: { $nin: excludeIds }
-    })
-      .sort({ createdAt: -1 })
-      .limit(2)
-      .select('title content categoryId categoryIds tags userId status createdAt updatedAt')
+    const note = await this.noteModel
+      .findOne(this.noteAccess.readScope(noteId, userId))
+      .select('_id userId acl visibility')
       .lean()
-      .exec();
+      .exec()
+    if (!note) throw new NotFoundException('Note not found')
 
-    const result = [...recommendations, ...drafts]
-    console.log('Recommendations result', { count: result.length })
-    return result
+    const userObjectId = new Types.ObjectId(userId)
+    let role: 'writer' | 'reader' = 'reader'
+    if (String(note.userId) === String(userObjectId)) {
+      role = 'writer'
+    } else if (Array.isArray(note.acl)) {
+      const aclEntry = note.acl.find((a: any) => String(a.userId) === String(userObjectId))
+      if (aclEntry && (aclEntry.role === 'owner' || aclEntry.role === 'editor')) {
+        role = 'writer'
+      }
+    }
+
+    const expiresIn = 300
+    const ticket = this.jwtService.sign(
+      { noteId, userId, role, type: 'room-ticket' },
+      { expiresIn },
+    )
+    return { ticket, role, expiresIn }
   }
 }

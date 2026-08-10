@@ -1,6 +1,12 @@
 import { Module } from '@nestjs/common';
+import { APP_INTERCEPTOR, APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { RedisModule } from './common/redis/redis.module';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor';
+import { ApiEnvelopeInterceptor } from './common/interceptors/api-envelope.interceptor';
+import { CustomThrottlerGuard } from './common/guards/custom-throttler.guard';
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { NotesModule } from './modules/notes/notes.module';
@@ -27,6 +33,7 @@ import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.
       isGlobal: true,
       envFilePath: '.env',
     }),
+    RedisModule,
     MongooseModule.forRootAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -34,6 +41,13 @@ import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.
       }),
       inject: [ConfigService],
     }),
+    ThrottlerModule.forRoot([
+      {
+        name: 'short',
+        ttl: 60_000,
+        limit: 60, // 默认 60 次/分钟
+      },
+    ]),
     AuthModule,
     UsersModule,
     NotesModule,
@@ -53,6 +67,11 @@ import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.
     MindmapsModule,
     AiModule,
     KnowledgeBasesModule,
+  ],
+  providers: [
+    { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },
+    { provide: APP_INTERCEPTOR, useClass: ApiEnvelopeInterceptor },
+    { provide: APP_GUARD, useClass: CustomThrottlerGuard },
   ],
 })
 export class AppModule { }

@@ -3,6 +3,9 @@ import assert = require('node:assert/strict')
 import { Types } from 'mongoose'
 import { BoardsService } from '../src/modules/boards/boards.service'
 import { MindmapsService } from '../src/modules/mindmaps/mindmaps.service'
+import { NoteAccessService } from '../src/modules/notes/note-access.service'
+
+const noteAccess = new NoteAccessService()
 
 function createModel(seed: any[] = []) {
   const rows = [...seed]
@@ -77,6 +80,7 @@ test('boards service denies cross-user read', async () => {
   const service = new BoardsService(
     createModel([{ _id: boardId, userId: ownerId, title: 'A', content: {} }]) as any,
     createNoteModel() as any,
+    noteAccess,
   )
 
   await assert.rejects(() => service.getById(String(boardId), String(otherId)), /Board not found/)
@@ -88,6 +92,7 @@ test('boards service allows owner read', async () => {
   const service = new BoardsService(
     createModel([{ _id: boardId, userId: ownerId, title: 'A', content: {} }]) as any,
     createNoteModel() as any,
+    noteAccess,
   )
 
   const board = await service.getById(String(boardId), String(ownerId))
@@ -107,6 +112,7 @@ test('boards service allows read through source note acl', async () => {
       acl: [{ userId: collaboratorId, role: 'viewer' }],
       visibility: 'private',
     }]) as any,
+    noteAccess,
   )
 
   const board = await service.getById(String(boardId), String(collaboratorId))
@@ -126,6 +132,7 @@ test('boards service denies update from non-owner even if note acl reader', asyn
       acl: [{ userId: collaboratorId, role: 'viewer' }],
       visibility: 'private',
     }]) as any,
+    noteAccess,
   )
 
   await assert.rejects(
@@ -135,7 +142,7 @@ test('boards service denies update from non-owner even if note acl reader', asyn
 })
 
 test('boards service rejects invalid id with 400', async () => {
-  const service = new BoardsService(createModel() as any, createNoteModel() as any)
+  const service = new BoardsService(createModel() as any, createNoteModel() as any, noteAccess)
   await assert.rejects(
     () => service.getById('not-a-valid-id', String(new Types.ObjectId())),
     /Board id is invalid/,
@@ -151,7 +158,7 @@ test('boards service returns conflict on duplicate client supplied id', async ()
     error.code = 11000
     throw error
   }
-  const service = new BoardsService(model as any, createNoteModel() as any)
+  const service = new BoardsService(model as any, createNoteModel() as any, noteAccess)
 
   await assert.rejects(
     () => service.create({ _id: String(boardId), userId: String(ownerId), title: 'A' }),
@@ -166,6 +173,7 @@ test('mindmaps service denies cross-user update', async () => {
   const service = new MindmapsService(
     createModel([{ _id: mapId, userId: ownerId, title: 'M', content: {} }]) as any,
     createNoteModel() as any,
+    noteAccess,
   )
 
   await assert.rejects(
@@ -180,6 +188,7 @@ test('mindmaps service allows owner update', async () => {
   const service = new MindmapsService(
     createModel([{ _id: mapId, userId: ownerId, title: 'M', content: {} }]) as any,
     createNoteModel() as any,
+    noteAccess,
   )
 
   const result = await service.update(String(mapId), String(ownerId), { title: 'New' })

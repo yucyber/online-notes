@@ -33,11 +33,13 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
       })
     } catch {}
   }
-  useEffect(() => { appliedRef.current.clear(); load() }, [noteId])
+  const loadRef = useRef(load)
+  loadRef.current = load
+  useEffect(() => { appliedRef.current.clear(); void loadRef.current() }, [noteId])
   useEffect(() => {
     if (selection.start === selection.end) return
     if (selectDebounceRef.current) clearTimeout(selectDebounceRef.current as any)
-    selectDebounceRef.current = window.setTimeout(() => { load() }, 250)
+    selectDebounceRef.current = window.setTimeout(() => { void loadRef.current() }, 250)
   }, [selection.start, selection.end])
   const add = async () => {
     if (!text.trim()) return
@@ -100,7 +102,7 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
                 <div className="mt-2 flex items-center gap-2">
                   <Button aria-label="回复" onClick={() => setActiveId(String(c._id || c.id))}>回复</Button>
                   <Button aria-pressed={Boolean(c.likes)} aria-label="点赞" onClick={() => { setItems(prev => prev.map(x => (x._id===c._id||x.id===c.id) ? { ...x, likes: (x.likes||0)+1 } : x)) }}>赞{c.likes ? `(${c.likes})` : ''}</Button>
-                  <Button aria-label="删除评论" onClick={async () => { try { await commentsAPI.delete(c._id || c.id!); await load() } catch (e) {} }} disabled={!canDelete}>删除</Button>
+                  <Button aria-label="删除评论" onClick={async () => { try { await commentsAPI.delete(c._id || c.id!); await load() } catch {} }} disabled={!canDelete}>删除</Button>
                 </div>
                 <div className="mt-2 space-y-2">
                   {(c.replies || []).map((r, k) => (

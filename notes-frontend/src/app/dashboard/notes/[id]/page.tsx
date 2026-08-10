@@ -1,5 +1,5 @@
 import { getNoteById } from '@/lib/api/server-notes'
-import NoteClientWrapper from './NoteClientWrapper'
+import NoteEditorShell from '@/components/editor/NoteEditorShell'
 import { notFound, redirect } from 'next/navigation'
 
 export default async function NotePage({ params }: { params: Promise<{ id: string }> }) {
@@ -9,7 +9,6 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
   try {
     note = await getNoteById(id)
   } catch (error: any) {
-    // Handle 401 Unauthorized by redirecting to login
     if (error.message && error.message.includes('401')) {
       redirect('/login')
     }
@@ -21,7 +20,7 @@ export default async function NotePage({ params }: { params: Promise<{ id: strin
   }
 
   return (
-    <NoteClientWrapper
+    <NoteEditorShell
       id={id}
       initialData={note}
       initialContent={note.content || ''}

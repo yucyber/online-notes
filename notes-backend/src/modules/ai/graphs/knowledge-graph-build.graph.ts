@@ -1,7 +1,16 @@
 import { Injectable } from '@nestjs/common'
+import {
+  clampUnitInterval,
+  normalizeKnowledgeGraphNodeType,
+  normalizeKnowledgeGraphNoteIds,
+  resolveKnowledgeGraphEdgeNoteIds,
+  uniqueStrings,
+  type KnowledgeGraphNodeType,
+} from '../../knowledge-bases/knowledge-graph-normalize'
 import { AiGatewayClient } from '../ai-gateway.client'
+import { parseJsonObject } from '../ai-output'
 
-export type KnowledgeGraphNodeType = 'concept' | 'entity' | 'topic' | 'claim'
+export type { KnowledgeGraphNodeType }
 
 export interface KnowledgeGraphBuildInput {
   knowledgeBaseId: string
@@ -88,7 +97,7 @@ export class KnowledgeGraphBuildGraph {
       temperature: 0.2,
     })
 
-    return this.normalizeProposal(knowledgeBaseId, notes, this.parseJson(answer))
+    return this.normalizeProposal(knowledgeBaseId, notes, parseJsonObject(answer))
   }
 
   private prepareNotes(notes: KnowledgeGraphBuildInput['notes']): PreparedGraphNote[] {
@@ -124,15 +133,6 @@ export class KnowledgeGraphBuildGraph {
     ].join('\n')
   }
 
-  private parseJson(answer: string): any {
-    const raw = String(answer || '').trim()
-    const unfenced = raw.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/i, '').trim()
-    const start = unfenced.indexOf('{')
-    const end = unfenced.lastIndexOf('}')
-    if (start < 0 || end < start) throw new Error('AI knowledge graph output is not JSON.')
-    return JSON.parse(unfenced.slice(start, end + 1))
-  }
-
   private normalizeProposal(knowledgeBaseId: string, notes: PreparedGraphNote[], raw: any): KnowledgeGraphProposal {
     const allowedNoteIds = new Set(notes.map((note) => note.id))
     const nodeMap = new Map<string, KnowledgeGraphProposalNode>()
@@ -142,13 +142,13 @@ export class KnowledgeGraphBuildGraph {
     for (const [index, item] of this.array(raw?.nodes).entries()) {
       const label = String(item?.label || item?.name || '').trim()
       if (!label) continue
-      const type = this.normalizeNodeType(item?.type)
+      const type = normalizeKnowledgeGraphNodeType(item?.type)
       const id = this.nodeId(label, type)
-      const noteIds = this.normalizeNoteIds(item?.noteIds, allowedNoteIds)
-      const confidence = this.clampNumber(item?.confidence, 0.75)
+      const noteIds = normalizeKnowledgeGraphNoteIds(item?.noteIds, allowedNoteIds)
+      const confidence = clampUnitInterval(item?.confidence, 0.75)
       const existing = nodeMap.get(id)
       if (existing) {
-        existing.noteIds = this.unique([...existing.noteIds, ...noteIds])
+        existing.noteIds = uniqueStrings([...existing.noteIds, ...noteIds])
         existing.confidence = Math.max(existing.confidence, confidence)
       } else if (nodeMap.size < this.maxNodes) {
         nodeMap.set(id, { id, label, type, confidence, noteIds })
@@ -169,13 +169,12 @@ export class KnowledgeGraphBuildGraph {
       const id = this.edgeId(source, target, relation)
       const sourceNode = nodeMap.get(source)
       const targetNode = nodeMap.get(target)
-      const fallbackNoteIds = this.unique([...(sourceNode?.noteIds || []), ...(targetNode?.noteIds || [])])
-      const noteIds = this.normalizeNoteIds(item?.noteIds, allowedNoteIds)
-      const normalizedNoteIds = noteIds.length > 0 ? noteIds : fallbackNoteIds
-      const weight = this.clampNumber(item?.weight, 0.6)
+      const fallbackNoteIds = uniqueStrings([...(sourceNode?.noteIds || []), ...(targetNode?.noteIds || [])])
+      const normalizedNoteIds = resolveKnowledgeGraphEdgeNoteIds(item?.noteIds, allowedNoteIds, fallbackNoteIds)
+      const weight = clampUnitInterval(item?.weight, 0.6)
       const existing = edgeMap.get(id)
       if (existing) {
-        existing.noteIds = this.unique([...existing.noteIds, ...normalizedNoteIds])
+        existing.noteIds = uniqueStrings([...existing.noteIds, ...normalizedNoteIds])
         existing.weight = Math.max(existing.weight, weight)
       } else if (edgeMap.size < this.maxEdges) {
         edgeMap.set(id, { id, source, target, relation, weight, noteIds: normalizedNoteIds })
@@ -189,15 +188,6 @@ export class KnowledgeGraphBuildGraph {
       edges: [...edgeMap.values()],
       warnings,
     }
-  }
-
-  private normalizeNoteIds(value: unknown, allowed: Set<string>) {
-    return this.unique(this.array(value).map((id) => String(id || '').trim()).filter((id) => allowed.has(id)))
-  }
-
-  private normalizeNodeType(value: unknown): KnowledgeGraphNodeType {
-    const normalized = String(value || '').trim().toLowerCase()
-    return normalized === 'entity' || normalized === 'topic' || normalized === 'claim' ? normalized : 'concept'
   }
 
   private nodeId(label: string, type: KnowledgeGraphNodeType) {
@@ -219,18 +209,8 @@ export class KnowledgeGraphBuildGraph {
     return ascii || Buffer.from(String(value || '')).toString('hex').slice(0, 32) || 'node'
   }
 
-  private clampNumber(value: unknown, fallback: number) {
-    const numeric = Number(value)
-    if (!Number.isFinite(numeric)) return fallback
-    return Math.max(0, Math.min(1, numeric))
-  }
-
   private array(value: unknown): any[] {
     return Array.isArray(value) ? value : []
-  }
-
-  private unique(values: string[]) {
-    return Array.from(new Set(values.filter(Boolean)))
   }
 
   private cleanText(value: unknown) {

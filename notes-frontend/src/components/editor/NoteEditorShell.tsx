@@ -1,0 +1,887 @@
+'use client'
+
+import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
+import { fetchNoteById, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { marked } from 'marked'
+import { htmlToMarkdown } from '@/utils/markdown-converter'
+import dynamic from 'next/dynamic'
+const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
+  ssr: false,
+  loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
+})
+import { Button } from '@/components/ui/button'
+import { ChevronDown, ChevronUp } from 'lucide-react'
+import type { Note, Category, Tag } from '@/types'
+import { getCurrentUser } from '@/lib/auth'
+import TiptapToolbar from '@/components/editor/TiptapToolbar'
+import { NoteEditorDrawers } from '@/components/editor/NoteEditorDrawers'
+import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
+import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
+import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
+import { useNoteSave } from '@/components/editor/useNoteSave'
+const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
+
+export interface NoteEditorShellProps {
+  id: string
+  initialData?: Note
+  initialContent?: string
+}
+
+function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShellProps) {
+  const router = useRouter()
+  const searchParams = useSearchParams()
+  const [note, setNote] = useState<Note | null>(initialData ?? null)
+  const [loading, setLoading] = useState(!initialData)
+  const [error, setError] = useState('')
+  const [categories, setCategories] = useState<Category[]>([])
+  const [tags, setTags] = useState<Tag[]>([])
+  const [selectedCategory, setSelectedCategory] = useState('')
+  const [selectedTags, setSelectedTags] = useState<string[]>([])
+  const [auxCategoryIds, setAuxCategoryIds] = useState<string[]>([])
+  const [tagInput, setTagInput] = useState('')
+  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
+  const [metaLoading, setMetaLoading] = useState(true)
+  const [metaError, setMetaError] = useState('')
+  const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
+  const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
+  const [uiDegraded, setUiDegraded] = useState<boolean>(false)
+  const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
+  const [showCollabDrawer, setShowCollabDrawer] = useState(false)
+  const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
+  const commentsDrawerRef = useRef<HTMLDivElement>(null)
+  const [toc, setToc] = useState<Array<{ id: string; text: string; level: number }>>([])
+  const {
+    editorContainerRef,
+    isFullscreen,
+    linkHref,
+    setIsFullscreen,
+    setLinkHref,
+    setShowInsertMenu,
+    setShowLinkDialog,
+    setShowSidebar,
+    showInsertMenu,
+    showLinkDialog,
+    showSidebar,
+  } = useNoteEditorPage()
+  const [showMeta, setShowMeta] = useState(true)
+  useEffect(() => {
+    const open = () => setShowLinkDialog(true)
+    document.addEventListener('open:link-dialog', open as any)
+    return () => { document.removeEventListener('open:link-dialog', open as any) }
+  }, [setShowLinkDialog])
+
+  // 生成 Markdown 大纲
+  const extractHeadingsFromMarkdown = useCallback((md: string) => {
+    const lines = md.split(/\n+/)
+    const result: Array<{ id: string; text: string; level: number }> = []
+    for (const line of lines) {
+      const m = /^(#{1,6})\s+(.+)$/.exec(line.trim())
+      if (m) {
+        const level = m[1].length
+        const text = m[2].trim()
+        const id = text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + result.length
+        result.push({ id, text, level })
+      }
+    }
+    setToc(prev => {
+      if (prev.length !== result.length) return result
+      for (let i = 0; i < prev.length; i++) {
+        if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
+      }
+      return prev
+    })
+  }, [])
+
+  // 生成 HTML 大纲（用于 TipTap）
+  const extractHeadingsFromHTML = useCallback((html: string) => {
+    try {
+      const doc = new DOMParser().parseFromString(html, 'text/html')
+      const hs = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))
+      const result = hs.map((h, i) => {
+        const level = Number(h.tagName.substring(1))
+        const text = (h.textContent || '').trim()
+        const id = (h.id && h.id.trim()) || text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + i
+        return { id, text, level }
+      })
+      setToc(prev => {
+        if (prev.length !== result.length) return result
+        for (let i = 0; i < prev.length; i++) {
+          if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
+        }
+        return prev
+      })
+    } catch {
+      setToc([])
+    }
+  }, [])
+
+  // 读取当前用户信息用于协作指示
+  useEffect(() => {
+    const u = getCurrentUser()
+    if (u) setMe({ id: u.id, name: u.email })
+  }, [])
+
+  // UI 降级：依据设备/网络/可及性偏好自动选择轻量模式，并上报 RUM 事件
+  useEffect(() => {
+    try {
+      const nav: any = navigator
+      const conn: any = nav?.connection || nav?.mozConnection || nav?.webkitConnection
+      const saveData: boolean = Boolean(conn?.saveData)
+      const downlink: number | undefined = typeof conn?.downlink === 'number' ? conn.downlink : undefined
+      const deviceMemory: number | undefined = typeof nav?.deviceMemory === 'number' ? nav.deviceMemory : undefined
+      const hw: number | undefined = typeof nav?.hardwareConcurrency === 'number' ? nav.hardwareConcurrency : undefined
+      const prefersReducedMotion = typeof window !== 'undefined' && !!window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+      const isOffline = typeof nav?.onLine === 'boolean' ? !nav.onLine : false
+      const lowSpec = (
+        saveData || isOffline || (downlink != null && downlink < 1.5) || (deviceMemory != null && deviceMemory < 4) || (hw != null && hw <= 4) || prefersReducedMotion
+      )
+      if (lowSpec) {
+        setEditorMode('markdown')
+        setUiDegraded(true)
+        try {
+          const evt = new CustomEvent('rum', {
+            detail: {
+              type: 'network',
+              name: 'ui_degrade',
+              meta: { saveData, downlink, deviceMemory, hardwareConcurrency: hw, prefersReducedMotion, offline: isOffline, page: 'edit' },
+              ts: Date.now(),
+            },
+          })
+          document.dispatchEvent(evt)
+        } catch { }
+      }
+    } catch { }
+  }, [])
+
+  // RUM：编辑器模式切换事件
+  useEffect(() => {
+    try {
+      const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'editor_mode_change', meta: { mode: editorMode, noteId: id } } })
+      document.dispatchEvent(evt)
+    } catch { }
+  }, [editorMode, id])
+
+
+
+  useEffect(() => {
+    if (!showCommentsDrawer) return
+    const dialog = commentsDrawerRef.current
+    if (!dialog) return
+    const focusable = dialog.querySelectorAll<HTMLElement>('a[href], button:not([disabled]), textarea, input, select, [tabindex]:not([tabindex="-1"])')
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    first?.focus()
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') { e.stopPropagation(); setShowCommentsDrawer(false) }
+      if (e.key === 'Tab') {
+        if (focusable.length === 0) return
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last?.focus() }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first?.focus() }
+      }
+    }
+    dialog.addEventListener('keydown', handleKey)
+    return () => { dialog.removeEventListener('keydown', handleKey) }
+  }, [showCommentsDrawer])
+
+  // 全屏切换：事件监听与状态同步
+  // 监听器只注册一次，通过 ref 读取最新的 handler/state，避免重复绑定
+  const handleToggleFullscreenRef = useRef<() => void>(() => {})
+  const isFullscreenRef = useRef(isFullscreen)
+  isFullscreenRef.current = isFullscreen
+  const noteIdRef = useRef(id)
+  noteIdRef.current = id
+  useEffect(() => {
+    const onFsChange = () => {
+      const active = Boolean(document.fullscreenElement)
+      setIsFullscreen(active)
+      try {
+        const evt = new CustomEvent('rum', { detail: { type: 'ui', name: 'fullscreen_change', meta: { active }, ts: Date.now() } })
+        document.dispatchEvent(evt)
+      } catch { }
+      if (active) {
+        // 进入全屏时隐藏侧栏，禁用页面滚动，聚焦工具栏按钮以保可达性
+        document.body.style.overflow = 'hidden'
+        setShowSidebar(false)
+        const btn = document.getElementById('fullscreen-button') as HTMLButtonElement | null
+        // 防止聚焦导致工具栏容器发生横向滚动
+        try {
+          btn?.focus({ preventScroll: true } as any)
+        } catch {
+          btn?.focus()
+        }
+        // 兜底：若浏览器仍产生滚动，强制将工具栏滚动位置复位
+        try {
+          const toolbar = document.querySelector('[role="toolbar"]') as HTMLElement | null
+          if (toolbar && (toolbar as any).scrollLeft > 0) (toolbar as any).scrollLeft = 0
+        } catch { }
+      } else {
+        // 退出全屏恢复滚动
+        document.body.style.overflow = ''
+      }
+    }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (document.fullscreenElement) {
+          e.stopPropagation()
+          try { document.exitFullscreen() } catch { }
+        } else if (isFullscreenRef.current) {
+          setIsFullscreen(false)
+          document.body.style.overflow = ''
+        }
+      }
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'f') {
+        e.preventDefault()
+        handleToggleFullscreenRef.current()
+      }
+    }
+    document.addEventListener('fullscreenchange', onFsChange)
+    const onToggle = () => { handleToggleFullscreenRef.current() }
+    document.addEventListener('editor:toggleFullscreen', onToggle as any)
+    document.addEventListener('keydown', onKey)
+    const onCommentsHover = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50) }
+    const onCommentsOpen = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50); try { document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: noteIdRef.current, strategy: 'context' } })) } catch { } }
+    document.addEventListener('comments:hover', onCommentsHover as any)
+    document.addEventListener('comments:open', onCommentsOpen as any)
+    return () => {
+      document.removeEventListener('fullscreenchange', onFsChange)
+      document.removeEventListener('editor:toggleFullscreen', onToggle as any)
+      document.removeEventListener('keydown', onKey)
+      document.removeEventListener('comments:hover', onCommentsHover as any)
+      document.removeEventListener('comments:open', onCommentsOpen as any)
+    }
+  }, [setIsFullscreen, setShowSidebar, setShowCommentsDrawer])
+
+  const handleToggleFullscreen = () => {
+    const target = editorContainerRef.current || document.documentElement
+    if (document.fullscreenElement) {
+      try { (document as any).exitFullscreen?.() } catch { }
+      setIsFullscreen(false)
+      document.body.style.overflow = ''
+      return
+    }
+    try {
+      const fn = (target as any).requestFullscreen || (document.documentElement as any).requestFullscreen || (document as any).webkitRequestFullscreen
+      if (typeof fn === 'function') {
+        Promise.resolve(fn.call(target)).catch(() => { })
+      }
+    } catch { }
+    // 若原生全屏未成功，200ms 后启用 CSS 回退
+    setTimeout(() => {
+      if (!document.fullscreenElement) {
+        setIsFullscreen(true)
+        document.body.style.overflow = 'hidden'
+      }
+    }, 200)
+  }
+  // 同步到 ref，供只注册一次的全屏事件监听器读取最新实现
+  handleToggleFullscreenRef.current = handleToggleFullscreen
+
+
+
+  const loadNote = useCallback(async () => {
+    try {
+      setLoading(true)
+      const data = await fetchNoteById(id)
+      setNote(data)
+      setCurrentContent(data?.content || '')
+      // 根据内容类型自动选择编辑器模式：Markdown 快照回退后避免富文本空白
+      try {
+        const raw = String(data?.content || '')
+        const isLikelyHTML = /<\/?[a-z][\s\S]*>/i.test(raw)
+        const isLikelyMarkdown = /(\n|^)\s{0,3}(#{1,6}\s+|[-*]\s+|\d+\.\s+|`{3,}|>|\[.+\]\(.+\))/m.test(raw)
+        // 若此前因 UI 降级已选择 markdown，则不强制改回
+        setEditorMode(prev => {
+          // 如果内容明显是 HTML，强制使用富文本模式，否则 Markdown 编辑器会显示源码，体验极差
+          if (isLikelyHTML) return 'rich'
+          if (prev === 'markdown') return prev
+          return (!isLikelyHTML && isLikelyMarkdown) ? 'markdown' : 'rich'
+        })
+      } catch { }
+      // 移除强制 setContent，避免与 Yjs 协同冲突导致内容重复或覆盖
+      // try { document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: String(data?.content || '<p></p>') } })) } catch { }
+      setError('')
+    } catch (err) {
+      setError('加载笔记失败')
+      console.error('Failed to load note:', err)
+    } finally {
+      setLoading(false)
+    }
+  }, [id])
+
+  useEffect(() => {
+    // SSR 已注入数据时跳过首屏请求；版本恢复带 restored 时强制重载
+    if (initialData && !searchParams?.get('restored')) return
+    void loadNote()
+  }, [loadNote, initialData, searchParams])
+
+  useEffect(() => {
+    if (!id) return
+    lockNote(id).catch(() => { })
+    return () => { unlockNote(id).catch(() => { }) }
+  }, [id])
+
+  useEffect(() => {
+    const loadMeta = async () => {
+      try {
+        setMetaLoading(true)
+        const [categoryData, tagData] = await Promise.all([
+          fetchCategories(),
+          fetchTags(),
+        ])
+        setCategories(categoryData)
+        setTags(tagData)
+        setMetaError('')
+      } catch (err) {
+        console.error('Failed to load categories or tags:', err)
+        setMetaError('无法加载分类或标签数据')
+      } finally {
+        setMetaLoading(false)
+      }
+    }
+
+    loadMeta()
+  }, [])
+
+  const resolveCategoryId = (category: Category | Note['category']) =>
+    (typeof category === 'object' && category
+      ? ((category as Category).id ||
+        (category as unknown as { _id?: string })?._id)
+      : '') || ''
+
+  const normalizeCategoryValue = (value: unknown) => {
+    if (typeof value === 'string') return value
+    if (value && typeof value === 'object') {
+      return (
+        (value as { id?: string }).id ||
+        (value as { _id?: string })._id ||
+        ''
+      );
+    }
+    return ''
+  }
+
+  const resolveTagId = (tag: Tag | string | Note['tags'][number]) => {
+    if (typeof tag === 'string') return tag
+    if (!tag) return ''
+    return (
+      (tag as Tag).id ||
+      (tag as unknown as { _id?: string })?._id ||
+      ''
+    )
+  }
+
+  useEffect(() => {
+    if (note) {
+      setSelectedCategory(
+        normalizeCategoryValue(note.categoryId) ||
+        resolveCategoryId(note.category) ||
+        ''
+      )
+      setSelectedTags(
+        Array.isArray(note.tags)
+          ? note.tags
+            .map((tag) => resolveTagId(tag))
+            .filter((tagId): tagId is string => Boolean(tagId))
+          : []
+      )
+    }
+  }, [note])
+
+  const toggleTag = (tagId: string) => {
+    setSelectedTags((prev) =>
+      prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
+    )
+  }
+
+  const { handleSave, handleSaveDraft, addTagsByNames } = useNoteSave({
+    id,
+    selectedCategory,
+    auxCategoryIds,
+    selectedTags,
+    categories,
+    tags,
+    editorMode,
+    setNote: (updater) => setNote(prev => updater(prev)),
+    setTags,
+  })
+
+  const childrenByParent = (() => {
+    const m: Record<string, Category[]> = {}
+    categories.forEach(c => {
+      const pid = (c.parentId || '')
+      const key = pid || '__root__'
+      if (!m[key]) m[key] = []
+      m[key].push(c)
+    })
+    return m
+  })()
+
+  const renderCategoryNode = (cat: Category, level: number = 0) => {
+    const id = resolveCategoryId(cat)
+    const checked = auxCategoryIds.includes(id)
+    const hasChildren = (childrenByParent[id] || []).length > 0
+    const expanded = expandedCats[id]
+    return (
+      <div key={id || cat.name} className="py-1">
+        <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 16}px` }}>
+          {hasChildren && (
+            <button
+              type="button"
+              onClick={() => setExpandedCats(prev => ({ ...prev, [id]: !prev[id] }))}
+              className="h-5 w-5 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500"
+              aria-label={expanded ? '折叠' : '展开'}
+            >
+              {expanded ? '▾' : '▸'}
+            </button>
+          )}
+          {!hasChildren && <span className="h-5 w-5" />}
+          <input
+            type="checkbox"
+            checked={checked}
+            onChange={(e) => {
+              const next = e.target.checked
+                ? Array.from(new Set([...auxCategoryIds, id]))
+                : auxCategoryIds.filter(x => x !== id)
+              setAuxCategoryIds(next)
+            }}
+            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
+          />
+          <span className="text-gray-700 text-sm">{cat.name}</span>
+        </div>
+        {hasChildren && expanded && (
+          <div>
+            {(childrenByParent[id] || []).map(child => renderCategoryNode(child, level + 1))}
+          </div>
+        )}
+      </div>
+    )
+  }
+
+  const handleModeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    const newMode = e.target.value as 'rich' | 'markdown'
+    if (newMode === editorMode) return
+
+    let newContent = currentContent
+    if (newMode === 'rich') {
+      // Markdown -> HTML
+      try {
+        newContent = await marked.parse(currentContent)
+      } catch (err) {
+        console.error('Markdown conversion failed:', err)
+      }
+    } else {
+      // HTML -> Markdown
+      newContent = htmlToMarkdown(currentContent)
+    }
+
+    setNote(prev => prev ? { ...prev, content: newContent } : null)
+    setCurrentContent(newContent)
+    setEditorMode(newMode)
+  }
+
+  const handleBack = () => {
+    router.push('/dashboard/notes')
+  }
+
+  const handleMarkdownChange = useCallback((content: string) => {
+    setCurrentContent(content)
+    extractHeadingsFromMarkdown(content)
+  }, [extractHeadingsFromMarkdown])
+
+  const handleSelectionChange = useCallback((start: number, end: number) => {
+    setSelection({ start, end })
+  }, [])
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-64">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      </div>
+    )
+  }
+
+  if (error) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-red-600 mb-4">{error}</p>
+        <Button onClick={loadNote}>重试</Button>
+      </div>
+    )
+  }
+
+  if (!note) {
+    return (
+      <div className="text-center py-8">
+        <p className="text-gray-500">笔记不存在</p>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-6 mx-auto w-full max-w-[1400px] px-4">
+
+      <NoteEditorHeader
+        note={note}
+        editorMode={editorMode}
+        showSidebar={showSidebar}
+        onBack={handleBack}
+        onModeChange={handleModeChange}
+        onVisibilityChange={async (visibility) => {
+          try {
+            await updateNote(id, { visibility: visibility as any })
+            await loadNote()
+          } catch { }
+        }}
+        onToggleSidebar={() => setShowSidebar((current) => !current)}
+        onOpenCollab={() => setShowCollabDrawer(true)}
+      />
+      {error && (
+        <div
+          className="p-4 text-sm text-red-600"
+          style={{
+            backgroundColor: '#fef2f2',
+            border: '1px solid #fecaca',
+            borderRadius: '8px',
+            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
+          }}
+        >
+          {error}
+        </div>
+      )}
+
+      {/* 分类/标签等元信息 */}
+      <div
+        className="col-span-12 w-full"
+        style={{
+          borderRadius: '12px',
+          boxShadow: 'var(--shadow-md)',
+          background: 'var(--surface-1)'
+        }}
+      >
+        <div
+          role="button"
+          tabIndex={0}
+          className="flex items-center justify-between px-6 py-3 cursor-pointer select-none"
+          style={{ borderBottom: showMeta ? '1px solid var(--border)' : 'none' }}
+          onClick={() => setShowMeta(!showMeta)}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMeta(!showMeta) } }}
+        >
+          <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>笔记属性</span>
+          <button className="text-gray-500 hover:text-gray-700">
+            {showMeta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
+        </div>
+
+        {showMeta && (
+          <div className="grid gap-6 p-6 lg:grid-cols-12" style={{ borderColor: 'var(--border)' }}>
+
+            <div
+              className="col-span-12 w-full"
+              style={{
+                borderRadius: '12px',
+                boxShadow: 'none',
+                background: 'transparent'
+              }}
+            >
+              <div className="grid gap-6 md:grid-cols-2">
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>选择分类</span>
+                    {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
+                  </div>
+                  <select
+                    className="w-full rounded-lg border p-3 text-sm"
+                    style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
+                    value={selectedCategory}
+                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    disabled={metaLoading || !!metaError}
+                  >
+                    <option value="">未分类</option>
+                    {categories.map((category) => {
+                      const value = resolveCategoryId(category)
+                      return (
+                        <option key={value || category.name} value={value}>
+                          {category.name}
+                        </option>
+                      )
+                    })}
+                  </select>
+
+                  <div className="mt-4">
+                    <div className="mb-2 flex items-center justify-between">
+                      <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>附属分类（仅用于标签）</span>
+                    </div>
+                    <div className="max-h-56 overflow-auto rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
+                      {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
+                    </div>
+                  </div>
+                </div>
+
+                <div>
+                  <div className="mb-2 flex items-center justify-between">
+                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标签（可多选）</span>
+                    {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
+                  </div>
+                  <div className="mb-2 flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={tagInput}
+                      onChange={(e) => setTagInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          const parts = tagInput.split(/[,\s]+/)
+                          setTagInput('')
+                          addTagsByNames(parts)
+                        }
+                      }}
+                      placeholder="输入标签，Enter 添加，支持逗号分隔"
+                      className="flex-1 rounded-lg border p-2 text-sm placeholder-muted"
+                      style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
+                    />
+                    <button
+                      className="px-3 py-1 rounded border text-sm"
+                      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
+                      onClick={() => setSelectedTags([])}
+                    >清空标签</button>
+                  </div>
+                  {tagInput && (
+                    <div className="mb-2 rounded-lg border p-2 shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
+                      <div className="text-xs text-gray-500 mb-1">建议</div>
+                      <div className="flex flex-wrap gap-2">
+                        {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
+                          const id = (t.id || (t as unknown as { _id?: string })?._id || '')
+                          return (
+                            <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                              {t.name}
+                            </button>
+                          )
+                        })}
+                        <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                          创建标签 “{tagInput}”
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                  {tags.length === 0 ? (
+                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                      {metaError || '暂无可用标签'}
+                    </p>
+                  ) : (
+                    <div className="flex flex-wrap gap-2">
+                      {tags.map((tag) => {
+                        const tagId =
+                          tag.id ||
+                          (tag as unknown as { _id?: string })?._id ||
+                          ''
+                        const isActive = tagId ? selectedTags.includes(tagId) : false
+                        return (
+                          <button
+                            key={tagId || tag.name}
+                            type="button"
+                            onClick={() => tagId && toggleTag(tagId)}
+                            disabled={!tagId}
+                            className="rounded-full border px-3 py-1 text-sm transition"
+                            style={{
+                              ...(isActive
+                                ? { borderColor: 'var(--primary-100)', background: 'var(--primary-50)', color: 'var(--primary-600)' }
+                                : { borderColor: 'var(--border)', color: 'var(--on-surface)' }),
+                              minHeight: 44,
+                            }}
+                          >
+                            {tag.name}
+                          </button>
+                        )
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                {metaError && (
+                  <p className="md:col-span-2 text-sm text-red-500">{metaError}</p>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        <div className="px-6 pb-2">
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-gray-500">编辑器</span>
+            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={handleModeChange}>
+              <option value="rich">富文本（协同）</option>
+              <option value="markdown">Markdown</option>
+            </select>
+            {uiDegraded && (
+              <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
+            )}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-6 p-6 lg:grid-cols-12 xl:grid-cols-12">
+        <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
+          {editorMode === 'rich' ? (
+            <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
+              <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+                if (cmd === 'comments') {
+                  try {
+                    setShowCommentsDrawer(true)
+                    const openEvt = new CustomEvent('comments:open')
+                    document.dispatchEvent(openEvt)
+                    if (selection && typeof selection.start === 'number' && typeof selection.end === 'number' && selection.start !== selection.end) {
+                      const markEvt = new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId: `local-${Date.now()}` } })
+                      document.dispatchEvent(markEvt)
+                    }
+                    setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50)
+                  } catch { }
+                  return
+                }
+                if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
+                const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
+                document.dispatchEvent(ev)
+              }} />
+              <TiptapEditor
+                noteId={id}
+                initialHTML={note.content || '<p></p>'}
+                onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+                user={me}
+                readOnly={false}
+                onSelectionChange={(start, end) => setSelection({ start, end })}
+                onContentChange={(html) => {
+                  setCurrentContent(html)
+                  extractHeadingsFromHTML(html)
+                }}
+                // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
+                versionKey={searchParams?.get('restored') || undefined}
+                updatedAt={note.updatedAt}
+                className="min-h-[calc(100vh-200px)]"
+              />
+            </div>
+          ) : (
+            <MarkdownEditor
+              initialContent={note.content || ''}
+              initialTitle={note.title || ''}
+              onSave={handleSave}
+              onSaveDraft={handleSaveDraft}
+              isNew={false}
+              draftKey={`note:${id}`}
+              onSelectionChange={handleSelectionChange}
+              onContentChange={handleMarkdownChange}
+            />
+          )}
+        </div>
+        <NoteEditorMetadataPanel id={id} toc={toc} showSidebar={showSidebar} isFullscreen={isFullscreen} />
+      </div>
+
+      <NoteEditorDrawers
+        id={id}
+        selection={selection}
+        showCollabDrawer={showCollabDrawer}
+        showCommentsDrawer={showCommentsDrawer}
+        commentsDrawerRef={commentsDrawerRef as React.RefObject<HTMLDivElement>}
+        onCloseCollab={() => setShowCollabDrawer(false)}
+        onCloseComments={() => setShowCommentsDrawer(false)}
+      />
+      {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
+      <button
+        aria-label="打开协作抽屉"
+        className="fixed right-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+        onClick={() => setShowCollabDrawer(true)}
+        style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
+      >
+        <span className="sr-only">打开协作抽屉</span>
+        •
+      </button>
+      {/* 左侧浮动 “+” 插入菜单 */}
+      {!isFullscreen && (
+        <>
+          <button
+            aria-label="插入工具"
+            className="fixed left-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+            onClick={() => setShowInsertMenu(s => !s)}
+            style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
+          >
+            +
+          </button>
+          {showInsertMenu && (
+            <div className="fixed left-6 bottom-40 z-50 rounded-xl border bg-white shadow-xl"
+              role="menu" aria-label="插入工具菜单"
+              style={{ minWidth: 220 }}
+            >
+              <div className="p-2 grid" style={{ rowGap: 6 }}>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                  setShowInsertMenu(false)
+                  try {
+                    const res = await boardsAPI.create({ title: '画板', noteId: id })
+                    document.dispatchEvent(new CustomEvent('tiptap:exec', {
+                      detail: {
+                        cmd: 'insertResource',
+                        payload: { type: 'board', id: res.id }
+                      }
+                    }))
+                  } catch { }
+                }}>画板</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
+                  setShowInsertMenu(false)
+                  try {
+                    const res = await mindmapsAPI.create({ title: '思维导图', noteId: id })
+                    // 使用 insertResource 命令直接插入卡片
+                    document.dispatchEvent(new CustomEvent('tiptap:exec', {
+                      detail: {
+                        cmd: 'insertResource',
+                        payload: { type: 'mindmap', id: res.id }
+                      }
+                    }))
+                  } catch { }
+                }}>思维导图</button>
+              </div>
+            </div>
+          )}
+        </>
+      )}
+      {/* 插入链接对话框 */}
+      {showLinkDialog && (
+        <div
+          className="fixed inset-0 z-50 bg-black/30"
+          role="dialog"
+          aria-modal="true"
+          tabIndex={0}
+          onClick={() => setShowLinkDialog(false)}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setShowLinkDialog(false)
+            if (e.key === 'Escape') setShowLinkDialog(false)
+          }}
+        >
+          <div
+            className="absolute left-1/2 top-1/3 -translate-x-1/2 rounded-xl border bg-white shadow-xl p-4 w-[420px]"
+            onClick={(e) => e.stopPropagation()}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter' || e.key === ' ') e.stopPropagation()
+            }}
+          >
+            <h3 className="text-base font-medium mb-3">插入链接</h3>
+            <input aria-label="链接地址" value={linkHref} onChange={(e) => setLinkHref(e.target.value)} className="w-full border rounded-md px-3 py-2" placeholder="https://example.com" />
+            <div className="mt-3 flex justify-end gap-2">
+              <button className="px-3 py-2 rounded-md border" onClick={() => setShowLinkDialog(false)}>取消</button>
+              <button className="px-3 py-2 rounded-md bg-blue-600 text-white" onClick={() => { const href = linkHref.trim(); if (href) document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'link', payload: { href } } })); setShowLinkDialog(false) }}>插入</button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* 旧的顶部弹窗已改为右侧抽屉，保留变量但不再渲染 */}
+    </div>
+  );
+}
+
+export default function NoteEditorShell(props: NoteEditorShellProps) {
+  return (
+    <Suspense fallback={<div className="flex items-center justify-center h-64"><div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600" /></div>}>
+      <NoteEditorShellInner {...props} />
+    </Suspense>
+  )
+}

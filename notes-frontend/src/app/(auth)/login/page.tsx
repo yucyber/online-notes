@@ -45,10 +45,10 @@ export default function LoginPage() {
       setIsLoading(true)
       setError('')
       const result = await login(values)
-      persistAuthSession(result.token, result.user)
+      persistAuthSession(result.user)
       router.push('/dashboard/notes')
       router.refresh()
-    } catch (err: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
       const msg = String(err?.response?.data?.message || '')
       const status = Number(err?.response?.status || 0)
       // 仅在自动模式下进行注册回退，避免误注册
@@ -56,7 +56,7 @@ export default function LoginPage() {
       if (isAuto && (status === 401 || /invalid|not ?found|不存在/i.test(msg))) {
         try {
           const reg = await register({ email: values.email, password: values.password })
-          persistAuthSession(reg.token, reg.user)
+          persistAuthSession(reg.user)
           router.push('/dashboard/notes')
           router.refresh()
           return

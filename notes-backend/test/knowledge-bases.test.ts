@@ -99,3 +99,65 @@ test('KnowledgeBasesService adds only readable notes to a knowledge base boundar
   assert.equal(result.note.id, noteId)
   assert.equal(result.note.title, 'MiMo 接入')
 })
+
+test('KnowledgeBasesService.listNotes queries notes through NoteAccess.readableNotesQuery', async () => {
+  const noteQueries: any[] = []
+  const selects: string[] = []
+  const kbModel = {
+    findOne: (query: any) => execResult(doc({ _id: new Types.ObjectId(kbId), name: 'AI', userId: query.userId })),
+  }
+  const linkModel = {
+    find: () => ({
+      sort: () => execResult([
+        doc({
+          _id: new Types.ObjectId('507f1f77bcf86cd799439015'),
+          knowledgeBaseId: new Types.ObjectId(kbId),
+          noteId: new Types.ObjectId(noteId),
+          userId: new Types.ObjectId(userId),
+          createdAt: new Date('2026-06-05T00:00:00.000Z'),
+        }),
+      ]),
+    }),
+  }
+  const noteModel = {
+    find: (query: any) => {
+      noteQueries.push(query)
+      return {
+        select: (fields: string) => {
+          selects.push(fields)
+          return execResult([
+            doc({
+              _id: new Types.ObjectId(noteId),
+              title: 'MiMo 接入',
+              summary: 'summary',
+              updatedAt: new Date('2026-06-05T00:00:00.000Z'),
+              createdAt: new Date('2026-06-04T00:00:00.000Z'),
+            }),
+          ])
+        },
+      }
+    },
+  }
+  const noteAccess = {
+    objectId: (id: string) => new Types.ObjectId(id),
+    readableNotesQuery: (noteIds: Types.ObjectId[], targetUserId: string) => ({
+      $and: [
+        { _id: { $in: noteIds } },
+        { readableFor: targetUserId },
+      ],
+    }),
+  }
+  const service = new KnowledgeBasesService(kbModel as any, linkModel as any, noteModel as any, noteAccess as any)
+
+  const listed = await service.listNotes(kbId, userId)
+  const graphNotes = await service.listGraphNotes(kbId, userId)
+
+  assert.equal(noteQueries.length, 2)
+  assert.equal(String(noteQueries[0].$and[0]._id.$in[0]), noteId)
+  assert.equal(noteQueries[0].$and[1].readableFor, userId)
+  assert.equal(selects[0], 'title summary updatedAt createdAt')
+  assert.equal(selects[1], 'title summary content updatedAt createdAt')
+  assert.equal(listed[0].note.id, noteId)
+  assert.equal(graphNotes[0].id, noteId)
+  assert.equal(graphNotes[0].title, 'MiMo 接入')
+})

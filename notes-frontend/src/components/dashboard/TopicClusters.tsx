@@ -94,8 +94,11 @@ export function TopicClusters() {
                     {topics.map((topic, i) => (
                         <div
                             key={i}
+                            role="button"
+                            tabIndex={0}
                             className="group relative flex flex-col items-start gap-1 rounded-lg border p-3 hover:bg-accent hover:text-accent-foreground transition-colors cursor-pointer w-full sm:w-[calc(50%-0.5rem)] md:w-[calc(33.33%-0.5rem)]"
                             onClick={() => handleTopicClick(topic)}
+                            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); handleTopicClick(topic) } }}
                         >
                             <div className="flex items-center justify-between w-full">
                                 <span className="font-semibold text-sm">{topic.name}</span>

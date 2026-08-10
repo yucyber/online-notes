@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { CommentsService } from './comments.service'
+import { CreateCommentDto, CreateReplyDto } from './dto'
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('notes/:id/comments')
@@ -26,7 +27,7 @@ export class CommentsController {
   }
 
   @Post()
-  async create(@Param('id') id: string, @Body() body: any, @Request() req) {
+  async create(@Param('id') id: string, @Body() body: CreateCommentDto, @Request() req) {
     const { start, end, text, anchor, blockId } = body
     const rid = (req.headers['x-request-id'] as string) || undefined
     const data = await this.service.create(id, req.user.id, start != null ? Number(start) : undefined, end != null ? Number(end) : undefined, String(text || ''), rid, anchor, blockId)
@@ -39,7 +40,7 @@ export class CommentsController {
 export class CommentRepliesController {
   constructor(private readonly service: CommentsService) {}
   @Post(':id/replies')
-  async reply(@Param('id') id: string, @Body() body: any, @Request() req) {
+  async reply(@Param('id') id: string, @Body() body: CreateReplyDto, @Request() req) {
     const { text } = body
     const rid = (req.headers['x-request-id'] as string) || undefined
     const data = await this.service.reply(id, req.user.id, String(text || ''), rid)

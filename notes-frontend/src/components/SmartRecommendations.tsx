@@ -13,6 +13,15 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('')
 
+  // 展开成原始值，避免 context 对象引用变化触发 effect 重新执行
+  const contextKeyword = context?.keyword
+  const contextCategoryId = context?.categoryId
+  const contextTagIds = JSON.stringify(context?.tagIds)
+  const contextTagsMode = context?.tagsMode
+  const contextStartDate = context?.startDate
+  const contextEndDate = context?.endDate
+  const contextStatus = context?.status
+
   useEffect(() => {
     const fetchRecommendations = async () => {
       try {
@@ -68,7 +77,9 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
     };
 
     fetchRecommendations();
-  }, [currentNoteId, context?.keyword, context?.categoryId, JSON.stringify(context?.tagIds), context?.tagsMode, context?.startDate, context?.endDate, context?.status]);
+    // context 是对象，按字段展开成原始值作为依赖，避免对象引用变化导致重复请求
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentNoteId, contextKeyword, contextCategoryId, contextTagIds, contextTagsMode, contextStartDate, contextEndDate, contextStatus]);
 
   if (loading) {
     return <div className="animate-pulse h-48 rounded-lg" style={{ background: 'var(--surface-2)' }}></div>;

@@ -42,7 +42,6 @@ export const generateId = (): string => {
 }
 
 // 防抖函数
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const debounce = <T extends (...args: any[]) => any>(
   func: T,
   delay: number
@@ -55,7 +54,6 @@ export const debounce = <T extends (...args: any[]) => any>(
 }
 
 // 节流函数
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 export const throttle = <T extends (...args: any[]) => any>(
   func: T,
   limit: number

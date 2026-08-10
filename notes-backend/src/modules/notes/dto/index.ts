@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsArray, IsMongoId, IsEnum, IsDateString, IsInt, Min, Max, IsIn } from 'class-validator';
+import { IsString, IsOptional, IsArray, IsMongoId, IsEnum, IsDateString, IsInt, Min, Max, IsIn, MaxLength } from 'class-validator';
 import { Transform } from 'class-transformer'
 
 export enum NoteStatus {
@@ -30,9 +30,11 @@ export enum SearchMode {
 
 export class CreateNoteDto {
   @IsString({ message: '标题必须是字符串' })
+  @MaxLength(200, { message: '标题不能超过 200 字符' })
   title: string;
 
   @IsString({ message: '内容必须是字符串' })
+  @MaxLength(500000, { message: '内容不能超过 500000 字符' })
   content: string;
 
   @IsOptional()
@@ -46,6 +48,7 @@ export class CreateNoteDto {
 
   @IsOptional()
   @IsArray({ message: '标签必须是数组' })
+  @IsMongoId({ each: true })
   tags: string[] = [];
 
   @IsOptional()
@@ -60,10 +63,12 @@ export class CreateNoteDto {
 export class UpdateNoteDto {
   @IsOptional()
   @IsString({ message: '标题必须是字符串' })
+  @MaxLength(200, { message: '标题不能超过 200 字符' })
   title?: string;
 
   @IsOptional()
   @IsString({ message: '内容必须是字符串' })
+  @MaxLength(500000, { message: '内容不能超过 500000 字符' })
   content?: string;
 
   @IsOptional()
@@ -80,6 +85,7 @@ export class UpdateNoteDto {
 
   @IsOptional()
   @IsArray({ message: '标签必须是数组' })
+  @IsMongoId({ each: true })
   tags?: string[];
 
   @IsOptional()
@@ -94,6 +100,7 @@ export class UpdateNoteDto {
 export class NoteFilterDto {
   @IsOptional()
   @IsString()
+  @MaxLength(100, { message: '搜索关键字不能超过 100 字符' })
   keyword?: string;
 
   @IsOptional()

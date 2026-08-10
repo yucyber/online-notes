@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { NotesService } from '../src/modules/notes/notes.service'
+import { NoteAccessService } from '../src/modules/notes/note-access.service'
 
 const userId = '507f1f77bcf86cd799439012'
 
@@ -43,7 +44,7 @@ test('NotesService.findAll selects note content for list preview fallback', asyn
     {} as any,
     {} as any,
     {} as any,
-    {} as any,
+    new NoteAccessService(),
     {} as any,
     {
       getList: async (_userId: string, payload: Record<string, unknown>) => {

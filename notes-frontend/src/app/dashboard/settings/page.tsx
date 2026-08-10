@@ -5,18 +5,15 @@ import { useRouter } from 'next/navigation'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getCurrentUser, removeToken } from '@/lib/auth'
+import { getCurrentUser, logout } from '@/lib/auth'
 import type { User } from '@/types'
-import { Save, LogOut, User as UserIcon, Key, Bell, Settings } from 'lucide-react'
+import { LogOut, User as UserIcon, Bell, Settings } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 
 export default function SettingsPage() {
   const router = useRouter()
   const [user, setUser] = useState<User | null>(null)
   const [loading, setLoading] = useState(true)
-  const [saving, setSaving] = useState(false)
-  const [error, setError] = useState('')
-  const [success, setSuccess] = useState('')
 
   useEffect(() => {
     const currentUser = getCurrentUser()
@@ -30,41 +27,7 @@ export default function SettingsPage() {
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
-      removeToken()
-      router.replace('/login')
-    }
-  }
-
-  const handlePasswordChange = async (e: React.FormEvent<HTMLFormElement>) => {
-    e.preventDefault()
-    const formData = new FormData(e.currentTarget)
-    // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const currentPassword = formData.get('currentPassword') as string
-    const newPassword = formData.get('newPassword') as string
-    const confirmPassword = formData.get('confirmPassword') as string
-
-    if (newPassword !== confirmPassword) {
-      setError('新密码和确认密码不一致')
-      return
-    }
-
-    if (newPassword.length < 6) {
-      setError('密码至少需要6个字符')
-      return
-    }
-
-    try {
-      setSaving(true)
-      setError('')
-      setSuccess('')
-      // TODO: 调用API更新密码
-      // await updatePassword({ currentPassword, newPassword })
-      setSuccess('密码更新成功')
-      e.currentTarget.reset()
-    } catch (err: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
-      setError(err.response?.data?.message || '密码更新失败，请重试')
-    } finally {
-      setSaving(false)
+      void logout().then(() => router.replace('/login'))
     }
   }
 
@@ -93,7 +56,6 @@ export default function SettingsPage() {
         <p className="text-[var(--text-muted)]">管理您的账户和偏好设置</p>
       </div>
 
-      {/* 账户信息 */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -132,96 +94,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 修改密码 */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Key className="h-5 w-5 text-[var(--text-muted)]" />
-            <CardTitle>修改密码</CardTitle>
-          </div>
-          <CardDescription>定期更新密码以保护您的账户安全</CardDescription>
-        </CardHeader>
-        <CardContent>
-          {error && (
-            <div
-              className="mb-4 p-3 text-sm text-red-600"
-              style={{
-                backgroundColor: '#fef2f2',
-                border: '1px solid #fecaca',
-                borderRadius: '8px',
-                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-              }}
-            >
-              {error}
-            </div>
-          )}
-          {success && (
-            <div
-              className="mb-4 p-3 text-sm text-green-600"
-              style={{
-                backgroundColor: '#ecfdf5',
-                border: '1px solid #d1fae5',
-                borderRadius: '8px',
-                boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-              }}
-            >
-              {success}
-            </div>
-          )}
-          <form onSubmit={handlePasswordChange} className="space-y-4">
-            <div>
-              <label htmlFor="currentPassword" className="block text-sm font-medium text-[var(--text-default)] mb-1">
-                当前密码
-              </label>
-              <Input
-                id="currentPassword"
-                name="currentPassword"
-                type="password"
-                placeholder="请输入当前密码"
-                required
-                disabled={saving}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="newPassword" className="block text-sm font-medium text-[var(--text-default)] mb-1">
-                新密码
-              </label>
-              <Input
-                id="newPassword"
-                name="newPassword"
-                type="password"
-                placeholder="请输入新密码（至少6位）"
-                required
-                disabled={saving}
-                minLength={6}
-              />
-            </div>
-
-            <div>
-              <label htmlFor="confirmPassword" className="block text-sm font-medium text-[var(--text-default)] mb-1">
-                确认新密码
-              </label>
-              <Input
-                id="confirmPassword"
-                name="confirmPassword"
-                type="password"
-                placeholder="请再次输入新密码"
-                required
-                disabled={saving}
-                minLength={6}
-              />
-            </div>
-
-            <Button type="submit" disabled={saving}>
-              <Save className="mr-2 h-4 w-4" />
-              {saving ? '保存中...' : '更新密码'}
-            </Button>
-          </form>
-        </CardContent>
-      </Card>
-
-      {/* 偏好设置 */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -255,7 +127,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 安全中心：网络访问状态 */}
       <Card>
         <CardHeader>
           <div className="flex items-center gap-2">
@@ -272,7 +143,6 @@ export default function SettingsPage() {
         </CardContent>
       </Card>
 
-      {/* 危险操作 */}
       <Card className="border-red-200">
         <CardHeader>
           <CardTitle className="text-red-600">危险操作</CardTitle>
@@ -313,4 +183,3 @@ export default function SettingsPage() {
     </div>
   )
 }
-

@@ -130,6 +130,12 @@ export class NotesController {
     return this.notesService.unlockNote(id, req.user.id)
   }
 
+  @UseGuards(AuthGuard('jwt'))
+  @Post(':id/room-ticket')
+  async generateRoomTicket(@Param('id') id: string, @Request() req) {
+    return this.notesService.generateRoomTicket(id, req.user.id);
+  }
+
   private computeETag(note: any): string {
     const basis = `${note?.id || note?._id || ''}:${new Date(note?.updatedAt || Date.now()).getTime()}`
     const hash = createHash('sha1').update(basis).digest('hex')

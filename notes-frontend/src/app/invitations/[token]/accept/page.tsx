@@ -19,7 +19,7 @@ export default function AcceptInvitationPage() {
         const data = await previewInvitation(token)
         setInfo(data)
         setError('')
-      } catch (e: any) {
+      } catch {
         setError('邀请已失效或不存在')
       } finally {
         setLoading(false)
@@ -32,7 +32,7 @@ export default function AcceptInvitationPage() {
     try {
       await acceptInvitation(token)
       router.replace(`/dashboard/notes/${info?.noteId}`)
-    } catch (e: any) {
+    } catch {
       setError('接受失败，请登录后重试')
     }
   }

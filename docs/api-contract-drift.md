@@ -7,7 +7,7 @@
 - `mark-planned-or-remove`：OpenAPI 标注 planned 或从契约移除。
 - `document-openapi`：后端已经有，OpenAPI 补齐。
 
-每行配套 `scripts/check-api-contract.mjs`，可重复运行；脚本不固化行数，输出实际 drift 数。
+每行配套 `scripts/check-api-contract.mjs`，可重复运行；脚本不固化行数，输出实际 drift 数。允许当前无活跃 drift 行（全部已 planned/discarded 或已对齐）。
 
 ## Planned APIs
 
@@ -19,6 +19,9 @@
 | `/api/v1/drafts/sync` | 草稿冲突合并/同步对未来离线恢复有价值，但当前没有同步模型和后端实现。 | 增加同步冲突模型、controller、service 和 UI 恢复流程。 |
 | `/api/v1/vector/upsert` | 单条向量写入可用于未来索引维护，但当前 embedding 写入是内部逻辑。 | 增加受保护的 vector controller 或管理任务入口。 |
 | `/api/v1/vector/batch-upsert` | 批量向量写入可用于未来重建索引，但当前没有公开批处理 API。 | 增加明确的重建流程、权限边界和批处理服务。 |
+| `/api/v1/assets/:id` | 附件读取有长期价值；前端已移除 stub 与 UI（2026-08-06 从 hide-client-entry 升级为 remove-client-entry）。 | 增加 assets controller/service、权限边界与前端调用入口。 |
+| `/api/v1/assets/base64` | 附件上传有长期价值；前端已移除 stub 与附件菜单。 | 增加上传链路、存储与明确错误反馈后再挂 UI。 |
+| `/api/v1/embeds` | 笔记内嵌资源创建有长期价值；前端已移除无调用方 stub。 | 增加 embeds controller 与编辑器插入闭环后再接入。 |
 
 ## Discarded APIs
 
@@ -29,8 +32,9 @@
 | `/api/v1/network/status` | 没有后端 controller 或前端依赖，且与轻量连通性检查重复。 | `/api/health` 和前端 fallback ping。 |
 | `/api/v1/network/diagnostics` | 没有当前产品工作流，随意暴露诊断接口还可能泄漏实现细节。 | 运维日志与定向健康检查。 |
 
+## Active Drift Registry
+
+当前无活跃 drift 行。新增不一致时在下表登记，并保证决策与验证方式完整。
+
 | 路径 | 消费者 | 后端状态 | OpenAPI 状态 | 决策 | 验证方式 |
 | --- | --- | --- | --- | --- | --- |
-| `/api/v1/assets/:id` | `notes-frontend/src/lib/api.ts` `assetsAPI.getById` | 缺失 | 缺失 | `hide-client-entry` | 前端入口需要返回明确不可用提示，避免静默失败。 |
-| `/api/v1/assets/base64` | `notes-frontend/src/lib/api.ts` `assetsAPI.uploadBase64` | 缺失 | 缺失 | `hide-client-entry` | 前端入口需要返回明确不可用提示，避免静默失败。 |
-| `/api/v1/embeds` | `notes-frontend/src/lib/api.ts` `embedsAPI.create` | 缺失 | 缺失 | `hide-client-entry` | Embed 创建路径返回明确不可用提示，而不是静默失败。 |

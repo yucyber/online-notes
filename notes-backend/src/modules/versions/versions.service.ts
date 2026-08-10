@@ -1,8 +1,10 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteVersion, NoteVersionDocument } from './schemas/note-version.schema'
+import { NoteAccessService } from '../notes/note-access.service'
+import { NotesService } from '../notes/notes.service'
 import { AuditService } from '../audit/audit.service'
 
 @Injectable()
@@ -10,12 +12,13 @@ export class VersionsService {
   constructor(
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
     @InjectModel(NoteVersion.name) private versionModel: Model<NoteVersionDocument>,
+    private readonly noteAccess: NoteAccessService,
     private readonly audit: AuditService,
+    private readonly notesService: NotesService,
   ) { }
 
   async list(noteId: string, userId: string) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u } } }, { visibility: 'public' }] }).exec()
+    const note = await this.noteModel.findOne(this.noteAccess.readScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('笔记不存在')
     const items = await this.versionModel.find({ noteId: note._id }).sort({ versionNo: -1 }).exec()
     return items
@@ -23,7 +26,8 @@ export class VersionsService {
 
   async snapshot(noteId: string, userId: string, name?: string, requestId?: string) {
     const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: { $in: ['owner', 'editor'] } } } }] }).exec()
+    // 快照属于写操作：editor 可以保存版本，但不能获得恢复整篇笔记的权限。
+    const note = await this.noteModel.findOne(this.noteAccess.writeScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     const last = await this.versionModel.findOne({ noteId: note._id }).sort({ versionNo: -1 }).exec()
     const nextNo = (last?.versionNo || 0) + 1
@@ -34,8 +38,8 @@ export class VersionsService {
   }
 
   async restore(noteId: string, versionNo: number, userId: string, requestId?: string) {
-    const u = new Types.ObjectId(userId)
-    const note = await this.noteModel.findOne({ _id: new Types.ObjectId(noteId), $or: [{ userId: u }, { acl: { $elemMatch: { userId: u, role: 'owner' } } }] }).exec()
+    // 恢复会同时覆盖正文、标签和分类，因此权限收紧到 owner，而不是普通 editor。
+    const note = await this.noteModel.findOne(this.noteAccess.ownerScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     const v = await this.versionModel.findOne({ noteId: note._id, versionNo }).exec()
     if (!v) throw new NotFoundException('版本不存在')
@@ -45,6 +49,8 @@ export class VersionsService {
       ; (note as any).categoryId = v.categoryId
       ; (note as any).categoryIds = v.categoryIds
     await note.save()
+    // 先持久化版本内容，再基于最终正文重建摘要和 embedding，避免派生字段指向旧版本。
+    await this.notesService.refreshDerivedFields(note)
     await this.audit.record('version_restored', userId, 'note', note._id.toString(), { requestId })
     return { ok: true }
   }

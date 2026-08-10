@@ -26,6 +26,12 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
   const linkQueries: any[] = []
   const kbModel = {
     findOne: (query: any) => execResult(doc({ _id: new Types.ObjectId(kbId), userId: query.userId })),
+    db: {
+      startSession: async () => ({
+        withTransaction: async (work: () => Promise<void>) => work(),
+        endSession: async () => undefined,
+      }),
+    },
   }
   const linkModel = {
     find: (query: any) => {
@@ -164,4 +170,106 @@ test('KnowledgeBasesService reads a graph scoped by knowledge base and user', as
   assert.equal(graph.nodes[0].id, 'node-a')
   assert.equal(graph.edges[0].source, 'node-a')
   assert.deepEqual(graph.edges[0].noteIds, [noteOneId])
+})
+
+test('KnowledgeBasesService.remove deletes graph data inside the KB user boundary', async () => {
+  const graphDeletes: any[] = []
+  const kbModel = {
+    findOne: (query: any) => execResult(doc({ _id: new Types.ObjectId(kbId), userId: query.userId })),
+    deleteOne: (query: any) => {
+      graphDeletes.push({ collection: 'kb', query })
+      return execResult({ deletedCount: 1 })
+    },
+  }
+  const linkModel = {
+    deleteMany: (query: any) => {
+      graphDeletes.push({ collection: 'links', query })
+      return execResult({ deletedCount: 2 })
+    },
+  }
+  const graphNodeModel = {
+    deleteMany: (query: any) => {
+      graphDeletes.push({ collection: 'nodes', query })
+      return execResult({ deletedCount: 3 })
+    },
+  }
+  const graphEdgeModel = {
+    deleteMany: (query: any) => {
+      graphDeletes.push({ collection: 'edges', query })
+      return execResult({ deletedCount: 4 })
+    },
+  }
+  const service = new KnowledgeBasesService(
+    kbModel as any,
+    linkModel as any,
+    {} as any,
+    { objectId: (id: string) => new Types.ObjectId(id) } as any,
+    graphNodeModel as any,
+    graphEdgeModel as any,
+  )
+
+  await service.remove(kbId, userId)
+
+  assert.deepEqual(graphDeletes.map((entry) => entry.collection), ['links', 'nodes', 'edges', 'kb'])
+  for (const entry of graphDeletes) {
+    assert.equal(entry.query.userId.toString(), userId)
+    if (entry.collection !== 'kb') assert.equal(entry.query.knowledgeBaseId.toString(), kbId)
+  }
+})
+
+test('KnowledgeBasesService.replaceGraph preserves the old graph when the transaction fails', async () => {
+  const state = {
+    nodes: [{ nodeId: 'old-node' }],
+    edges: [{ edgeId: 'old-edge' }],
+  }
+  const session = {
+    withTransaction: async (work: () => Promise<void>) => {
+      const snapshot = JSON.parse(JSON.stringify(state))
+      try {
+        await work()
+      } catch (error) {
+        state.nodes = snapshot.nodes
+        state.edges = snapshot.edges
+        throw error
+      }
+    },
+    endSession: async () => undefined,
+  }
+  const kbModel = {
+    findOne: (query: any) => execResult(doc({ _id: new Types.ObjectId(kbId), userId: query.userId })),
+    db: { startSession: async () => session },
+  }
+  const linkModel = {
+    find: () => ({ sort: () => execResult([doc({ noteId: new Types.ObjectId(noteOneId) })]) }),
+  }
+  const graphNodeModel = {
+    deleteMany: () => ({ exec: async () => { state.nodes = []; return { deletedCount: 1 } } }),
+    insertMany: async (rows: any[]) => {
+      state.nodes.push(...rows)
+      return rows
+    },
+  }
+  const graphEdgeModel = {
+    deleteMany: () => ({ exec: async () => { state.edges = []; return { deletedCount: 1 } } }),
+    insertMany: async () => { throw new Error('edge insert failed') },
+  }
+  const service = new KnowledgeBasesService(
+    kbModel as any,
+    linkModel as any,
+    {} as any,
+    { objectId: (id: string) => new Types.ObjectId(id) } as any,
+    graphNodeModel as any,
+    graphEdgeModel as any,
+  )
+
+  await assert.rejects(() => service.replaceGraph(kbId, {
+      nodes: [
+      { id: 'new-node', label: 'New', type: 'concept', noteIds: [noteOneId] },
+      { id: 'new-node-2', label: 'New 2', type: 'concept', noteIds: [noteOneId] },
+      ],
+    edges: [{ id: 'new-edge', source: 'new-node', target: 'new-node-2', relation: 'related', noteIds: [noteOneId] }],
+  }, userId), /edge insert failed/)
+
+  assert.deepEqual(state.nodes, [{ nodeId: 'old-node' }])
+  assert.deepEqual(state.edges, [{ edgeId: 'old-edge' }])
 })

@@ -193,10 +193,7 @@ function main() {
     }
   }
 
-  if (registry.size === 0) {
-    console.error('Expected at least one drift row')
-    failures++
-  }
+  // Zero active drift rows is valid after planned/discarded cleanup.
 
   if (failures > 0) {
     process.exit(1)

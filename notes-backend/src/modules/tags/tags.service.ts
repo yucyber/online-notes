@@ -4,6 +4,7 @@ import { Model, Types } from 'mongoose';
 import { Note, NoteDocument } from '../notes/schemas/note.schema';
 import { Tag, TagDocument } from './schemas/tag.schema';
 import { CreateTagDto, UpdateTagDto } from './dto';
+import { assertOwnedByUser } from '../taxonomy/taxonomy-ownership';
 
 @Injectable()
 export class TagsService {
@@ -13,7 +14,7 @@ export class TagsService {
   ) { }
 
   async create(createTagDto: CreateTagDto, userId: string): Promise<Tag> {
-    // Check if tag name already exists for this user
+    // 标签名只要求在当前用户空间内唯一，不影响其他用户使用同名标签。
     const existingTag = await this.tagModel.findOne({
       name: createTagDto.name,
       userId: new Types.ObjectId(userId),
@@ -43,7 +44,7 @@ export class TagsService {
     const createdTag = new this.tagModel({
       name,
       userId: new Types.ObjectId(userId),
-      color: '#3b82f6' // Default blue
+      color: '#3b82f6' // 未指定颜色时使用产品默认蓝色。
     });
     return createdTag.save();
   }
@@ -68,8 +69,12 @@ export class TagsService {
     return tag;
   }
 
+  async assertOwnedIds(ids: string[], userId: string): Promise<void> {
+    await assertOwnedByUser(ids, userId, this.tagModel, '标签')
+  }
+
   async update(id: string, updateTagDto: UpdateTagDto, userId: string): Promise<Tag> {
-    // Check if tag name already exists for this user (excluding current tag)
+    // 重命名时排除自身，同时仍把唯一性限制在当前用户空间内。
     if (updateTagDto.name) {
       const existingTag = await this.tagModel.findOne({
         name: updateTagDto.name,
@@ -102,7 +107,7 @@ export class TagsService {
   }
 
   async remove(id: string, userId: string): Promise<void> {
-    // 默认策略：移除模式。从所有笔记中移除该标签，再删除
+    // 先从当前用户的笔记中解除引用，再删除标签，避免留下无法展示的悬空 ID。
     await this.noteModel.updateMany(
       { userId: new Types.ObjectId(userId), tags: new Types.ObjectId(id) },
       { $pull: { tags: new Types.ObjectId(id) } }
@@ -142,7 +147,7 @@ export class TagsService {
     const tags = await this.tagModel.find({ userId: new Types.ObjectId(userId) });
     let updated = 0;
     for (const tag of tags) {
-      // 兼容性处理：同时匹配 ObjectId 和 String 类型的 ID，防止历史数据格式不一致
+      // 历史笔记可能把标签 ID 存成 ObjectId 或 String，重算时必须同时匹配两种格式。
       const count = await this.noteModel.countDocuments({
         userId: new Types.ObjectId(userId),
         tags: { $in: [tag._id, tag._id.toString()] }
@@ -163,20 +168,18 @@ export class TagsService {
     const userObj = new Types.ObjectId(userId)
     const srcObjIds = sourceIds.map(id => new Types.ObjectId(id))
     const targetObjId = new Types.ObjectId(targetId)
-    // 添加目标标签
+    // 先补目标标签再移除源标签，保证每篇受影响笔记在迁移过程中仍有可用标签。
     const addRes = await this.noteModel.updateMany(
       { userId: userObj, tags: { $in: srcObjIds } },
       { $addToSet: { tags: targetObjId } }
     ).exec()
-    // 移除源标签
     await this.noteModel.updateMany(
       { userId: userObj, tags: { $in: srcObjIds } },
       { $pull: { tags: { $in: srcObjIds } } }
     ).exec()
 
-    // 删除源标签
     await this.tagModel.deleteMany({ _id: { $in: srcObjIds }, userId: userObj }).exec()
-    // 更新计数（简单按受影响笔记数增量）
+    // modifiedCount 是实际新增目标标签的笔记数，用它增量修正目标标签计数。
     await this.tagModel.findByIdAndUpdate(targetObjId, { $inc: { noteCount: addRes.modifiedCount || 0 } }).exec()
 
     return { affectedNotes: addRes.modifiedCount || 0 }

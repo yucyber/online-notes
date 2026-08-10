@@ -99,7 +99,7 @@ test('AiService wraps audited workflow calls without changing the public respons
     { userId: '507f1f77bcf86cd799439012' },
   )
 
-  assert.equal(result.messages[0].content, 'graph TD\nA-->B')
+  assert.equal(result.content, 'graph TD\nA-->B')
   assert.equal(startCalls[0].graphName, 'MermaidGenerationGraph')
   assert.equal(startCalls[0].userId, '507f1f77bcf86cd799439012')
   assert.equal(startCalls[0].provider, 'mimo')

@@ -1,13 +1,21 @@
+// 修正 Node.js c-ares DNS：Windows 下 c-ares 只读全局 DNS 配置（为空时回退 127.0.0.1），
+// 不读网卡接口配置，导致 mongodb+srv 的 SRV 查询被本机拒绝（ECONNREFUSED）。
+// 必须在引入 mongoose 等会触发 DNS 的模块前执行。
+import * as dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
-import { ApiEnvelopeInterceptor } from './common/interceptors/api-envelope.interceptor'
 import { ApiExceptionFilter } from './common/filters/api-exception.filter'
-import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor'
 import { JwtService } from '@nestjs/jwt';
 import Redis from 'ioredis';
 import { RateLimiterRedis } from 'rate-limiter-flexible';
 import { JwtWsAdapter } from './ws/jwt-ws.adapter';
+import { REDIS_CLIENT } from './common/redis/redis.constants';
+import * as cookieParser from 'cookie-parser';
+import { json } from 'express';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
@@ -21,10 +29,14 @@ async function bootstrap() {
     .split(',')
     .map((x) => x.trim());
 
-  // Support regex patterns for dynamic Vercel preview URLs
+  const isProduction = process.env.NODE_ENV === 'production';
+
+  // 生产环境不使用默认正则，必须显式配置 CORS_ALLOWED_PATTERNS
   const allowedPatterns = process.env.CORS_ALLOWED_PATTERNS
     ? process.env.CORS_ALLOWED_PATTERNS.split(',').map(p => new RegExp(p.trim()))
-    : [/^https:\/\/.*\.vercel\.app$/];
+    : isProduction
+      ? [] // 生产环境默认不匹配任何 preview 域名
+      : [/^https:\/\/.*\.vercel\.app$/]; // 开发环境保留
 
   app.enableCors({
     origin: (origin, callback) => {
@@ -50,6 +62,10 @@ async function bootstrap() {
     exposedHeaders: ['X-Request-Id', 'ETag', 'X-Idempotency-Applied', 'X-Trace-Id'],
   })
 
+  app.use(cookieParser());
+  // 限制请求体大小，防止超大正文导致内存压力
+  app.use(json({ limit: '2mb' }));
+
   // Global validation pipe
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
@@ -57,12 +73,9 @@ async function bootstrap() {
     transform: true,
   }));
   // Global response envelope & exception handling
-  // 顺序：先幂等拦截器（缓存最终包），再统一响应包拦截器
-  app.useGlobalInterceptors(new IdempotencyInterceptor())
-  app.useGlobalInterceptors(new ApiEnvelopeInterceptor())
   app.useGlobalFilters(new ApiExceptionFilter())
 
-  const redis = new Redis(process.env.REDIS_URL || 'redis://localhost:6379')
+  const redis = app.get<Redis>(REDIS_CLIENT)
   const msgLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:msg:user', points: 300, duration: 60 })
   const connLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:conn:ip', points: 100, duration: 60 })
   app.useWebSocketAdapter(new JwtWsAdapter(app, app.get(JwtService), msgLimiter, connLimiter, redis))

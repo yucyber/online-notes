@@ -4,6 +4,7 @@ import { NotesModule } from '../notes/notes.module'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
 import { KnowledgeBasesController } from './knowledge-bases.controller'
 import { KnowledgeBasesService } from './knowledge-bases.service'
+import { KnowledgeGraphService } from './knowledge-graph.service'
 import { KnowledgeBase, KnowledgeBaseSchema } from './schemas/knowledge-base.schema'
 import { KnowledgeBaseNote, KnowledgeBaseNoteSchema } from './schemas/knowledge-base-note.schema'
 import { KnowledgeGraphEdge, KnowledgeGraphEdgeSchema } from './schemas/knowledge-graph-edge.schema'
@@ -21,7 +22,7 @@ import { KnowledgeGraphNode, KnowledgeGraphNodeSchema } from './schemas/knowledg
     ]),
   ],
   controllers: [KnowledgeBasesController],
-  providers: [KnowledgeBasesService],
+  providers: [KnowledgeBasesService, KnowledgeGraphService],
   exports: [KnowledgeBasesService],
 })
 export class KnowledgeBasesModule {}

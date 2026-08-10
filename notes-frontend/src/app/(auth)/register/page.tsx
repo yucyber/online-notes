@@ -49,13 +49,12 @@ export default function RegisterPage() {
     try {
       setIsLoading(true)
       setError('')
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       const { confirmPassword: _confirmPassword, ...registerData } = values
       const result = await register(registerData)
-      persistAuthSession(result.token, result.user)
+      persistAuthSession(result.user)
       router.push('/dashboard/notes')
       router.refresh()
-    } catch (err: any) { // eslint-disable-line @typescript-eslint/no-explicit-any
+    } catch (err: any) {
       setError(err.response?.data?.message || '注册失败，请重试')
     } finally {
       setIsLoading(false)

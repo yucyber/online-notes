@@ -101,6 +101,8 @@ export class AiGatewayClient {
     return this.readProviderConfig(provider, this.chatProviderKeys(route, provider))
   }
 
+  // 路由策略：text 走 AI_TEXT_PROVIDER（默认 sensenova），reasoning 走 AI_REASONING_PROVIDER（默认 mimo）。
+  // 两条路由可分别配置不同 API key 和 model，满足文案生成与推理型任务的成本要求不同。
   private resolveChatProviderName(route: AiChatRoute): string {
     return String(
       this.configService.get<string>(route === 'reasoning' ? 'AI_REASONING_PROVIDER' : 'AI_TEXT_PROVIDER') ||
@@ -210,6 +212,8 @@ export class AiGatewayClient {
     return path.startsWith('/') ? path : `/${path}`
   }
 
+  // SSE 流按行拆分；buffer 保留跨 chunk 的不完整行，直到遇到换行符才提交。
+  // 兼容 OpenAI 格式（choices[0].delta.content）和部分厂商的非标准字段（data.content）。
   private openAiSseToTextStream(body: ReadableStream<Uint8Array>): ReadableStream<Uint8Array> {
     const encoder = new TextEncoder()
     const decoder = new TextDecoder()

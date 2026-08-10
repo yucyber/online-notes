@@ -10,18 +10,21 @@ export class AuthService {
     private jwtService: JwtService,
   ) {}
 
-  async register(createUserDto: CreateUserDto) {
-    const user = await this.usersService.create(createUserDto);
-    const payload = { email: user.email, sub: (user as any).id };
+  private toAuthResponse(user: any) {
     return {
-      token: this.jwtService.sign(payload),
+      token: this.jwtService.sign({ email: user.email, sub: (user as any).id }),
       user: {
         id: (user as any).id,
         email: user.email,
         createdAt: (user as any).createdAt,
         updatedAt: (user as any).updatedAt,
       },
-    };
+    }
+  }
+
+  async register(createUserDto: CreateUserDto) {
+    const user = await this.usersService.create(createUserDto);
+    return this.toAuthResponse(user);
   }
 
   async login(loginUserDto: LoginUserDto) {
@@ -29,17 +32,7 @@ export class AuthService {
     if (!user) {
       throw new UnauthorizedException('邮箱或密码错误');
     }
-
-    const payload = { email: user.email, sub: (user as any).id };
-    return {
-      token: this.jwtService.sign(payload),
-      user: {
-        id: (user as any).id,
-        email: user.email,
-        createdAt: (user as any).createdAt,
-        updatedAt: (user as any).updatedAt,
-      },
-    };
+    return this.toAuthResponse(user);
   }
 
   async getProfile(userId: string) {

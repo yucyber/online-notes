@@ -1,5 +1,5 @@
-import { Controller, Get, Post, Body, Query, UseGuards, Request } from '@nestjs/common'
-import { SemanticService } from './semantic.service'
+import { Controller, Get, Post, Body, Query, UseGuards, Request, UnauthorizedException } from '@nestjs/common'
+import { SemanticService, SemanticSearchOpts } from './semantic.service'
 import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 
 @Controller('v1/semantic')
@@ -7,10 +7,38 @@ import { JwtAuthGuard } from '../auth/jwt-auth.guard'
 export class SemanticController {
   constructor(private readonly semantic: SemanticService) { }
 
+  private resolveUserId(req: any): string {
+    const userObj = req.user as any
+    const userId = userObj?._id || userObj?.id || userObj?.userId
+    if (!userId) throw new UnauthorizedException('User ID missing')
+    return String(userId)
+  }
+
+  private keywordOpts(input: {
+    page?: number
+    limit?: number
+    threshold?: number
+    categoryId?: string
+    tagIds?: string[]
+    tagsMode?: 'any' | 'all'
+    categoriesMode?: 'any' | 'all'
+    mode?: SemanticSearchOpts['mode']
+  }): SemanticSearchOpts {
+    return {
+      mode: input.mode || 'keyword',
+      page: Number(input.page || 1),
+      limit: Number(input.limit || 10),
+      threshold: Number(input.threshold || 0),
+      categoryId: input.categoryId,
+      tagIds: input.tagIds,
+      tagsMode: input.tagsMode,
+      categoriesMode: input.categoriesMode,
+    }
+  }
+
   @Post('topics/convert')
   async convertTopicToTag(@Request() req, @Body() body: { topicName: string; noteIds: string[] }) {
-    const userObj = req.user as any;
-    const userId = userObj._id || userObj.id || userObj.userId;
+    const userId = this.resolveUserId(req)
     return this.semantic.convertToTag(userId, body.topicName, body.noteIds);
   }
 
@@ -27,80 +55,56 @@ export class SemanticController {
     @Query('tagsMode') tagsMode?: 'any' | 'all',
     @Query('categoriesMode') categoriesMode?: 'any' | 'all',
   ) {
+    const userId = this.resolveUserId(req)
     const tagArray = Array.isArray(tagIds)
       ? (tagIds as string[]).filter(Boolean)
       : (tagIds ? String(tagIds).split(',').filter(Boolean) : undefined)
 
+    const baseOpts = this.keywordOpts({
+      page,
+      limit,
+      threshold,
+      categoryId,
+      tagIds: tagArray,
+      tagsMode,
+      categoriesMode,
+      mode: mode || 'keyword',
+    })
+
     if (mode === 'vector' || mode === 'hybrid') {
       try {
-        // Fix: Use req.user._id or req.user.id as the user ID. req.user is the Mongoose document.
-        const userObj = req.user as any;
-        const userId = userObj._id || userObj.id || userObj.userId;
+        const results = await this.semantic.searchVector(String(q || ''), userId, baseOpts);
 
-        if (!userId) {
-          console.error('User ID not found in request:', userObj);
-          throw new Error('User ID missing');
-        }
-
-        const results = await this.semantic.searchVector(String(q || ''), userId);
-
-        // If vector search returns results, use them
-        if (results.length > 0) {
-          return {
-            page: Number(page || 1),
-            limit: Number(limit || 10),
-            total: results.length, // Vector search aggregation doesn't return total count easily
-            totalPages: 1,
-            hasNext: false,
-            data: results.map(item => ({
-              id: item._id,
-              title: item.title,
-              preview: item.content.substring(0, 200),
-              score: item.score,
-              updatedAt: item.updatedAt
-            }))
-          }
+        if (results.data.length > 0) {
+          return results
         }
       } catch (err) {
         console.error('Vector search failed:', err);
-        // Fallthrough to keyword search on error
-
-        // If vector search fails (empty) and mode is hybrid, fallback to keyword search
         if (mode === 'hybrid') {
-          return this.semantic.search(String(q || ''), { mode: 'keyword', page: Number(page || 1), limit: Number(limit || 10), threshold: Number(threshold || 0), categoryId, tagIds: tagArray, tagsMode, categoriesMode })
+          return this.semantic.search(String(q || ''), userId, { ...baseOpts, mode: 'keyword' })
         }
 
-        // If mode is vector and no results, return empty
         return {
           page: Number(page || 1),
           limit: Number(limit || 10),
           total: 0,
           totalPages: 1,
           hasNext: false,
-          data: []
+          data: [],
         }
       }
 
-      return this.semantic.search(String(q || ''), { mode, page: Number(page || 1), limit: Number(limit || 10), threshold: Number(threshold || 0), categoryId, tagIds: tagArray, tagsMode, categoriesMode })
+      // Empty vector hit: fall back to access-scoped keyword (same as previous behavior).
+      return this.semantic.search(String(q || ''), userId, { ...baseOpts, mode: 'keyword' })
     }
 
-    return this.semantic.search(String(q || ''), {
-      mode: mode || 'keyword',
-      page: Number(page || 1),
-      limit: Number(limit || 10),
-      threshold: Number(threshold || 0),
-      categoryId,
-      tagIds: tagArray,
-      tagsMode,
-      categoriesMode,
-    })
+    return this.semantic.search(String(q || ''), userId, baseOpts)
   }
 
   @Get('topics')
   async getTopics(@Request() req) {
-    const userObj = req.user as any;
-    const userId = userObj._id || userObj.id || userObj.userId;
-    const topics = await this.semantic.discoverTopics(String(userId));
+    const userId = this.resolveUserId(req);
+    const topics = await this.semantic.discoverTopics(userId);
     return { code: 200, message: 'success', data: { topics } };
   }
 }
