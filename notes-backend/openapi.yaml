@@ -193,7 +193,7 @@ paths:
       summary: 退出登录并清除认证 Cookie
       responses:
         '200':
-          $ref: '#/components/responses/Ok'
+          $ref: '#/components/responses/LogoutEnvelope'
   /api/auth/me:
     get:
       tags: [Auth]
@@ -1313,6 +1313,18 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiEnvelope'
+    LogoutEnvelope:
+      description: 已清除认证 Cookie
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                required: [data]
+                properties:
+                  data:
+                    $ref: '#/components/schemas/LogoutResult'
     AuthSession:
       description: 登录态
       content:
@@ -1354,6 +1366,7 @@ components:
             allOf:
               - $ref: '#/components/schemas/ApiEnvelope'
               - type: object
+                required: [data]
                 properties:
                   data:
                     $ref: '#/components/schemas/RoomTicket'
@@ -1554,6 +1567,13 @@ components:
         data: {}
         requestId: { type: string }
         timestamp: { type: string, format: date-time }
+    LogoutResult:
+      type: object
+      required: [message]
+      properties:
+        message:
+          type: string
+          example: OK
     User:
       type: object
       properties:
