@@ -1,3 +1,10 @@
+// 修正 Node.js c-ares DNS：Windows 下 c-ares 只读全局 DNS 配置（为空时回退 127.0.0.1），
+// 不读网卡接口配置，导致 mongodb+srv 的 SRV 查询被本机拒绝（ECONNREFUSED）。
+// 必须在引入 mongoose 等会触发 DNS 的模块前执行。
+import * as dns from 'dns';
+dns.setDefaultResultOrder('ipv4first');
+dns.setServers(['8.8.8.8', '1.1.1.1']);
+
 import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
