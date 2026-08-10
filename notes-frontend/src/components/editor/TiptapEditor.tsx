@@ -33,6 +33,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   )
   const {
     provider,
+    roomRole,
     connStatus,
     participants,
     collabEnabled,
@@ -40,6 +41,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     wsDebug,
     reconnect,
   } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
+  const effectiveReadOnly = readOnly || roomRole !== 'writer'
   const { idbSynced } = useTiptapPersistence(room, ydoc)
 
   const injectBusyRef = useRef(false)
@@ -60,7 +62,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     // 版本回溯或协作未启用时才需要将 HTML 设为初始内容。
     content: ((collabEnabled && !versionKey) ? undefined : (initialHTML || '<p></p>')),
     editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
-    editable: !readOnly,
+    editable: !effectiveReadOnly,
     immediatelyRender: false,
   }, [provider, collabEnabled])
   useTiptapCommentMarks({ editor, noteId, suppressSelectionRef })
@@ -82,7 +84,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             }
             currentHeadingIndex++
           }
-        })
+  })
 
         if (foundPos !== -1) {
           try {
@@ -105,6 +107,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     document.addEventListener('editor:scrollToHeading', handler)
     return () => document.removeEventListener('editor:scrollToHeading', handler)
   }, [editor])
+
+  useEffect(() => {
+    editor?.setEditable(!effectiveReadOnly)
+  }, [editor, effectiveReadOnly])
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -330,6 +336,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     const execHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail || {}
       const cmd = detail.cmd as string
+      if (effectiveReadOnly && cmd !== 'fullscreen') return
       const payload = detail.payload
       const chain = editor.chain().focus()
       if (cmd === 'bold') chain.toggleBold().run()
@@ -396,7 +403,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     document.addEventListener('tiptap:exec', execHandler as any)
     return () => { document.removeEventListener('tiptap:exec', execHandler as any) }
-  }, [editor, onSaveRef])
+  }, [editor, onSaveRef, effectiveReadOnly])
 
   if (!editor) return <div className="p-4 text-sm text-gray-500">编辑器加载中…</div>
 
@@ -410,7 +417,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           {connMeta.detail && <span className="ml-2 text-xs text-gray-500">{connMeta.detail}</span>}
           <span className="ml-2 text-[11px] text-gray-500">ws[{wsDebug.connected ? 'on' : wsDebug.connecting ? 'dial' : 'off'}] sync[{wsDebug.synced ? 'ok' : '…'}]</span>
           {localMode && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
-          {readOnly && <span className="ml-2 text-xs text-gray-500">只读</span>}
+          {effectiveReadOnly && <span className="ml-2 text-xs font-medium text-amber-700">只读权限，无法修改内容</span>}
         </div>
         <div className="flex items-center gap-1" role="list" aria-label="在线协作者">
           {participants.map((p, i) => {
@@ -433,7 +440,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           {participants.length === 0 && <span className="text-xs text-gray-400">无在线协作者</span>}
         </div>
         <Button size="sm" variant="outline" onClick={reconnect}>重连</Button>
-        <Button size="sm" variant="outline" disabled={readOnly || localMode} onClick={async () => { if (readOnly || localMode) return; const html = editor.getHTML(); await onSave(html) }}>保存</Button>
+        <Button size="sm" variant="outline" disabled={effectiveReadOnly || localMode} onClick={async () => { if (effectiveReadOnly || localMode) return; const html = editor.getHTML(); await onSave(html) }}>保存</Button>
       </div>
       <div
         id="editor-card"
@@ -460,7 +467,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         >
           <TiptapAiActions
             editor={editor}
-            readOnly={readOnly}
+            readOnly={effectiveReadOnly}
             aiWritingType={aiWritingType}
             setAiWritingType={setAiWritingType}
             mode="continue"
@@ -471,7 +478,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           editor={editor}
           pluginKey="bubble-menu"
           shouldShow={({ editor: ed, state }) => {
-            if (readOnly) return false
+            if (effectiveReadOnly) return false
             const { from, to } = state.selection
             return ed.isEditable && ed.isFocused && from !== to
           }}
@@ -486,13 +493,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             aria-label="文本格式工具"
             style={{ height: 44, paddingLeft: 8, paddingRight: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-1)' }}
           >
-            <Button aria-label="粗体" title="粗体 (Ctrl+B)" size="icon" variant="ghost" disabled={readOnly} onClick={() => editor.chain().focus().toggleBold().run()}>
+            <Button aria-label="粗体" title="粗体 (Ctrl+B)" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => editor.chain().focus().toggleBold().run()}>
               <Bold className="w-4 h-4" aria-hidden />
             </Button>
-            <Button aria-label="斜体" title="斜体 (Ctrl+I)" size="icon" variant="ghost" disabled={readOnly} onClick={() => editor.chain().focus().toggleItalic().run()}>
+            <Button aria-label="斜体" title="斜体 (Ctrl+I)" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => editor.chain().focus().toggleItalic().run()}>
               <Italic className="w-4 h-4" aria-hidden />
             </Button>
-            <Button aria-label="下划线" title="下划线 (Ctrl+U)" size="icon" variant="ghost" disabled={readOnly} onClick={() => editor.chain().focus().toggleUnderline().run()}>
+            <Button aria-label="下划线" title="下划线 (Ctrl+U)" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => editor.chain().focus().toggleUnderline().run()}>
               <UnderlineIcon className="w-4 h-4" aria-hidden />
             </Button>
 
@@ -500,14 +507,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
             <TiptapAiActions
               editor={editor}
-              readOnly={readOnly}
+              readOnly={effectiveReadOnly}
               aiWritingType={aiWritingType}
               setAiWritingType={setAiWritingType}
               mode="selection"
             />
 
             <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
-            <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={readOnly} onClick={() => {
+            <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => {
               try {
                 const { from, to } = editor.state.selection
                 const openEvt = new CustomEvent('comments:open')

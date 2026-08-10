@@ -19,10 +19,21 @@ interface MarkdownEditorProps {
   draftKey?: string
   onSelectionChange?: (start: number, end: number) => void
   onContentChange?: (content: string, title: string) => void
+  readOnly?: boolean
 }
 
-export default function MarkdownEditor({ initialContent, initialTitle, onSave, onSaveDraft, isNew = false, draftKey, onSelectionChange, onContentChange }: MarkdownEditorProps) {
+export default function MarkdownEditor({ initialContent, initialTitle, onSave, onSaveDraft, isNew = false, draftKey, onSelectionChange, onContentChange, readOnly = false }: MarkdownEditorProps) {
   const editor = useMarkdownEditor({ initialContent, initialTitle, onSave, isNew, draftKey, onContentChange })
+  if (readOnly) {
+    return <div className="space-y-4">
+      <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800" role="status">
+        只读权限，无法修改内容
+      </div>
+      <div className="min-h-[560px] overflow-y-auto rounded-xl border border-gray-200 bg-white p-6">
+        <ReactMarkdown rehypePlugins={[rehypeRaw, rehypeSanitize]}>{editor.content}</ReactMarkdown>
+      </div>
+    </div>
+  }
   return <div className="space-y-4">
     <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between sticky top-0 z-30 bg-white/80 backdrop-blur supports-[backdrop-filter]:bg-white/60 py-2"><div className="flex-1 min-w-0"><input type="text" value={editor.title} onChange={(event) => editor.setTitle(event.target.value)} placeholder="请输入笔记标题..." className="text-2xl font-bold w-full" style={{ padding: '8px 12px', border: '1px solid #e5e7eb', borderRadius: '12px', outline: 'none', transition: 'all 0.2s ease', boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)' }} /></div><div className="flex items-center gap-2 flex-shrink-0"><div className="text-sm text-gray-500 mr-2">{editor.wordCount} 字</div>{editor.lastSaved && <span className="text-sm text-gray-500 mr-2">最后保存: {editor.lastSaved}</span>}<div className="flex items-center gap-2"><Button id="save-button" onClick={() => void editor.handleSave().then(editor.clearLocalDraftAfterSave)} disabled={editor.isSaving || !editor.title.trim()} className="flex items-center gap-2"><Save className="h-4 w-4" />{editor.isSaving ? '保存中...' : '保存'}</Button>{onSaveDraft && <Button variant="secondary" onClick={() => void onSaveDraft(editor.title, editor.content)} disabled={editor.isSaving || !editor.title.trim()}>保存为草稿</Button>}</div></div></div>
     {editor.restoreBanner && <div className="text-sm" style={{ backgroundColor: '#fff7ed', border: '1px solid #fdba74', borderRadius: '10px', padding: '10px 12px', color: '#9a3412' }}><div className="flex items-center justify-between gap-3"><span>检测到离线草稿（{new Date(editor.restoreBanner.updatedAt).toLocaleString('zh-CN')}），是否恢复并同步？</span><div className="flex items-center gap-2"><Button size="sm" variant="outline" onClick={() => editor.setRestoreBanner(null)}>忽略</Button><Button size="sm" onClick={() => void editor.restoreDraft(true)}>恢复并同步</Button></div></div>{!editor.isOnline && <div className="mt-2 text-xs text-amber-700">当前离线，将在网络恢复后再尝试同步。</div>}</div>}

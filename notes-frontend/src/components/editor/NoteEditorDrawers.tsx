@@ -35,7 +35,7 @@ export function NoteEditorDrawers({
               if (event.key === 'Enter' || event.key === ' ') onCloseCollab()
             }}
           />
-          <div className="absolute right-0 top-0 h-full w-[360px] bg-white border-l shadow-xl">
+          <div className="absolute right-0 top-0 h-full w-full max-w-[360px] bg-white border-l shadow-xl">
             <div className="flex items-center justify-between px-4 py-2 border-b">
               <div className="text-sm font-medium">{"协作"}</div>
               <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={onCloseCollab}>{"关闭"}</button>
@@ -65,7 +65,7 @@ export function NoteEditorDrawers({
           <div
             ref={commentsDrawerRef}
             id="comments-drawer"
-            className="absolute right-0 top-0 h-full w-[380px] bg-white border-l shadow-xl"
+            className="absolute right-0 top-0 h-full w-full max-w-[380px] bg-white border-l shadow-xl"
             style={{ borderRadius: 0, transform: 'translateX(0)', transition: 'transform 300ms ease-in-out' }}
           >
             <div className="flex items-center justify-between px-4 py-2 border-b">

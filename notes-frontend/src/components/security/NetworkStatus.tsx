@@ -69,7 +69,7 @@ export default function NetworkStatus({ onReconnect }: Props) {
 
   return (
     <div
-      className="flex items-center justify-between"
+      className="flex items-center justify-between gap-3 whitespace-nowrap"
       role="status"
       aria-live="polite"
       style={{
@@ -79,7 +79,7 @@ export default function NetworkStatus({ onReconnect }: Props) {
         backgroundColor: '#ffffff',
       }}
     >
-       <div className="flex items-center gap-2">
+       <div className="flex min-w-0 items-center gap-2">
          {isOnline ? (
            <Wifi className="h-4 w-4" color={statusColor} />
          ) : (
@@ -100,7 +100,9 @@ export default function NetworkStatus({ onReconnect }: Props) {
        <div className="flex items-center gap-2">
          <button
            type="button"
-           className="flex items-center gap-1"
+           aria-label="重试网络连接"
+           title="重试网络连接"
+           className="flex items-center gap-1 whitespace-nowrap"
            style={{
              height: '44px',
              padding: '0 12px',
@@ -117,6 +119,9 @@ export default function NetworkStatus({ onReconnect }: Props) {
          {isOnline && apiReachable && (
            <button
              type="button"
+             aria-label="触发数据同步"
+             title="触发数据同步"
+             className="whitespace-nowrap"
              style={{
                height: '44px',
                padding: '0 12px',

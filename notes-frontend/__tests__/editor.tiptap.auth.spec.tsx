@@ -67,6 +67,18 @@ describe('TiptapEditor collaboration auth', () => {
     expect((WebsocketProvider as any).instances[0].options.params.access_token).toBe('room-ticket')
   })
 
+  test('reader room ticket keeps the editor non-editable', async () => {
+    mockGetRoomTicket.mockResolvedValue({ ticket: 'reader-ticket', role: 'reader', expiresIn: 300 })
+
+    const { container } = render(
+      <TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />,
+    )
+
+    await waitFor(() => {
+      expect(container.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'false')
+    })
+  })
+
   test('degrades without creating a provider when room-ticket issuance fails', async () => {
     mockGetRoomTicket.mockRejectedValue(new Error('unauthorized'))
 

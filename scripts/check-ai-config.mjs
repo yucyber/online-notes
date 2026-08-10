@@ -15,9 +15,6 @@ const envFiles = [
 ]
 
 const required = [
-  { key: 'MIMO_API_KEY', purpose: 'MiMo text/reasoning provider key' },
-  { key: 'MIMO_BASE_URL', purpose: 'MiMo OpenAI-compatible base URL' },
-  { key: 'MIMO_MODEL', purpose: 'MiMo default reasoning/long-context model' },
   { key: 'SENSENOVA_API_KEY', purpose: 'SenseNova gateway key for DeepSeek model' },
   { key: 'SENSENOVA_BASE_URL', purpose: 'SenseNova OpenAI-compatible base URL' },
   { key: 'SENSENOVA_TEXT_MODEL', purpose: 'SenseNova text model, e.g. deepseek-v4-flash' },
@@ -31,6 +28,9 @@ const required = [
 ]
 
 const optional = [
+  { key: 'MIMO_API_KEY', purpose: 'Optional MiMo provider key' },
+  { key: 'MIMO_BASE_URL', purpose: 'Optional MiMo OpenAI-compatible base URL' },
+  { key: 'MIMO_MODEL', purpose: 'Optional MiMo model' },
   { key: 'SILICONFLOW_RERANKER_PATH', purpose: 'Optional SiliconFlow reranker endpoint path; defaults to /rerank' },
   { key: 'AI_RERANKER_PROVIDER', purpose: 'Default reranker provider route' },
 ]
@@ -372,12 +372,6 @@ async function main() {
   ]
 
   const checks = [
-    await checkOpenAiChat({
-      name: 'MiMo chat',
-      baseUrl: merged.MIMO_BASE_URL,
-      apiKey: merged.MIMO_API_KEY,
-      model: merged.MIMO_MODEL,
-    }),
     await checkOpenAiChat({
       name: 'SenseNova DeepSeek chat',
       baseUrl: merged.SENSENOVA_BASE_URL,

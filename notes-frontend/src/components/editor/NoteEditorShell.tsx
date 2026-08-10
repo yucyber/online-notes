@@ -11,7 +11,7 @@ const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'
   loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
 })
 import { Button } from '@/components/ui/button'
-import { ChevronDown, ChevronUp } from 'lucide-react'
+import { ChevronDown, ChevronUp, Plus, Users } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
@@ -20,6 +20,7 @@ import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
 import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
+import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export interface NoteEditorShellProps {
@@ -48,6 +49,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
   const [uiDegraded, setUiDegraded] = useState<boolean>(false)
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
+  const readOnly = !canWriteNote(note, me.id)
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
   const commentsDrawerRef = useRef<HTMLDivElement>(null)
@@ -317,10 +319,10 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [loadNote, initialData, searchParams])
 
   useEffect(() => {
-    if (!id) return
+    if (!id || !shouldManageNoteLock(note, me.id)) return
     lockNote(id).catch(() => { })
     return () => { unlockNote(id).catch(() => { }) }
-  }, [id])
+  }, [id, note, me.id])
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -440,6 +442,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           <input
             type="checkbox"
             checked={checked}
+            disabled={readOnly}
             onChange={(e) => {
               const next = e.target.checked
                 ? Array.from(new Set([...auxCategoryIds, id]))
@@ -524,11 +527,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
 
       <NoteEditorHeader
         note={note}
+        readOnly={readOnly}
         editorMode={editorMode}
         showSidebar={showSidebar}
         onBack={handleBack}
         onModeChange={handleModeChange}
         onVisibilityChange={async (visibility) => {
+          if (readOnly) return
           try {
             await updateNote(id, { visibility: visibility as any })
             await loadNote()
@@ -596,7 +601,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                     style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                     value={selectedCategory}
                     onChange={(e) => setSelectedCategory(e.target.value)}
-                    disabled={metaLoading || !!metaError}
+                    disabled={readOnly || metaLoading || !!metaError}
                   >
                     <option value="">未分类</option>
                     {categories.map((category) => {
@@ -624,10 +629,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                     <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标签（可多选）</span>
                     {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
                   </div>
-                  <div className="mb-2 flex items-center gap-2">
+                  <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center">
                     <input
                       type="text"
                       value={tagInput}
+                      disabled={readOnly}
                       onChange={(e) => setTagInput(e.target.value)}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
@@ -637,11 +643,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                         }
                       }}
                       placeholder="输入标签，Enter 添加，支持逗号分隔"
-                      className="flex-1 rounded-lg border p-2 text-sm placeholder-muted"
+                      className="min-w-0 flex-1 rounded-lg border p-2 text-sm placeholder-muted"
                       style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                     />
                     <button
-                      className="px-3 py-1 rounded border text-sm"
+                      disabled={readOnly}
+                      className="whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
                       style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                       onClick={() => setSelectedTags([])}
                     >清空标签</button>
@@ -723,7 +730,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
           {editorMode === 'rich' ? (
             <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
-              <TiptapToolbar disabled={false} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+              <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
                 if (cmd === 'comments') {
                   try {
                     setShowCommentsDrawer(true)
@@ -746,7 +753,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 initialHTML={note.content || '<p></p>'}
                 onSave={async (html: string) => { await handleSave(note.title || '', html) }}
                 user={me}
-                readOnly={false}
+                readOnly={readOnly}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
                 onContentChange={(html) => {
                   setCurrentContent(html)
@@ -768,6 +775,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
               draftKey={`note:${id}`}
               onSelectionChange={handleSelectionChange}
               onContentChange={handleMarkdownChange}
+              readOnly={readOnly}
             />
           )}
         </div>
@@ -786,26 +794,27 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
       <button
         aria-label="打开协作抽屉"
-        className="fixed right-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+        title="打开协作"
+        className="fixed right-4 bottom-24 z-40 grid place-items-center rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 sm:right-6"
         onClick={() => setShowCollabDrawer(true)}
         style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
       >
-        <span className="sr-only">打开协作抽屉</span>
-        •
+        <Users className="h-5 w-5" aria-hidden />
       </button>
       {/* 左侧浮动 “+” 插入菜单 */}
-      {!isFullscreen && (
+      {!isFullscreen && !readOnly && (
         <>
           <button
             aria-label="插入工具"
-            className="fixed left-6 bottom-24 z-40 rounded-full shadow-xl active-95"
+            title="插入内容"
+            className="fixed right-4 bottom-40 z-40 grid place-items-center rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 sm:right-6"
             onClick={() => setShowInsertMenu(s => !s)}
             style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
           >
-            +
+            <Plus className="h-5 w-5" aria-hidden />
           </button>
           {showInsertMenu && (
-            <div className="fixed left-6 bottom-40 z-50 rounded-xl border bg-white shadow-xl"
+            <div className="fixed right-4 bottom-56 z-50 rounded-xl border bg-white shadow-xl sm:right-6"
               role="menu" aria-label="插入工具菜单"
               style={{ minWidth: 220 }}
             >

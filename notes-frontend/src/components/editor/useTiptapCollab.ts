@@ -21,6 +21,7 @@ export function useTiptapCollab(opts: {
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<CollabStatus>('connecting')
   const [roomTicket, setRoomTicket] = useState<string | null>(null)
+  const [roomRole, setRoomRole] = useState<'writer' | 'reader' | null>(null)
   const [ticketError, setTicketError] = useState<string | null>(null)
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
   const participantsCache = useRef<Array<{ id: string; name?: string }>>([])
@@ -36,10 +37,12 @@ export function useTiptapCollab(opts: {
   useEffect(() => {
     if (!noteId) return
     let cancelled = false
+    setRoomRole(null)
     notesAPI.getRoomTicket(noteId)
       .then((data) => {
         if (!cancelled && data?.ticket) {
           setRoomTicket(data.ticket)
+          setRoomRole(data.role)
           setTicketError(null)
         }
       })
@@ -287,6 +290,7 @@ export function useTiptapCollab(opts: {
 
   return {
     provider,
+    roomRole,
     connStatus,
     participants,
     collabEnabled,

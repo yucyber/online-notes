@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import AIPet from '@/components/ai/AIPet'
-import { DashboardHeader, DashboardSidebar } from '@/components/dashboard/dashboard-navigation'
+import { DashboardHeader, DashboardSidebar, shouldUseOverlaySidebar } from '@/components/dashboard/dashboard-navigation'
 import { getCurrentUser, isAuthenticated, logout } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
 import { listNotifications } from '@/lib/api'
@@ -70,7 +70,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }
   const toggleSidebar = () => {
     try {
-      if (window.innerWidth >= 768) {
+      if (!shouldUseOverlaySidebar(window.innerWidth)) {
         setIsSidebarHidden((current) => { const next = !current; localStorage.setItem('sidebarHidden', String(next)); return next })
       } else setIsMobileMenuOpen(true)
     } catch { setIsMobileMenuOpen(true) }

@@ -26,10 +26,9 @@ export function CollaboratorsPanel({ noteId }: { noteId: string }) {
   loadRef.current = load
   useEffect(() => { void loadRef.current() }, [noteId])
   useEffect(() => {
-    const timer = setInterval(() => { loadRef.current().catch(() => { }) }, 5000)
     const onVis = () => { if (document.visibilityState === 'visible') loadRef.current().catch(() => { }) }
     document.addEventListener('visibilitychange', onVis)
-    return () => { clearInterval(timer); document.removeEventListener('visibilitychange', onVis) }
+    return () => { document.removeEventListener('visibilitychange', onVis) }
   }, [noteId])
   useEffect(() => {
     if (invites.length > 0) {
