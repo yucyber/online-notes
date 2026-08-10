@@ -1,5 +1,13 @@
-import { act, render, screen } from '@testing-library/react'
+import { render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
+
+const mockGetRoomTicket = jest.fn()
+
+jest.mock('@/lib/api/notes', () => ({
+  notesAPI: {
+    getRoomTicket: (...args: unknown[]) => mockGetRoomTicket(...args),
+  },
+}))
 
 jest.mock('y-websocket', () => {
   const providerInstances: any[] = []
@@ -44,59 +52,38 @@ describe('TiptapEditor collaboration auth', () => {
   const user = { id: 'u1', name: 'User One' }
 
   beforeEach(() => {
-    jest.useFakeTimers()
-    localStorage.clear()
+    mockGetRoomTicket.mockReset()
     ;(WebsocketProvider as any).instances.length = 0
     process.env.NEXT_PUBLIC_YWS_URL = 'ws://localhost:1234'
   })
 
-  afterEach(() => {
-    jest.useRealTimers()
-  })
-
-  function jwtWithExp(expMs: number) {
-    const payload = Buffer.from(JSON.stringify({ sub: 'u1', exp: Math.floor(expMs / 1000) })).toString('base64')
-    return `header.${payload}.signature`
-  }
-
-  test('passes access_token to WebsocketProvider when token exists', () => {
-    const token = jwtWithExp(Date.now() + 60_000)
-    localStorage.setItem('notes_token', token)
+  test('passes the room ticket to WebsocketProvider after ticket issuance', async () => {
+    mockGetRoomTicket.mockResolvedValue({ ticket: 'room-ticket', role: 'writer', expiresIn: 300 })
 
     render(<TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />)
 
-    expect((WebsocketProvider as any).instances).toHaveLength(1)
-    expect((WebsocketProvider as any).instances[0].options.params.access_token).toBe(token)
+    await waitFor(() => expect((WebsocketProvider as any).instances).toHaveLength(1))
+    expect(mockGetRoomTicket).toHaveBeenCalledWith('n1')
+    expect((WebsocketProvider as any).instances[0].options.params.access_token).toBe('room-ticket')
   })
 
-  test('does not create provider when token is missing', () => {
+  test('degrades without creating a provider when room-ticket issuance fails', async () => {
+    mockGetRoomTicket.mockRejectedValue(new Error('unauthorized'))
+
     render(<TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />)
 
+    expect(await screen.findByText('协作鉴权失败')).toBeInTheDocument()
     expect((WebsocketProvider as any).instances).toHaveLength(0)
-    expect(screen.getByText('协作需要登录')).toBeInTheDocument()
   })
 
-  test('renders readable status when websocket url is missing', () => {
-    localStorage.setItem('notes_token', jwtWithExp(Date.now() + 60_000))
+  test('renders readable status when websocket url is missing', async () => {
+    mockGetRoomTicket.mockResolvedValue({ ticket: 'room-ticket', role: 'writer', expiresIn: 300 })
     delete process.env.NEXT_PUBLIC_YWS_URL
 
     render(<TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />)
 
-    expect(screen.getByText('协作配置缺失')).toBeInTheDocument()
-  })
-
-  test('destroys provider and degrades when token expires during an active session', () => {
-    localStorage.setItem('notes_token', jwtWithExp(Date.now() + 5_000))
-
-    render(<TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />)
-    expect((WebsocketProvider as any).instances).toHaveLength(1)
-    const instance = (WebsocketProvider as any).instances[0]
-
-    act(() => {
-      jest.advanceTimersByTime(5_100)
-    })
-
-    expect(instance.destroy).toHaveBeenCalled()
-    expect(screen.getByText('登录已过期，协作已暂停')).toBeInTheDocument()
+    await waitFor(() => expect(mockGetRoomTicket).toHaveBeenCalledWith('n1'))
+    expect(await screen.findByText('协作配置缺失')).toBeInTheDocument()
+    expect((WebsocketProvider as any).instances).toHaveLength(0)
   })
 })
