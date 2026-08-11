@@ -66,6 +66,22 @@ describe('useEditorAutoSave', () => {
     expect(save).toHaveBeenCalledTimes(1)
   })
 
+  it('reuses the manual save while its debounce timer is pending', async () => {
+    const pending = deferred<void>()
+    const save = jest.fn().mockReturnValue(pending.promise)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    act(() => { void result.current.saveNow() })
+    await act(async () => { jest.advanceTimersByTime(400) })
+
+    expect(save).toHaveBeenCalledTimes(1)
+
+    await act(async () => { pending.resolve() })
+  })
+
   it('keeps the latest save state when an earlier request finishes later', async () => {
     const first = deferred<void>()
     const second = deferred<void>()
@@ -130,6 +146,39 @@ describe('useEditorAutoSave', () => {
     expect(result.current.state).toBe('saved')
     expect(save).toHaveBeenCalledTimes(2)
     expect(dismissToast).toHaveBeenCalledWith('save:n1')
+  })
+
+  it('does not update state or show a toast after an in-flight save unmounts', async () => {
+    const pending = deferred<void>()
+    const save = jest.fn().mockReturnValue(pending.promise)
+    const { result, rerender, unmount } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    expect(result.current.state).toBe('saving')
+
+    unmount()
+    await act(async () => { pending.reject(new Error('request after unmount')) })
+
+    expect(errorToast).not.toHaveBeenCalled()
+    expect(dismissToast).not.toHaveBeenCalled()
+  })
+
+  it('does not dismiss a toast after an in-flight save succeeds post-unmount', async () => {
+    const pending = deferred<void>()
+    const save = jest.fn().mockReturnValue(pending.promise)
+    const { rerender, unmount } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    unmount()
+    await act(async () => { pending.resolve() })
+
+    expect(dismissToast).not.toHaveBeenCalled()
   })
 })
 
