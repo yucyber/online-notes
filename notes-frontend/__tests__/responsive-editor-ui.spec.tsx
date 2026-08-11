@@ -1,4 +1,6 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import AIPet from '@/components/ai/AIPet'
 import { DashboardSidebar, shouldUseOverlaySidebar } from '@/components/dashboard/dashboard-navigation'
@@ -139,37 +141,42 @@ describe('编辑页窄视口布局', () => {
     const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
     const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
     const grid = container.querySelector('.editor-layout-grid') as HTMLElement
+    const main = container.querySelector('.editor-layout-main') as HTMLElement
+    const productCss = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
+    const gridTracks = () => [
+      grid.style.getPropertyValue('--editor-left-width'),
+      'minmax(0, 1fr)',
+      grid.style.getPropertyValue('--editor-right-width'),
+    ]
 
-    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('280px')
-    expect(grid.style.getPropertyValue('--editor-right-width')).toBe('240px')
-    const expandedMainTrack = 1200 - 280 - 240
+    expect(main).toBeInTheDocument()
+    expect(productCss).toMatch(/\.editor-layout-grid\s*\{[^}]*grid-template-columns:\s*var\(--editor-left-width\) minmax\(0, 1fr\) var\(--editor-right-width\)/s)
+    expect(productCss).toMatch(/\.editor-layout-main\s*\{[^}]*min-width:\s*0/s)
+    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '240px'])
 
     fireEvent.click(screen.getByRole('button', { name: '收起左侧导航' }))
     act(() => animationFrame?.(0))
     const leftRestore = within(container.querySelector('#editor-left-navigation') as HTMLElement)
       .getByRole('button', { name: '展开左侧导航' })
     expect(leftRestore).toHaveFocus()
-    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('52px')
+    expect(gridTracks()).toEqual(['52px', 'minmax(0, 1fr)', '240px'])
 
     fireEvent.keyDown(leftRestore, { key: 'Enter', code: 'Enter' })
     fireEvent.keyUp(leftRestore, { key: 'Enter', code: 'Enter' })
     expect(screen.getByRole('button', { name: '收起左侧导航' })).toBeInTheDocument()
-    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('280px')
+    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '240px'])
 
     fireEvent.click(screen.getByRole('button', { name: '收起右侧面板' }))
     act(() => animationFrame?.(0))
     const rightRestore = within(container.querySelector('#editor-right-metadata') as HTMLElement)
       .getByRole('button', { name: '展开右侧面板' })
     expect(rightRestore).toHaveFocus()
-    expect(grid.style.getPropertyValue('--editor-right-width')).toBe('52px')
-
-    const rightCollapsedMainTrack = 1200 - 280 - 52
-    expect(rightCollapsedMainTrack).toBeGreaterThan(expandedMainTrack)
+    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '52px'])
 
     fireEvent.keyDown(rightRestore, { key: ' ', code: 'Space' })
     fireEvent.keyUp(rightRestore, { key: ' ', code: 'Space' })
     expect(screen.getByRole('button', { name: '收起右侧面板' })).toBeInTheDocument()
-    expect(grid.style.getPropertyValue('--editor-right-width')).toBe('240px')
+    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '240px'])
   })
 
   test('Toast action 暴露明确名称并可由键盘操作', () => {

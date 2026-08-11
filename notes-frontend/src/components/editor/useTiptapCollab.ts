@@ -95,6 +95,7 @@ export function useTiptapCollab(opts: {
     setProvider(p)
     setConnStatus('connecting')
     let offlineToastVisible = false
+    let authFailureTerminal = false
 
     const requestReconnect = () => {
       setConnStatus('connecting')
@@ -103,6 +104,8 @@ export function useTiptapCollab(opts: {
     }
 
     const markUnavailable = () => {
+      // 鉴权失败是终态，provider 随后的通用 disconnected 事件不能降级成可重连网络错误。
+      if (authFailureTerminal) return
       setConnStatus('disconnected')
       setLocalMode(true)
       setWsDebug((previous) => ({ ...previous, connecting: false, connected: false, synced: false }))
@@ -119,6 +122,7 @@ export function useTiptapCollab(opts: {
     }
 
     const markAuthFailure = (status: CollabStatus) => {
+      authFailureTerminal = true
       setConnStatus(status)
       setLocalMode(true)
       setCollabEnabled(false)

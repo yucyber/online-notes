@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 const mockGetRoomTicket = jest.fn()
@@ -131,9 +131,11 @@ describe('TiptapEditor collaboration auth', () => {
     await waitFor(() => expect((WebsocketProvider as any).instances).toHaveLength(1))
     const provider = (WebsocketProvider as any).instances[0]
 
-    provider.emit('status', { status: 'connected' })
-    provider.emit('status', { status: 'disconnected' })
-    provider.emit('connection-error', new Error('network unavailable'))
+    act(() => {
+      provider.emit('status', { status: 'connected' })
+      provider.emit('status', { status: 'disconnected' })
+      provider.emit('connection-error', new Error('network unavailable'))
+    })
 
     expect(await screen.findByText('实时协作暂不可用，已离线编辑')).toBeInTheDocument()
     expect(mockAppToastError).toHaveBeenCalledTimes(1)
@@ -145,11 +147,33 @@ describe('TiptapEditor collaboration auth', () => {
     }))
 
     const toastOptions = mockAppToastError.mock.calls[0][0]
-    toastOptions.action.onClick()
+    act(() => toastOptions.action.onClick())
     expect(provider.connect).toHaveBeenCalledTimes(1)
 
-    provider.emit('status', { status: 'connected' })
+    act(() => provider.emit('status', { status: 'connected' }))
     expect(await screen.findByText('已连接')).toBeInTheDocument()
     expect(mockAppToastDismiss).toHaveBeenCalledWith('collab:offline-note')
+  })
+
+  test.each([
+    ['401 connection error', 'connection-error', new Error('401 Unauthorized')],
+    ['4401 close', 'connection-close', { code: 4401, reason: 'unauthorized' }],
+    ['1008 close', 'connection-close', { code: 1008, reason: 'policy violation' }],
+  ])('%s 后的 disconnected 事件不覆盖鉴权失败终态', async (_caseName, event, payload) => {
+    mockGetRoomTicket.mockResolvedValue({ ticket: 'room-ticket', role: 'writer', expiresIn: 300 })
+
+    render(<TiptapEditor noteId={`auth-${event}`} initialHTML="<p>x</p>" onSave={async () => { }} user={user} />)
+
+    await waitFor(() => expect((WebsocketProvider as any).instances).toHaveLength(1))
+    const provider = (WebsocketProvider as any).instances[0]
+
+    act(() => {
+      provider.emit(event, payload)
+      provider.emit('status', { status: 'disconnected' })
+    })
+
+    expect(await screen.findByText('协作鉴权失败')).toBeInTheDocument()
+    expect(screen.queryByText('实时协作暂不可用，已离线编辑')).not.toBeInTheDocument()
+    expect(mockAppToastError).not.toHaveBeenCalled()
   })
 })
