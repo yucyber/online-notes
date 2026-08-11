@@ -1,0 +1,160 @@
+import { act, render, renderHook, screen } from '@testing-library/react'
+import '@testing-library/jest-dom'
+
+const errorToast = jest.fn()
+const dismissToast = jest.fn()
+
+jest.mock('@/lib/app-toast', () => ({
+  appToast: { error: errorToast, dismiss: dismissToast },
+}))
+
+import { EditorSaveStatus } from '@/components/editor/EditorSaveStatus'
+import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
+
+describe('useEditorAutoSave', () => {
+  const originalOnline = Object.getOwnPropertyDescriptor(window.navigator, 'onLine')
+
+  beforeEach(() => {
+    jest.useFakeTimers()
+    errorToast.mockReset()
+    dismissToast.mockReset()
+    setOnline(true)
+  })
+
+  afterEach(() => {
+    jest.useRealTimers()
+    if (originalOnline) Object.defineProperty(window.navigator, 'onLine', originalOnline)
+  })
+
+  it('debounces a changed snapshot and reports saved', async () => {
+    const save = jest.fn().mockResolvedValue(undefined)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+
+    expect(result.current.state).toBe('saved')
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(save).toHaveBeenCalledWith('A', 'two')
+  })
+
+  it('does not save when read-only', async () => {
+    const save = jest.fn().mockResolvedValue(undefined)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: false, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: false, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+
+    expect(result.current.state).toBe('idle')
+    expect(save).not.toHaveBeenCalled()
+  })
+
+  it('does not send an already saved snapshot again', async () => {
+    const save = jest.fn().mockResolvedValue(undefined)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    await act(async () => { await result.current.saveNow() })
+
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps the latest save state when an earlier request finishes later', async () => {
+    const first = deferred<void>()
+    const second = deferred<void>()
+    const save = jest.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(() => second.promise)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    rerender({ noteId: 'n1', title: 'A', content: 'three', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+
+    await act(async () => { second.resolve() })
+    await act(async () => { first.reject(new Error('stale failure')) })
+
+    expect(result.current.state).toBe('saved')
+    expect(errorToast).not.toHaveBeenCalled()
+  })
+
+  it('keeps changes locally offline and retries once when the network returns', async () => {
+    const save = jest.fn().mockResolvedValue(undefined)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    setOnline(false)
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    expect(result.current.state).toBe('local')
+    expect(save).not.toHaveBeenCalled()
+
+    setOnline(true)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+
+    expect(result.current.state).toBe('saved')
+    expect(save).toHaveBeenCalledTimes(1)
+  })
+
+  it('retains a failed snapshot for retry and shows a persistent error toast', async () => {
+    const save = jest.fn()
+      .mockRejectedValueOnce(new Error('network down'))
+      .mockResolvedValueOnce(undefined)
+    const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+
+    expect(result.current.state).toBe('error')
+    expect(errorToast).toHaveBeenCalledWith(expect.objectContaining({
+      id: 'save:n1',
+      persistent: true,
+      action: expect.objectContaining({ label: '重新保存' }),
+    }))
+
+    await act(async () => { await result.current.retry() })
+    expect(result.current.state).toBe('saved')
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(dismissToast).toHaveBeenCalledWith('save:n1')
+  })
+})
+
+describe('EditorSaveStatus', () => {
+  it.each([
+    ['saving', '正在保存…'],
+    ['saved', '已自动保存'],
+    ['local', '已保存到本地'],
+    ['error', '保存失败'],
+  ] as const)('renders %s state', (state, label) => {
+    render(<EditorSaveStatus state={state} />)
+    expect(screen.getByText(label)).toBeInTheDocument()
+  })
+})
+
+function deferred<T>() {
+  let resolve!: (value: T | PromiseLike<T>) => void
+  let reject!: (reason?: unknown) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  return { promise, resolve, reject }
+}
+
+function setOnline(value: boolean) {
+  Object.defineProperty(window.navigator, 'onLine', { configurable: true, value })
+}

@@ -41,14 +41,12 @@ export function useNoteSave({
         if (tagId) resultIds.push(tagId)
         continue
       }
-      try {
-        const created = await createTag(name)
-        const tagId = created.id || (created as unknown as { _id?: string })?._id || ''
-        if (tagId) {
-          resultIds.push(tagId)
-          setTags(prev => [{ ...created, id: tagId }, ...prev])
-        }
-      } catch { }
+      const created = await createTag(name)
+      const tagId = created.id || (created as unknown as { _id?: string })?._id || ''
+      if (tagId) {
+        resultIds.push(tagId)
+        setTags(prev => [{ ...created, id: tagId }, ...prev])
+      }
     }
     return resultIds
   }, [tags, setTags])
@@ -82,8 +80,7 @@ export function useNoteSave({
           detail: { type: 'network', name: eventName, meta: { noteId: id, message: String((error as any)?.message || error), mode: editorMode } },
         }))
       } catch { }
-      const msg = status === 'published' ? '保存失败，请重试' : '保存草稿失败，请重试'
-      throw new Error(msg)
+      throw error
     }
   }, [id, selectedCategory, auxCategoryIds, selectedTags, categories, editorMode, addTagsByNames, setNote])
 

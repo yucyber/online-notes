@@ -20,6 +20,8 @@ import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
 import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
+import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
+import { EditorSaveStatus } from '@/components/editor/EditorSaveStatus'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
@@ -47,6 +49,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
   const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
   const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
+  const [currentTitle, setCurrentTitle] = useState(initialData?.title ?? '')
   const [uiDegraded, setUiDegraded] = useState<boolean>(false)
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const readOnly = !canWriteNote(note, me.id)
@@ -288,6 +291,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       const data = await fetchNoteById(id)
       setNote(data)
       setCurrentContent(data?.content || '')
+      setCurrentTitle(data?.title || '')
       // 根据内容类型自动选择编辑器模式：Markdown 快照回退后避免富文本空白
       try {
         const raw = String(data?.content || '')
@@ -408,6 +412,25 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     setNote: (updater) => setNote(prev => updater(prev)),
     setTags,
   })
+  const { state: saveState, saveNow } = useEditorAutoSave({
+    noteId: id,
+    title: currentTitle,
+    content: currentContent,
+    enabled: Boolean(note) && !readOnly,
+    save: handleSave,
+    delayMs: 400,
+  })
+
+  useEffect(() => {
+    const onSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        void saveNow()
+      }
+    }
+    document.addEventListener('keydown', onSaveShortcut)
+    return () => { document.removeEventListener('keydown', onSaveShortcut) }
+  }, [saveNow])
 
   const childrenByParent = (() => {
     const m: Record<string, Category[]> = {}
@@ -723,6 +746,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             {uiDegraded && (
               <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
             )}
+            <EditorSaveStatus state={saveState} />
           </div>
         </div>
       </div>
@@ -751,7 +775,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
               <TiptapEditor
                 noteId={id}
                 initialHTML={note.content || '<p></p>'}
-                onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+                onSave={async (html: string) => { setCurrentContent(html); await saveNow() }}
                 user={me}
                 readOnly={readOnly}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
@@ -769,12 +793,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             <MarkdownEditor
               initialContent={note.content || ''}
               initialTitle={note.title || ''}
-              onSave={handleSave}
+              onSave={async (title, content) => { setCurrentTitle(title); setCurrentContent(content); await saveNow() }}
               onSaveDraft={handleSaveDraft}
               isNew={false}
               draftKey={`note:${id}`}
               onSelectionChange={handleSelectionChange}
-              onContentChange={handleMarkdownChange}
+              onContentChange={(content, title) => { setCurrentTitle(title); handleMarkdownChange(content) }}
               readOnly={readOnly}
             />
           )}
