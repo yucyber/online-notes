@@ -4,7 +4,8 @@
 
 - 工具：agent-browser 0.27.0，Chromium。
 - writer 会话：`task7fix-u1`；viewer 会话：`task7fix-u2`。
-- 前端与后端在验收前已经按仓库既有配置运行。
+- 前置：从本 worktree 分别在 `notes-frontend` 执行 `npm.cmd run dev`、在 `notes-backend` 执行 `npm.cmd run dev`、在 `y-websocket` 执行 `npm.cmd run start`；这些服务在验收前已经按仓库 scripts 启动，本轮不重启。
+- `task7fix-u1` 与 `task7fix-u2` 必须已完成登录，以下命令不包含登录步骤。
 - `$env:TASK7_NOTE_URL` 在本地会话中预先赋值为目标笔记 URL；命令不回显登录信息或请求机密。
 - 本文记录 Fix round 1 已执行的命令与输出。Fix round 2 没有重新启动服务或浏览器。
 
@@ -13,12 +14,20 @@
 ```powershell
 agent-browser --session task7fix-u1 set viewport 1440 900
 agent-browser --session task7fix-u1 open $env:TASK7_NOTE_URL
-agent-browser --session task7fix-u1 eval '(() => { const g=document.querySelector(".editor-layout-grid"); const m=document.querySelector(".editor-layout-main"); return {columns:getComputedStyle(g).gridTemplateColumns, gridWidth:g.getBoundingClientRect().width, mainWidth:m.getBoundingClientRect().width}; })()'
+agent-browser --session task7fix-u1 eval '(() => { const rect=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth}}; const g=document.querySelector(".editor-layout-grid"); return {viewport:{width:innerWidth,height:innerHeight},document:{scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth},columns:getComputedStyle(g).gridTemplateColumns,grid:rect(".editor-layout-grid"),main:rect(".editor-layout-main"),toolbar:rect(".editor-toolbar")}; })()'
 ```
 
-输出：`{"columns":"280px 558px 240px","gridWidth":1078,"mainWidth":558}`。
+首次 eval 的已保存关键输出：`columns="280px 558px 240px"`、grid width `1078`、main rect width `558`。原始记录没有保留 document 与 toolbar 的完整对象值；上述同一条 eval 会在复跑时一并返回它们，未保留的值不在本文补造。
 
-收起左右栏后重复上述 eval，输出：`{"columns":"52px 974px 52px","gridWidth":1078,"mainWidth":974}`。此处是正文 main rect 的实际折叠前后值：`558 → 974`，不是固定视口减法。
+按 aria name 收起左右栏并读取同一组几何值：
+
+```powershell
+agent-browser --session task7fix-u1 click '[aria-label="收起左侧导航"]'
+agent-browser --session task7fix-u1 click '[aria-label="收起右侧面板"]'
+agent-browser --session task7fix-u1 eval '(() => { const rect=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth}}; const g=document.querySelector(".editor-layout-grid"); return {viewport:{width:innerWidth,height:innerHeight},document:{scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth},columns:getComputedStyle(g).gridTemplateColumns,grid:rect(".editor-layout-grid"),main:rect(".editor-layout-main"),toolbar:rect(".editor-toolbar")}; })()'
+```
+
+折叠后已保存关键输出：`columns="52px 974px 52px"`、grid width `1078`、main rect width `974`。此处正文 main rect 的实际折叠前后值为 `558 → 974`，不是固定视口减法；document/toolbar 完整对象同样仅在复跑时由命令返回，原始记录未保留的字段保持未记录。
 
 ```powershell
 agent-browser --session task7fix-u1 focus '[aria-label="展开左侧导航"]'
@@ -31,10 +40,10 @@ agent-browser --session task7fix-u1 eval 'getComputedStyle(document.querySelecto
 ```powershell
 agent-browser --session task7fix-u1 focus '[aria-label="展开右侧面板"]'
 agent-browser --session task7fix-u1 press Space
-agent-browser --session task7fix-u1 eval 'getComputedStyle(document.querySelector(".editor-layout-grid")).gridTemplateColumns'
+agent-browser --session task7fix-u1 eval '(() => { const rect=s=>{const e=document.querySelector(s),r=e.getBoundingClientRect();return {left:r.left,right:r.right,width:r.width,scrollWidth:e.scrollWidth,clientWidth:e.clientWidth}}; const g=document.querySelector(".editor-layout-grid"); return {columns:getComputedStyle(g).gridTemplateColumns,main:rect(".editor-layout-main"),toolbar:rect(".editor-toolbar"),document:{scrollWidth:document.documentElement.scrollWidth,clientWidth:document.documentElement.clientWidth}}; })()'
 ```
 
-输出：`"280px 558px 240px"`。左右栏状态均已恢复。
+关键输出：`columns="280px 558px 240px"`、main rect width `558`。左右栏状态均已恢复。
 
 ```powershell
 agent-browser --session task7fix-u1 network requests --clear
