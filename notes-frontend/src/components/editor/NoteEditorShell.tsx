@@ -3,13 +3,7 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
-import { marked } from 'marked'
-import { htmlToMarkdown } from '@/utils/markdown-converter'
 import dynamic from 'next/dynamic'
-const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
-  ssr: false,
-  loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
-})
 import { Button } from '@/components/ui/button'
 import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
@@ -47,10 +41,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
-  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
   const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
   const [currentTitle, setCurrentTitle] = useState(initialData?.title ?? '')
-  const [uiDegraded, setUiDegraded] = useState<boolean>(false)
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const readOnly = !canWriteNote(note, me.id)
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
@@ -85,28 +77,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     return () => { document.removeEventListener('open:insert-menu', open as any) }
   }, [setShowInsertMenu])
 
-  // 生成 Markdown 大纲
-  const extractHeadingsFromMarkdown = useCallback((md: string) => {
-    const lines = md.split(/\n+/)
-    const result: Array<{ id: string; text: string; level: number }> = []
-    for (const line of lines) {
-      const m = /^(#{1,6})\s+(.+)$/.exec(line.trim())
-      if (m) {
-        const level = m[1].length
-        const text = m[2].trim()
-        const id = text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + result.length
-        result.push({ id, text, level })
-      }
-    }
-    setToc(prev => {
-      if (prev.length !== result.length) return result
-      for (let i = 0; i < prev.length; i++) {
-        if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
-      }
-      return prev
-    })
-  }, [])
-
   // 生成 HTML 大纲（用于 TipTap）
   const extractHeadingsFromHTML = useCallback((html: string) => {
     try {
@@ -136,7 +106,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     if (u) setMe({ id: u.id, name: u.email })
   }, [])
 
-  // UI 降级：依据设备/网络/可及性偏好自动选择轻量模式，并上报 RUM 事件
+  // 仅保留低性能环境观测；统一编辑器后不能再降级到另一套内容格式。
   useEffect(() => {
     try {
       const nav: any = navigator
@@ -151,8 +121,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         saveData || isOffline || (downlink != null && downlink < 1.5) || (deviceMemory != null && deviceMemory < 4) || (hw != null && hw <= 4) || prefersReducedMotion
       )
       if (lowSpec) {
-        setEditorMode('markdown')
-        setUiDegraded(true)
         try {
           const evt = new CustomEvent('rum', {
             detail: {
@@ -167,14 +135,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       }
     } catch { }
   }, [])
-
-  // RUM：编辑器模式切换事件
-  useEffect(() => {
-    try {
-      const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'editor_mode_change', meta: { mode: editorMode, noteId: id } } })
-      document.dispatchEvent(evt)
-    } catch { }
-  }, [editorMode, id])
 
 
 
@@ -299,19 +259,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       setNote(data)
       setCurrentContent(data?.content || '')
       setCurrentTitle(data?.title || '')
-      // 根据内容类型自动选择编辑器模式：Markdown 快照回退后避免富文本空白
-      try {
-        const raw = String(data?.content || '')
-        const isLikelyHTML = /<\/?[a-z][\s\S]*>/i.test(raw)
-        const isLikelyMarkdown = /(\n|^)\s{0,3}(#{1,6}\s+|[-*]\s+|\d+\.\s+|`{3,}|>|\[.+\]\(.+\))/m.test(raw)
-        // 若此前因 UI 降级已选择 markdown，则不强制改回
-        setEditorMode(prev => {
-          // 如果内容明显是 HTML，强制使用富文本模式，否则 Markdown 编辑器会显示源码，体验极差
-          if (isLikelyHTML) return 'rich'
-          if (prev === 'markdown') return prev
-          return (!isLikelyHTML && isLikelyMarkdown) ? 'markdown' : 'rich'
-        })
-      } catch { }
       // 移除强制 setContent，避免与 Yjs 协同冲突导致内容重复或覆盖
       // try { document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: String(data?.content || '<p></p>') } })) } catch { }
       setError('')
@@ -408,14 +355,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     )
   }
 
-  const { handleSave, handleSaveDraft, addTagsByNames } = useNoteSave({
+  const { handleSave, addTagsByNames } = useNoteSave({
     id,
     selectedCategory,
     auxCategoryIds,
     selectedTags,
     categories,
     tags,
-    editorMode,
+    editorMode: 'rich',
     setNote: (updater) => setNote(prev => updater(prev)),
     setTags,
   })
@@ -492,40 +439,9 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     )
   }
 
-  const handleModeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newMode = e.target.value as 'rich' | 'markdown'
-    if (newMode === editorMode) return
-
-    let newContent = currentContent
-    if (newMode === 'rich') {
-      // Markdown -> HTML
-      try {
-        newContent = await marked.parse(currentContent)
-      } catch (err) {
-        console.error('Markdown conversion failed:', err)
-      }
-    } else {
-      // HTML -> Markdown
-      newContent = htmlToMarkdown(currentContent)
-    }
-
-    setNote(prev => prev ? { ...prev, content: newContent } : null)
-    setCurrentContent(newContent)
-    setEditorMode(newMode)
-  }
-
   const handleBack = () => {
     router.push('/dashboard/notes')
   }
-
-  const handleMarkdownChange = useCallback((content: string) => {
-    setCurrentContent(content)
-    extractHeadingsFromMarkdown(content)
-  }, [extractHeadingsFromMarkdown])
-
-  const handleSelectionChange = useCallback((start: number, end: number) => {
-    setSelection({ start, end })
-  }, [])
 
   const focusRestoreButton = (button: React.RefObject<HTMLButtonElement>) => {
     window.requestAnimationFrame(() => button.current?.focus())
@@ -598,11 +514,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       <NoteEditorHeader
         note={note}
         readOnly={readOnly}
-        editorMode={editorMode}
+        editorMode="rich"
         leftCollapsed={preferences.leftCollapsed}
         rightCollapsed={preferences.rightCollapsed}
         onBack={handleBack}
-        onModeChange={handleModeChange}
+        onModeChange={() => undefined}
         onVisibilityChange={async (visibility) => {
           if (readOnly) return
           try {
@@ -786,18 +702,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           </div>
         )}
 
-        <div className="px-6 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">编辑器</span>
-            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={handleModeChange}>
-              <option value="rich">富文本（协同）</option>
-              <option value="markdown">Markdown</option>
-            </select>
-            {uiDegraded && (
-              <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
-            )}
-          </div>
-        </div>
       </div>
       <div
         className="editor-layout-grid"
@@ -858,8 +762,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           )}
         </aside>
         <div className="editor-layout-main">
-          {editorMode === 'rich' ? (
-            <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
+          <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
                 if (cmd === 'link' && !payload) { setShowLinkDialog(true); return }
                 if (cmd === 'comments') {
@@ -898,20 +801,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 className="min-h-[calc(100vh-200px)]"
                 />
               </div>
-            </div>
-          ) : (
-            <MarkdownEditor
-              initialContent={note.content || ''}
-              initialTitle={note.title || ''}
-              onSave={async (title, content) => { setCurrentTitle(title); setCurrentContent(content); await saveNow() }}
-              onSaveDraft={handleSaveDraft}
-              isNew={false}
-              draftKey={`note:${id}`}
-              onSelectionChange={handleSelectionChange}
-              onContentChange={(content, title) => { setCurrentTitle(title); handleMarkdownChange(content) }}
-              readOnly={readOnly}
-            />
-          )}
+          </div>
         </div>
         <NoteEditorMetadataPanel
           id={id}

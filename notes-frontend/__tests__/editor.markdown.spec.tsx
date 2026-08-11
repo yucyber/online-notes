@@ -1,46 +1,25 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import '@testing-library/jest-dom'
+const mockMarkedParse = jest.fn((raw: string) => {
+  const fixtures: Record<string, string> = {
+    '**粗体**': '<p><strong>粗体</strong></p>\n',
+    '1. 第一项\n2. 第二项': '<ol><li>第一项</li><li>第二项</li></ol>\n',
+    '[旧链接](https://example.com)': '<p><a href="https://example.com">旧链接</a></p>\n',
+  }
+  return fixtures[raw] || `<p>${raw}</p>\n`
+})
 
-jest.mock('react-markdown', () => ({
-  __esModule: true,
-  default: ({ children }: { children: unknown }) => <div>{children as any}</div>,
-}))
+jest.mock('marked', () => ({ marked: { parse: mockMarkedParse } }))
 
-jest.mock('rehype-raw', () => ({
-  __esModule: true,
-  default: () => null,
-}))
+import { normalizeEditorContent } from '@/components/editor/useTiptapEditorBridge'
 
-jest.mock('rehype-sanitize', () => ({
-  __esModule: true,
-  default: () => null,
-}))
+describe('旧 Markdown 内容兼容', () => {
+  it.each([
+    ['**粗体**', '<strong>粗体</strong>'],
+    ['1. 第一项\n2. 第二项', '<ol>'],
+    ['[旧链接](https://example.com)', '<a href="https://example.com">旧链接</a>'],
+  ])('统一转为后端仍可保存的 HTML：%s', (raw, fragment) => {
+    const result = normalizeEditorContent(raw)
 
-jest.mock('react-syntax-highlighter', () => ({
-  Prism: ({ children }: { children: unknown }) => <pre>{children as any}</pre>,
-}))
-
-jest.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
-  dracula: {},
-}))
-
-jest.mock('@/lib/draftStore', () => ({
-  getDraft: jest.fn(async () => null),
-  putDraft: jest.fn(async () => undefined),
-  removeDraft: jest.fn(async () => undefined),
-}))
-
-import MarkdownEditor from '@/components/editor/MarkdownEditor'
-
-describe('MarkdownEditor 边界', () => {
-  it('全区域输入与快捷保存', () => {
-    const onSave = jest.fn(async () => { })
-    const onSaveDraft = jest.fn(async () => { })
-    render(<MarkdownEditor initialContent={''} initialTitle={'t'} onSave={onSave} onSaveDraft={onSaveDraft} isNew draftKey={'new'} />)
-    const textarea = screen.getByPlaceholderText(/使用Markdown格式编写笔记/)
-    fireEvent.click(textarea)
-    fireEvent.change(textarea, { target: { value: 'abc' } })
-    fireEvent.keyDown(textarea, { ctrlKey: true, key: 's' })
-    expect(onSave).toHaveBeenCalled()
+    expect(result.source).toBe('markdown')
+    expect(result.html).toContain(fragment)
   })
 })

@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
@@ -8,9 +9,10 @@ import { createTiptapExtensions } from './tiptap-extensions'
 import { COLLAB_STATUS_META, colorFromString, hexToRgb, sanitizeHTML, srgb } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
 import { useTiptapPersistence } from './useTiptapPersistence'
-import { useTiptapEditorBridge } from './useTiptapEditorBridge'
+import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge } from './useTiptapEditorBridge'
 import { useTiptapCommentMarks } from './useTiptapCommentMarks'
 import { TiptapAiActions } from './TiptapAiActions'
+import { appToast } from '@/lib/app-toast'
 
 type Props = {
   noteId: string
@@ -27,6 +29,7 @@ type Props = {
 }
 
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
+  const normalizedInitialContent = useMemo(() => normalizeEditorContent(initialHTML || ''), [initialHTML])
   const ydoc = useMemo(() => new Y.Doc(), [])
   const room = useMemo(() => `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`,
     [noteId, versionKey],
@@ -56,15 +59,53 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const suppressSelectionRef = useRef(false)
   const lastSelectionRef = useRef<{ from: number; to: number }>({ from: -1, to: -1 })
   const selectionDebounceRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!normalizedInitialContent.preservedRaw) return
+    appToast.error({
+      id: `content-conversion:${noteId}`,
+      title: '内容格式转换失败',
+      message: '已保留原始文本，请检查内容后重试。',
+      persistent: true,
+    })
+  }, [normalizedInitialContent.preservedRaw, noteId])
+
   const editor = useEditor({
     extensions: createTiptapExtensions({ collabEnabled, ydoc, provider, user }),
     // 协作模式且非版本回溯时，Yjs 是正文真相源，不能用 initialHTML 覆盖编辑器内容；
     // 版本回溯或协作未启用时才需要将 HTML 设为初始内容。
-    content: ((collabEnabled && !versionKey) ? undefined : (initialHTML || '<p></p>')),
-    editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
+    content: ((collabEnabled && !versionKey) ? undefined : normalizedInitialContent.html),
+    editorProps: {
+      attributes: { class: 'tiptap-content min-h-full outline-none' },
+      handlePaste: (view, event) => {
+        const clipboard = event.clipboardData
+        if (!clipboard) return false
+        const normalized = normalizeMarkdownPaste(
+          clipboard.getData('text/plain'),
+          clipboard.getData('text/html'),
+        )
+        if (!normalized) return false
+
+        event.preventDefault()
+        if (normalized.preservedRaw) {
+          appToast.error({
+            id: `content-conversion:${noteId}`,
+            title: '内容格式转换失败',
+            message: '已保留原始文本，请检查内容后重试。',
+            persistent: true,
+          })
+        }
+
+        const container = document.createElement('div')
+        container.innerHTML = sanitizeHTML(normalized.html)
+        const slice = ProseMirrorDOMParser.fromSchema(view.state.schema).parseSlice(container)
+        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView())
+        return true
+      },
+    },
     editable: !effectiveReadOnly,
     immediatelyRender: false,
-  }, [provider, collabEnabled])
+  }, [provider, collabEnabled, normalizedInitialContent.html, noteId])
   useTiptapCommentMarks({ editor, noteId, suppressSelectionRef })
 
   useEffect(() => {
@@ -198,7 +239,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [editor, onContentChangeRef])
 
   useEffect(() => {
-    if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>' && provider) {
+    if (wsDebug.synced && editor && normalizedInitialContent.html !== '<p></p>' && provider) {
       const timer = setTimeout(() => {
         try {
           const meta = ydoc.getMap('meta')
@@ -212,7 +253,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
           const currentText = editor.getText().trim()
           const isDirtyMarkdown = currentText.startsWith('# ') || currentText.startsWith('## ')
-          const isCleanHTML = initialHTML.includes('<h') || initialHTML.includes('<ul') || initialHTML.includes('<ol')
+          const isCleanHTML = normalizedInitialContent.html.includes('<h') || normalizedInitialContent.html.includes('<ul') || normalizedInitialContent.html.includes('<ol')
 
           const lastUpdatedAt = meta.get('lastUpdatedAt') as number | undefined
           const serverUpdatedAt = updatedAt ? new Date(updatedAt).getTime() : 0
@@ -223,7 +264,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             if (shouldSeed || isExternalUpdate) {
               meta.set('seeded', { by: clientId, at: Date.now() })
               if (serverUpdatedAt > 0) meta.set('lastUpdatedAt', serverUpdatedAt)
-              editor.commands.setContent(initialHTML)
+              editor.commands.setContent(normalizedInitialContent.html)
               console.log('[Collab] seeded/repaired by', clientId, { isExternalUpdate, serverUpdatedAt, lastUpdatedAt })
             } else {
               console.log('[Collab] skip seed, already seeded', meta.get('seeded'))
@@ -235,7 +276,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt, idbSynced, ydoc])
+  }, [wsDebug.synced, editor, normalizedInitialContent.html, provider, updatedAt, idbSynced, ydoc])
 
   useEffect(() => {
     if (!editor) return

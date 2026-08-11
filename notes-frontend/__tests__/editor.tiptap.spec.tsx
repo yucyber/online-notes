@@ -1,8 +1,17 @@
-import { render, screen, fireEvent, within } from '@testing-library/react'
+import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 const mockIndexeddbPersistenceConstructor = jest.fn()
 const mockIndexeddbPersistenceDestroy = jest.fn()
+const mockAppToastError = jest.fn()
+const mockGetRoomTicket = jest.fn()
+const mockMarkedParse = jest.fn((raw: string) => {
+  if (raw === '# 旧标题') return '<h1>旧标题</h1>\n'
+  if (raw === '[OpenAI](https://openai.com)') return '<p><a href="https://openai.com">OpenAI</a></p>\n'
+  if (raw.startsWith('| 名称 |')) return '<table><thead><tr><th>名称</th><th>状态</th></tr></thead><tbody><tr><td>编辑器</td><td>完成</td></tr></tbody></table>'
+  if (raw.startsWith('```ts')) return '<pre><code class="language-ts">const ready = true\n</code></pre>\n'
+  return `<p>${raw}</p>\n`
+})
 
 jest.mock('y-websocket', () => {
   class WebsocketProvider {
@@ -44,7 +53,8 @@ jest.mock('next/dynamic', () => ({
   __esModule: true,
   default: () => () => <div data-testid="dynamic-editor" />,
 }))
-jest.mock('marked', () => ({ marked: { parse: jest.fn() } }))
+jest.mock('marked', () => ({ marked: { parse: mockMarkedParse } }))
+jest.mock('@/lib/app-toast', () => ({ appToast: { error: mockAppToastError } }))
 jest.mock('@/lib/api', () => ({
   fetchCategories: jest.fn(() => new Promise(() => {})),
   fetchTags: jest.fn(() => new Promise(() => {})),
@@ -53,6 +63,11 @@ jest.mock('@/lib/api', () => ({
   unlockNote: jest.fn(),
   boardsAPI: { create: jest.fn() },
   mindmapsAPI: { create: jest.fn() },
+}))
+jest.mock('@/lib/api/notes', () => ({
+  notesAPI: {
+    getRoomTicket: mockGetRoomTicket,
+  },
 }))
 jest.mock('@/lib/auth', () => ({ getCurrentUser: () => null }))
 jest.mock('@/components/editor/NoteEditorDrawers', () => ({ NoteEditorDrawers: () => null }))
@@ -70,6 +85,9 @@ jest.mock('@/components/editor/note-permissions', () => ({
 import TiptapEditor from '@/components/editor/TiptapEditor'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
 import NoteEditorShell from '@/components/editor/NoteEditorShell'
+import { Editor } from '@tiptap/core'
+import * as Y from 'yjs'
+import { createTiptapExtensions } from '@/components/editor/tiptap-extensions'
 
 describe('TiptapEditor 全区域输入', () => {
   const user = { id: 'u1', name: 'User One' }
@@ -78,6 +96,8 @@ describe('TiptapEditor 全区域输入', () => {
     ;(process as any).env.NEXT_PUBLIC_YWS_URL = ''
     mockIndexeddbPersistenceConstructor.mockClear()
     mockIndexeddbPersistenceDestroy.mockClear()
+    mockAppToastError.mockClear()
+    mockGetRoomTicket.mockReset().mockImplementation(() => new Promise(() => {}))
     installIndexedDbMock()
   })
 
@@ -108,6 +128,48 @@ describe('TiptapEditor 全区域输入', () => {
     render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} readOnly />)
     const saveBtn = screen.getByRole('button', { name: '保存' })
     expect(saveBtn).toBeDisabled()
+  })
+
+  it('加载旧 Markdown 时显示转换后的富文本', () => {
+    render(<TiptapEditor noteId="markdown-note" initialHTML={'# 旧标题'} onSave={async () => {}} user={user} />)
+
+    expect(document.querySelector('.ProseMirror h1')).toHaveTextContent('旧标题')
+  })
+
+  it('旧 Markdown 转换失败时持续提示且编辑器保留原文', () => {
+    mockMarkedParse.mockImplementationOnce(() => {
+      throw new Error('conversion failed')
+    })
+
+    render(<TiptapEditor noteId="broken-note" initialHTML={'# 损坏 <内容>'} onSave={async () => {}} user={user} />)
+
+    expect(document.querySelector('.ProseMirror')).toHaveTextContent('# 损坏 <内容>')
+    expect(mockAppToastError).toHaveBeenCalledWith({
+      id: 'content-conversion:broken-note',
+      title: '内容格式转换失败',
+      message: '已保留原始文本，请检查内容后重试。',
+      persistent: true,
+    })
+  })
+
+  it.each([
+    ['链接', '[OpenAI](https://openai.com)', 'a[href="https://openai.com"]'],
+    ['表格', '| 名称 | 状态 |\n| --- | --- |\n| 编辑器 | 完成 |', 'table'],
+    ['代码块', '```ts\nconst ready = true\n```', 'pre code'],
+  ])('将明确 Markdown %s 粘贴为富文本', async (_label, plainText, selector) => {
+    mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'test-ticket', role: 'writer', expiresIn: 60 })
+    render(<TiptapEditor noteId={`paste-${_label}`} initialHTML={'<p></p>'} onSave={async () => {}} user={user} />)
+    const editable = document.querySelector('.ProseMirror') as HTMLElement
+
+    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
+
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: { getData: (type: string) => type === 'text/plain' ? plainText : '' },
+    })
+    editable.dispatchEvent(pasteEvent)
+
+    expect(editable.querySelector(selector)).toBeInTheDocument()
   })
 
   it('suppresses IndexedDB persistence unhandled rejections', () => {
@@ -183,6 +245,24 @@ describe('TiptapEditor 全区域输入', () => {
   })
 })
 
+describe('Tiptap Markdown 快捷输入', () => {
+  it.each(['heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock'])(
+    '保留 %s input rules',
+    (extensionName) => {
+      const ydoc = new Y.Doc()
+      const editor = new Editor({
+        extensions: createTiptapExtensions({ collabEnabled: false, ydoc, provider: null, user: { id: 'u1', name: '用户' } }),
+        content: '<p></p>',
+      })
+
+      expect(editor.extensionManager.extensions.find(({ name }) => name === extensionName)?.config.addInputRules).toEqual(expect.any(Function))
+
+      editor.destroy()
+      ydoc.destroy()
+    },
+  )
+})
+
 describe('TiptapToolbar', () => {
   it('keeps each insertion action inside the named group', () => {
     render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
@@ -247,6 +327,13 @@ describe('NoteEditorShell insertion affordances', () => {
     expect(screen.queryByRole('button', { name: '插入工具' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '插入更多内容' }))
     expect(screen.getByRole('menu', { name: '插入工具菜单' })).toBeInTheDocument()
+  })
+
+  it('不显示富文本与 Markdown 模式切换', () => {
+    render(<NoteEditorShell id="n1" initialData={{ id: 'n1', title: '测试笔记', content: '', tags: [], visibility: 'private' } as any} />)
+
+    expect(screen.queryByRole('option', { name: '富文本（协同）' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: 'Markdown' })).not.toBeInTheDocument()
   })
 })
 
