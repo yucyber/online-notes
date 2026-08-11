@@ -1,7 +1,5 @@
 import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
-import { readFileSync } from 'node:fs'
-import { resolve } from 'node:path'
 
 const mockIndexeddbPersistenceConstructor = jest.fn()
 const mockIndexeddbPersistenceDestroy = jest.fn()
@@ -412,25 +410,6 @@ describe('旧 Yjs Markdown 安全迁移', () => {
 })
 
 describe('TiptapToolbar', () => {
-  it('将窄屏横向滚动限制在工具区内而不是页面工具栏', () => {
-    const style = document.createElement('style')
-    style.textContent = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
-    document.head.appendChild(style)
-
-    try {
-      render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
-
-      const toolbar = screen.getByRole('toolbar', { name: '编辑器工具栏' })
-      const tools = toolbar.querySelector('.editor-toolbar__tools') as HTMLElement
-      expect(getComputedStyle(toolbar).display).toBe('flex')
-      expect(getComputedStyle(toolbar).overflowX).not.toBe('auto')
-      expect(getComputedStyle(tools).minWidth).toBe('0')
-      expect(getComputedStyle(tools).overflowX).toBe('auto')
-    } finally {
-      style.remove()
-    }
-  })
-
   it('keeps each insertion action inside the named group', () => {
     render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
 

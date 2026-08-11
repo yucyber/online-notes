@@ -1,10 +1,9 @@
 import { act, renderHook, waitFor } from '@testing-library/react'
 import { hydrateRoot } from 'react-dom/client'
+import { TextEncoder as NodeTextEncoder } from 'node:util'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 
-const { TextEncoder } = require('util')
-;(globalThis as { TextEncoder?: typeof TextEncoder }).TextEncoder ??= TextEncoder
-const { renderToString } = require('react-dom/server') as typeof import('react-dom/server')
+;(globalThis as { TextEncoder?: typeof NodeTextEncoder }).TextEncoder ??= NodeTextEncoder
 
 function LayoutPreferenceSnapshot() {
   const { preferences } = useEditorLayoutPreferences()
@@ -37,7 +36,8 @@ describe('useEditorLayoutPreferences', () => {
     })
   })
 
-  it('keeps SSR markup stable before hydration and applies stored preferences in the client effect', () => {
+  it('keeps SSR markup stable before hydration and applies stored preferences in the client effect', async () => {
+    const { renderToString } = await import('react-dom/server')
     localStorage.setItem('notes:editor-layout:v1', JSON.stringify({
       leftCollapsed: true,
       rightCollapsed: false,

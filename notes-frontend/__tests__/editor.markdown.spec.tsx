@@ -1,8 +1,9 @@
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import * as vm from 'node:vm'
+
 jest.mock('marked', () => {
-  const fs = require('node:fs')
-  const path = require('node:path')
-  const vm = require('node:vm')
-  const packageRoot = path.dirname(require.resolve('marked/package.json'))
+  const packageRoot = path.dirname(path.resolve(process.cwd(), 'node_modules', 'marked', 'package.json'))
   const context: Record<string, any> = {}
   vm.runInNewContext(fs.readFileSync(path.join(packageRoot, 'lib', 'marked.umd.js'), 'utf8'), context)
   return { marked: context.marked.marked }

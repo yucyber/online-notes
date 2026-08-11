@@ -763,6 +763,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
               aria-label="展开左侧导航"
               title="展开左侧导航"
               onClick={handleToggleLeft}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                handleToggleLeft()
+              }}
             >
               导航
             </button>

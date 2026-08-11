@@ -1,66 +1,88 @@
 # 编辑器简洁界面全量验收报告
 
 - 验收日期：2026-08-11
-- 验收基线：`73e2caf0685239276da7344c9f4b27427d9d6119`
-- 验收结论：`DONE_WITH_CONCERNS`
-- 说明：本报告与 Task 7 测试处于同一提交，因此用上述父提交作为被验收产品代码的精确 SHA；Task 7 提交可用 `git log -1 --format=%H` 获取。
+- 产品基线 SHA：`73e2caf0685239276da7344c9f4b27427d9d6119`
+- Fix round 1 起始 HEAD SHA：`53bfbbfedf6fd787823269ad4a760a79116a5053`
+- 验收对象：上述 HEAD 叠加本报告同提交中的 Fix round 1 产品、测试与证据变更
+- 结论：`DONE_WITH_CONCERNS`
 
-## 自动化回归
+报告无法在自身提交内容中稳定写入最终提交 SHA；最终交付 HEAD 以 `git log -1 --format=%H` 为准。上述 baseline 与起始 HEAD 均为验收时实际读取值。
 
-先临时移除新增断言依赖的产品行为，确认 2 个 suite 中有 3 个测试按预期失败；恢复产品行为后再执行 GREEN。临时变更未保留，Task 1–6 产品代码未修改。
+## 自动化验证
 
-| 阶段 | 命令 | 结果 | Exit code |
-| --- | --- | --- | ---: |
-| RED | 临时变异后执行 `npm.cmd exec -- jest --runInBand --coverage=false __tests__/responsive-editor-ui.spec.tsx __tests__/editor.tiptap.spec.tsx` | 2 suites 中 3 failed、40 passed，共 43 tests | 1 |
-| GREEN | `npm.cmd exec -- jest --runInBand --coverage=false __tests__/responsive-editor-ui.spec.tsx __tests__/editor.tiptap.spec.tsx` | 2 suites、43 tests 全部通过 | 0 |
-| brief 原命令 | `npm.cmd test -- --runInBand --coverage=false ...`（8 个指定文件） | 未执行测试；`package.json` 不存在 `test` script | 1 |
-| focused 等价命令 | `npm.cmd exec -- jest --runInBand --coverage=false`（8 个指定文件） | 8 suites、87 tests 全部通过 | 0 |
-| lint | `npm.cmd run lint` | 6 errors、2 warnings | 1 |
-| type-check | `npm.cmd run type-check` | 通过 | 0 |
-| ci:test | `npm.cmd run ci:test` | 17 suites、112 tests 全部通过；全局 coverage threshold 通过 | 0 |
-| build | `npm.cmd run build` | Next.js 生产构建通过 | 0 |
+### RED / GREEN
 
-`ci:test` coverage：Statements 36.57%、Branches 25.40%、Functions 25.47%、Lines 39.20%。测试输出还包含现有的 ts-jest、React `act`、IndexedDB/协作 mock 日志，不影响 Jest 退出码。
+| 阶段 | 命令与结果 | Exit code |
+| --- | --- | ---: |
+| RED（键盘、协作） | `npm.cmd exec -- jest --runInBand --coverage=false --silent __tests__/responsive-editor-ui.spec.tsx __tests__/editor.tiptap.auth.spec.tsx __tests__/ai-chat-window.spec.tsx`：响应式与协作两个新增行为断言按预期失败；AI suite 首次因测试环境未 mock ESM `react-markdown` 而未进入行为断言 | 1 |
+| RED（AI 行为） | 补齐测试环境后执行 `npm.cmd exec -- jest --runInBand --coverage=false --silent __tests__/ai-chat-window.spec.tsx`：因仍显示英文内联错误、没有统一 Toast 而 1 test failed | 1 |
+| GREEN | `npm.cmd exec -- jest --runInBand --coverage=false --silent __tests__/responsive-editor-ui.spec.tsx __tests__/editor.tiptap.auth.spec.tsx __tests__/ai-chat-window.spec.tsx`：3 suites / 16 tests 全部通过 | 0 |
 
-末轮复验时，首次 focused 执行曾出现 `editor.tiptap.spec.tsx` 单个瞬时失败（7 suites / 86 tests 通过，exit 1）；该文件隔离重跑为 33/33，通过后相同 8-suite 命令再次重跑为 87/87、exit 0。未修改产品代码或测试来掩盖该波动。
+新增回归验证：左恢复按钮用 Enter、右恢复按钮用 Space，并分别断言轨道恢复；协作断线只产生一个固定 id Toast，action 为“重新连接”，连接成功 dismiss；AI 失败保留中文 inline error，并从统一 Toast 的“重试生成”action 重试原请求。已移除把 JSDOM computed style 当作真实溢出证明的测试。
 
-lint 的 6 个错误均为 `@typescript-eslint/no-require-imports`：
+### Focused 与质量门禁
 
-- `__tests__/editor-layout-preferences.spec.tsx`：第 5、7 行
-- `__tests__/editor.markdown.spec.tsx`：第 2、3、4 行
-- `src/components/editor/useTiptapEditorBridge.ts`：第 99 行
+brief 原命令仍不能运行：
 
-另有 2 个 warning：`src/components/editor/useEditorAutoSave.ts` 第 173 行的 Hook dependency，以及 `src/components/ui/AppToaster.tsx` 第 16 行未使用的 `tone`。这些均不在 Task 7 允许修改的文件范围内。
+```powershell
+npm.cmd test -- --runInBand --coverage=false __tests__/app-toast.spec.tsx __tests__/editor-auto-save.spec.tsx __tests__/editor-layout-preferences.spec.tsx __tests__/editor-unified-input.spec.tsx __tests__/responsive-editor-ui.spec.tsx __tests__/readonly-controls.spec.tsx __tests__/editor.tiptap.spec.tsx __tests__/editor.tiptap.auth.spec.tsx
+```
+
+结果：`package.json` 没有 `test` script，exit 1。实际使用的完整 focused 等价命令为：
+
+```powershell
+npm.cmd exec -- jest --runInBand --coverage=false --silent __tests__/app-toast.spec.tsx __tests__/editor-auto-save.spec.tsx __tests__/editor-layout-preferences.spec.tsx __tests__/editor-unified-input.spec.tsx __tests__/responsive-editor-ui.spec.tsx __tests__/readonly-controls.spec.tsx __tests__/editor.tiptap.spec.tsx __tests__/editor.tiptap.auth.spec.tsx __tests__/editor.markdown.spec.tsx __tests__/ai-chat-window.spec.tsx
+```
+
+| 命令 | 结果 | Exit code |
+| --- | --- | ---: |
+| 上述完整 focused 命令 | 10 suites / 93 tests 全部通过 | 0 |
+| `npm.cmd run lint` | 0 errors、2 warnings | 0 |
+| `npm.cmd run type-check` | 通过 | 0 |
+| `npm.cmd run ci:test` | 18 suites / 113 tests 全部通过，coverage threshold 通过 | 0 |
+| `npm.cmd run build` | Next.js 16.0.10 生产构建通过 | 0 |
+
+`ci:test` coverage：Statements 38.18%、Branches 26.51%、Functions 26.97%、Lines 41.02%。现有 ts-jest、React `act`、IndexedDB/协作 mock 日志不影响退出码。
+
+原先 6 个 `@typescript-eslint/no-require-imports` error 已通过等价 ESM import 清零。保留的 2 个 warning 是：
+
+- `src/components/editor/useEditorAutoSave.ts:173`：Hook dependency `snapshot`
+- `src/components/ui/AppToaster.tsx:16`：参数 `tone` 未使用
 
 ## 浏览器验收
 
-环境：Chromium（agent-browser 0.27.0），本地前端 `localhost:3000`、后端 `localhost:3001`、y-websocket `localhost:1234`。账号只从仓库外的 `account-test` 文件读取，报告不记录凭据。两个账号使用隔离会话。
+环境：Chromium / agent-browser 0.27.0；前端 `localhost:3000`、后端 `localhost:3001`。两个账号只从仓库外 `account-test` 读取并使用隔离会话；报告和提交不记录账号或凭据。
 
-| 视口 | 账号角色 | 场景 | 结果 | 证据摘要 |
-| --- | --- | --- | --- | --- |
-| 1440×900 | 可写用户 | 左栏拖拽、左右面板收起/恢复、刷新持久化 | PASS | 左栏由 280px 拖到 340px；双栏折叠为 52px/52px，正文宽度由 498px 扩到 974px；刷新后保持，恢复按钮可聚焦并以 Enter 操作 |
-| 1440×900 | 可写用户 | 防抖自动保存 | PASS | 连续输入仅产生 1 次 `PUT`，响应 200，界面显示“已自动保存” |
-| 1440×900 | 可写用户 | 离线编辑与恢复保存 | PASS | 离线输入时显示“已保存到本地”且无 `PUT`；恢复网络后产生 1 次 `PUT` 并显示“已自动保存” |
-| 1440×900 | 可写用户 | Toast 与 AI 入口不重叠 | PASS | Toast 位于右上（top 16、bottom 72），AI 入口位于右下（top 820、bottom 876），矩形不相交 |
-| 960×900 | 可写用户 | 正文宽度、tooltip 边界、水平溢出 | FAIL | 页面无 document 级横向滚动，但 layout columns 为 `340px 514px`；正文与左栏重叠且 paper/toolbar 被 `overflow:hidden` 裁切，评论/协作 tooltip anchor 位于视口右边界之外 |
-| 960×900 | 可写用户 | `prefers-reduced-motion` | PASS | media query 命中；左右面板与 tooltip 的 transition duration 为 `0s`，animation 为 `none` |
-| 1440×900 | 可写用户 | y-websocket 不可用降级 | FAIL | 停止服务并刷新后持续显示“连接中”，未显示离线编辑状态；无带“重新连接”文案的统一 Toast action。验收后已恢复服务 |
-| 1440×900 | 可写用户 | AI 请求失败 | FAIL | 离线请求只显示 ChatWindow 内英文错误，未产生统一错误 Toast，也没有“重试生成”action |
-| 1440×900 | 只读协作者 | 全部写入口与 Network | PASS | 正文/标题不可编辑，属性、标签、工具栏写操作、保存和评论入口禁用；注入编辑/保存事件及 Ctrl+S 后内容不变，写请求为 0 |
-| 1440×900 | 可写用户 | Markdown 富文本输入、粘贴与刷新 | PASS | 标题、列表、引用、代码块、链接、表格均呈现；自动保存后刷新结构与内容保留 |
+### 操作与实测证据
 
-## 发现的问题
+| 视口 / 角色 | 操作与 selector | 实测结果 | 状态 |
+| --- | --- | --- | --- |
+| 1440×900 / writer | 聚焦 `.ProseMirror`，`Control+End` 后输入；清空并读取 browser network requests | 防抖窗口内恰好 1 个笔记 `PUT`，HTTP 200；页面包含“已自动保存” | PASS |
+| 1440×900 / writer | 收起两栏；聚焦 `[aria-label="展开左侧导航"]` 后 Enter，聚焦 `[aria-label="展开右侧面板"]` 后 Space | 展开轨道 `280px 558px 240px`；双栏折叠 `52px 974px 52px`；Enter 后 `280px 746px 52px`；Space 后恢复 `280px 558px 240px`，localStorage 同步 | PASS |
+| 1440×900 / writer | `set offline true` 后向 `.ProseMirror` 输入，再 `set offline false` | 离线时 `navigator.onLine=false`、显示“已保存到本地”、0 requests；恢复后显示“已自动保存”，恰好 1 个笔记 `PUT`，HTTP 200 | PASS |
+| 1440×900 / viewer | 清空 network；派发 `editor:setContent`、`tiptap:exec save`，再按 Ctrl+S | `.ProseMirror[contenteditable="false"]`；probe 未写入；toolbar 25/27 buttons disabled；0 requests | PASS |
+| 960×900 / writer | `set viewport 960 900`、清空布局偏好、reload；读取 `.editor-layout-grid`、`.editor-layout-main`、`.editor-toolbar`、`.editor-toolbar__tools`、`.editor-paper` rect 与 document scroll | document scroll/client `952/952`；grid/main/toolbar 均宽 854，left/right `49/903`；paper left/right/width `83/869/786`；tools scroll/client `592/546`，仅工具区局部滚动；tooltip anchors 为评论 `777–809`、协作 `813–845`；右栏默认 collapsed | PASS |
+| 960×900 / writer | `set media light reduced-motion`；读取左右栏与 `.editor-tooltip::after` transition duration | media query 命中，left/right/tooltip 均为 `0s` | PASS |
+| 1440×900 / writer | 原有 Markdown 标题、列表、引用、代码、链接、表格在 reload 后检查 | 富文本结构与内容仍存在 | PASS |
+| 1440×900 / writer | y-websocket 断线→重连 | 自动化状态机测试通过；浏览器首次启动的 worktree 前端没有注入既有 `NEXT_PUBLIC_YWS_URL`，只得到“协作配置缺失”，未形成可信断线→重连链路 | UNVERIFIED |
+| 1440×900 / writer | AI 请求失败与“重试生成” | Jest action 回归通过；本轮浏览器收尾前未完成可信失败注入 | UNVERIFIED |
 
-1. 约 960px 视口下，三栏仍使用桌面列宽，正文与左栏重叠，工具栏及 tooltip anchor 被右侧裁切。这是本次验收发现的产品 bug。
-2. y-websocket 不可用时，状态长期停留在“连接中”，没有明确离线降级，也没有统一 Toast 的“重新连接”操作。
-3. AI 请求失败使用 ChatWindow 内联英文错误，没有复用统一 Toast，也没有“重试生成”操作。
-4. 全局 lint 因 6 个既有 `require` 错误退出 1；Task 7 未越权修改这些文件。
-5. brief 指定的 `npm.cmd test` 无法运行，因为前端未定义 `test` script；已用等价 Jest 命令完成 focused 验收。
+### 截图资产
 
-## 未验证项
+截图均仅保留编辑器主体，机械裁去顶部 96px 账号导航区；已逐张目视检查，不含账号、密码、token、Cookie 或 Authorization。
 
-- 保存请求真实失败时，同类错误 Toast 去重及“重新保存”重试。请求拦截未能稳定制造失败，因此不写为通过。
-- 两个浏览器同时在线时的实时协作同步。y-websocket 服务已实际启动并做不可用场景，但未完成可靠的双端同步断言。
-- 移动真机检查。本次仅使用桌面 Chromium 的 1440×900 和 960×900 模拟视口。
+- `assets/2026-08-11-editor-calm-minimal-ui/writer-responsive-960-redacted.png`：960px 修复后 layout、paper、toolbar 与局部工具栏滚动
+- `assets/2026-08-11-editor-calm-minimal-ui/writer-collapsed-saved-1440-redacted.png`：writer 折叠轨道与“已自动保存”
+- `assets/2026-08-11-editor-calm-minimal-ui/viewer-readonly-1440-redacted.png`：viewer 查看模式、禁用工具栏与只读正文
 
-鉴于新增回归、type-check、全量 Jest 与 build 均通过，但 lint 未通过且浏览器验收发现 3 项产品问题，本任务结论为 `DONE_WITH_CONCERNS`，不将未执行或不可靠的检查记为通过。
+## 剩余未验证项
+
+- 浏览器层 y-websocket 真实断线、固定 id Toast、“重新连接”action 与成功 dismiss 的完整链路；自动化状态机回归已覆盖，但不替代浏览器结论。
+- 浏览器层 AI 真实失败注入与“重试生成”；自动化 action 回归已覆盖。
+- 保存请求真实失败时，同类保存 Toast 去重和“重新保存”重试。
+- 两个浏览器同时在线的实时内容同步。
+- 移动真机；本轮只有桌面 Chromium 1440×900 与真实 960×900 viewport。
+
+## 结论
+
+960 裁切、键盘恢复、协作断线状态机、AI 失败 Toast 和 6 个 lint error 均已在代码与自动化层修复；真实 960 几何、writer 保存/离线恢复和 viewer 零写请求通过。由于协作断线重连和 AI 失败未取得完整浏览器链路，结论保持 `DONE_WITH_CONCERNS`，未验证项没有写成通过。

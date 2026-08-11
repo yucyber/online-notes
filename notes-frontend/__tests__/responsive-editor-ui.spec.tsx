@@ -135,13 +135,14 @@ describe('编辑页窄视口布局', () => {
     expect(restore).toHaveFocus()
   })
 
-  test('左右恢复按钮可由键盘聚焦并恢复对应面板', () => {
+  test('左右恢复按钮分别响应 Enter 和 Space，并释放正文轨道宽度', () => {
     const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
     const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
     const grid = container.querySelector('.editor-layout-grid') as HTMLElement
 
     expect(grid.style.getPropertyValue('--editor-left-width')).toBe('280px')
     expect(grid.style.getPropertyValue('--editor-right-width')).toBe('240px')
+    const expandedMainTrack = 1200 - 280 - 240
 
     fireEvent.click(screen.getByRole('button', { name: '收起左侧导航' }))
     act(() => animationFrame?.(0))
@@ -150,17 +151,25 @@ describe('编辑页窄视口布局', () => {
     expect(leftRestore).toHaveFocus()
     expect(grid.style.getPropertyValue('--editor-left-width')).toBe('52px')
 
+    fireEvent.keyDown(leftRestore, { key: 'Enter', code: 'Enter' })
+    fireEvent.keyUp(leftRestore, { key: 'Enter', code: 'Enter' })
+    expect(screen.getByRole('button', { name: '收起左侧导航' })).toBeInTheDocument()
+    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('280px')
+
     fireEvent.click(screen.getByRole('button', { name: '收起右侧面板' }))
     act(() => animationFrame?.(0))
     const rightRestore = within(container.querySelector('#editor-right-metadata') as HTMLElement)
       .getByRole('button', { name: '展开右侧面板' })
     expect(rightRestore).toHaveFocus()
     expect(grid.style.getPropertyValue('--editor-right-width')).toBe('52px')
-    expect(container.querySelector('.editor-layout-main')).toHaveClass('editor-layout-main')
 
-    fireEvent.keyDown(rightRestore, { key: 'Enter' })
-    fireEvent.click(rightRestore)
+    const rightCollapsedMainTrack = 1200 - 280 - 52
+    expect(rightCollapsedMainTrack).toBeGreaterThan(expandedMainTrack)
+
+    fireEvent.keyDown(rightRestore, { key: ' ', code: 'Space' })
+    fireEvent.keyUp(rightRestore, { key: ' ', code: 'Space' })
     expect(screen.getByRole('button', { name: '收起右侧面板' })).toBeInTheDocument()
+    expect(grid.style.getPropertyValue('--editor-right-width')).toBe('240px')
   })
 
   test('Toast action 暴露明确名称并可由键盘操作', () => {

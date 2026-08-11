@@ -23,10 +23,15 @@ export function NoteEditorMetadataPanel({ id, toc, collapsed, isFullscreen, onTo
           ref={restoreButtonRef}
           type="button"
           className="editor-layout-restore-button"
-          aria-label="展开右侧面板"
-          title="展开右侧面板"
-          onClick={onToggle}
-        >
+        aria-label="展开右侧面板"
+        title="展开右侧面板"
+        onClick={onToggle}
+        onKeyDown={(event) => {
+          if (event.key !== 'Enter' && event.key !== ' ') return
+          event.preventDefault()
+          onToggle()
+        }}
+      >
           <PanelRightOpen className="h-4 w-4" aria-hidden />
         </button>
       </aside>

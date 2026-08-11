@@ -1,4 +1,5 @@
 import { useEffect, useRef } from 'react'
+import { marked } from 'marked'
 
 export type NormalizedEditorContent = {
   html: string
@@ -95,8 +96,6 @@ export function normalizeEditorContent(raw: string): NormalizedEditorContent {
 
 function convertMarkdown(original: string): NormalizedEditorContent {
   try {
-    // marked@17 为 ESM-only，仅在确认需要转换时加载，HTML/plain 路径不会被转换器故障牵连。
-    const { marked } = require('marked') as { marked: { parse: (source: string, options: { async: false }) => string | Promise<string> } }
     const converted = marked.parse(original, { async: false })
     if (typeof converted !== 'string') throw new Error('marked returned async content')
     return { html: normalizeMarkedHTML(converted), source: 'markdown' }

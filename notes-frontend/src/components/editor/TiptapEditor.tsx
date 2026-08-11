@@ -509,7 +509,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           连接状态：<span className={connMeta.className}>{connMeta.label}</span>
           {connMeta.detail && <span className="ml-2 text-xs text-gray-500">{connMeta.detail}</span>}
           <span className="ml-2 text-[11px] text-gray-500">ws[{wsDebug.connected ? 'on' : wsDebug.connecting ? 'dial' : 'off'}] sync[{wsDebug.synced ? 'ok' : '…'}]</span>
-          {localMode && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
+          {localMode && connStatus !== 'disconnected' && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
           {effectiveReadOnly && <span className="ml-2 text-xs font-medium text-amber-700">只读权限，无法修改内容</span>}
         </div>
         <div className="flex items-center gap-1" role="list" aria-label="在线协作者">
