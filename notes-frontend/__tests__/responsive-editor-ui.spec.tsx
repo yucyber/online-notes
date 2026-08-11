@@ -1,10 +1,14 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react'
 import NetworkStatus from '@/components/security/NetworkStatus'
+import AIPet from '@/components/ai/AIPet'
 import { DashboardSidebar, shouldUseOverlaySidebar } from '@/components/dashboard/dashboard-navigation'
 import { networkAPI } from '@/lib/api'
 import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
 import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
 import NoteEditorShell from '@/components/editor/NoteEditorShell'
+import { AppToastCard, AppToaster } from '@/components/ui/AppToaster'
+
+const mockToastDismiss = jest.fn()
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: jest.fn() }),
@@ -15,6 +19,11 @@ jest.mock('next/dynamic', () => ({
   default: () => () => <div data-testid="dynamic-editor" />,
 }))
 jest.mock('marked', () => ({ marked: { parse: jest.fn() } }))
+jest.mock('react-hot-toast', () => ({
+  Toaster: ({ position }: { position: string }) => <div data-testid="toast-position" data-position={position} />,
+  toast: { dismiss: (...args: unknown[]) => mockToastDismiss(...args) },
+}))
+jest.mock('@/components/ai/ChatWindow', () => ({ __esModule: true, default: () => null }))
 jest.mock('@/lib/api', () => ({
   networkAPI: { ping: jest.fn() },
   fetchCategories: jest.fn(() => new Promise(() => {})),
@@ -48,6 +57,7 @@ describe('编辑页窄视口布局', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
     Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', { configurable: true, value: jest.fn() })
     animationFrame = undefined
+    mockToastDismiss.mockClear()
     Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { animationFrame = callback; return 1 } })
   })
 
@@ -123,6 +133,64 @@ describe('编辑页窄视口布局', () => {
     expect(restore.parentElement).toHaveStyle({ width: '52px' })
     restore.focus()
     expect(restore).toHaveFocus()
+  })
+
+  test('左右恢复按钮可由键盘聚焦并恢复对应面板', () => {
+    const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
+    const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
+    const grid = container.querySelector('.editor-layout-grid') as HTMLElement
+
+    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('280px')
+    expect(grid.style.getPropertyValue('--editor-right-width')).toBe('240px')
+
+    fireEvent.click(screen.getByRole('button', { name: '收起左侧导航' }))
+    act(() => animationFrame?.(0))
+    const leftRestore = within(container.querySelector('#editor-left-navigation') as HTMLElement)
+      .getByRole('button', { name: '展开左侧导航' })
+    expect(leftRestore).toHaveFocus()
+    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('52px')
+
+    fireEvent.click(screen.getByRole('button', { name: '收起右侧面板' }))
+    act(() => animationFrame?.(0))
+    const rightRestore = within(container.querySelector('#editor-right-metadata') as HTMLElement)
+      .getByRole('button', { name: '展开右侧面板' })
+    expect(rightRestore).toHaveFocus()
+    expect(grid.style.getPropertyValue('--editor-right-width')).toBe('52px')
+    expect(container.querySelector('.editor-layout-main')).toHaveClass('editor-layout-main')
+
+    fireEvent.keyDown(rightRestore, { key: 'Enter' })
+    fireEvent.click(rightRestore)
+    expect(screen.getByRole('button', { name: '收起右侧面板' })).toBeInTheDocument()
+  })
+
+  test('Toast action 暴露明确名称并可由键盘操作', () => {
+    const retry = jest.fn()
+    render(
+      <AppToastCard
+        toastId="save:n1"
+        tone="error"
+        title="保存失败"
+        action={{ label: '重新保存', onClick: retry }}
+      />,
+    )
+
+    const action = screen.getByRole('button', { name: '重新保存' })
+    action.focus()
+    expect(action).toHaveFocus()
+    fireEvent.click(action)
+    expect(retry).toHaveBeenCalledTimes(1)
+  })
+
+  test('统一 Toast 与 AI 入口分别锚定右上和右下', () => {
+    render(
+      <>
+        <AppToaster />
+        <AIPet />
+      </>,
+    )
+
+    expect(screen.getByTestId('toast-position')).toHaveAttribute('data-position', 'top-right')
+    expect(screen.getByRole('button', { name: '切换 AI 助手' })).toHaveClass('fixed', 'bottom-4', 'right-4')
   })
 
   test('拖拽实时调整左栏，提交后才持久化，Escape 恢复起始宽度', () => {
