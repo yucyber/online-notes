@@ -11,7 +11,7 @@ const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'
   loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
 })
 import { Button } from '@/components/ui/button'
-import { ChevronDown, ChevronUp, Plus, Users } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
@@ -21,7 +21,6 @@ import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataP
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
-import { EditorSaveStatus } from '@/components/editor/EditorSaveStatus'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
@@ -80,6 +79,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     document.addEventListener('open:link-dialog', open as any)
     return () => { document.removeEventListener('open:link-dialog', open as any) }
   }, [setShowLinkDialog])
+  useEffect(() => {
+    const open = () => setShowInsertMenu(true)
+    document.addEventListener('open:insert-menu', open as any)
+    return () => { document.removeEventListener('open:insert-menu', open as any) }
+  }, [setShowInsertMenu])
 
   // 生成 Markdown 大纲
   const extractHeadingsFromMarkdown = useCallback((md: string) => {
@@ -589,7 +593,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }
 
   return (
-    <div className="space-y-6 mx-auto w-full max-w-[1400px] px-4">
+    <div className="editor-shell">
 
       <NoteEditorHeader
         note={note}
@@ -609,6 +613,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         onToggleLeft={handleToggleLeft}
         onToggleRight={handleToggleRight}
         onOpenCollab={() => setShowCollabDrawer(true)}
+        saveState={saveState}
       />
       {error && (
         <div
@@ -791,12 +796,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             {uiDegraded && (
               <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
             )}
-            <EditorSaveStatus state={saveState} />
           </div>
         </div>
       </div>
       <div
-        className="editor-layout-grid p-6"
+        className="editor-layout-grid"
         data-right-collapsed={preferences.rightCollapsed}
         style={{
           '--editor-left-width': `${preferences.leftCollapsed ? 52 : preferences.leftWidth}px`,
@@ -853,9 +857,9 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             />
           )}
         </aside>
-        <div className="editor-layout-main min-w-0">
+        <div className="editor-layout-main">
           {editorMode === 'rich' ? (
-            <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
+            <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
                 if (cmd === 'comments') {
                   try {
@@ -870,11 +874,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                   } catch { }
                   return
                 }
+                if (cmd === 'collab') { setShowCollabDrawer(true); return }
                 if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
                 const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
                 document.dispatchEvent(ev)
               }} />
-              <TiptapEditor
+              <div className="editor-paper">
+                <TiptapEditor
                 noteId={id}
                 initialHTML={note.content || '<p></p>'}
                 onSave={async (html: string) => { setCurrentContent(html); await saveNow() }}
@@ -889,7 +895,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 versionKey={searchParams?.get('restored') || undefined}
                 updatedAt={note.updatedAt}
                 className="min-h-[calc(100vh-200px)]"
-              />
+                />
+              </div>
             </div>
           ) : (
             <MarkdownEditor
@@ -924,28 +931,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         onCloseCollab={() => setShowCollabDrawer(false)}
         onCloseComments={() => setShowCommentsDrawer(false)}
       />
-      {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
-      <button
-        aria-label="打开协作抽屉"
-        title="打开协作"
-        className="fixed right-4 bottom-24 z-40 grid place-items-center rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 sm:right-6"
-        onClick={() => setShowCollabDrawer(true)}
-        style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
-      >
-        <Users className="h-5 w-5" aria-hidden />
-      </button>
-      {/* 左侧浮动 “+” 插入菜单 */}
       {!isFullscreen && !readOnly && (
         <>
-          <button
-            aria-label="插入工具"
-            title="插入内容"
-            className="fixed right-4 bottom-40 z-40 grid place-items-center rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 sm:right-6"
-            onClick={() => setShowInsertMenu(s => !s)}
-            style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
-          >
-            <Plus className="h-5 w-5" aria-hidden />
-          </button>
           {showInsertMenu && (
             <div className="fixed right-4 bottom-56 z-50 rounded-xl border bg-white shadow-xl sm:right-6"
               role="menu" aria-label="插入工具菜单"

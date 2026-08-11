@@ -2,6 +2,11 @@
   --radius-card: 12px; --radius-button: 8px; --radius-input: 8px;
   --shadow-sm: 0 1px 2px rgba(0,0,0,.06);
   --shadow-md: 0 4px 6px -1px rgba(0,0,0,.1), 0 2px 4px -2px rgba(0,0,0,.1);
+  --editor-canvas-width: 820px;
+  --editor-header-height: 72px;
+  --editor-control-size: 32px;
+  --editor-transition-fast: 150ms ease;
+  --editor-transition: 200ms ease;
   --focus-ring-color: #1d4ed8;
   --icon-size: 20px;
 }
@@ -87,8 +92,10 @@ html[data-theme="dark"] {
 .editor-layout-grid {
   display: grid;
   grid-template-columns: var(--editor-left-width) minmax(0, 1fr) var(--editor-right-width);
-  gap: 24px;
+  gap: 0;
   position: relative;
+  min-height: calc(100vh - var(--editor-header-height));
+  background: var(--bg);
 }
 
 .editor-left-navigation,
@@ -110,6 +117,197 @@ html[data-theme="dark"] {
 
 .editor-layout-main {
   min-width: 0;
+  overflow: hidden;
+}
+
+.editor-shell {
+  width: 100%;
+  min-height: 100vh;
+  background: var(--bg);
+}
+
+.editor-header {
+  position: sticky;
+  top: 0;
+  z-index: 40;
+  min-height: var(--editor-header-height);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 24px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+  backdrop-filter: blur(12px);
+}
+
+.editor-header__title-block {
+  min-width: 0;
+}
+
+.editor-header__breadcrumb,
+.editor-header__title-row,
+.editor-header__actions,
+.editor-toolbar,
+.editor-toolbar__tools,
+.editor-toolbar__actions,
+.editor-toolbar__group {
+  display: flex;
+  align-items: center;
+}
+
+.editor-header__breadcrumb {
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.editor-header__breadcrumb > button {
+  width: var(--editor-control-size) !important;
+  height: var(--editor-control-size) !important;
+}
+
+.editor-header__title-row {
+  gap: 10px;
+  min-width: 0;
+}
+
+.editor-header h1 {
+  overflow: hidden;
+  margin: 0;
+  color: var(--on-surface);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-header__mode-status {
+  flex: none;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.editor-header__actions {
+  flex: none;
+  gap: 4px;
+}
+
+.editor-header__actions [aria-live="polite"] {
+  margin-right: 8px;
+  color: var(--text-muted);
+}
+
+.editor-tooltip {
+  position: relative;
+  display: inline-flex;
+}
+
+.editor-tooltip::after {
+  position: absolute;
+  z-index: 60;
+  top: calc(100% + 6px);
+  left: 50%;
+  padding: 4px 7px;
+  border-radius: var(--radius-button);
+  background: var(--text);
+  color: var(--bg-elev);
+  content: attr(data-tooltip);
+  font-size: 11px;
+  line-height: 1.2;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -2px);
+  transition: opacity var(--editor-transition-fast), transform var(--editor-transition-fast);
+  white-space: nowrap;
+}
+
+.editor-tooltip:hover::after,
+.editor-tooltip:focus-within::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.editor-toolbar {
+  min-height: 48px;
+  gap: 12px;
+  padding: 6px 22px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-1);
+}
+
+.editor-toolbar__tools {
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.editor-toolbar button {
+  width: var(--editor-control-size) !important;
+  height: var(--editor-control-size) !important;
+  border-radius: var(--radius-button) !important;
+}
+
+.editor-toolbar__select,
+.editor-toolbar__color {
+  height: var(--editor-control-size);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-button);
+  background: var(--surface-1);
+  color: var(--on-surface);
+}
+
+.editor-toolbar__select {
+  padding: 0 6px;
+}
+
+.editor-toolbar__color {
+  width: var(--editor-control-size);
+  padding: 3px;
+}
+
+.editor-toolbar__group {
+  gap: 2px;
+}
+
+.editor-toolbar__separator {
+  width: 1px;
+  height: 20px;
+  margin: 0 5px;
+  background: var(--border);
+}
+
+.editor-toolbar__actions {
+  flex: none;
+  gap: 4px;
+}
+
+.editor-toolbar__hint {
+  margin-right: 4px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.editor-rich-editor {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 100%;
+}
+
+.editor-paper {
+  width: min(var(--editor-canvas-width), calc(100% - 68px));
+  min-height: 520px;
+  margin: 28px auto 42px;
+  padding: 42px 52px;
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  background: var(--bg-elev);
+  box-shadow: var(--shadow-sm);
 }
 
 .editor-layout-restore-button {

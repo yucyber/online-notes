@@ -457,3 +457,29 @@
   max-width: 100%;
   display: block;
 }
+
+/* 正文纸张由编辑器外壳负责，避免 TipTap 内容区域在宽屏下横向扩张。 */
+.editor-paper .ProseMirror {
+  min-height: calc(100vh - 300px);
+}
+
+@media (max-width: 767px) {
+  .editor-header {
+    align-items: flex-start;
+    padding: 10px 16px;
+  }
+
+  .editor-toolbar {
+    padding: 6px 12px;
+  }
+
+  .editor-toolbar__hint {
+    display: none;
+  }
+
+  .editor-paper {
+    width: calc(100% - 28px);
+    margin-top: 16px;
+    padding: 28px 24px;
+  }
+}

@@ -37,6 +37,7 @@ jest.mock('y-indexeddb', () => ({
 }))
 
 import TiptapEditor from '@/components/editor/TiptapEditor'
+import TiptapToolbar from '@/components/editor/TiptapToolbar'
 
 describe('TiptapEditor 全区域输入', () => {
   const user = { id: 'u1', name: 'User One' }
@@ -147,6 +148,17 @@ describe('TiptapEditor 全区域输入', () => {
     await new Promise((resolve) => setTimeout(resolve, 20))
 
     expect(mockIndexeddbPersistenceConstructor).toHaveBeenCalledWith('online-notes:note:n1', expect.anything())
+  })
+})
+
+describe('TiptapToolbar', () => {
+  it('groups insertion tools and exposes icon actions by accessible name', () => {
+    render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
+
+    expect(screen.getByRole('group', { name: '插入' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '评论' })).toBeEnabled()
+    expect(screen.getByRole('button', { name: '协作成员' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '悬浮插入内容' })).not.toBeInTheDocument()
   })
 })
 
