@@ -3,18 +3,20 @@ import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
 import type { EditorSnapshot } from '@/components/editor/editor-save-types'
 
 type HarnessProps = {
+  noteId?: string
   title: string
   content: string
+  enabled?: boolean
   save: (snapshot: EditorSnapshot) => Promise<void>
   expose?: (result: ReturnType<typeof useEditorAutoSave>) => void
 }
 
-function Harness({ title, content, save, expose }: HarnessProps) {
+function Harness({ noteId = 'n1', title, content, enabled = true, save, expose }: HarnessProps) {
   const snapshot = { title, content, tags: [] }
   const result = useEditorAutoSave({
-    noteId: 'n1',
+    noteId,
     snapshot,
-    enabled: true,
+    enabled,
     save,
     delayMs: 400,
   })
@@ -129,6 +131,111 @@ describe('useEditorAutoSave save queue', () => {
     await act(async () => { await drainPromise })
     expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining({ content: '2' }))
     expect(maxActiveRequests).toBe(1)
+  })
+
+  it('readOnly 往返后仍等待同 note 的旧请求再保存最新内容', async () => {
+    const first = deferred<void>()
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    let serverContent = '0'
+    const save = jest.fn().mockImplementation(async (snapshot: EditorSnapshot) => {
+      const invocation = save.mock.calls.length
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      try {
+        if (invocation === 1) await first.promise
+        serverContent = snapshot.content
+      } finally {
+        activeRequests -= 1
+      }
+    })
+    const { rerender } = render(<Harness title="A" content="0" save={save} />)
+
+    rerender(<Harness title="A" content="1" save={save} />)
+    await advanceDebounce()
+    rerender(<Harness title="A" content="1" enabled={false} save={save} />)
+    rerender(<Harness title="A" content="1" save={save} />)
+    rerender(<Harness title="A" content="2" save={save} />)
+    await advanceDebounce()
+    rerender(<Harness title="A" content="3" save={save} />)
+    await advanceDebounce()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    first.resolve()
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining({ content: '3' }))
+    expect(maxActiveRequests).toBe(1)
+    expect(serverContent).toBe('3')
+  })
+
+  it('n1 → n2 → n1 后新请求仍等待旧 n1 请求完成', async () => {
+    const first = deferred<void>()
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    let serverContent = '0'
+    const save = jest.fn().mockImplementation(async (snapshot: EditorSnapshot) => {
+      const invocation = save.mock.calls.length
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      try {
+        if (invocation === 1) await first.promise
+        serverContent = snapshot.content
+      } finally {
+        activeRequests -= 1
+      }
+    })
+    const { rerender } = render(<Harness noteId="n1" title="A" content="0" save={save} />)
+
+    rerender(<Harness noteId="n1" title="A" content="1" save={save} />)
+    await advanceDebounce()
+    rerender(<Harness noteId="n2" title="B" content="0" save={save} />)
+    rerender(<Harness noteId="n1" title="A" content="1" save={save} />)
+    rerender(<Harness noteId="n1" title="A" content="2" save={save} />)
+    await advanceDebounce()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    first.resolve()
+    await flushPromises()
+
+    expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining({ content: '2' }))
+    expect(maxActiveRequests).toBe(1)
+    expect(serverContent).toBe('2')
+  })
+
+  it('同 note 卸载重挂后仍等待旧实例的请求完成', async () => {
+    const first = deferred<void>()
+    let activeRequests = 0
+    let maxActiveRequests = 0
+    let serverContent = '0'
+    const save = jest.fn().mockImplementation(async (snapshot: EditorSnapshot) => {
+      const invocation = save.mock.calls.length
+      activeRequests += 1
+      maxActiveRequests = Math.max(maxActiveRequests, activeRequests)
+      try {
+        if (invocation === 1) await first.promise
+        serverContent = snapshot.content
+      } finally {
+        activeRequests -= 1
+      }
+    })
+    const firstView = render(<Harness title="A" content="0" save={save} />)
+    firstView.rerender(<Harness title="A" content="1" save={save} />)
+    await advanceDebounce()
+    firstView.unmount()
+
+    const secondView = render(<Harness title="A" content="1" save={save} />)
+    secondView.rerender(<Harness title="A" content="2" save={save} />)
+    await advanceDebounce()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    first.resolve()
+    await flushPromises()
+
+    expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining({ content: '2' }))
+    expect(maxActiveRequests).toBe(1)
+    expect(serverContent).toBe('2')
   })
 })
 

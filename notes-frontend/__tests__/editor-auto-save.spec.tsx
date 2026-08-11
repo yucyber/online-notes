@@ -155,6 +155,67 @@ describe('useEditorAutoSave', () => {
     expect(dismissToast).toHaveBeenCalledWith('save:n1')
   })
 
+  it('discards a failed retry action after switching notes', async () => {
+    const save = jest.fn()
+      .mockRejectedValueOnce(new Error('n1 failed'))
+      .mockResolvedValue(undefined)
+    const { rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('failed'), enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    const retryAction = getLatestRetryAction()
+
+    rerender({ noteId: 'n2', snapshot: makeSnapshot('base'), enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n2', snapshot: makeSnapshot('changed'), enabled: true, save, delayMs: 400 })
+    act(() => { retryAction() })
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(dismissToast).toHaveBeenCalledWith('save:n1')
+  })
+
+  it('discards a failed retry action after becoming read-only', async () => {
+    const save = jest.fn()
+      .mockRejectedValueOnce(new Error('save failed'))
+      .mockResolvedValue(undefined)
+    const { rerender } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('failed'), enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    const retryAction = getLatestRetryAction()
+
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('read-only'), enabled: false, save, delayMs: 400 })
+    act(() => { retryAction() })
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(dismissToast).toHaveBeenCalledWith('save:n1')
+  })
+
+  it('discards a failed retry action after unmount', async () => {
+    const save = jest.fn()
+      .mockRejectedValueOnce(new Error('save failed'))
+      .mockResolvedValue(undefined)
+    const { rerender, unmount } = renderHook((props) => useEditorAutoSave(props), {
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
+    })
+
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('failed'), enabled: true, save, delayMs: 400 })
+    await act(async () => { jest.advanceTimersByTime(400) })
+    const retryAction = getLatestRetryAction()
+
+    unmount()
+    act(() => { retryAction() })
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(dismissToast).toHaveBeenCalledWith('save:n1')
+  })
+
   it('does not update state or show a toast after an in-flight save unmounts', async () => {
     const pending = deferred<void>()
     const save = jest.fn().mockReturnValue(pending.promise)
@@ -217,4 +278,19 @@ function setOnline(value: boolean) {
 
 function makeSnapshot(content: string) {
   return { title: 'A', content, tags: [] }
+}
+
+function getLatestRetryAction(): () => void {
+  const toast = errorToast.mock.calls[errorToast.mock.calls.length - 1]?.[0] as {
+    action?: { onClick?: () => void }
+  }
+  if (!toast.action?.onClick) throw new Error('Expected retry action')
+  return toast.action.onClick
+}
+
+async function flushPromises() {
+  await act(async () => {
+    await Promise.resolve()
+    await Promise.resolve()
+  })
 }
