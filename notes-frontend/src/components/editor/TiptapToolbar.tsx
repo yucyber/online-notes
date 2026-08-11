@@ -44,7 +44,7 @@ export default function TiptapToolbar({ disabled, exec, isFullscreen }: Props) {
         </select>
         <div role="group" aria-label="插入" className="editor-toolbar__group">
           <Button size="icon" variant="ghost" aria-label="插入更多内容" title="插入更多内容" disabled={disabled} onClick={openInsertMenu}><Plus className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="插入链接" title="插入链接 (Ctrl+K)" disabled={disabled} onClick={() => document.dispatchEvent(new CustomEvent('open:link-dialog'))}><LinkIcon className="w-4 h-4" aria-hidden /></Button>
+          <Button size="icon" variant="ghost" aria-label="插入链接" title="插入链接 (Ctrl+K)" disabled={disabled} onClick={() => exec('link')}><LinkIcon className="w-4 h-4" aria-hidden /></Button>
           <input id={fileInputId} type="file" accept="image/*" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => exec('image', { src: String(reader.result || '') }); reader.readAsDataURL(file); event.currentTarget.value = '' }} />
           <Button size="icon" variant="ghost" aria-label="插入图片" title="插入图片" disabled={disabled} onClick={() => (document.getElementById(fileInputId) as HTMLInputElement | null)?.click()}><ImageIcon className="w-4 h-4" aria-hidden /></Button>
           <Button size="icon" variant="ghost" aria-label="插入表格" title="插入表格 3x3" disabled={disabled} onClick={() => exec('table')}><Table className="w-4 h-4" aria-hidden /></Button>

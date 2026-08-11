@@ -861,6 +861,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           {editorMode === 'rich' ? (
             <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+                if (cmd === 'link' && !payload) { setShowLinkDialog(true); return }
                 if (cmd === 'comments') {
                   try {
                     setShowCommentsDrawer(true)

@@ -1,4 +1,4 @@
-import { render, screen, fireEvent } from '@testing-library/react'
+import { render, screen, fireEvent, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 const mockIndexeddbPersistenceConstructor = jest.fn()
@@ -36,8 +36,40 @@ jest.mock('y-indexeddb', () => ({
   },
 }))
 
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: jest.fn() }),
+  useSearchParams: () => ({ get: () => null }),
+}))
+jest.mock('next/dynamic', () => ({
+  __esModule: true,
+  default: () => () => <div data-testid="dynamic-editor" />,
+}))
+jest.mock('marked', () => ({ marked: { parse: jest.fn() } }))
+jest.mock('@/lib/api', () => ({
+  fetchCategories: jest.fn(() => new Promise(() => {})),
+  fetchTags: jest.fn(() => new Promise(() => {})),
+  updateNote: jest.fn(),
+  lockNote: jest.fn(),
+  unlockNote: jest.fn(),
+  boardsAPI: { create: jest.fn() },
+  mindmapsAPI: { create: jest.fn() },
+}))
+jest.mock('@/lib/auth', () => ({ getCurrentUser: () => null }))
+jest.mock('@/components/editor/NoteEditorDrawers', () => ({ NoteEditorDrawers: () => null }))
+jest.mock('@/components/editor/useNoteSave', () => ({
+  useNoteSave: () => ({ handleSave: jest.fn(), handleSaveDraft: jest.fn(), addTagsByNames: jest.fn() }),
+}))
+jest.mock('@/components/editor/useEditorAutoSave', () => ({
+  useEditorAutoSave: () => ({ state: 'saved', saveNow: jest.fn() }),
+}))
+jest.mock('@/components/editor/note-permissions', () => ({
+  canWriteNote: () => true,
+  shouldManageNoteLock: () => false,
+}))
+
 import TiptapEditor from '@/components/editor/TiptapEditor'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
+import NoteEditorShell from '@/components/editor/NoteEditorShell'
 
 describe('TiptapEditor 全区域输入', () => {
   const user = { id: 'u1', name: 'User One' }
@@ -152,13 +184,69 @@ describe('TiptapEditor 全区域输入', () => {
 })
 
 describe('TiptapToolbar', () => {
-  it('groups insertion tools and exposes icon actions by accessible name', () => {
+  it('keeps each insertion action inside the named group', () => {
     render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
 
-    expect(screen.getByRole('group', { name: '插入' })).toBeInTheDocument()
+    const insertGroup = screen.getByRole('group', { name: '插入' })
+    expect(within(insertGroup).getByRole('button', { name: '插入更多内容' })).toBeEnabled()
+    expect(within(insertGroup).getByRole('button', { name: '插入链接' })).toBeEnabled()
+    expect(within(insertGroup).getByRole('button', { name: '插入图片' })).toBeEnabled()
+    expect(within(insertGroup).getByRole('button', { name: '插入表格' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '评论' })).toBeEnabled()
     expect(screen.getByRole('button', { name: '协作成员' })).toBeEnabled()
-    expect(screen.queryByRole('button', { name: '悬浮插入内容' })).not.toBeInTheDocument()
+  })
+
+  it('maps grouped insertion actions to the existing menu and command bus', () => {
+    const exec = jest.fn()
+    const openInsertMenu = jest.fn()
+    const originalFileReader = window.FileReader
+    const reader = {
+      result: 'data:image/png;base64,toolbar-image',
+      onload: null as (() => void) | null,
+      readAsDataURL: jest.fn(),
+    }
+    reader.readAsDataURL.mockImplementation(() => reader.onload?.())
+    Object.defineProperty(window, 'FileReader', { configurable: true, value: jest.fn(() => reader) })
+    document.addEventListener('open:insert-menu', openInsertMenu)
+
+    try {
+      render(<TiptapToolbar disabled={false} exec={exec} />)
+      const insertGroup = screen.getByRole('group', { name: '插入' })
+
+      fireEvent.click(within(insertGroup).getByRole('button', { name: '插入更多内容' }))
+      fireEvent.click(within(insertGroup).getByRole('button', { name: '插入链接' }))
+      fireEvent.click(within(insertGroup).getByRole('button', { name: '插入表格' }))
+      fireEvent.change(insertGroup.querySelector('input[type="file"]')!, {
+        target: { files: [new File(['image'], 'toolbar.png', { type: 'image/png' })] },
+      })
+
+      expect(openInsertMenu).toHaveBeenCalledTimes(1)
+      expect(exec).toHaveBeenCalledWith('link')
+      expect(exec).toHaveBeenCalledWith('table')
+      expect(exec).toHaveBeenCalledWith('image', { src: 'data:image/png;base64,toolbar-image' })
+    } finally {
+      document.removeEventListener('open:insert-menu', openInsertMenu)
+      Object.defineProperty(window, 'FileReader', { configurable: true, value: originalFileReader })
+    }
+  })
+
+  it('provides a discoverable tooltip for each icon-only action', () => {
+    render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
+
+    for (const name of ['评论', '协作成员']) {
+      expect(screen.getByRole('button', { name }).closest('[data-tooltip]')).toHaveAttribute('data-tooltip', name)
+    }
+  })
+})
+
+describe('NoteEditorShell insertion affordances', () => {
+  it('does not render the removed floating insert button', () => {
+    render(<NoteEditorShell id="n1" initialData={{ id: 'n1', title: '测试笔记', content: '', tags: [], visibility: 'private' } as any} />)
+
+    expect(screen.getByRole('toolbar', { name: '编辑器工具栏' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '插入工具' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '插入更多内容' }))
+    expect(screen.getByRole('menu', { name: '插入工具菜单' })).toBeInTheDocument()
   })
 })
 
