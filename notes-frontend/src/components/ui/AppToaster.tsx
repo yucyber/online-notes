@@ -1,7 +1,9 @@
 'use client'
 
+import { useEffect, useRef } from 'react'
 import { AlertCircle, X } from 'lucide-react'
 import { Toaster, toast } from 'react-hot-toast'
+import tippy from 'tippy.js'
 
 type AppToastCardProps = {
   toastId: string
@@ -12,6 +14,19 @@ type AppToastCardProps = {
 }
 
 export function AppToastCard({ toastId, tone, title, message, action }: AppToastCardProps) {
+  const closeButtonRef = useRef<HTMLButtonElement>(null)
+
+  useEffect(() => {
+    if (!closeButtonRef.current) return
+
+    const tooltip = tippy(closeButtonRef.current, {
+      content: '关闭通知',
+      trigger: 'mouseenter focus',
+    })
+
+    return () => tooltip.destroy()
+  }, [])
+
   return (
     <div
       className="flex w-[360px] items-start gap-3 rounded-xl border border-red-200 bg-[var(--surface-1)] p-4 text-[var(--on-surface)] shadow-lg"
@@ -32,6 +47,7 @@ export function AppToastCard({ toastId, tone, title, message, action }: AppToast
         )}
       </div>
       <button
+        ref={closeButtonRef}
         type="button"
         className="-mr-1 -mt-1 rounded p-1 text-[var(--text-muted)] hover:bg-[var(--surface-2)] hover:text-[var(--on-surface)]"
         aria-label="关闭提示"
