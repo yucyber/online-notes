@@ -5,8 +5,9 @@ import { Input } from '@/components/ui/input'
 
 type Reply = { _id?: string; authorId?: string; text: string; createdAt?: string }
 type CommentItem = { _id?: string; id?: string; start: number; end: number; text: string; authorId?: string; createdAt?: string; replies?: Reply[]; likes?: number }
+type Props = { noteId: string; selection: { start: number; end: number }; readOnly?: boolean }
 
-export function CommentsPanel({ noteId, selection }: { noteId: string; selection: { start: number; end: number } }) {
+export function CommentsPanel({ noteId, selection, readOnly = false }: Props) {
   const [items, setItems] = useState<CommentItem[]>([])
   const [text, setText] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
@@ -42,6 +43,7 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
     selectDebounceRef.current = window.setTimeout(() => { void loadRef.current() }, 250)
   }, [selection.start, selection.end])
   const add = async () => {
+    if (readOnly) return
     if (!text.trim()) return
     if (selection.start === selection.end) {
       setMessage('请选择文本范围后再添加评论')
@@ -64,6 +66,7 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
     } catch {}
   }
   const reply = async (cid: string, value: string) => {
+    if (readOnly) return
     if (!value.trim()) return
     await commentsAPI.reply(cid, value.trim())
     await load()
@@ -82,8 +85,8 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
       <div className="text-xs text-gray-500">当前选区：{selection.start}–{selection.end}</div>
       <div className="flex gap-2">
         <label htmlFor="comment-input" className="sr-only">评论内容</label>
-        <Input id="comment-input" aria-label="评论内容" value={text} onChange={e => setText(e.target.value)} placeholder="添加评论" />
-        <Button aria-label="提交评论" onClick={add}>提交</Button>
+        <Input id="comment-input" aria-label="评论内容" value={text} onChange={e => setText(e.target.value)} placeholder="添加评论" disabled={readOnly} />
+        <Button aria-label="提交评论" onClick={add} disabled={readOnly}>提交</Button>
       </div>
       <div aria-live="polite" className="text-xs text-red-600">{message}</div>
       <ul className="space-y-3" aria-label="评论列表" role="list">
@@ -100,9 +103,9 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
                 </div>
                 <div className="mt-2 text-sm">{c.text}</div>
                 <div className="mt-2 flex items-center gap-2">
-                  <Button aria-label="回复" onClick={() => setActiveId(String(c._id || c.id))}>回复</Button>
-                  <Button aria-pressed={Boolean(c.likes)} aria-label="点赞" onClick={() => { setItems(prev => prev.map(x => (x._id===c._id||x.id===c.id) ? { ...x, likes: (x.likes||0)+1 } : x)) }}>赞{c.likes ? `(${c.likes})` : ''}</Button>
-                  <Button aria-label="删除评论" onClick={async () => { try { await commentsAPI.delete(c._id || c.id!); await load() } catch {} }} disabled={!canDelete}>删除</Button>
+                  <Button aria-label="回复" onClick={() => { if (readOnly) return; setActiveId(String(c._id || c.id)) }} disabled={readOnly}>回复</Button>
+                  <Button aria-pressed={Boolean(c.likes)} aria-label="点赞" onClick={() => { if (readOnly) return; setItems(prev => prev.map(x => (x._id===c._id||x.id===c.id) ? { ...x, likes: (x.likes||0)+1 } : x)) }} disabled={readOnly}>赞{c.likes ? `(${c.likes})` : ''}</Button>
+                  <Button aria-label="删除评论" onClick={async () => { if (readOnly) return; try { await commentsAPI.delete(c._id || c.id!); await load() } catch {} }} disabled={readOnly || !canDelete}>删除</Button>
                 </div>
                 <div className="mt-2 space-y-2">
                   {(c.replies || []).map((r, k) => (
@@ -119,9 +122,10 @@ export function CommentsPanel({ noteId, selection }: { noteId: string; selection
                 <div className="mt-2 flex gap-2">
                   <Input aria-label="回复内容" placeholder="回复评论"
                     value={replyTexts[String(c._id || c.id)] || ''}
+                    disabled={readOnly}
                     onChange={(e) => setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: e.target.value }))}
-                    onKeyDown={async (e) => { if (e.key==='Enter') { const val = replyTexts[String(c._id||c.id)] || ''; await reply(String(c._id||c.id), val); setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: '' })); } }} />
-                  <Button aria-label="提交回复" onClick={async () => { const val = replyTexts[String(c._id||c.id)] || ''; await reply(String(c._id||c.id), val); setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: '' })); }}>回复</Button>
+                    onKeyDown={async (e) => { if (e.key==='Enter') { if (readOnly) return; const val = replyTexts[String(c._id||c.id)] || ''; await reply(String(c._id||c.id), val); setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: '' })); } }} />
+                  <Button aria-label="提交回复" disabled={readOnly} onClick={async () => { if (readOnly) return; const val = replyTexts[String(c._id||c.id)] || ''; await reply(String(c._id||c.id), val); setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: '' })); }}>回复</Button>
                 </div>
               </div>
             </li>

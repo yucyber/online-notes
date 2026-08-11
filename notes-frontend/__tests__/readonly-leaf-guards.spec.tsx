@@ -1,0 +1,62 @@
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { CommentsPanel } from '@/components/collab/CommentsPanel'
+import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
+import { commentsAPI, createComment, invitationsAPI } from '@/lib/api'
+
+jest.mock('@/lib/api', () => ({
+  aclAPI: { get: jest.fn().mockResolvedValue({ visibility: 'shared', acl: [] }) },
+  invitationsAPI: {
+    list: jest.fn().mockResolvedValue([]),
+    create: jest.fn().mockResolvedValue({ token: 'invite-token', expiresAt: '2026-08-12T00:00:00.000Z' }),
+  },
+  listComments: jest.fn().mockResolvedValue([]),
+  createComment: jest.fn().mockResolvedValue({ id: 'created-comment' }),
+  commentsAPI: {
+    list: jest.fn().mockResolvedValue([{
+      _id: 'comment-1', authorId: 'viewer', start: 0, end: 2, text: '已有评论', replies: [],
+    }]),
+    reply: jest.fn().mockResolvedValue(undefined),
+    delete: jest.fn().mockResolvedValue(undefined),
+  },
+}))
+
+beforeEach(() => {
+  localStorage.setItem('notes_user_id', 'viewer')
+  jest.clearAllMocks()
+})
+
+test('comment leaf handlers reject create, reply, and delete after permission becomes read-only', async () => {
+  const props = { noteId: 'note-1', selection: { start: 0, end: 2 } }
+  const { rerender } = render(<CommentsPanel {...props} readOnly={false} />)
+  await screen.findByText('已有评论')
+
+  fireEvent.change(screen.getByRole('textbox', { name: '评论内容' }), { target: { value: '新评论' } })
+  fireEvent.change(screen.getByRole('textbox', { name: '回复内容' }), { target: { value: '新回复' } })
+  rerender(<CommentsPanel {...props} readOnly />)
+
+  for (const name of ['提交评论', '提交回复', '删除评论']) {
+    const button = screen.getByRole('button', { name })
+    button.removeAttribute('disabled')
+    fireEvent.click(button)
+  }
+
+  await waitFor(() => {
+    expect(createComment).not.toHaveBeenCalled()
+    expect(commentsAPI.reply).not.toHaveBeenCalled()
+    expect(commentsAPI.delete).not.toHaveBeenCalled()
+  })
+})
+
+test('invitation leaf handler rejects a filled invite after permission becomes read-only', async () => {
+  const { rerender } = render(<CollaboratorsPanel noteId="note-1" readOnly={false} />)
+  await screen.findByRole('status')
+  fireEvent.change(screen.getByRole('textbox', { name: '邀请邮箱' }), { target: { value: 'reader@example.com' } })
+
+  rerender(<CollaboratorsPanel noteId="note-1" readOnly />)
+  const send = screen.getByRole('button', { name: '发送邀请' })
+  send.removeAttribute('disabled')
+  fireEvent.click(send)
+
+  await waitFor(() => expect(invitationsAPI.create).not.toHaveBeenCalled())
+  expect(screen.getByRole('button', { name: '刷新邀请与协作者状态' })).toBeEnabled()
+})

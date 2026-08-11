@@ -1,10 +1,12 @@
-import { render, screen, fireEvent, waitFor, within } from '@testing-library/react'
+import { act, render, screen, fireEvent, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 const mockIndexeddbPersistenceConstructor = jest.fn()
 const mockIndexeddbPersistenceDestroy = jest.fn()
 const mockAppToastError = jest.fn()
 const mockGetRoomTicket = jest.fn()
+const mockListCommentMarks = jest.fn()
+const mockWebsocketProviderInstances: any[] = []
 const mockMarkedParse = jest.fn((raw: string) => {
   if (raw === '# 旧标题') return '<h1>旧标题</h1>\n'
   if (raw === '[OpenAI](https://openai.com)') return '<p><a href="https://openai.com">OpenAI</a></p>\n'
@@ -17,8 +19,11 @@ jest.mock('y-websocket', () => {
   class WebsocketProvider {
     awareness = {
       clientID: 1,
+      states: new Map(),
       setLocalStateField: jest.fn(),
       getStates: jest.fn(() => new Map()),
+      getLocalState: jest.fn(() => ({})),
+      setLocalState: jest.fn(),
       on: jest.fn(),
       off: jest.fn(),
     }
@@ -30,7 +35,9 @@ jest.mock('y-websocket', () => {
     wsconnected = false
     wsconnecting = false
     synced = false
-    constructor(public url: string, public room: string, public doc: any, public options: any) { }
+    constructor(public url: string, public room: string, public doc: any, public options: any) {
+      mockWebsocketProviderInstances.push(this)
+    }
   }
   return { WebsocketProvider }
 })
@@ -63,6 +70,7 @@ jest.mock('@/lib/api', () => ({
   unlockNote: jest.fn(),
   boardsAPI: { create: jest.fn() },
   mindmapsAPI: { create: jest.fn() },
+  commentsAPI: { list: (...args: unknown[]) => mockListCommentMarks(...args) },
 }))
 jest.mock('@/lib/api/notes', () => ({
   notesAPI: {
@@ -98,6 +106,8 @@ describe('TiptapEditor 全区域输入', () => {
     mockIndexeddbPersistenceDestroy.mockClear()
     mockAppToastError.mockClear()
     mockGetRoomTicket.mockReset().mockImplementation(() => new Promise(() => {}))
+    mockListCommentMarks.mockReset().mockResolvedValue([])
+    mockWebsocketProviderInstances.length = 0
     installIndexedDbMock()
   })
 
@@ -128,6 +138,83 @@ describe('TiptapEditor 全区域输入', () => {
     render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} readOnly />)
     const saveBtn = screen.getByRole('button', { name: '保存' })
     expect(saveBtn).toBeDisabled()
+  })
+
+  it('只读态忽略所有程序化编辑事件且不改变编辑器内容', async () => {
+    render(<TiptapEditor noteId="readonly-events" initialHTML="<p>原始内容</p>" onSave={async () => {}} user={user} readOnly />)
+    const editable = document.querySelector('.ProseMirror') as HTMLElement
+    const originalHTML = editable.innerHTML
+
+    document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: '<p>外部覆盖</p>' } }))
+    window.dispatchEvent(new MessageEvent('message', {
+      origin: window.location.origin,
+      data: { type: 'INSERT_MINDMAP', payload: { id: 'mindmap-1' } },
+    }))
+    document.dispatchEvent(new CustomEvent('comments:mark', { detail: { start: 1, end: 3, commentId: 'comment-1' } }))
+    document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: 'readonly-events' } }))
+    await act(async () => { await Promise.resolve() })
+
+    expect(editable.innerHTML).toBe(originalHTML)
+    expect(editable.querySelector('resource-embed')).not.toBeInTheDocument()
+    expect(editable.querySelector('[data-comment-id]')).not.toBeInTheDocument()
+  })
+
+  it('权限在 provider 延迟 apply 前变为只读时不改变 editor 或 Y.Doc', async () => {
+    process.env.NEXT_PUBLIC_YWS_URL = 'ws://localhost:1234'
+    mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'writer-ticket', role: 'writer', expiresIn: 60 })
+    const props = { noteId: 'delayed-readonly', initialHTML: '<p>初始内容</p>', onSave: async () => {}, user }
+    const { rerender } = render(<TiptapEditor {...props} />)
+
+    const editable = document.querySelector('.ProseMirror') as HTMLElement
+    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
+    expect(mockWebsocketProviderInstances).toHaveLength(1)
+    const provider = mockWebsocketProviderInstances[0]
+    const ydoc = provider.doc as Y.Doc
+    const originalYDoc = Array.from(Y.encodeStateAsUpdate(ydoc))
+
+    document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: '<p>延迟覆盖</p>' } }))
+    expect(provider.on).toHaveBeenCalledWith('sync', expect.any(Function))
+    rerender(<TiptapEditor {...props} readOnly />)
+    await act(async () => { await new Promise(resolve => setTimeout(resolve, 850)) })
+
+    expect(editable).not.toHaveTextContent('延迟覆盖')
+    expect(Array.from(Y.encodeStateAsUpdate(ydoc))).toEqual(originalYDoc)
+  })
+
+  it('评论 replay 请求返回前权限变为只读时不写入 mark', async () => {
+    mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'writer-ticket', role: 'writer', expiresIn: 60 })
+    let resolveComments!: (comments: any[]) => void
+    mockListCommentMarks
+      .mockResolvedValueOnce([])
+      .mockReturnValueOnce(new Promise(resolve => { resolveComments = resolve }))
+    const props = { noteId: 'replay-readonly', initialHTML: '<p>原始内容</p>', onSave: async () => {}, user }
+    const { rerender } = render(<TiptapEditor {...props} />)
+    const editable = document.querySelector('.ProseMirror') as HTMLElement
+    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
+
+    document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: 'replay-readonly' } }))
+    await waitFor(() => expect(mockListCommentMarks).toHaveBeenCalledTimes(2))
+    rerender(<TiptapEditor {...props} readOnly />)
+    await act(async () => { resolveComments([{ _id: 'late-comment', start: 1, end: 3 }]); await Promise.resolve() })
+
+    expect(editable.querySelector('[data-comment-id="late-comment"]')).not.toBeInTheDocument()
+  })
+
+  it('只读期间错过评论事件后在获得写权限时恢复 mark', async () => {
+    mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'writer-ticket', role: 'writer', expiresIn: 60 })
+    mockListCommentMarks.mockResolvedValueOnce([{ _id: 'restored-comment', start: 1, end: 3 }])
+    const props = { noteId: 'replay-after-permission', initialHTML: '<p>原始内容</p>', onSave: async () => {}, user }
+    const { rerender } = render(<TiptapEditor {...props} readOnly />)
+    const editable = document.querySelector('.ProseMirror') as HTMLElement
+
+    document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: 'replay-after-permission' } }))
+    expect(mockListCommentMarks).not.toHaveBeenCalled()
+
+    rerender(<TiptapEditor {...props} />)
+
+    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
+    await waitFor(() => expect(editable.querySelector('[data-comment-id="restored-comment"]')).toBeInTheDocument())
+    expect(mockListCommentMarks).toHaveBeenCalledWith('replay-after-permission')
   })
 
   it('加载旧 Markdown 时显示转换后的富文本', () => {

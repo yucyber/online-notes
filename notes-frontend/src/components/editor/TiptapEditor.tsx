@@ -79,6 +79,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     reconnect,
   } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
   const effectiveReadOnly = readOnly || roomRole !== 'writer'
+  const effectiveReadOnlyRef = useRef(effectiveReadOnly)
+  effectiveReadOnlyRef.current = effectiveReadOnly
   const { idbSynced } = useTiptapPersistence(room, ydoc)
 
   const injectBusyRef = useRef(false)
@@ -140,7 +142,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     editable: !effectiveReadOnly,
     immediatelyRender: false,
   }, [provider, collabEnabled, documentKey])
-  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef })
+  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef, readOnly: effectiveReadOnly, readOnlyRef: effectiveReadOnlyRef })
 
   useEffect(() => {
     if (!editor) return
@@ -188,8 +190,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [editor, effectiveReadOnly])
 
   useEffect(() => {
+    if (!editor || effectiveReadOnly) return
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
+      if (effectiveReadOnlyRef.current) return
       if (event.data?.type === 'INSERT_MINDMAP' && editor) {
         const { id } = event.data.payload
         editor.chain().focus().insertContent({
@@ -204,10 +208,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [editor])
+  }, [editor, effectiveReadOnly])
 
   useEffect(() => {
-    if (!editor || migratedOnceRef.current) return
+    if (!editor || migratedOnceRef.current || effectiveReadOnly) return
     try {
       const ranges: Array<{ from: number; to: number; label: string }> = []
       editor.state.doc.descendants((node: any, pos: number) => {
@@ -223,13 +227,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         }
       })
       ranges.sort((a, b) => b.from - a.from).forEach(r => {
+        if (effectiveReadOnlyRef.current) return
         suppressSelectionRef.current = true
         editor.chain().focus().setTextSelection({ from: r.from, to: r.to }).deleteSelection().insertStatusPill({ label: r.label, variant: 'inprogress' }).run()
         setTimeout(() => { suppressSelectionRef.current = false }, 120)
       })
     } catch { }
     migratedOnceRef.current = true
-  }, [editor])
+  }, [editor, effectiveReadOnly])
 
   useEffect(() => {
     if (!editor) return
@@ -273,8 +278,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [editor, onContentChangeRef])
 
   useEffect(() => {
-    if (wsDebug.synced && editor && normalizedInitialContent.html !== '<p></p>' && provider) {
+    if (!effectiveReadOnly && wsDebug.synced && editor && normalizedInitialContent.html !== '<p></p>' && provider) {
       const timer = setTimeout(() => {
+        if (effectiveReadOnlyRef.current) return
         try {
           const meta = ydoc.getMap('meta')
           const clientId = provider.awareness.clientID
@@ -295,6 +301,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             normalizedInitialContent.source,
           )
 
+          if (effectiveReadOnlyRef.current) return
           ydoc.transact(() => {
             const shouldSeed = !meta.get('seeded') && !hasLocalDocContent
             const shouldRepairLegacy = hasLocalDocContent && matchesLegacyRaw
@@ -319,12 +326,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, normalizedInitialContent, provider, initialSeed, idbSynced, ydoc])
+  }, [wsDebug.synced, editor, normalizedInitialContent, provider, initialSeed, idbSynced, ydoc, effectiveReadOnly])
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || effectiveReadOnly) return
     const setHandler = (e: Event) => {
       try {
+        if (effectiveReadOnlyRef.current) return
         const html = (e as CustomEvent).detail?.html as string
         if (typeof html === 'string') {
           if (injectBusyRef.current) return
@@ -334,6 +342,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const p = provider
           const safe = sanitizeHTML(html || '<p></p>')
           const apply = () => {
+            if (effectiveReadOnlyRef.current) return
             injectBusyRef.current = true
             suppressSelectionRef.current = true
             if (collabEnabled && p) {
@@ -382,7 +391,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     document.addEventListener('editor:setContent', setHandler as any)
     return () => { document.removeEventListener('editor:setContent', setHandler as any) }
-  }, [editor, provider, collabEnabled, ydoc])
+  }, [editor, provider, collabEnabled, ydoc, effectiveReadOnly])
 
   useEffect(() => {
     const card = document.getElementById('editor-card')

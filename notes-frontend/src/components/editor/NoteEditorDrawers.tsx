@@ -45,9 +45,9 @@ export function NoteEditorDrawers({
             <div className="p-4 space-y-4 overflow-auto h-full">
               <div className="rounded-lg border">
                 <div className="px-3 py-2 border-b text-xs font-medium">{"协作者"}</div>
-                <fieldset disabled={readOnly} className="min-w-0 border-0 p-3">
-                  <CollaboratorsPanel noteId={id} />
-                </fieldset>
+                <div className="p-3">
+                  <CollaboratorsPanel noteId={id} readOnly={readOnly} />
+                </div>
               </div>
             </div>
           </div>
@@ -77,9 +77,9 @@ export function NoteEditorDrawers({
             </div>
             <div className="p-4 overflow-auto h-full">
               <div className="rounded-lg border" style={{ borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)' }}>
-                <fieldset disabled={readOnly} className="min-w-0 border-0 p-3">
-                  <CommentsPanel noteId={id} selection={selection} />
-                </fieldset>
+                <div className="p-3">
+                  <CommentsPanel noteId={id} selection={selection} readOnly={readOnly} />
+                </div>
               </div>
             </div>
           </div>

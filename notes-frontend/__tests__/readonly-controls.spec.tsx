@@ -106,6 +106,7 @@ test('read-only drawers expose existing collaboration data without writable comm
   expect((await screen.findAllByText('协作者')).length).toBeGreaterThan(0)
   expect(screen.getByRole('button', { name: '发送邀请' })).toBeDisabled()
   expect(screen.getByRole('button', { name: '提交评论' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '刷新邀请与协作者状态' })).toBeEnabled()
 })
 
 test('viewer write attempts never issue note, tag, or comment requests while read navigation still works', async () => {
