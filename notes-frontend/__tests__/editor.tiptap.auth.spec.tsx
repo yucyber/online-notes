@@ -69,14 +69,17 @@ describe('TiptapEditor collaboration auth', () => {
 
   test('reader room ticket keeps the editor non-editable', async () => {
     mockGetRoomTicket.mockResolvedValue({ ticket: 'reader-ticket', role: 'reader', expiresIn: 300 })
+    const onSave = jest.fn()
 
     const { container } = render(
-      <TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async () => { }} user={user} />,
+      <TiptapEditor noteId="n1" initialHTML="<p>x</p>" onSave={async (html) => { onSave(html) }} user={user} />,
     )
 
     await waitFor(() => {
       expect(container.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'false')
     })
+    document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'save' } }))
+    expect(onSave).not.toHaveBeenCalled()
   })
 
   test('degrades without creating a provider when room-ticket issuance fails', async () => {

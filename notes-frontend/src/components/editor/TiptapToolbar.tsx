@@ -8,9 +8,21 @@ type Props = {
   isFullscreen?: boolean
 }
 
-export default function TiptapToolbar({ disabled, exec, isFullscreen }: Props) {
+export default function TiptapToolbar({ disabled, exec: dispatch, isFullscreen }: Props) {
   const fileInputId = 'editor-image-input'
-  const openInsertMenu = () => document.dispatchEvent(new CustomEvent('open:insert-menu'))
+  const exec = (cmd: string, payload?: any) => {
+    if (disabled) return
+    if (payload === undefined) dispatch(cmd)
+    else dispatch(cmd, payload)
+  }
+  const openInsertMenu = () => {
+    if (disabled) return
+    document.dispatchEvent(new CustomEvent('open:insert-menu'))
+  }
+  const openImagePicker = () => {
+    if (disabled) return
+    ;(document.getElementById(fileInputId) as HTMLInputElement | null)?.click()
+  }
 
   return (
     <div role="toolbar" aria-label="编辑器工具栏" className="editor-toolbar">
@@ -45,8 +57,8 @@ export default function TiptapToolbar({ disabled, exec, isFullscreen }: Props) {
         <div role="group" aria-label="插入" className="editor-toolbar__group">
           <Button size="icon" variant="ghost" aria-label="插入更多内容" title="插入更多内容" disabled={disabled} onClick={openInsertMenu}><Plus className="w-4 h-4" aria-hidden /></Button>
           <Button size="icon" variant="ghost" aria-label="插入链接" title="插入链接 (Ctrl+K)" disabled={disabled} onClick={() => exec('link')}><LinkIcon className="w-4 h-4" aria-hidden /></Button>
-          <input id={fileInputId} type="file" accept="image/*" className="sr-only" disabled={disabled} onChange={(event) => { const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => exec('image', { src: String(reader.result || '') }); reader.readAsDataURL(file); event.currentTarget.value = '' }} />
-          <Button size="icon" variant="ghost" aria-label="插入图片" title="插入图片" disabled={disabled} onClick={() => (document.getElementById(fileInputId) as HTMLInputElement | null)?.click()}><ImageIcon className="w-4 h-4" aria-hidden /></Button>
+          <input id={fileInputId} type="file" accept="image/*" className="sr-only" disabled={disabled} onChange={(event) => { if (disabled) return; const file = event.target.files?.[0]; if (!file) return; const reader = new FileReader(); reader.onload = () => exec('image', { src: String(reader.result || '') }); reader.readAsDataURL(file); event.currentTarget.value = '' }} />
+          <Button size="icon" variant="ghost" aria-label="插入图片" title="插入图片" disabled={disabled} onClick={openImagePicker}><ImageIcon className="w-4 h-4" aria-hidden /></Button>
           <Button size="icon" variant="ghost" aria-label="插入表格" title="插入表格 3x3" disabled={disabled} onClick={() => exec('table')}><Table className="w-4 h-4" aria-hidden /></Button>
         </div>
         <Button size="icon" variant="ghost" aria-label="取消链接" title="取消链接" disabled={disabled} onClick={() => exec('unlink')}><Unlink className="w-4 h-4" aria-hidden /></Button>
@@ -68,8 +80,8 @@ export default function TiptapToolbar({ disabled, exec, isFullscreen }: Props) {
       <div className="editor-toolbar__actions">
         <span className="editor-toolbar__hint">支持 Markdown 快捷输入</span>
         <span className="editor-tooltip" data-tooltip="评论"><Button size="icon" variant="ghost" aria-label={disabled ? '打开评论' : '评论'} title="评论 (Alt+C)" disabled={disabled} onClick={() => exec('comments')}><MessageSquare className="w-4 h-4" aria-hidden /></Button></span>
-        <span className="editor-tooltip" data-tooltip="协作成员"><Button size="icon" variant="ghost" aria-label="协作成员" title="协作成员" disabled={disabled} onClick={() => exec('collab')}><Users className="w-4 h-4" aria-hidden /></Button></span>
-        <Button id="fullscreen-button" size="icon" variant="ghost" aria-label={isFullscreen ? '退出全屏' : '进入全屏'} title="切换全屏 (Ctrl+Shift+F)" aria-pressed={Boolean(isFullscreen)} onClick={() => exec('fullscreen')}>
+        <span className="editor-tooltip" data-tooltip="协作成员"><Button size="icon" variant="ghost" aria-label="协作成员" title="协作成员" onClick={() => dispatch('collab')}><Users className="w-4 h-4" aria-hidden /></Button></span>
+        <Button id="fullscreen-button" size="icon" variant="ghost" aria-label={isFullscreen ? '退出全屏' : '进入全屏'} title="切换全屏 (Ctrl+Shift+F)" aria-pressed={Boolean(isFullscreen)} onClick={() => dispatch('fullscreen')}>
           {isFullscreen ? <Minimize className="w-4 h-4" aria-hidden /> : <Maximize className="w-4 h-4" aria-hidden />}
         </Button>
       </div>

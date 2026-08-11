@@ -17,6 +17,7 @@ import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
+import { appToast } from '@/lib/app-toast'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export interface NoteEditorShellProps {
@@ -45,6 +46,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [currentTitle, setCurrentTitle] = useState(initialData?.title ?? '')
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const readOnly = !canWriteNote(note, me.id)
+  const rejectReadOnlyWrite = useCallback(() => {
+    if (!readOnly) return false
+    appToast.error({ id: `permission:${id}`, title: '当前笔记仅可查看' })
+    return true
+  }, [id, readOnly])
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
   const commentsDrawerRef = useRef<HTMLDivElement>(null)
@@ -67,15 +73,31 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [isResizingLeft, setIsResizingLeft] = useState(false)
   const [showMeta, setShowMeta] = useState(true)
   useEffect(() => {
-    const open = () => setShowLinkDialog(true)
+    const open = () => {
+      if (rejectReadOnlyWrite()) return
+      setShowLinkDialog(true)
+    }
     document.addEventListener('open:link-dialog', open as any)
     return () => { document.removeEventListener('open:link-dialog', open as any) }
-  }, [setShowLinkDialog])
+  }, [rejectReadOnlyWrite, setShowLinkDialog])
   useEffect(() => {
-    const open = () => setShowInsertMenu(true)
+    const open = () => {
+      if (rejectReadOnlyWrite()) return
+      setShowInsertMenu(true)
+    }
     document.addEventListener('open:insert-menu', open as any)
     return () => { document.removeEventListener('open:insert-menu', open as any) }
-  }, [setShowInsertMenu])
+  }, [rejectReadOnlyWrite, setShowInsertMenu])
+  useEffect(() => {
+    if (!readOnly) return
+    const rejectHistoricalCommand = (event: Event) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      rejectReadOnlyWrite()
+    }
+    document.addEventListener('tiptap:exec', rejectHistoricalCommand, true)
+    return () => { document.removeEventListener('tiptap:exec', rejectHistoricalCommand, true) }
+  }, [readOnly, rejectReadOnlyWrite])
 
   // 生成 HTML 大纲（用于 TipTap）
   const extractHeadingsFromHTML = useCallback((html: string) => {
@@ -350,12 +372,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [note])
 
   const toggleTag = (tagId: string) => {
+    if (rejectReadOnlyWrite()) return
     setSelectedTags((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
     )
   }
 
-  const { handleSave, addTagsByNames } = useNoteSave({
+  const { handleSave: persistNote, addTagsByNames: persistTags } = useNoteSave({
     id,
     selectedCategory,
     auxCategoryIds,
@@ -366,6 +389,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     setNote: (updater) => setNote(prev => updater(prev)),
     setTags,
   })
+  const handleSave = useCallback(async (title: string, content: string) => {
+    if (rejectReadOnlyWrite()) return
+    await persistNote(title, content)
+  }, [persistNote, rejectReadOnlyWrite])
+  const addTagsByNames = useCallback(async (names: string[]) => {
+    if (rejectReadOnlyWrite()) return []
+    return persistTags(names)
+  }, [persistTags, rejectReadOnlyWrite])
   const { state: saveState, saveNow } = useEditorAutoSave({
     noteId: id,
     title: currentTitle,
@@ -379,12 +410,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     const onSaveShortcut = (event: KeyboardEvent) => {
       if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
         event.preventDefault()
+        if (rejectReadOnlyWrite()) return
         void saveNow()
       }
     }
     document.addEventListener('keydown', onSaveShortcut)
     return () => { document.removeEventListener('keydown', onSaveShortcut) }
-  }, [saveNow])
+  }, [rejectReadOnlyWrite, saveNow])
 
   const childrenByParent = (() => {
     const m: Record<string, Category[]> = {}
@@ -421,6 +453,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             checked={checked}
             disabled={readOnly}
             onChange={(e) => {
+              if (rejectReadOnlyWrite()) return
               const next = e.target.checked
                 ? Array.from(new Set([...auxCategoryIds, id]))
                 : auxCategoryIds.filter(x => x !== id)
@@ -520,7 +553,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         onBack={handleBack}
         onModeChange={() => undefined}
         onVisibilityChange={async (visibility) => {
-          if (readOnly) return
+          if (rejectReadOnlyWrite()) return
           try {
             await updateNote(id, { visibility: visibility as any })
             await loadNote()
@@ -589,7 +622,10 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                     className="w-full rounded-lg border p-3 text-sm"
                     style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                     value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    onChange={(e) => {
+                      if (rejectReadOnlyWrite()) return
+                      setSelectedCategory(e.target.value)
+                    }}
                     disabled={readOnly || metaLoading || !!metaError}
                   >
                     <option value="">未分类</option>
@@ -623,9 +659,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                       type="text"
                       value={tagInput}
                       disabled={readOnly}
-                      onChange={(e) => setTagInput(e.target.value)}
+                      onChange={(e) => {
+                        if (rejectReadOnlyWrite()) return
+                        setTagInput(e.target.value)
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
+                          if (rejectReadOnlyWrite()) return
                           const parts = tagInput.split(/[,\s]+/)
                           setTagInput('')
                           addTagsByNames(parts)
@@ -639,7 +679,10 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                       disabled={readOnly}
                       className="whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
                       style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                      onClick={() => setSelectedTags([])}
+                      onClick={() => {
+                        if (rejectReadOnlyWrite()) return
+                        setSelectedTags([])
+                      }}
                     >清空标签</button>
                   </div>
                   {tagInput && (
@@ -649,12 +692,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                         {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
                           const id = (t.id || (t as unknown as { _id?: string })?._id || '')
                           return (
-                            <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                            <button key={id || t.name} type="button" disabled={readOnly || !id} onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
                               {t.name}
                             </button>
                           )
                         })}
-                        <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                        <button type="button" disabled={readOnly} onClick={() => { if (rejectReadOnlyWrite()) return; void addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
                           创建标签 “{tagInput}”
                         </button>
                       </div>
@@ -677,7 +720,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                             key={tagId || tag.name}
                             type="button"
                             onClick={() => tagId && toggleTag(tagId)}
-                            disabled={!tagId}
+                            disabled={readOnly || !tagId}
                             className="rounded-full border px-3 py-1 text-sm transition"
                             style={{
                               ...(isActive
@@ -764,6 +807,9 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         <div className="editor-layout-main">
           <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+                if (cmd === 'collab') { setShowCollabDrawer(true); return }
+                if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
+                if (rejectReadOnlyWrite()) return
                 if (cmd === 'link' && !payload) { setShowLinkDialog(true); return }
                 if (cmd === 'comments') {
                   try {
@@ -778,8 +824,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                   } catch { }
                   return
                 }
-                if (cmd === 'collab') { setShowCollabDrawer(true); return }
-                if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
                 const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
                 document.dispatchEvent(ev)
               }} />
@@ -787,13 +831,18 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 <TiptapEditor
                 noteId={id}
                 initialHTML={note.content || '<p></p>'}
-                onSave={async (html: string) => { setCurrentContent(html); await saveNow() }}
+                onSave={async (html: string) => {
+                  if (rejectReadOnlyWrite()) return
+                  setCurrentContent(html)
+                  await saveNow()
+                }}
                 user={me}
                 readOnly={readOnly}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
                 onContentChange={(html) => {
-                  setCurrentContent(html)
                   extractHeadingsFromHTML(html)
+                  if (readOnly) return
+                  setCurrentContent(html)
                 }}
                 // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
                 versionKey={searchParams?.get('restored') || undefined}
@@ -821,6 +870,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         commentsDrawerRef={commentsDrawerRef as React.RefObject<HTMLDivElement>}
         onCloseCollab={() => setShowCollabDrawer(false)}
         onCloseComments={() => setShowCommentsDrawer(false)}
+        readOnly={readOnly}
       />
       {!isFullscreen && !readOnly && (
         <>
@@ -865,7 +915,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         </>
       )}
       {/* 插入链接对话框 */}
-      {showLinkDialog && (
+      {showLinkDialog && !readOnly && (
         <div
           className="fixed inset-0 z-50 bg-black/30"
           role="dialog"
