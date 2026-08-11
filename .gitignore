@@ -52,4 +52,5 @@ notes-backend/tsconfig.tsbuildinfo
 # Tooling and IDE state
 .trae/
 .runtime/
+.worktrees/
 
