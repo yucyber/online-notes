@@ -20,7 +20,7 @@ type SaveQueue = {
   lastSavedKey: string
 }
 
-type WriteResult = 'saved' | 'failed' | 'stale'
+type WriteResult = 'saved' | 'failed' | 'offline' | 'stale'
 
 // writer tail 必须跨 hook 实例存活，避免同 note 卸载重挂后绕过尚未完成的物理写。
 const writerTails = new Map<string, Promise<void>>()
@@ -109,6 +109,7 @@ export function useEditorAutoSave({ noteId, snapshot, enabled, save, delayMs }: 
           queue.pending = null
         }
         if (!canUseQueue(queue, requestedSnapshot.noteId)) return 'stale'
+        if (typeof navigator !== 'undefined' && !navigator.onLine) return 'offline'
         try {
           await saveRef.current(copySnapshot(requestedSnapshot.payload))
           return 'saved'
@@ -125,7 +126,13 @@ export function useEditorAutoSave({ noteId, snapshot, enabled, save, delayMs }: 
 
       if (result === 'stale' || !canUseQueue(queue, requestedSnapshot.noteId)) return
 
-      if (result === 'saved') {
+      if (result === 'offline') {
+        // online 事件可能在等待旧 writer 时再次断网，必须重新开放下一次自动重试。
+        if (!queue.pending) queue.pending = requestedSnapshot
+        onlineRetryRef.current = false
+        setState('local')
+        return
+      } else if (result === 'saved') {
         queue.lastSavedKey = requestedSnapshot.key
 
         // 运行中再次提交同一快照无需重复写；失败分支不能做此去重，否则 A → B → A 会丢失最后 A。
@@ -264,6 +271,10 @@ export function useEditorAutoSave({ noteId, snapshot, enabled, save, delayMs }: 
 
   useEffect(() => {
     const retryOnOnline = () => {
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        onlineRetryRef.current = false
+        return
+      }
       const pending = queueRef.current.pending
       if (!enabledRef.current || onlineRetryRef.current || !pending) return
       onlineRetryRef.current = true

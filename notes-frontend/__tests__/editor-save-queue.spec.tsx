@@ -237,6 +237,54 @@ describe('useEditorAutoSave save queue', () => {
     expect(maxActiveRequests).toBe(1)
     expect(serverContent).toBe('2')
   })
+
+  it('等待旧 writer 时断网会保留 latest 并在网络恢复后只重试一次', async () => {
+    const first = deferred<void>()
+    const save = jest.fn()
+      .mockImplementationOnce(() => first.promise)
+      .mockImplementationOnce(async () => {
+        if (!window.navigator.onLine) throw new Error('offline request')
+      })
+    let current!: ReturnType<typeof useEditorAutoSave>
+    const expose = (result: ReturnType<typeof useEditorAutoSave>) => { current = result }
+    const { rerender } = render(<Harness title="A" content="0" save={save} expose={expose} />)
+
+    rerender(<Harness title="A" content="1" save={save} expose={expose} />)
+    await advanceDebounce()
+    rerender(<Harness title="A" content="1" enabled={false} save={save} expose={expose} />)
+    rerender(<Harness title="A" content="1" save={save} expose={expose} />)
+
+    setOnline(false)
+    rerender(<Harness title="A" content="2" save={save} expose={expose} />)
+    await advanceDebounce()
+    expect(current.state).toBe('local')
+
+    setOnline(true)
+    await act(async () => { window.dispatchEvent(new Event('online')) })
+    setOnline(false)
+    first.resolve()
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(current.state).toBe('local')
+
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      window.dispatchEvent(new Event('online'))
+    })
+    expect(save).toHaveBeenCalledTimes(1)
+
+    setOnline(true)
+    await act(async () => {
+      window.dispatchEvent(new Event('online'))
+      window.dispatchEvent(new Event('online'))
+    })
+    await flushPromises()
+
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(save).toHaveBeenNthCalledWith(2, expect.objectContaining({ content: '2' }))
+    expect(current.state).toBe('saved')
+  })
 })
 
 async function advanceDebounce() {
