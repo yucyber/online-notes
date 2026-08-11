@@ -1,15 +1,17 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, Users } from 'lucide-react'
+import { ArrowLeft, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types'
 
 type Props = {
   note: Note
   editorMode: 'rich' | 'markdown'
-  showSidebar: boolean
+  leftCollapsed: boolean
+  rightCollapsed: boolean
   onBack: () => void
   onModeChange: (event: React.ChangeEvent<HTMLSelectElement>) => void
   onVisibilityChange: (visibility: string) => void | Promise<void>
-  onToggleSidebar: () => void
+  onToggleLeft: () => void
+  onToggleRight: () => void
   onOpenCollab: () => void
   readOnly?: boolean
 }
@@ -17,11 +19,13 @@ type Props = {
 export function NoteEditorHeader({
   note,
   editorMode,
-  showSidebar,
+  leftCollapsed,
+  rightCollapsed,
   onBack,
   onModeChange,
   onVisibilityChange,
-  onToggleSidebar,
+  onToggleLeft,
+  onToggleRight,
   onOpenCollab,
   readOnly = false,
 }: Props) {
@@ -54,12 +58,29 @@ export function NoteEditorHeader({
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" aria-pressed={!showSidebar} onClick={onToggleSidebar} className="hover:bg-[var(--surface-2)]">
-            {showSidebar ? (
-              <span className="inline-flex items-center gap-1"><ChevronRight className="h-4 w-4" /> {"隐藏侧栏"}</span>
-            ) : (
-              <span className="inline-flex items-center gap-1"><ChevronLeft className="h-4 w-4" /> {"显示侧栏"}</span>
-            )}
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={leftCollapsed ? '展开左侧导航' : '收起左侧导航'}
+            aria-controls="editor-left-navigation"
+            aria-expanded={!leftCollapsed}
+            title={leftCollapsed ? '展开左侧导航' : '收起左侧导航'}
+            onClick={onToggleLeft}
+            className="hover:bg-[var(--surface-2)]"
+          >
+            {leftCollapsed ? <PanelLeftOpen className="h-4 w-4" /> : <PanelLeftClose className="h-4 w-4" />}
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            aria-label={rightCollapsed ? '展开右侧面板' : '收起右侧面板'}
+            aria-controls="editor-right-metadata"
+            aria-expanded={!rightCollapsed}
+            title={rightCollapsed ? '展开右侧面板' : '收起右侧面板'}
+            onClick={onToggleRight}
+            className="hover:bg-[var(--surface-2)]"
+          >
+            {rightCollapsed ? <PanelRightOpen className="h-4 w-4" /> : <PanelRightClose className="h-4 w-4" />}
           </Button>
           <Button variant="ghost" size="icon" aria-label="打开协作" title="协作" onClick={onOpenCollab} className="hover:bg-[var(--surface-2)]">
             <Users className="h-5 w-5" />

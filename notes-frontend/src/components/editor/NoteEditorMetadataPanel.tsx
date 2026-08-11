@@ -1,19 +1,40 @@
 
 
+import { PanelRightOpen } from 'lucide-react'
+
 type TocItem = { id: string; text: string; level: number }
 
 type Props = {
   id: string
   toc: TocItem[]
-  showSidebar: boolean
+  collapsed: boolean
   isFullscreen: boolean
+  onToggle: () => void
+  restoreButtonRef?: React.RefObject<HTMLButtonElement>
 }
 
-export function NoteEditorMetadataPanel({ id, toc, showSidebar, isFullscreen }: Props) {
-  if (!showSidebar || isFullscreen) return null
+export function NoteEditorMetadataPanel({ id, toc, collapsed, isFullscreen, onToggle, restoreButtonRef }: Props) {
+  if (isFullscreen) return null
+
+  if (collapsed) {
+    return (
+      <aside id="editor-right-metadata" className="editor-right-metadata editor-right-metadata--collapsed" aria-label="右侧面板">
+        <button
+          ref={restoreButtonRef}
+          type="button"
+          className="editor-layout-restore-button"
+          aria-label="展开右侧面板"
+          title="展开右侧面板"
+          onClick={onToggle}
+        >
+          <PanelRightOpen className="h-4 w-4" aria-hidden />
+        </button>
+      </aside>
+    )
+  }
 
   return (
-    <div className="lg:col-span-2 xl:col-span-3">
+    <aside id="editor-right-metadata" className="editor-right-metadata" aria-label="右侧面板">
       <div className="sticky top-20 space-y-3">
         <div className="rounded-lg border bg-white">
           <div className="px-4 py-2 border-b text-sm font-medium">{"大纲"}</div>
@@ -49,6 +70,6 @@ export function NoteEditorMetadataPanel({ id, toc, showSidebar, isFullscreen }: 
           </div>
         </div>
       </div>
-    </div>
+    </aside>
   )
 }

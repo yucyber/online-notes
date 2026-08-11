@@ -23,6 +23,7 @@ import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
 import { EditorSaveStatus } from '@/components/editor/EditorSaveStatus'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
+import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export interface NoteEditorShellProps {
@@ -65,11 +66,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     setLinkHref,
     setShowInsertMenu,
     setShowLinkDialog,
-    setShowSidebar,
     showInsertMenu,
     showLinkDialog,
-    showSidebar,
   } = useNoteEditorPage()
+  const { preferences, toggleLeft, toggleRight, setLeftWidth } = useEditorLayoutPreferences()
+  const leftRestoreButtonRef = useRef<HTMLButtonElement>(null)
+  const rightRestoreButtonRef = useRef<HTMLButtonElement>(null)
+  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
+  const [isResizingLeft, setIsResizingLeft] = useState(false)
   const [showMeta, setShowMeta] = useState(true)
   useEffect(() => {
     const open = () => setShowLinkDialog(true)
@@ -208,7 +212,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       if (active) {
         // 进入全屏时隐藏侧栏，禁用页面滚动，聚焦工具栏按钮以保可达性
         document.body.style.overflow = 'hidden'
-        setShowSidebar(false)
         const btn = document.getElementById('fullscreen-button') as HTMLButtonElement | null
         // 防止聚焦导致工具栏容器发生横向滚动
         try {
@@ -256,7 +259,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       document.removeEventListener('comments:hover', onCommentsHover as any)
       document.removeEventListener('comments:open', onCommentsOpen as any)
     }
-  }, [setIsFullscreen, setShowSidebar, setShowCommentsDrawer])
+  }, [setIsFullscreen, setShowCommentsDrawer])
 
   const handleToggleFullscreen = () => {
     const target = editorContainerRef.current || document.documentElement
@@ -520,6 +523,46 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     setSelection({ start, end })
   }, [])
 
+  const focusRestoreButton = (button: React.RefObject<HTMLButtonElement>) => {
+    window.requestAnimationFrame(() => button.current?.focus())
+  }
+
+  const handleToggleLeft = () => {
+    const isCollapsing = !preferences.leftCollapsed
+    toggleLeft()
+    if (isCollapsing) focusRestoreButton(leftRestoreButtonRef)
+  }
+
+  const handleToggleRight = () => {
+    const isCollapsing = !preferences.rightCollapsed
+    toggleRight()
+    if (isCollapsing) focusRestoreButton(rightRestoreButtonRef)
+  }
+
+  const finishLeftResize = () => {
+    const drag = dragRef.current
+    if (!drag) return
+    setLeftWidth(drag.width)
+    dragRef.current = null
+    setIsResizingLeft(false)
+  }
+
+  const cancelLeftResize = useCallback(() => {
+    const drag = dragRef.current
+    if (!drag) return
+    setLeftWidth(drag.startWidth, false)
+    dragRef.current = null
+    setIsResizingLeft(false)
+  }, [setLeftWidth])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cancelLeftResize()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [cancelLeftResize])
+
   if (loading) {
     return (
       <div className="flex items-center justify-center h-64">
@@ -552,7 +595,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         note={note}
         readOnly={readOnly}
         editorMode={editorMode}
-        showSidebar={showSidebar}
+        leftCollapsed={preferences.leftCollapsed}
+        rightCollapsed={preferences.rightCollapsed}
         onBack={handleBack}
         onModeChange={handleModeChange}
         onVisibilityChange={async (visibility) => {
@@ -562,7 +606,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             await loadNote()
           } catch { }
         }}
-        onToggleSidebar={() => setShowSidebar((current) => !current)}
+        onToggleLeft={handleToggleLeft}
+        onToggleRight={handleToggleRight}
         onOpenCollab={() => setShowCollabDrawer(true)}
       />
       {error && (
@@ -750,8 +795,65 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           </div>
         </div>
       </div>
-      <div className="grid gap-6 p-6 lg:grid-cols-12 xl:grid-cols-12">
-        <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
+      <div
+        className="editor-layout-grid p-6"
+        data-right-collapsed={preferences.rightCollapsed}
+        style={{
+          '--editor-left-width': `${preferences.leftCollapsed ? 52 : preferences.leftWidth}px`,
+          '--editor-right-width': preferences.rightCollapsed ? '0px' : '240px',
+        } as React.CSSProperties}
+      >
+        <aside id="editor-left-navigation" className="editor-left-navigation" aria-label="左侧导航">
+          {preferences.leftCollapsed ? (
+            <button
+              ref={leftRestoreButtonRef}
+              type="button"
+              className="editor-layout-restore-button"
+              aria-label="展开左侧导航"
+              title="展开左侧导航"
+              onClick={handleToggleLeft}
+            >
+              导航
+            </button>
+          ) : (
+            <div className="editor-left-navigation__content">
+              <p className="text-sm font-medium">笔记导航</p>
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>使用页头按钮收起导航以扩大编辑空间。</p>
+            </div>
+          )}
+          {!preferences.leftCollapsed && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整左侧导航宽度"
+              className="editor-layout-resizer"
+              data-resizing={isResizingLeft}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                dragRef.current = {
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startWidth: preferences.leftWidth,
+                  width: preferences.leftWidth,
+                }
+                setIsResizingLeft(true)
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current
+                if (!drag || drag.pointerId !== event.pointerId) return
+                drag.width = Math.min(360, Math.max(220, drag.startWidth + event.clientX - drag.startX))
+                // 拖动中只更新内存，避免连续写入 localStorage 影响编辑交互。
+                setLeftWidth(drag.width, false)
+              }}
+              onPointerUp={(event) => {
+                if (dragRef.current?.pointerId !== event.pointerId) return
+                finishLeftResize()
+              }}
+              onPointerCancel={cancelLeftResize}
+            />
+          )}
+        </aside>
+        <div className="editor-layout-main min-w-0">
           {editorMode === 'rich' ? (
             <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
@@ -803,7 +905,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             />
           )}
         </div>
-        <NoteEditorMetadataPanel id={id} toc={toc} showSidebar={showSidebar} isFullscreen={isFullscreen} />
+        <NoteEditorMetadataPanel
+          id={id}
+          toc={toc}
+          collapsed={preferences.rightCollapsed}
+          isFullscreen={isFullscreen}
+          onToggle={handleToggleRight}
+          restoreButtonRef={rightRestoreButtonRef}
+        />
       </div>
 
       <NoteEditorDrawers
