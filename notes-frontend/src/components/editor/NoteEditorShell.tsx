@@ -550,7 +550,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const cancelLeftResize = useCallback(() => {
     const drag = dragRef.current
     if (!drag) return
-    setLeftWidth(drag.startWidth, false)
+    setLeftWidth(drag.startWidth, false, false)
     dragRef.current = null
     setIsResizingLeft(false)
   }, [setLeftWidth])
@@ -800,7 +800,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         data-right-collapsed={preferences.rightCollapsed}
         style={{
           '--editor-left-width': `${preferences.leftCollapsed ? 52 : preferences.leftWidth}px`,
-          '--editor-right-width': preferences.rightCollapsed ? '0px' : '240px',
+          '--editor-right-width': preferences.rightCollapsed ? '52px' : '240px',
         } as React.CSSProperties}
       >
         <aside id="editor-left-navigation" className="editor-left-navigation" aria-label="左侧导航">
@@ -843,7 +843,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 if (!drag || drag.pointerId !== event.pointerId) return
                 drag.width = Math.min(360, Math.max(220, drag.startWidth + event.clientX - drag.startX))
                 // 拖动中只更新内存，避免连续写入 localStorage 影响编辑交互。
-                setLeftWidth(drag.width, false)
+                setLeftWidth(drag.width, false, false)
               }}
               onPointerUp={(event) => {
                 if (dragRef.current?.pointerId !== event.pointerId) return

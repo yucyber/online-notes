@@ -18,7 +18,7 @@ export function NoteEditorMetadataPanel({ id, toc, collapsed, isFullscreen, onTo
 
   if (collapsed) {
     return (
-      <aside id="editor-right-metadata" className="editor-right-metadata editor-right-metadata--collapsed" aria-label="右侧面板">
+      <aside id="editor-right-metadata" className="editor-right-metadata editor-right-metadata--collapsed" aria-label="右侧面板" style={{ width: '52px' }}>
         <button
           ref={restoreButtonRef}
           type="button"
