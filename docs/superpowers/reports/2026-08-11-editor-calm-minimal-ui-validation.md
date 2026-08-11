@@ -5,9 +5,10 @@
 - Task 7 / fix base：`53bfbbfedf6fd787823269ad4a760a79116a5053`
 - Fix round 1：`a28b6013ba1a6ad29573d31cd83327c804ab22f7`
 - Fix round 2 代码与测试 HEAD：`1f08d1618f6a34e6e972dea896af3d2c33f62d57`
+- Fix round 2 浏览器证据 SHA：`de174cc387c76e48a61c5f8abbb445e7031e438c`
 - 结论：`DONE_WITH_CONCERNS`
 
-本报告和浏览器 transcript 组成独立 docs evidence 提交，该提交直接以 `1f08d1618f6a34e6e972dea896af3d2c33f62d57` 为 parent。docs evidence 提交自身的 SHA 不写入自身内容，交付后用 `git log -1 --format=%H` 取得；代码验收对象不会因此产生自引用歧义。
+本报告的元数据提交 B 直接以浏览器证据提交 `de174cc387c76e48a61c5f8abbb445e7031e438c` 为 parent。B 无法在自身内容中记录自身 SHA；交付时以 `git log -1 --format=%H` 取得，并用 `git show -s --format=%P HEAD` 核对其 parent。该自引用限制不影响代码/测试 SHA 与浏览器证据 SHA 的精确追溯。
 
 ## 自动化验证
 
