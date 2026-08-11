@@ -1,13 +1,12 @@
-const mockMarkedParse = jest.fn((raw: string) => {
-  const fixtures: Record<string, string> = {
-    '**粗体**': '<p><strong>粗体</strong></p>\n',
-    '1. 第一项\n2. 第二项': '<ol><li>第一项</li><li>第二项</li></ol>\n',
-    '[旧链接](https://example.com)': '<p><a href="https://example.com">旧链接</a></p>\n',
-  }
-  return fixtures[raw] || `<p>${raw}</p>\n`
+jest.mock('marked', () => {
+  const fs = require('node:fs')
+  const path = require('node:path')
+  const vm = require('node:vm')
+  const packageRoot = path.dirname(require.resolve('marked/package.json'))
+  const context: Record<string, any> = {}
+  vm.runInNewContext(fs.readFileSync(path.join(packageRoot, 'lib', 'marked.umd.js'), 'utf8'), context)
+  return { marked: context.marked.marked }
 })
-
-jest.mock('marked', () => ({ marked: { parse: mockMarkedParse } }))
 
 import { normalizeEditorContent } from '@/components/editor/useTiptapEditorBridge'
 
@@ -21,5 +20,21 @@ describe('旧 Markdown 内容兼容', () => {
 
     expect(result.source).toBe('markdown')
     expect(result.html).toContain(fragment)
+  })
+
+  it('保留真实 marked 列表中 inline siblings 之间的语义空格', () => {
+    const result = normalizeEditorContent('- **foo** *bar*')
+    const doc = new DOMParser().parseFromString(result.html, 'text/html')
+
+    expect(result.source).toBe('markdown')
+    expect(doc.querySelector('li')?.textContent).toBe('foo bar')
+  })
+
+  it('Markdown block 与 inline HTML 混合时仍按 Markdown 转换', () => {
+    const result = normalizeEditorContent('# 标题\n<strong>正文</strong>')
+
+    expect(result.source).toBe('markdown')
+    expect(result.html).toContain('<h1>标题</h1>')
+    expect(result.html).toContain('<strong>正文</strong>')
   })
 })

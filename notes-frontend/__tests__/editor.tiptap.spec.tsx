@@ -82,7 +82,7 @@ jest.mock('@/components/editor/note-permissions', () => ({
   shouldManageNoteLock: () => false,
 }))
 
-import TiptapEditor from '@/components/editor/TiptapEditor'
+import TiptapEditor, { isLegacyRawMarkdownDocument } from '@/components/editor/TiptapEditor'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
 import NoteEditorShell from '@/components/editor/NoteEditorShell'
 import { Editor } from '@tiptap/core'
@@ -170,6 +170,29 @@ describe('TiptapEditor 全区域输入', () => {
     editable.dispatchEvent(pasteEvent)
 
     expect(editable.querySelector(selector)).toBeInTheDocument()
+  })
+
+  it('忽略同一笔记的旧保存响应且保留当前编辑内容', async () => {
+    mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'test-ticket', role: 'writer', expiresIn: 60 })
+    const props = { noteId: 'stable-seed', onSave: async () => {}, user }
+    const { rerender } = render(<TiptapEditor {...props} initialHTML="<p>初稿</p>" />)
+    let editable = document.querySelector('.ProseMirror') as HTMLElement
+    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
+
+    const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
+    Object.defineProperty(pasteEvent, 'clipboardData', {
+      value: { getData: (type: string) => type === 'text/plain' ? '[OpenAI](https://openai.com)' : '' },
+    })
+    editable.dispatchEvent(pasteEvent)
+    expect(editable.querySelector('a[href="https://openai.com"]')).toBeInTheDocument()
+
+    rerender(<TiptapEditor {...props} initialHTML="<p>旧保存响应</p>" updatedAt="2026-08-11T00:00:10.000Z" />)
+    editable = document.querySelector('.ProseMirror') as HTMLElement
+
+    await waitFor(() => {
+      expect(editable.querySelector('a[href="https://openai.com"]')).toBeInTheDocument()
+      expect(editable).not.toHaveTextContent('旧保存响应')
+    })
   })
 
   it('suppresses IndexedDB persistence unhandled rejections', () => {
@@ -261,6 +284,42 @@ describe('Tiptap Markdown 快捷输入', () => {
       ydoc.destroy()
     },
   )
+})
+
+describe('旧 Yjs Markdown 安全迁移', () => {
+  it('提供基于 ProseMirror document 等价的迁移判断', () => {
+    expect(isLegacyRawMarkdownDocument).toEqual(expect.any(Function))
+  })
+
+  it.each([
+    ['blockquote', '> 引用'],
+    ['code block', '```ts\nconst ready = true\n```'],
+    ['table', '| 名称 | 状态 |\n| --- | --- |\n| 编辑器 | 完成 |'],
+  ])('识别已 seed 的 dirty %s', (_label, raw) => {
+    const ydoc = new Y.Doc()
+    const editor = new Editor({
+      extensions: createTiptapExtensions({ collabEnabled: false, ydoc, provider: null, user: { id: 'u1', name: '用户' } }),
+      content: raw,
+    })
+
+    expect(isLegacyRawMarkdownDocument(editor, raw, 'markdown')).toBe(true)
+
+    editor.destroy()
+    ydoc.destroy()
+  })
+
+  it('不迁移与后端旧 raw 不同的协作内容', () => {
+    const ydoc = new Y.Doc()
+    const editor = new Editor({
+      extensions: createTiptapExtensions({ collabEnabled: false, ydoc, provider: null, user: { id: 'u1', name: '用户' } }),
+      content: '<p>协作者的新内容</p>',
+    })
+
+    expect(isLegacyRawMarkdownDocument(editor, '> 后端旧引用', 'markdown')).toBe(false)
+
+    editor.destroy()
+    ydoc.destroy()
+  })
 })
 
 describe('TiptapToolbar', () => {

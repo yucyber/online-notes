@@ -31,6 +31,14 @@ function isExplicitMarkdown(raw: string) {
     || MARKDOWN_TABLE_PATTERN.test(raw)
 }
 
+function hasMarkdownBlockStructure(raw: string) {
+  return MARKDOWN_BLOCK_PATTERN.test(raw) || MARKDOWN_TABLE_PATTERN.test(raw)
+}
+
+function isBlockNode(node: ChildNode | undefined) {
+  return node instanceof HTMLElement && /^(P|UL|OL|BLOCKQUOTE|PRE|TABLE|DIV)$/.test(node.tagName)
+}
+
 function normalizeMarkedHTML(html: string) {
   if (typeof document === 'undefined') return html.trim()
 
@@ -40,13 +48,18 @@ function normalizeMarkedHTML(html: string) {
   // marked 的紧凑列表没有段落节点；补齐 Tiptap schema 所需结构，避免首次保存时内容漂移。
   template.content.querySelectorAll('li').forEach((item) => {
     let paragraph: HTMLParagraphElement | null = null
-    Array.from(item.childNodes).forEach((node) => {
+    const originalChildren = Array.from(item.childNodes)
+    originalChildren.forEach((node, index) => {
       if (node.nodeType === Node.TEXT_NODE && !node.textContent?.trim()) {
-        node.remove()
-        return
+        const previous = originalChildren[index - 1]
+        const next = originalChildren[index + 1]
+        // inline siblings 之间的空格属于正文；仅移除 block 边界处由 marked 排版产生的缩进。
+        if (!previous || !next || isBlockNode(previous) || isBlockNode(next)) {
+          node.remove()
+          return
+        }
       }
-      const isBlock = node instanceof HTMLElement && /^(P|UL|OL|BLOCKQUOTE|PRE|TABLE|DIV)$/.test(node.tagName)
-      if (isBlock) {
+      if (isBlockNode(node)) {
         paragraph = null
         return
       }
@@ -72,9 +85,15 @@ function normalizeMarkedHTML(html: string) {
 
 export function normalizeEditorContent(raw: string): NormalizedEditorContent {
   const original = String(raw || '')
+  // Markdown block 是更强的格式信号，允许正文中夹带 inline HTML。
+  if (hasMarkdownBlockStructure(original)) return convertMarkdown(original)
   if (HTML_ELEMENT_PATTERN.test(original)) return { html: original, source: 'html' }
   if (!isExplicitMarkdown(original)) return { html: plainTextToHTML(original), source: 'plain' }
 
+  return convertMarkdown(original)
+}
+
+function convertMarkdown(original: string): NormalizedEditorContent {
   try {
     // marked@17 为 ESM-only，仅在确认需要转换时加载，HTML/plain 路径不会被转换器故障牵连。
     const { marked } = require('marked') as { marked: { parse: (source: string, options: { async: false }) => string | Promise<string> } }

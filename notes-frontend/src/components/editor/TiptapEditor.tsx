@@ -1,6 +1,7 @@
 'use client'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
+import type { Editor as TiptapEditorInstance } from '@tiptap/core'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
@@ -9,7 +10,7 @@ import { createTiptapExtensions } from './tiptap-extensions'
 import { COLLAB_STATUS_META, colorFromString, hexToRgb, sanitizeHTML, srgb } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
 import { useTiptapPersistence } from './useTiptapPersistence'
-import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge } from './useTiptapEditorBridge'
+import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge, type NormalizedEditorContent } from './useTiptapEditorBridge'
 import { useTiptapCommentMarks } from './useTiptapCommentMarks'
 import { TiptapAiActions } from './TiptapAiActions'
 import { appToast } from '@/lib/app-toast'
@@ -28,8 +29,41 @@ type Props = {
   updatedAt?: string
 }
 
+const CONTENT_NORMALIZATION_VERSION = 1
+
+export function isLegacyRawMarkdownDocument(
+  editor: TiptapEditorInstance,
+  raw: string,
+  source: NormalizedEditorContent['source'],
+) {
+  if (source !== 'markdown' || typeof document === 'undefined') return false
+
+  try {
+    const container = document.createElement('div')
+    container.innerHTML = raw
+    const legacyDocument = ProseMirrorDOMParser.fromSchema(editor.state.schema).parse(container)
+    // 只有当前 Yjs document 与旧后端 raw 的历史 seed 完全一致，才允许格式迁移。
+    return editor.state.doc.eq(legacyDocument)
+  } catch {
+    return false
+  }
+}
+
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
-  const normalizedInitialContent = useMemo(() => normalizeEditorContent(initialHTML || ''), [initialHTML])
+  const documentKey = `${noteId}:${versionKey || ''}`
+  const initialSeedRef = useRef<{
+    key: string
+    raw: string
+    updatedAt?: string
+    normalized: NormalizedEditorContent
+  } | null>(null)
+  if (!initialSeedRef.current || initialSeedRef.current.key !== documentKey) {
+    const raw = initialHTML || ''
+    initialSeedRef.current = { key: documentKey, raw, updatedAt, normalized: normalizeEditorContent(raw) }
+  }
+  // 同一 document 的保存响应只更新外围数据，不能重建 editor 或覆盖尚未保存的本地输入。
+  const initialSeed = initialSeedRef.current
+  const normalizedInitialContent = initialSeed.normalized
   const ydoc = useMemo(() => new Y.Doc(), [])
   const room = useMemo(() => `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`,
     [noteId, versionKey],
@@ -105,7 +139,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     },
     editable: !effectiveReadOnly,
     immediatelyRender: false,
-  }, [provider, collabEnabled, normalizedInitialContent.html, noteId])
+  }, [provider, collabEnabled, documentKey])
   useTiptapCommentMarks({ editor, noteId, suppressSelectionRef })
 
   useEffect(() => {
@@ -251,21 +285,30 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             hasLocalDocContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
           } catch { }
 
-          const currentText = editor.getText().trim()
-          const isDirtyMarkdown = currentText.startsWith('# ') || currentText.startsWith('## ')
-          const isCleanHTML = normalizedInitialContent.html.includes('<h') || normalizedInitialContent.html.includes('<ul') || normalizedInitialContent.html.includes('<ol')
-
           const lastUpdatedAt = meta.get('lastUpdatedAt') as number | undefined
-          const serverUpdatedAt = updatedAt ? new Date(updatedAt).getTime() : 0
+          const serverUpdatedAt = initialSeed.updatedAt ? new Date(initialSeed.updatedAt).getTime() : 0
           const isExternalUpdate = serverUpdatedAt > (lastUpdatedAt || 0) + 1000
+          const hasCurrentNormalization = meta.get('contentNormalizationVersion') === CONTENT_NORMALIZATION_VERSION
+          const matchesLegacyRaw = !hasCurrentNormalization && isLegacyRawMarkdownDocument(
+            editor,
+            initialSeed.raw,
+            normalizedInitialContent.source,
+          )
 
           ydoc.transact(() => {
-            const shouldSeed = (!meta.get('seeded') && !hasLocalDocContent) || ((isDirtyMarkdown && isCleanHTML) && !hasLocalDocContent)
-            if (shouldSeed || isExternalUpdate) {
+            const shouldSeed = !meta.get('seeded') && !hasLocalDocContent
+            const shouldRepairLegacy = hasLocalDocContent && matchesLegacyRaw
+            // Markdown 外部快照不得覆盖已发生增量的协作文档；仅空文档或精确命中旧 raw 时可应用。
+            const shouldApplyExternal = isExternalUpdate
+              && (normalizedInitialContent.source !== 'markdown' || !hasLocalDocContent || matchesLegacyRaw)
+            if (shouldSeed || shouldRepairLegacy || shouldApplyExternal) {
               meta.set('seeded', { by: clientId, at: Date.now() })
               if (serverUpdatedAt > 0) meta.set('lastUpdatedAt', serverUpdatedAt)
+              if (normalizedInitialContent.source === 'markdown') {
+                meta.set('contentNormalizationVersion', CONTENT_NORMALIZATION_VERSION)
+              }
               editor.commands.setContent(normalizedInitialContent.html)
-              console.log('[Collab] seeded/repaired by', clientId, { isExternalUpdate, serverUpdatedAt, lastUpdatedAt })
+              console.log('[Collab] seeded/repaired by', clientId, { shouldRepairLegacy, shouldApplyExternal, serverUpdatedAt, lastUpdatedAt })
             } else {
               console.log('[Collab] skip seed, already seeded', meta.get('seeded'))
             }
@@ -276,7 +319,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, normalizedInitialContent.html, provider, updatedAt, idbSynced, ydoc])
+  }, [wsDebug.synced, editor, normalizedInitialContent, provider, initialSeed, idbSynced, ydoc])
 
   useEffect(() => {
     if (!editor) return
