@@ -29,24 +29,24 @@ describe('useEditorAutoSave', () => {
   it('debounces a changed snapshot and reports saved', async () => {
     const save = jest.fn().mockResolvedValue(undefined)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
 
     expect(result.current.state).toBe('saved')
     expect(save).toHaveBeenCalledTimes(1)
-    expect(save).toHaveBeenCalledWith('A', 'two')
+    expect(save).toHaveBeenCalledWith(makeSnapshot('two'))
   })
 
   it('does not save when read-only', async () => {
     const save = jest.fn().mockResolvedValue(undefined)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: false, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: false, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: false, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: false, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
 
     expect(result.current.state).toBe('idle')
@@ -56,10 +56,10 @@ describe('useEditorAutoSave', () => {
   it('does not send an already saved snapshot again', async () => {
     const save = jest.fn().mockResolvedValue(undefined)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
     await act(async () => { await result.current.saveNow() })
 
@@ -70,10 +70,10 @@ describe('useEditorAutoSave', () => {
     const pending = deferred<void>()
     const save = jest.fn().mockReturnValue(pending.promise)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     act(() => { void result.current.saveNow() })
     await act(async () => { jest.advanceTimersByTime(400) })
 
@@ -82,36 +82,43 @@ describe('useEditorAutoSave', () => {
     await act(async () => { pending.resolve() })
   })
 
-  it('keeps the latest save state when an earlier request finishes later', async () => {
+  it('keeps saving until the latest queued snapshot succeeds', async () => {
     const first = deferred<void>()
     const second = deferred<void>()
     const save = jest.fn()
       .mockImplementationOnce(() => first.promise)
       .mockImplementationOnce(() => second.promise)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
-    rerender({ noteId: 'n1', title: 'A', content: 'three', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('three'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
+
+    expect(save).toHaveBeenCalledTimes(1)
+    expect(result.current.lastSavedSnapshot).toBeNull()
+
+    await act(async () => { first.resolve() })
+    expect(save).toHaveBeenCalledTimes(2)
+    expect(result.current.state).toBe('saving')
+    expect(result.current.lastSavedSnapshot).toEqual(makeSnapshot('two'))
 
     await act(async () => { second.resolve() })
-    await act(async () => { first.reject(new Error('stale failure')) })
-
     expect(result.current.state).toBe('saved')
+    expect(result.current.lastSavedSnapshot).toEqual(makeSnapshot('three'))
     expect(errorToast).not.toHaveBeenCalled()
   })
 
   it('keeps changes locally offline and retries once when the network returns', async () => {
     const save = jest.fn().mockResolvedValue(undefined)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
     setOnline(false)
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
     expect(result.current.state).toBe('local')
     expect(save).not.toHaveBeenCalled()
@@ -129,10 +136,10 @@ describe('useEditorAutoSave', () => {
       .mockRejectedValueOnce(new Error('network down'))
       .mockResolvedValueOnce(undefined)
     const { result, rerender } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
 
     expect(result.current.state).toBe('error')
@@ -152,10 +159,10 @@ describe('useEditorAutoSave', () => {
     const pending = deferred<void>()
     const save = jest.fn().mockReturnValue(pending.promise)
     const { result, rerender, unmount } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
     expect(result.current.state).toBe('saving')
 
@@ -170,10 +177,10 @@ describe('useEditorAutoSave', () => {
     const pending = deferred<void>()
     const save = jest.fn().mockReturnValue(pending.promise)
     const { rerender, unmount } = renderHook((props) => useEditorAutoSave(props), {
-      initialProps: { noteId: 'n1', title: 'A', content: 'one', enabled: true, save, delayMs: 400 },
+      initialProps: { noteId: 'n1', snapshot: makeSnapshot('one'), enabled: true, save, delayMs: 400 },
     })
 
-    rerender({ noteId: 'n1', title: 'A', content: 'two', enabled: true, save, delayMs: 400 })
+    rerender({ noteId: 'n1', snapshot: makeSnapshot('two'), enabled: true, save, delayMs: 400 })
     await act(async () => { jest.advanceTimersByTime(400) })
     unmount()
     await act(async () => { pending.resolve() })
@@ -206,4 +213,8 @@ function deferred<T>() {
 
 function setOnline(value: boolean) {
   Object.defineProperty(window.navigator, 'onLine', { configurable: true, value })
+}
+
+function makeSnapshot(content: string) {
+  return { title: 'A', content, tags: [] }
 }

@@ -15,6 +15,7 @@ import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataP
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
+import type { EditorSnapshot } from '@/components/editor/editor-save-types'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 import { appToast } from '@/lib/app-toast'
@@ -389,9 +390,9 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     setNote: (updater) => setNote(prev => updater(prev)),
     setTags,
   })
-  const handleSave = useCallback(async (title: string, content: string) => {
+  const handleSave = useCallback(async (snapshot: EditorSnapshot) => {
     if (rejectReadOnlyWrite()) return
-    await persistNote(title, content)
+    await persistNote(snapshot.title, snapshot.content)
   }, [persistNote, rejectReadOnlyWrite])
   const addTagsByNames = useCallback(async (names: string[]) => {
     if (rejectReadOnlyWrite()) return []
@@ -399,8 +400,15 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [persistTags, rejectReadOnlyWrite])
   const { state: saveState, saveNow } = useEditorAutoSave({
     noteId: id,
-    title: currentTitle,
-    content: currentContent,
+    snapshot: {
+      title: currentTitle,
+      content: currentContent,
+      visibility: note?.visibility,
+      categoryId: selectedCategory || undefined,
+      categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
+      tags: selectedTags,
+      status: 'published',
+    },
     enabled: Boolean(note) && !readOnly,
     save: handleSave,
     delayMs: 400,

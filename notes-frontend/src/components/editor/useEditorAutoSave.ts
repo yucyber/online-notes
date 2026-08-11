@@ -2,122 +2,164 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { appToast } from '@/lib/app-toast'
+import type { EditorSnapshot } from './editor-save-types'
 
 export type SaveState = 'idle' | 'saving' | 'saved' | 'local' | 'error'
 
 type SaveSnapshot = {
   noteId: string
   key: string
-  title: string
-  content: string
+  payload: EditorSnapshot
+}
+
+type SaveQueue = {
+  running: Promise<void> | null
+  pending: SaveSnapshot | null
+  lastSavedKey: string
 }
 
 type UseEditorAutoSaveOptions = {
   noteId: string
-  title: string
-  content: string
+  snapshot: EditorSnapshot
   enabled: boolean
-  save: (title: string, content: string) => Promise<void>
+  save: (snapshot: EditorSnapshot) => Promise<void>
   delayMs: number
 }
 
-export function useEditorAutoSave({ noteId, title, content, enabled, save, delayMs }: UseEditorAutoSaveOptions) {
+function copySnapshot(snapshot: EditorSnapshot): EditorSnapshot {
+  return {
+    ...snapshot,
+    categoryIds: snapshot.categoryIds ? [...snapshot.categoryIds] : undefined,
+    tags: [...snapshot.tags],
+  }
+}
+
+function toSaveSnapshot(noteId: string, snapshot: EditorSnapshot): SaveSnapshot {
+  const payload = copySnapshot(snapshot)
+  return {
+    noteId,
+    key: JSON.stringify([noteId, payload]),
+    payload,
+  }
+}
+
+function createQueue(lastSavedKey: string): SaveQueue {
+  return { running: null, pending: null, lastSavedKey }
+}
+
+export function useEditorAutoSave({ noteId, snapshot, enabled, save, delayMs }: UseEditorAutoSaveOptions) {
+  const currentSnapshot = toSaveSnapshot(noteId, snapshot)
   const [state, setState] = useState<SaveState>('idle')
-  const latestSnapshotRef = useRef<SaveSnapshot>({ noteId, key: '', title, content })
-  const savedSnapshotRef = useRef('')
-  const pendingSnapshotRef = useRef<SaveSnapshot | null>(null)
+  const [lastSavedSnapshot, setLastSavedSnapshot] = useState<EditorSnapshot | null>(null)
+  const latestSnapshotRef = useRef(currentSnapshot)
+  const queueRef = useRef<SaveQueue>(createQueue(currentSnapshot.key))
   const debounceRef = useRef<{ key: string; timer: number } | null>(null)
-  const inFlightRef = useRef<{ key: string; promise: Promise<void> } | null>(null)
-  const requestTokenRef = useRef(0)
   const disposedRef = useRef(false)
-  const observedNoteIdRef = useRef<string | null>(null)
-  const wasEnabledRef = useRef(false)
+  const observedNoteIdRef = useRef(noteId)
+  const wasEnabledRef = useRef(enabled)
   const onlineRetryRef = useRef(false)
   const enabledRef = useRef(enabled)
   const saveRef = useRef(save)
+  const enqueueRef = useRef<(snapshot: SaveSnapshot) => Promise<void>>(() => Promise.resolve())
 
-  const snapshot: SaveSnapshot = {
-    noteId,
-    key: JSON.stringify([noteId, title, content]),
-    title,
-    content,
-  }
-  latestSnapshotRef.current = snapshot
+  latestSnapshotRef.current = currentSnapshot
   enabledRef.current = enabled
   saveRef.current = save
 
-  const saveSnapshot = useCallback((requestedSnapshot?: SaveSnapshot): Promise<void> => {
-    const currentSnapshot = requestedSnapshot || pendingSnapshotRef.current || latestSnapshotRef.current
-    if (disposedRef.current || !enabledRef.current || savedSnapshotRef.current === currentSnapshot.key) return Promise.resolve()
+  const drain = useCallback(async (queue: SaveQueue) => {
+    while (queue.pending) {
+      const requestedSnapshot = queue.pending
+      queue.pending = null
 
-    const inFlight = inFlightRef.current
-    if (inFlight?.key === currentSnapshot.key) return inFlight.promise
+      if (typeof navigator !== 'undefined' && !navigator.onLine) {
+        queue.pending = requestedSnapshot
+        onlineRetryRef.current = false
+        if (queueRef.current === queue && !disposedRef.current && enabledRef.current) setState('local')
+        return
+      }
 
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      pendingSnapshotRef.current = currentSnapshot
-      onlineRetryRef.current = false
-      setState('local')
-      return Promise.resolve()
+      const canWriteUi = () => (
+        queueRef.current === queue &&
+        !disposedRef.current &&
+        enabledRef.current &&
+        latestSnapshotRef.current.noteId === requestedSnapshot.noteId
+      )
+      if (canWriteUi()) setState('saving')
+
+      try {
+        await saveRef.current(copySnapshot(requestedSnapshot.payload))
+        queue.lastSavedKey = requestedSnapshot.key
+
+        // 运行中再次提交同一快照无需重复写；失败分支不能做此去重，否则 A → B → A 会丢失最后 A。
+        const latestPending = queue.pending as SaveSnapshot | null
+        if (latestPending?.key === requestedSnapshot.key) queue.pending = null
+        if (canWriteUi()) {
+          setLastSavedSnapshot(copySnapshot(requestedSnapshot.payload))
+          if (!queue.pending) {
+            setState('saved')
+            appToast.dismiss(`save:${requestedSnapshot.noteId}`)
+          }
+        }
+      } catch {
+        // 失败时优先保留运行期间到达的最新快照；没有更新输入时才把本轮快照放回队列。
+        if (!queue.pending) queue.pending = requestedSnapshot
+        if (canWriteUi()) {
+          setState('error')
+          appToast.error({
+            id: `save:${requestedSnapshot.noteId}`,
+            title: '保存失败',
+            message: '内容已保留在本地，可重新保存。',
+            action: {
+              label: '重新保存',
+              onClick: () => { void enqueueRef.current(queue.pending || latestSnapshotRef.current) },
+            },
+            persistent: true,
+          })
+        }
+        return
+      }
     }
-
-    const requestToken = ++requestTokenRef.current
-    pendingSnapshotRef.current = currentSnapshot
-    setState('saving')
-
-    let promise!: Promise<void>
-    try {
-      promise = saveRef.current(currentSnapshot.title, currentSnapshot.content)
-    } catch (error) {
-      promise = Promise.reject(error)
-    }
-    promise = promise.then(
-      () => {
-        if (disposedRef.current || requestToken !== requestTokenRef.current) return
-
-        savedSnapshotRef.current = currentSnapshot.key
-        pendingSnapshotRef.current = null
-        setState('saved')
-        appToast.dismiss(`save:${currentSnapshot.noteId}`)
-      },
-      () => {
-        if (disposedRef.current || requestToken !== requestTokenRef.current) return
-
-        // 保存失败时保留最新快照，避免用户只能重新输入已编辑的内容。
-        pendingSnapshotRef.current = currentSnapshot
-        setState('error')
-        appToast.error({
-          id: `save:${currentSnapshot.noteId}`,
-          title: '保存失败',
-          message: '内容已保留在本地，可重新保存。',
-          action: { label: '重新保存', onClick: () => { void saveSnapshot() } },
-          persistent: true,
-        })
-      },
-    ).finally(() => {
-      if (inFlightRef.current?.promise === promise) inFlightRef.current = null
-    })
-    inFlightRef.current = { key: currentSnapshot.key, promise }
-    return promise
   }, [])
 
+  const enqueue = useCallback((requestedSnapshot: SaveSnapshot): Promise<void> => {
+    const queue = queueRef.current
+    queue.pending = requestedSnapshot
+
+    if (!queue.running) {
+      if (queue.lastSavedKey === requestedSnapshot.key) {
+        queue.pending = null
+        return Promise.resolve()
+      }
+
+      // running 始终代表整个 drain，而非单次请求，saveNow 才能复用当前串行队列。
+      const running = drain(queue).finally(() => {
+        if (queue.running === running) queue.running = null
+      })
+      queue.running = running
+    }
+    return queue.running
+  }, [drain])
+  enqueueRef.current = enqueue
+
   const saveNow = useCallback(() => {
-    const currentSnapshot = latestSnapshotRef.current
-    if (debounceRef.current?.key === currentSnapshot.key) {
+    const latestSnapshot = latestSnapshotRef.current
+    if (debounceRef.current?.key === latestSnapshot.key) {
       window.clearTimeout(debounceRef.current.timer)
       debounceRef.current = null
     }
-    return saveSnapshot(currentSnapshot)
-  }, [saveSnapshot])
+    return enqueue(latestSnapshot)
+  }, [enqueue])
 
   const retry = useCallback(() => {
-    return saveSnapshot(pendingSnapshotRef.current || latestSnapshotRef.current)
-  }, [saveSnapshot])
+    return enqueue(queueRef.current.pending || latestSnapshotRef.current)
+  }, [enqueue])
 
   useEffect(() => {
     disposedRef.current = false
     return () => {
       disposedRef.current = true
-      requestTokenRef.current += 1
+      queueRef.current.pending = null
+      queueRef.current = createQueue(latestSnapshotRef.current.key)
       if (debounceRef.current) {
         window.clearTimeout(debounceRef.current.timer)
         debounceRef.current = null
@@ -126,61 +168,61 @@ export function useEditorAutoSave({ noteId, title, content, enabled, save, delay
   }, [])
 
   useEffect(() => {
+    const resetQueue = () => {
+      // 旧请求仍可自然结束，但替换 queue 后不再具备 UI 回写资格，也不会被新快照复用。
+      queueRef.current.pending = null
+      queueRef.current = createQueue(currentSnapshot.key)
+      setLastSavedSnapshot(null)
+      setState('idle')
+    }
+
     if (observedNoteIdRef.current !== noteId) {
       observedNoteIdRef.current = noteId
-      savedSnapshotRef.current = snapshot.key
-      pendingSnapshotRef.current = null
-      requestTokenRef.current += 1
       wasEnabledRef.current = enabled
-      setState('idle')
+      resetQueue()
       return
     }
 
     if (!enabled) {
-      requestTokenRef.current += 1
       wasEnabledRef.current = false
-      savedSnapshotRef.current = snapshot.key
-      pendingSnapshotRef.current = null
-      setState('idle')
+      resetQueue()
       return
     }
 
     if (!wasEnabledRef.current) {
       wasEnabledRef.current = true
-      savedSnapshotRef.current = snapshot.key
-      pendingSnapshotRef.current = null
-      setState('idle')
+      resetQueue()
       return
     }
 
-    if (savedSnapshotRef.current === snapshot.key) {
-      if (pendingSnapshotRef.current?.key === snapshot.key) pendingSnapshotRef.current = null
+    const queue = queueRef.current
+    if (queue.lastSavedKey === currentSnapshot.key) {
+      if (queue.pending?.key === currentSnapshot.key) queue.pending = null
       return
     }
 
-    // 输入变化立即作废旧请求的回写资格，延迟完成也不能覆盖新内容的状态。
-    requestTokenRef.current += 1
-    pendingSnapshotRef.current = snapshot
+    queue.pending = currentSnapshot
     const timer = window.setTimeout(() => {
       if (debounceRef.current?.timer === timer) debounceRef.current = null
-      void saveSnapshot(snapshot)
+      void enqueue(currentSnapshot)
     }, delayMs)
-    debounceRef.current = { key: snapshot.key, timer }
+    debounceRef.current = { key: currentSnapshot.key, timer }
     return () => {
       window.clearTimeout(timer)
       if (debounceRef.current?.timer === timer) debounceRef.current = null
     }
-  }, [delayMs, enabled, noteId, saveSnapshot, snapshot.key])
+  }, [currentSnapshot.key, delayMs, enabled, enqueue, noteId])
 
   useEffect(() => {
     const retryOnOnline = () => {
-      if (!enabledRef.current || onlineRetryRef.current || !pendingSnapshotRef.current) return
+      const pending = queueRef.current.pending
+      if (!enabledRef.current || onlineRetryRef.current || !pending) return
       onlineRetryRef.current = true
-      void saveSnapshot(pendingSnapshotRef.current)
+      void enqueue(pending)
     }
     window.addEventListener('online', retryOnOnline)
     return () => { window.removeEventListener('online', retryOnOnline) }
-  }, [saveSnapshot])
+  }, [enqueue])
 
-  return { state, saveNow, retry }
+  return { state, saveNow, retry, lastSavedSnapshot }
 }
