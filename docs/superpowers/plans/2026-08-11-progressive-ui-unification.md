@@ -2,9 +2,11 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** 在不一次性重做全部业务页面的前提下，先修复内容覆盖风险，再统一全局设计基础、Dashboard 壳层、编辑器和笔记主链路。
+**Goal:** 先修复内容覆盖风险并统一全局设计基础、Dashboard 壳层、编辑器和笔记主链路，再以同一 Calm Minimal 语言分批整改全部业务页面。
 
-**Architecture:** 使用“数据安全前置门禁 → 全局 token/基础组件 → AppShell → 编辑器/笔记主链路 → 浏览器验收”的渐进迁移。全站共享一套语义 token 和基础组件；未迁移业务页先继承统一壳层，不在本轮改业务结构。
+**Architecture:** 使用“数据安全前置门禁 → 全局 token/基础组件 → AppShell → 编辑器/笔记主链路 → 业务域分批迁移 → 最终浏览器验收”的渐进迁移。全站共享一套语义 token 和基础组件；业务页面只调整结构与呈现，不改现有业务语义。
+
+**执行基线（2026-08-12）：** Task 1–10 的编辑器整改、可靠性修复和验收成果已合入 `f24e714`。后续任务必须基于该提交继续，不得重复实现编辑器 Toast、自动保存、面板布局、统一 Tiptap 或只读边界。
 
 **Tech Stack:** Next.js 16、React 18、TypeScript、Tailwind CSS 3、Tiptap 2、Yjs/y-indexeddb/y-websocket、Lucide React、Jest/Testing Library、agent-browser。
 
@@ -14,7 +16,8 @@
 - 图标唯一来源为 `lucide-react`；图标按钮必须有 `aria-label` 与 Tooltip，移动端点击区域至少 44×44px。
 - 产品 UI 不显示 `ws[...]`、`sync[...]`、API 延迟或常驻“保存/重连/触发同步”。
 - 自动保存、离线恢复、只读边界和 room ticket 刷新必须在视觉迁移前通过回归测试。
-- 不引入新的大型 UI 组件库，不重做非笔记业务页面的信息架构。
+- 不引入新的大型 UI 组件库，不重做业务页面的信息架构。
+- 分批实施时只运行受影响的聚焦测试、`type-check` 或必要 lint；全部页面完成后再统一执行一次全量门禁。
 - 每个任务先 RED、再 GREEN、再审查；Critical/Important 必须清零，Minor 记录后收口。
 - 复杂业务、权限和异步时序注释使用简洁中文，只解释原因与约束。
 - Commit message 使用中文 `类型(范围): 简述`。
@@ -832,8 +835,16 @@ git commit -m "test(ui): 完成渐进式界面统一验收"
 3. Task 9 只做剩余页面兼容扫描，不扩大业务页面设计范围。
 4. Task 10 只验收；任何产品代码修改必须回到对应任务并重新审查。
 
+### 2026-08-12 后续执行顺序
+
+1. 以 `f24e714` 为代码基线，先统一仍未迁移页面使用的 token、基础组件和 AppShell 接口。
+2. 第一批迁移仪表盘、分类、标签、知识库和 AI；每个业务域完成后只运行相关测试。
+3. 第二批迁移通知、活动、设置、看板、思维导图和认证页面，并完成响应式兼容检查。
+4. 全部页面完成后统一运行 Jest、lint、type-check、production build 和真实浏览器核心流程验收。
+5. 具体文件与定向测试命令在开始实现前依据 `f24e714` 当前源码生成，避免复用本计划中已经执行完毕的旧任务步骤。
+
 ## Stop Conditions
 
 - 阶段 0 仍存在数据覆盖风险：停止 UI 扩张。
 - 基础组件导致三个以上不同类型业务回归：停止页面迁移，先稳定组件契约。
-- 编辑器与笔记主链路通过后，其余页面仅剩非阻断视觉差异：本轮结束，登记后续迁移，不继续追求全站像素级统一。
+- 各业务页面达到统一 token、壳层、组件和响应式要求后停止，不追求全站逐像素一致。
