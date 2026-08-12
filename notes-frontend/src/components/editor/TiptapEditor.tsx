@@ -507,7 +507,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       </span>
       <div
         id="editor-card"
-        className={`border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${className || ''}`}
+        className={`min-h-[560px] ${className || ''}`}
         onMouseDown={(e) => {
           try {
             if (!editor || !editor.isEditable) return
@@ -518,7 +518,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             }
           } catch { }
         }}
-        style={{ position: 'relative', display: 'flex', flexDirection: 'column', background: 'var(--surface-1)', borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)', ...style }}
+        style={{ position: 'relative', display: 'flex', flexDirection: 'column', ...style }}
       >
         <FloatingMenu
           editor={editor}

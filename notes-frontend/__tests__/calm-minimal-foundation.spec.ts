@@ -157,4 +157,17 @@ describe('Calm Minimal 全局界面基础契约', () => {
       expect(read(`src/app/dashboard/${name}/page.tsx`)).toContain('product-page-header')
     })
   })
+
+  test('编辑器使用笔记目录和开放式正文画布', () => {
+    const sidebar = read('src/components/editor/EditorWorkspaceSidebar.tsx')
+    const header = read('src/components/editor/NoteEditorHeader.tsx')
+    const editor = read('src/components/editor/TiptapEditor.tsx')
+
+    expect(sidebar).toContain('笔记目录')
+    expect(sidebar).not.toContain('当前笔记')
+    expect(sidebar).not.toContain('全部笔记')
+    expect(header).not.toContain('返回笔记')
+    expect(editor).not.toContain("className={`border rounded-[8px]")
+    expect(editor).not.toContain("boxShadow: 'var(--shadow-md)'")
+  })
 })

@@ -1,4 +1,4 @@
-import { ArrowLeft, PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Users } from 'lucide-react'
+import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Users } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types'
 import { EditorSaveStatus } from './EditorSaveStatus'
@@ -9,7 +9,6 @@ type Props = {
   editorMode: 'rich' | 'markdown'
   leftCollapsed: boolean
   rightCollapsed: boolean
-  onBack: () => void
   onModeChange: (event: React.ChangeEvent<HTMLSelectElement>) => void
   onVisibilityChange: (visibility: string) => void | Promise<void>
   onToggleLeft: () => void
@@ -24,7 +23,6 @@ export function NoteEditorHeader({
   editorMode,
   leftCollapsed,
   rightCollapsed,
-  onBack,
   onToggleLeft,
   onToggleRight,
   onOpenCollab,
@@ -35,9 +33,6 @@ export function NoteEditorHeader({
     <div className="editor-header">
       <div className="editor-header__title-block">
         <div className="editor-header__title-row">
-          <Button variant="ghost" size="icon" aria-label="返回笔记" title="返回笔记" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" aria-hidden />
-          </Button>
           <div>
             <span className="editor-header__eyebrow">{editorMode === 'rich' ? '协同编辑' : 'Markdown'}</span>
             <div className="editor-header__title-line">

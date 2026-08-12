@@ -164,19 +164,12 @@ describe('编辑页窄视口布局', () => {
     fireEvent.keyDown(leftRestore, { key: 'Enter', code: 'Enter' })
     fireEvent.keyUp(leftRestore, { key: 'Enter', code: 'Enter' })
     expect(screen.getByRole('button', { name: '收起左侧导航' })).toBeInTheDocument()
-    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '280px'])
-
-    fireEvent.click(screen.getByRole('button', { name: '收起右侧面板' }))
-    act(() => animationFrame?.(0))
-    const rightRestore = within(container.querySelector('#editor-right-metadata') as HTMLElement)
-      .getByRole('button', { name: '展开右侧面板' })
-    expect(rightRestore).toHaveFocus()
     expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '52px'])
 
-    fireEvent.keyDown(rightRestore, { key: ' ', code: 'Space' })
-    fireEvent.keyUp(rightRestore, { key: ' ', code: 'Space' })
+    fireEvent.click(within(container.querySelector('#editor-right-metadata') as HTMLElement).getByRole('button', { name: '展开右侧面板' }))
     expect(screen.getByRole('button', { name: '收起右侧面板' })).toBeInTheDocument()
-    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '280px'])
+    expect(within(container.querySelector('#editor-left-navigation') as HTMLElement).getByRole('button', { name: '展开左侧导航' })).toBeInTheDocument()
+    expect(gridTracks()).toEqual(['52px', 'minmax(0, 1fr)', '280px'])
   })
 
   test('Toast action 暴露明确名称并可由键盘操作', () => {

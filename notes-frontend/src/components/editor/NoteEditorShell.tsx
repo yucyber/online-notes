@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
@@ -32,6 +32,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const router = useRouter()
   const searchParams = useSearchParams()
   const [note, setNote] = useState<Note | null>(initialData ?? null)
+  const [directoryNotes, setDirectoryNotes] = useState<Note[]>(initialData ? [initialData] : [])
+  const [directorySearch, setDirectorySearch] = useState('')
   const [loading, setLoading] = useState(!initialData)
   const [error, setError] = useState('')
   const [categories, setCategories] = useState<Category[]>([])
@@ -73,6 +75,15 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const rightRestoreButtonRef = useRef<HTMLButtonElement>(null)
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
   const [isResizingLeft, setIsResizingLeft] = useState(false)
+  useEffect(() => {
+    // 目录是辅助导航，加载失败不能阻断正文编辑。
+    if (typeof fetchNotes !== 'function') return
+    const controller = new AbortController()
+    void fetchNotes({ page: 1, size: 50 }, controller.signal)
+      .then((result) => setDirectoryNotes(result.items))
+      .catch(() => undefined)
+    return () => controller.abort()
+  }, [])
   useEffect(() => {
     const open = () => {
       if (rejectReadOnlyWrite()) return
@@ -426,10 +437,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     return () => { document.removeEventListener('keydown', onSaveShortcut) }
   }, [rejectReadOnlyWrite, saveNow])
 
-  const handleBack = () => {
-    router.push('/dashboard/notes')
-  }
-
   const handleWorkspaceBack = () => {
     router.push('/dashboard')
   }
@@ -440,12 +447,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
 
   const handleToggleLeft = () => {
     const isCollapsing = !preferences.leftCollapsed
+    if (preferences.leftCollapsed && !preferences.rightCollapsed) toggleRight()
     toggleLeft()
     if (isCollapsing) focusRestoreButton(leftRestoreButtonRef)
   }
 
   const handleToggleRight = () => {
     const isCollapsing = !preferences.rightCollapsed
+    if (preferences.rightCollapsed && !preferences.leftCollapsed) toggleLeft()
     toggleRight()
     if (isCollapsing) focusRestoreButton(rightRestoreButtonRef)
   }
@@ -512,8 +521,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       >
         <EditorWorkspaceSidebar
           collapsed={preferences.leftCollapsed}
+          notes={directoryNotes}
+          currentNoteId={id}
+          searchValue={directorySearch}
+          onSearchChange={setDirectorySearch}
+          onOpenNote={(noteId) => router.push(`/dashboard/notes/${noteId}/edit`)}
           onBack={handleWorkspaceBack}
-          onOpenNotes={handleBack}
           onToggle={handleToggleLeft}
           restoreButtonRef={leftRestoreButtonRef}
         >
@@ -556,7 +569,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             editorMode="rich"
             leftCollapsed={preferences.leftCollapsed}
             rightCollapsed={preferences.rightCollapsed}
-            onBack={handleBack}
             onModeChange={() => undefined}
             onVisibilityChange={async (visibility) => {
               if (rejectReadOnlyWrite()) return

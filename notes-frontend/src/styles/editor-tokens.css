@@ -193,6 +193,49 @@ html[data-theme="dark"] {
   gap: 4px;
 }
 
+.editor-note-directory {
+  min-height: 0;
+  overflow-y: auto;
+}
+
+.editor-note-directory__heading {
+  padding: 4px 10px 8px;
+  color: var(--product-text-muted, var(--text-muted));
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .08em;
+}
+
+.editor-note-directory__item {
+  display: flex;
+  width: 100%;
+  min-height: 40px;
+  align-items: center;
+  gap: 9px;
+  padding: 8px 10px;
+  border-radius: var(--product-radius-sm, 8px);
+  color: var(--product-text-secondary, var(--text-muted));
+  text-align: left;
+}
+
+.editor-note-directory__item span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-note-directory__item:hover,
+.editor-note-directory__item[data-active="true"] {
+  background: var(--product-accent-soft, var(--surface-2));
+  color: var(--product-accent, var(--primary));
+}
+
+.editor-note-directory__empty {
+  padding: 14px 10px;
+  color: var(--product-text-muted, var(--text-muted));
+  font-size: 12px;
+}
+
 .editor-workspace-sidebar__nav-item {
   width: 100%;
   justify-content: flex-start !important;
@@ -575,11 +618,7 @@ html[data-theme="dark"] {
   width: min(var(--editor-canvas-width), calc(100% - 68px));
   min-height: 520px;
   margin: 28px auto 42px;
-  padding: 42px 52px;
-  border: 1px solid var(--border);
-  border-radius: 16px;
-  background: var(--bg-elev);
-  box-shadow: var(--shadow-sm);
+  padding: 34px 52px;
 }
 
 .editor-layout-restore-button {
@@ -631,23 +670,26 @@ html[data-theme="dark"] {
 
   .editor-left-navigation,
   .editor-right-metadata {
-    position: absolute;
-    top: 24px;
-    z-index: 3;
+    position: fixed;
+    top: 0;
+    bottom: 0;
+    z-index: 20;
+    box-shadow: var(--shadow-lg);
   }
 
   .editor-left-navigation {
-    left: 24px;
+    left: 0;
     width: var(--editor-left-width);
   }
 
   .editor-right-metadata {
-    right: 24px;
+    right: 0;
     width: 240px;
   }
 
+  .editor-left-navigation--collapsed,
   .editor-layout-grid[data-right-collapsed="true"] .editor-right-metadata {
-    width: 52px;
+    display: none;
   }
 
   .editor-layout-resizer {

@@ -85,17 +85,15 @@ test('viewer sees a view action without a delete action', () => {
   expect(screen.queryByTitle('删除')).not.toBeInTheDocument()
 })
 
-test('read-only editor header describes viewing while retaining navigation and collaborator access', () => {
-  const onBack = jest.fn()
+test('read-only editor header describes viewing while retaining collaborator access', () => {
   const onOpenCollab = jest.fn()
   render(<NoteEditorHeader note={note} editorMode="rich" leftCollapsed={false} rightCollapsed={false}
-    onBack={onBack} onModeChange={jest.fn()} onVisibilityChange={jest.fn()}
+    onModeChange={jest.fn()} onVisibilityChange={jest.fn()}
     onToggleLeft={jest.fn()} onToggleRight={jest.fn()} onOpenCollab={onOpenCollab} readOnly />)
 
   expect(screen.getByText('查看笔记')).toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '返回笔记' }))
   fireEvent.click(screen.getByRole('button', { name: '打开协作' }))
-  expect(onBack).toHaveBeenCalledTimes(1)
+  expect(screen.queryByRole('button', { name: '返回笔记' })).not.toBeInTheDocument()
   expect(onOpenCollab).toHaveBeenCalledTimes(1)
 })
 
