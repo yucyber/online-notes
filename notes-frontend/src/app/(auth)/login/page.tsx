@@ -91,14 +91,14 @@ export default function LoginPage() {
 
   return (
     <Suspense fallback={<div className="min-h-screen flex items-center justify-center">加载中...</div>}>
-    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-primary-50 via-white to-gray-50 py-12 px-4 sm:px-6 lg:px-8">
+    <div className="flex min-h-screen items-center justify-center bg-[var(--product-bg)] px-4 py-12 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8 animate-fade-in">
         <div className="text-center">
           <div 
             className="inline-flex items-center justify-center w-16 h-16 mb-4"
             style={{
               borderRadius: '50%',
-              background: 'linear-gradient(to bottom right, #2563eb, #1d4ed8)',
+              background: '#263244',
               boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
               WebkitBoxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
               MozBoxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1)',
@@ -107,17 +107,14 @@ export default function LoginPage() {
             <span className="text-2xl font-bold text-white">笔记</span>
           </div>
           <h1 
-            className="text-4xl font-bold mb-3"
+            className="mb-3 text-3xl font-bold text-[var(--product-text)]"
             style={{
-              background: 'linear-gradient(to right, #111827, #2563eb, #111827)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
+              color: 'var(--product-text)',
             }}
           >
             欢迎回来
           </h1>
-          <p className="text-gray-600 text-lg">
+          <p className="text-lg text-[var(--product-text-secondary)]">
             请登录您的账户以继续
           </p>
         </div>
@@ -135,7 +132,7 @@ export default function LoginPage() {
             <div 
               className="mb-6 p-4 text-sm text-red-600"
               style={{
-                background: 'linear-gradient(to right, #fef2f2, #fee2e2)',
+                background: 'var(--product-danger-soft)',
                 border: '2px solid #fecaca',
                 borderRadius: '12px',
                 boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
@@ -190,7 +187,7 @@ export default function LoginPage() {
 
             <Button
               type="submit"
-              className="w-full h-12 text-base font-semibold shadow-lg hover:shadow-xl"
+              className="h-12 w-full text-base font-semibold"
               disabled={isLoading}
             >
               {isLoading ? '登录中...' : '登录'}
@@ -198,7 +195,7 @@ export default function LoginPage() {
           </form>
 
           <div className="mt-8 text-center pt-6 border-t border-gray-200">
-            <p className="text-sm text-gray-600">
+              <p className="text-sm text-[var(--product-text-secondary)]">
               还没有账户？{' '}
               <a
                 href="/register"

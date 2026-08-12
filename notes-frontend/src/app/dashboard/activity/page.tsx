@@ -18,15 +18,15 @@ export default function ActivityPage() {
     load()
   }, [page, size])
   return (
-    <div className="p-4 space-y-4">
-      <div className="font-semibold">活动日志</div>
+    <div className="space-y-6">
+      <div><h1 className="page-heading">活动日志</h1><p className="page-description">查看账户与内容的近期变更记录。</p></div>
       <div className="flex items-center justify-between">
         <PageSizeSelect size={size} onSizeChange={setSize} />
         <Pagination page={page} size={size} total={total} onPageChange={setPage} />
       </div>
       <ul className="space-y-2">
         {items.map((e, i) => (
-          <li key={i} className="text-sm border rounded px-3 py-2">{e.eventType} · {e.resourceType} · {new Date(e.createdAt).toLocaleString()}</li>
+          <li key={i} className="rounded-xl border border-[var(--product-line)] bg-[var(--product-panel)] px-4 py-3 text-sm text-[var(--product-text-secondary)]">{e.eventType} · {e.resourceType} · {new Date(e.createdAt).toLocaleString()}</li>
         ))}
         {items.length === 0 && <div className="text-sm text-gray-500">暂无日志</div>}
       </ul>

@@ -73,4 +73,28 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(aiChat).not.toContain('shadow-2xl')
     expect(aiChat).not.toContain('slide-in-from-bottom')
   })
+
+  test('扩展页面与认证页使用 Calm Minimal 标题和背景', () => {
+    const pages = [
+      'src/app/dashboard/activity/page.tsx',
+      'src/app/dashboard/notifications/page.tsx',
+      'src/app/dashboard/settings/page.tsx',
+      'src/app/(auth)/login/page.tsx',
+      'src/app/(auth)/register/page.tsx',
+    ].map(read)
+
+    for (const source of pages) {
+      expect(source).not.toContain('linear-gradient')
+      expect(source).not.toContain('bg-gradient')
+      expect(source).not.toContain('shadow-xl')
+    }
+    expect(pages[0]).toContain('page-heading')
+    expect(pages[1]).toContain('page-heading')
+    expect(pages[2]).toContain('page-heading')
+    for (const authPage of pages.slice(3)) {
+      expect(authPage).toContain('bg-[var(--product-bg)]')
+      expect(authPage).toContain('text-[var(--product-text-secondary)]')
+      expect(authPage).not.toContain('text-gray-600')
+    }
+  })
 })

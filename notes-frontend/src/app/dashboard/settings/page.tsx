@@ -42,18 +42,8 @@ export default function SettingsPage() {
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-2">
-        <h1
-          className="text-3xl font-bold"
-          style={{
-            background: 'linear-gradient(to right, #111827, #2563eb, #111827)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}
-        >
-          设置
-        </h1>
-        <p className="text-[var(--text-muted)]">管理您的账户和偏好设置</p>
+        <h1 className="page-heading">设置</h1>
+        <p className="page-description">管理您的账户和偏好设置</p>
       </div>
 
       <Card>

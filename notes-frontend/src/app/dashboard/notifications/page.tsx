@@ -32,13 +32,13 @@ export default function NotificationsPage() {
   const markReadClick = async (id: string) => { await markNotificationRead(id); await load() }
 
   return (
-    <div className="p-6 space-y-6">
-      <div className="text-lg font-semibold">消息中心</div>
-      <div className="space-y-3">
+    <div className="space-y-6">
+      <div><h1 className="page-heading">消息中心</h1><p className="page-description">集中处理协作邀请和未读通知。</p></div>
+      <div className="calm-panel space-y-3 p-5">
         <div className="text-sm font-medium">待接受邀请</div>
         <ul className="space-y-2">
           {invites.map((v, i) => (
-            <li key={i} className="flex items-center justify-between border rounded px-3 py-2">
+            <li key={i} className="flex items-center justify-between rounded-xl border border-[var(--product-line-soft)] px-4 py-3">
               <span className="text-sm">笔记 {v.noteId} · 角色 {v.role} · 截止 {new Date(v.expiresAt).toLocaleString()}</span>
               <div className="flex gap-2">
                 <Button onClick={() => accept(v.hash)}>接受</Button>
@@ -48,7 +48,7 @@ export default function NotificationsPage() {
           {invites.length === 0 && <div className="text-sm text-gray-500">暂无待处理邀请</div>}
         </ul>
       </div>
-      <div className="space-y-3">
+      <div className="calm-panel space-y-3 p-5">
         <div className="text-sm font-medium">未读通知</div>
         <div className="flex items-center justify-between">
           <PageSizeSelect size={size} onSizeChange={setSize} />
@@ -56,7 +56,7 @@ export default function NotificationsPage() {
         </div>
         <ul className="space-y-2">
           {(notes?.items || []).map((n: any) => (
-            <li key={n.id || n._id} className="flex items-center justify-between border rounded px-3 py-2">
+            <li key={n.id || n._id} className="flex items-center justify-between rounded-xl border border-[var(--product-line-soft)] px-4 py-3">
               <span className="text-sm">{n.type} · {new Date(n.createdAt).toLocaleString()}</span>
               <Button variant="outline" onClick={() => markReadClick(n.id || n._id)}>标记已读</Button>
             </li>
