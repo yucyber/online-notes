@@ -1,6 +1,6 @@
 "use client"
 import { Button } from '@/components/ui/button'
-import { Bold, Code, Heading, Image as ImageIcon, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Maximize, MessageSquare, Minimize, Plus, Quote, Redo2, Save, Table, Underline, Undo2, Unlink, Users } from 'lucide-react'
+import { Bold, Code, Heading, Image as ImageIcon, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Maximize, Minimize, Plus, Quote, Redo2, Save, Table, Underline, Undo2, Unlink } from 'lucide-react'
 import { EditorToolbarMoreMenu } from './EditorToolbarMoreMenu'
 
 type Props = {
@@ -71,8 +71,6 @@ export default function TiptapToolbar({ disabled, exec: dispatch, isFullscreen }
       </div>
       <div className="editor-toolbar__actions">
         <span className="editor-toolbar__hint">支持 Markdown 快捷输入</span>
-        <span className="editor-tooltip" data-tooltip="评论"><Button size="icon" variant="ghost" aria-label={disabled ? '打开评论' : '评论'} title="评论 (Alt+C)" disabled={disabled} onClick={() => exec('comments')}><MessageSquare className="w-4 h-4" aria-hidden /></Button></span>
-        <span className="editor-tooltip" data-tooltip="协作成员"><Button size="icon" variant="ghost" aria-label="协作成员" title="协作成员" onClick={() => dispatch('collab')}><Users className="w-4 h-4" aria-hidden /></Button></span>
         <Button id="fullscreen-button" size="icon" variant="ghost" aria-label={isFullscreen ? '退出全屏' : '进入全屏'} title="切换全屏 (Ctrl+Shift+F)" aria-pressed={Boolean(isFullscreen)} onClick={() => dispatch('fullscreen')}>
           {isFullscreen ? <Minimize className="w-4 h-4" aria-hidden /> : <Maximize className="w-4 h-4" aria-hidden />}
         </Button>

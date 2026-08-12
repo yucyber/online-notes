@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import NetworkStatus from '@/components/security/NetworkStatus'
@@ -50,17 +50,13 @@ jest.mock('@/components/editor/note-permissions', () => ({
   shouldManageNoteLock: () => false,
 }))
 
-let animationFrame: FrameRequestCallback | undefined
-
 describe('编辑页窄视口布局', () => {
   beforeEach(() => {
     ;(networkAPI.ping as jest.Mock).mockResolvedValue({ latency: 20, ok: true, status: 200 })
     localStorage.clear()
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 1280 })
     Object.defineProperty(HTMLElement.prototype, 'setPointerCapture', { configurable: true, value: jest.fn() })
-    animationFrame = undefined
     mockToastDismiss.mockClear()
-    Object.defineProperty(window, 'requestAnimationFrame', { configurable: true, value: (callback: FrameRequestCallback) => { animationFrame = callback; return 1 } })
   })
 
   test('桌面侧栏仅在宽视口常驻，避免挤压编辑器', () => {
@@ -92,84 +88,45 @@ describe('编辑页窄视口布局', () => {
     expect(screen.getByRole('button', { name: '触发数据同步' })).toHaveClass('whitespace-nowrap')
   })
 
-  test('左右面板有独立的可访问收起控制', () => {
+  test('页头集中评论、协作和属性入口', () => {
     const note = { id: 'n1', title: '布局测试', content: '', tags: [] } as any
-    const onToggleLeft = jest.fn()
-    const onToggleRight = jest.fn()
+    const onToggleProperties = jest.fn()
 
     render(
       <NoteEditorHeader
         note={note}
         editorMode="rich"
-        leftCollapsed={false}
-        rightCollapsed={false}
-        onBack={() => undefined}
-        onModeChange={() => undefined}
-        onVisibilityChange={() => undefined}
-        onToggleLeft={onToggleLeft}
-        onToggleRight={onToggleRight}
+        onOpenComments={() => undefined}
+        onToggleProperties={onToggleProperties}
+        propertiesOpen={false}
         onOpenCollab={() => undefined}
       />,
     )
 
-    const left = screen.getByRole('button', { name: '收起左侧导航' })
-    const right = screen.getByRole('button', { name: '收起右侧面板' })
-    expect(left).toHaveAttribute('aria-controls', 'editor-left-navigation')
-    expect(left).toHaveAttribute('aria-expanded', 'true')
-    expect(right).toHaveAttribute('aria-controls', 'editor-right-metadata')
-    expect(right).toHaveAttribute('aria-expanded', 'true')
+    expect(screen.getByRole('button', { name: '打开评论' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: '打开协作' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '打开笔记属性' }))
+    expect(onToggleProperties).toHaveBeenCalledTimes(1)
   })
 
-  test('收起右侧时元数据面板保留恢复按钮', () => {
+  test('笔记属性关闭时不渲染弹窗', () => {
     render(
       <NoteEditorMetadataPanel
         id="n1"
-        toc={[]}
-        collapsed
-        isFullscreen={false}
-        onToggle={() => undefined}
+        open={false}
+        panelRef={{ current: null }}
       />,
     )
 
-    const restore = screen.getByRole('button', { name: '展开右侧面板' })
-    expect(restore.parentElement).toHaveStyle({ width: '52px' })
-    restore.focus()
-    expect(restore).toHaveFocus()
+    expect(screen.queryByRole('dialog', { name: '笔记属性' })).not.toBeInTheDocument()
   })
 
-  test('左右恢复按钮分别响应 Enter 和 Space，并释放正文轨道宽度', () => {
-    const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
-    const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
-    const grid = container.querySelector('.editor-layout-grid') as HTMLElement
-    const main = container.querySelector('.editor-layout-main') as HTMLElement
+  test('左栏收起后释放轨道并保留边缘恢复触点', () => {
     const productCss = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
-    const gridTracks = () => [
-      grid.style.getPropertyValue('--editor-left-width'),
-      'minmax(0, 1fr)',
-      grid.style.getPropertyValue('--editor-right-width'),
-    ]
 
-    expect(main).toBeInTheDocument()
-    expect(productCss).toMatch(/\.editor-layout-grid\s*\{[^}]*grid-template-columns:\s*var\(--editor-left-width\) minmax\(0, 1fr\) var\(--editor-right-width\)/s)
+    expect(productCss).toMatch(/\.editor-left-edge-trigger\s*\{/)
+    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{/)
     expect(productCss).toMatch(/\.editor-layout-main\s*\{[^}]*min-width:\s*0/s)
-    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '280px'])
-
-    fireEvent.click(screen.getByRole('button', { name: '收起左侧导航' }))
-    act(() => animationFrame?.(0))
-    const leftRestore = within(container.querySelector('#editor-left-navigation') as HTMLElement)
-      .getByRole('button', { name: '展开左侧导航' })
-    expect(leftRestore).toHaveFocus()
-    expect(gridTracks()).toEqual(['52px', 'minmax(0, 1fr)', '280px'])
-
-    fireEvent.keyDown(leftRestore, { key: 'Enter', code: 'Enter' })
-    fireEvent.keyUp(leftRestore, { key: 'Enter', code: 'Enter' })
-    expect(screen.getByRole('button', { name: '收起左侧导航' })).toBeInTheDocument()
-    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '52px'])
-
-    fireEvent.click(within(container.querySelector('#editor-right-metadata') as HTMLElement).getByRole('button', { name: '展开右侧面板' }))
-    expect(screen.getByRole('button', { name: '收起右侧面板' })).toBeInTheDocument()
-    expect(within(container.querySelector('#editor-left-navigation') as HTMLElement).getByRole('button', { name: '展开左侧导航' })).toBeInTheDocument()
-    expect(gridTracks()).toEqual(['52px', 'minmax(0, 1fr)', '280px'])
   })
 
   test('Toast action 暴露明确名称并可由键盘操作', () => {
@@ -223,28 +180,26 @@ describe('编辑页窄视口布局', () => {
     expect(JSON.parse(localStorage.getItem('notes:editor-layout:v1') || '{}')).toMatchObject({ leftWidth: 296 })
   })
 
-  test('宽屏收起右侧后保留可见恢复轨道并转移焦点', () => {
+  test('窄屏通过页头入口打开独立大纲抽屉', () => {
     const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
-    const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
+    render(<NoteEditorShell id="n1" initialData={note} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '收起右侧面板' }))
-    act(() => animationFrame?.(0))
-
-    const restore = within(container.querySelector('#editor-right-metadata') as HTMLElement).getByRole('button', { name: '展开右侧面板' })
-    expect((container.querySelector('.editor-layout-grid') as HTMLElement).style.getPropertyValue('--editor-right-width')).toBe('52px')
-    expect(restore.parentElement).toHaveStyle({ width: '52px' })
-    expect(restore).toHaveFocus()
+    fireEvent.click(screen.getByRole('button', { name: '打开大纲' }))
+    expect(screen.getByRole('dialog', { name: '大纲' })).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    expect(screen.queryByRole('dialog', { name: '大纲' })).not.toBeInTheDocument()
   })
 
-  test('编辑器使用单一工作区侧栏并将笔记属性放入右侧面板', () => {
+  test('编辑器使用笔记目录并通过页头打开属性弹窗', () => {
     const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
     const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
 
     const navigation = screen.getByRole('complementary', { name: '编辑器导航' })
-    expect(within(navigation).getByRole('button', { name: '返回工作台' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('button', { name: '返回我的笔记' })).toBeInTheDocument()
     expect(within(navigation).getByRole('searchbox', { name: '搜索笔记' })).toBeInTheDocument()
 
-    const properties = screen.getByRole('complementary', { name: '笔记属性' })
+    fireEvent.click(screen.getByRole('button', { name: '打开笔记属性' }))
+    const properties = screen.getByRole('dialog', { name: '笔记属性' })
     expect(within(properties).getByText('选择分类')).toBeInTheDocument()
     expect(container.querySelector('.editor-top-properties')).not.toBeInTheDocument()
   })

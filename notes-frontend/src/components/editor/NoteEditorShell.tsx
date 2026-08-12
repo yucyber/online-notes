@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
@@ -70,9 +70,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     showInsertMenu,
     showLinkDialog,
   } = useNoteEditorPage()
-  const { preferences, toggleLeft, toggleRight, setLeftWidth } = useEditorLayoutPreferences()
+  const { preferences, toggleLeft, setLeftWidth } = useEditorLayoutPreferences()
   const leftRestoreButtonRef = useRef<HTMLButtonElement>(null)
-  const rightRestoreButtonRef = useRef<HTMLButtonElement>(null)
+  const propertiesPanelRef = useRef<HTMLDivElement>(null)
+  const [showProperties, setShowProperties] = useState(false)
+  const [outlinePinned, setOutlinePinned] = useState(true)
+  const [showOutlineDrawer, setShowOutlineDrawer] = useState(false)
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
   const [isResizingLeft, setIsResizingLeft] = useState(false)
   useEffect(() => {
@@ -85,6 +88,28 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     return () => controller.abort()
   }, [])
   useEffect(() => {
+    if (!showProperties) return
+    const close = (event: MouseEvent) => {
+      if ((event.target as Element | null)?.closest('[aria-label="打开笔记属性"]')) return
+      if (!propertiesPanelRef.current?.contains(event.target as Node)) setShowProperties(false)
+    }
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setShowProperties(false)
+    }
+    document.addEventListener('mousedown', close)
+    document.addEventListener('keydown', closeOnEscape)
+    return () => {
+      document.removeEventListener('mousedown', close)
+      document.removeEventListener('keydown', closeOnEscape)
+    }
+  }, [showProperties])
+  useEffect(() => {
+    if (!showInsertMenu) return
+    const close = (event: KeyboardEvent) => { if (event.key === 'Escape') setShowInsertMenu(false) }
+    document.addEventListener('keydown', close)
+    return () => document.removeEventListener('keydown', close)
+  }, [showInsertMenu, setShowInsertMenu])
+  useEffect(() => {
     const open = () => {
       if (rejectReadOnlyWrite()) return
       setShowLinkDialog(true)
@@ -95,7 +120,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   useEffect(() => {
     const open = () => {
       if (rejectReadOnlyWrite()) return
-      setShowInsertMenu(true)
+      setShowInsertMenu((open) => !open)
     }
     document.addEventListener('open:insert-menu', open as any)
     return () => { document.removeEventListener('open:insert-menu', open as any) }
@@ -438,7 +463,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [rejectReadOnlyWrite, saveNow])
 
   const handleWorkspaceBack = () => {
-    router.push('/dashboard')
+    router.push('/dashboard/notes')
   }
 
   const focusRestoreButton = (button: React.RefObject<HTMLButtonElement>) => {
@@ -447,16 +472,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
 
   const handleToggleLeft = () => {
     const isCollapsing = !preferences.leftCollapsed
-    if (preferences.leftCollapsed && !preferences.rightCollapsed) toggleRight()
     toggleLeft()
     if (isCollapsing) focusRestoreButton(leftRestoreButtonRef)
-  }
-
-  const handleToggleRight = () => {
-    const isCollapsing = !preferences.rightCollapsed
-    if (preferences.rightCollapsed && !preferences.leftCollapsed) toggleLeft()
-    toggleRight()
-    if (isCollapsing) focusRestoreButton(rightRestoreButtonRef)
   }
 
   const finishLeftResize = () => {
@@ -513,10 +530,9 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
 
       <div
         className="editor-layout-grid"
-        data-right-collapsed={preferences.rightCollapsed}
         style={{
-          '--editor-left-width': `${preferences.leftCollapsed ? 52 : preferences.leftWidth}px`,
-          '--editor-right-width': preferences.rightCollapsed ? '52px' : '280px',
+          '--editor-left-width': `${preferences.leftCollapsed ? 0 : preferences.leftWidth}px`,
+          '--editor-right-width': '0px',
         } as React.CSSProperties}
       >
         <EditorWorkspaceSidebar
@@ -567,23 +583,43 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             note={note}
             readOnly={readOnly}
             editorMode="rich"
-            leftCollapsed={preferences.leftCollapsed}
-            rightCollapsed={preferences.rightCollapsed}
-            onModeChange={() => undefined}
-            onVisibilityChange={async (visibility) => {
-              if (rejectReadOnlyWrite()) return
-              try {
-                await updateNote(id, { visibility: visibility as any })
-                await loadNote()
-              } catch { }
-            }}
-            onToggleLeft={handleToggleLeft}
-            onToggleRight={handleToggleRight}
+            onOpenComments={() => setShowCommentsDrawer(true)}
             onOpenCollab={() => setShowCollabDrawer(true)}
+            onToggleProperties={() => setShowProperties((open) => !open)}
+            onToggleOutline={() => setShowOutlineDrawer((open) => !open)}
+            propertiesOpen={showProperties}
             saveState={saveState}
           />
+          <NoteEditorMetadataPanel
+            id={id}
+            open={showProperties}
+            panelRef={propertiesPanelRef as React.RefObject<HTMLDivElement>}
+            properties={(
+              <EditorNoteProperties
+                categories={categories}
+                tags={tags}
+                selectedCategory={selectedCategory}
+                selectedTags={selectedTags}
+                auxCategoryIds={auxCategoryIds}
+                tagInput={tagInput}
+                expandedCats={expandedCats}
+                metaLoading={metaLoading}
+                metaError={metaError}
+                readOnly={readOnly}
+                resolveCategoryId={resolveCategoryId}
+                setSelectedCategory={setSelectedCategory}
+                setSelectedTags={setSelectedTags}
+                setAuxCategoryIds={setAuxCategoryIds}
+                setTagInput={setTagInput}
+                setExpandedCats={setExpandedCats}
+                toggleTag={toggleTag}
+                addTagsByNames={addTagsByNames}
+                rejectReadOnlyWrite={rejectReadOnlyWrite}
+              />
+            )}
+          />
           {error && <div className="editor-error-banner" role="alert">{error}</div>}
-          <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
+          <div ref={editorContainerRef} className="editor-rich-editor" data-fullscreen={isFullscreen} style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
                 if (cmd === 'collab') { setShowCollabDrawer(true); return }
                 if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
@@ -594,10 +630,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                     setShowCommentsDrawer(true)
                     const openEvt = new CustomEvent('comments:open')
                     document.dispatchEvent(openEvt)
-                    if (selection && typeof selection.start === 'number' && typeof selection.end === 'number' && selection.start !== selection.end) {
-                      const markEvt = new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId: `local-${Date.now()}` } })
-                      document.dispatchEvent(markEvt)
-                    }
                     setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50)
                   } catch { }
                   return
@@ -628,39 +660,18 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 className="min-h-[calc(100vh-200px)]"
                 />
               </div>
+              {!isFullscreen && (
+                <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
+                  <button type="button" className="editor-outline__toggle" aria-label={outlinePinned ? '隐藏大纲' : '显示大纲'} onClick={() => setOutlinePinned((value) => !value)}>大纲</button>
+                  <div className="editor-outline__content">
+                    {toc.length === 0 ? <span>暂无标题</span> : toc.map((heading) => (
+                      <button key={heading.id} type="button" style={{ paddingLeft: `${(heading.level - 1) * 10}px` }} onClick={() => document.getElementById(heading.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{heading.text}</button>
+                    ))}
+                  </div>
+                </aside>
+              )}
           </div>
         </div>
-        <NoteEditorMetadataPanel
-          id={id}
-          toc={toc}
-          collapsed={preferences.rightCollapsed}
-          isFullscreen={isFullscreen}
-          onToggle={handleToggleRight}
-          restoreButtonRef={rightRestoreButtonRef}
-          properties={(
-            <EditorNoteProperties
-              categories={categories}
-              tags={tags}
-              selectedCategory={selectedCategory}
-              selectedTags={selectedTags}
-              auxCategoryIds={auxCategoryIds}
-              tagInput={tagInput}
-              expandedCats={expandedCats}
-              metaLoading={metaLoading}
-              metaError={metaError}
-              readOnly={readOnly}
-              resolveCategoryId={resolveCategoryId}
-              setSelectedCategory={setSelectedCategory}
-              setSelectedTags={setSelectedTags}
-              setAuxCategoryIds={setAuxCategoryIds}
-              setTagInput={setTagInput}
-              setExpandedCats={setExpandedCats}
-              toggleTag={toggleTag}
-              addTagsByNames={addTagsByNames}
-              rejectReadOnlyWrite={rejectReadOnlyWrite}
-            />
-          )}
-        />
       </div>
 
       <NoteEditorDrawers
@@ -673,14 +684,35 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         onCloseComments={() => setShowCommentsDrawer(false)}
         readOnly={readOnly}
       />
+      {showOutlineDrawer && !isFullscreen && (
+        <div className="editor-outline-drawer-backdrop" onMouseDown={() => setShowOutlineDrawer(false)}>
+          <aside className="editor-outline-drawer" role="dialog" aria-label="大纲" onMouseDown={(event) => event.stopPropagation()}>
+            <div className="editor-outline-drawer__header">
+              <strong>大纲</strong>
+              <button type="button" onClick={() => setShowOutlineDrawer(false)}>关闭</button>
+            </div>
+            <div className="editor-outline__content">
+              {toc.length === 0 ? <span>暂无标题</span> : toc.map((heading) => (
+                <button key={heading.id} type="button" style={{ paddingLeft: `${(heading.level - 1) * 10}px` }} onClick={() => { document.getElementById(heading.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setShowOutlineDrawer(false) }}>{heading.text}</button>
+              ))}
+            </div>
+          </aside>
+        </div>
+      )}
       {!isFullscreen && !readOnly && (
         <>
           {showInsertMenu && (
-            <div className="fixed right-4 bottom-56 z-50 rounded-xl border bg-white shadow-xl sm:right-6"
+            <div className="editor-insert-backdrop" onMouseDown={() => setShowInsertMenu(false)}>
+            <div className="editor-insert-popover"
               role="menu" aria-label="插入工具菜单"
-              style={{ minWidth: 220 }}
+              tabIndex={-1}
+              onMouseDown={(event) => event.stopPropagation()}
             >
               <div className="p-2 grid" style={{ rowGap: 6 }}>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'task' } })) }}>任务列表</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'blockquote' } })) }}>引用</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'code' } })) }}>行内代码</button>
+                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'hr' } })) }}>分割线</button>
                 <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
                 <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
                 <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
@@ -711,6 +743,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                   } catch { }
                 }}>思维导图</button>
               </div>
+            </div>
             </div>
           )}
         </>

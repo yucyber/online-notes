@@ -56,10 +56,10 @@ export function CommentsPanel({ noteId, selection, readOnly = false }: Props) {
       setText('')
       await load()
       try {
-        const commentId = created?.id || created?._id || `local-${Date.now()}`
-        // 保持事件闭环：标记选区 + 广播创建事件（供其他面板联动，如大纲/协作）
-        const markEvt = new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId } })
-        document.dispatchEvent(markEvt)
+        const commentId = created?.id || created?._id
+        if (!commentId) return
+        // 只有服务端确认的评论才允许落下持久标记，取消或失败不会污染正文。
+        document.dispatchEvent(new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId } }))
         const createdEvt = new CustomEvent('comments:created', { detail: { noteId, start: selection.start, end: selection.end, commentId, idempotencyKey: idemKey } })
         document.dispatchEvent(createdEvt)
       } catch {}

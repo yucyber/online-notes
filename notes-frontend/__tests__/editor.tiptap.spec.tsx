@@ -418,8 +418,8 @@ describe('TiptapToolbar', () => {
     expect(within(insertGroup).getByRole('button', { name: '插入链接' })).toBeEnabled()
     expect(within(insertGroup).getByRole('button', { name: '插入图片' })).toBeEnabled()
     expect(within(insertGroup).getByRole('button', { name: '插入表格' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '评论' })).toBeEnabled()
-    expect(screen.getByRole('button', { name: '协作成员' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: '评论' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '协作成员' })).not.toBeInTheDocument()
   })
 
   it('maps grouped insertion actions to the existing menu and command bus', () => {
@@ -456,12 +456,11 @@ describe('TiptapToolbar', () => {
     }
   })
 
-  it('provides a discoverable tooltip for each icon-only action', () => {
+  it('keeps page-level collaboration actions out of the formatting toolbar', () => {
     render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
 
-    for (const name of ['评论', '协作成员']) {
-      expect(screen.getByRole('button', { name }).closest('[data-tooltip]')).toHaveAttribute('data-tooltip', name)
-    }
+    expect(screen.queryByRole('button', { name: '评论' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '协作成员' })).not.toBeInTheDocument()
   })
 
   it('moves low-frequency formatting into an accessible more menu', () => {

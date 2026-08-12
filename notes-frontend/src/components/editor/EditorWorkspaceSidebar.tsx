@@ -30,7 +30,7 @@ export function EditorWorkspaceSidebar({
   if (collapsed) {
     return (
       <aside id="editor-left-navigation" className="editor-left-navigation editor-left-navigation--collapsed" aria-label="编辑器导航">
-        <Button ref={restoreButtonRef} type="button" variant="ghost" size="icon" aria-label="展开左侧导航" title="展开左侧导航" onClick={onToggle} onKeyDown={(event) => {
+        <Button ref={restoreButtonRef} type="button" variant="ghost" size="icon" className="editor-left-edge-trigger" aria-label="展开左侧导航" title="展开左侧导航" onClick={onToggle} onKeyDown={(event) => {
           if (event.key !== 'Enter' && event.key !== ' ') return
           event.preventDefault()
           onToggle()
@@ -53,6 +53,10 @@ export function EditorWorkspaceSidebar({
             <PanelLeftClose className="h-4 w-4" aria-hidden />
           </Button>
         </div>
+
+        <Button type="button" variant="ghost" className="editor-workspace-sidebar__nav-item editor-workspace-sidebar__back" aria-label="返回我的笔记" onClick={onBack}>
+          <ArrowLeft className="h-4 w-4" aria-hidden /><span>返回我的笔记</span>
+        </Button>
 
         <label className="editor-workspace-sidebar__search">
           <Search className="h-4 w-4" aria-hidden />
@@ -78,11 +82,7 @@ export function EditorWorkspaceSidebar({
           {visibleNotes.length === 0 && <p className="editor-note-directory__empty">暂无匹配笔记</p>}
         </nav>
 
-        <div className="editor-workspace-sidebar__footer">
-          <Button type="button" variant="ghost" className="editor-workspace-sidebar__nav-item" aria-label="返回工作台" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" aria-hidden /><span>返回工作台</span>
-          </Button>
-        </div>
+        <button type="button" className="editor-sidebar-collapse-handle" aria-label="收起左侧导航" onClick={onToggle}><PanelLeftClose className="h-4 w-4" aria-hidden /></button>
       </div>
       {children}
     </aside>

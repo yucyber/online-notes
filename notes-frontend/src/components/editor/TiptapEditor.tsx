@@ -5,7 +5,7 @@ import type { Editor as TiptapEditorInstance } from '@tiptap/core'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
-import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
+import { Copy, MessageSquare } from 'lucide-react'
 import { createTiptapExtensions } from './tiptap-extensions'
 import { COLLAB_STATUS_META, sanitizeHTML } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
@@ -391,37 +391,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [editor, provider, collabEnabled, ydoc, effectiveReadOnly])
 
   useEffect(() => {
-    const card = document.getElementById('editor-card')
-    const tip = document.getElementById('comment-tooltip') as HTMLDivElement | null
-    if (!card || !tip) return
-    const onOver = (e: MouseEvent) => {
-      const target = e.target as HTMLElement
-      const mark = target?.closest('.comment-mark') as HTMLElement | null
-      if (mark) {
-        const rect = mark.getBoundingClientRect()
-        const cardRect = card.getBoundingClientRect()
-        tip.style.left = `${rect.left - cardRect.left + 8}px`
-        tip.style.top = `${rect.top - cardRect.top - 28}px`
-        tip.style.display = 'block'
-        tip.style.opacity = '1'
-        try {
-          const id = mark.getAttribute('data-comment-id')
-          const evt = new CustomEvent('comments:hover', { detail: { id } })
-          document.dispatchEvent(evt)
-        } catch { }
-      } else {
-        tip.style.opacity = '0'
-        tip.style.display = 'none'
-      }
-    }
-    card.addEventListener('mousemove', onOver)
-    card.addEventListener('mouseleave', () => { if (tip) { tip.style.opacity = '0'; tip.style.display = 'none' } })
-    return () => {
-      card.removeEventListener('mousemove', onOver)
-    }
-  }, [])
-
-  useEffect(() => {
     if (!editor) return
     const execHandler = (e: Event) => {
       const detail = (e as CustomEvent).detail || {}
@@ -551,23 +520,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           }}
         >
           <div
-            className="flex items-center gap-2 justify-start"
+            className="editor-selection-popover"
             role="toolbar"
             aria-label="文本格式工具"
             style={{ height: 44, paddingLeft: 8, paddingRight: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-1)' }}
           >
-            <Button aria-label="粗体" title="粗体 (Ctrl+B)" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => editor.chain().focus().toggleBold().run()}>
-              <Bold className="w-4 h-4" aria-hidden />
-            </Button>
-            <Button aria-label="斜体" title="斜体 (Ctrl+I)" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => editor.chain().focus().toggleItalic().run()}>
-              <Italic className="w-4 h-4" aria-hidden />
-            </Button>
-            <Button aria-label="下划线" title="下划线 (Ctrl+U)" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => editor.chain().focus().toggleUnderline().run()}>
-              <UnderlineIcon className="w-4 h-4" aria-hidden />
-            </Button>
-
-            <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
-
             <TiptapAiActions
               editor={editor}
               readOnly={effectiveReadOnly}
@@ -576,16 +533,12 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
               mode="selection"
             />
 
-            <div aria-hidden className="w-px h-4 mx-1" style={{ background: 'var(--border)' }} />
+            <Button aria-label="复制选中文本" size="icon" variant="ghost" onClick={() => navigator.clipboard?.writeText(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' '))}>
+              <Copy className="w-4 h-4" aria-hidden />
+            </Button>
             <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => {
               try {
-                const { from, to } = editor.state.selection
-                const openEvt = new CustomEvent('comments:open')
-                document.dispatchEvent(openEvt)
-                if (from !== to) {
-                  const markEvt = new CustomEvent('comments:mark', { detail: { start: from, end: to, commentId: `local-${Date.now()}` } })
-                  document.dispatchEvent(markEvt)
-                }
+                document.dispatchEvent(new CustomEvent('comments:open'))
               } catch { }
             }}>
               <MessageSquare className="w-4 h-4" aria-hidden />
@@ -593,7 +546,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           </div>
         </BubbleMenu>
         <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', padding: 12, background: 'var(--surface-1)', color: 'var(--on-surface)' }} />
-        <div id="comment-tooltip" style={{ position: 'absolute', pointerEvents: 'none', display: 'none', padding: '8px 10px', borderRadius: 8, background: 'rgba(0,0,0,0.6)', color: '#fff', fontSize: 12, boxShadow: '0 2px 10px rgba(0,0,0,0.1)', transition: 'opacity 300ms ease-in-out' }}>已添加评论，打开右侧面板查看</div>
       </div>
     </div>
   )

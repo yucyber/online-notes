@@ -117,6 +117,7 @@ html[data-theme="dark"] {
 }
 
 .editor-workspace-sidebar {
+  position: relative;
   position: sticky;
   top: 0;
   display: grid;
@@ -125,6 +126,49 @@ html[data-theme="dark"] {
   min-height: 100vh;
   padding: 18px 14px;
 }
+
+.editor-workspace-sidebar__back {
+  margin-top: -4px;
+}
+
+.editor-sidebar-collapse-handle {
+  position: absolute;
+  top: 50%;
+  right: -14px;
+  z-index: 4;
+  display: grid;
+  width: 28px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: 999px;
+  background: var(--product-panel, var(--surface-1));
+  color: var(--product-text-secondary, var(--text-muted));
+  opacity: 0;
+  transform: translateY(-50%);
+  transition: opacity 150ms ease;
+}
+
+.editor-left-navigation:hover .editor-sidebar-collapse-handle,
+.editor-left-navigation:focus-within .editor-sidebar-collapse-handle {
+  opacity: 1;
+}
+
+.editor-left-edge-trigger {
+  position: fixed;
+  top: 50%;
+  left: -12px;
+  z-index: 20;
+  width: 30px !important;
+  border: 1px solid var(--product-line, var(--border)) !important;
+  border-radius: 0 999px 999px 0 !important;
+  background: var(--product-panel, var(--surface-1)) !important;
+  opacity: .45;
+  transform: translateY(-50%);
+}
+
+.editor-left-edge-trigger:hover,
+.editor-left-edge-trigger:focus-visible { left: 0; opacity: 1; }
 
 .editor-workspace-sidebar__brand {
   display: flex;
@@ -254,6 +298,7 @@ html[data-theme="dark"] {
 }
 
 .editor-layout-main {
+  position: relative;
   min-width: 0;
   overflow: hidden;
 }
@@ -274,6 +319,112 @@ html[data-theme="dark"] {
   padding: 12px 24px;
   border-bottom: 1px solid var(--border);
   background: color-mix(in srgb, var(--surface-1) 92%, transparent);
+}
+
+.editor-header__breadcrumb {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--product-text-muted, var(--text-muted));
+  font-size: 12px;
+}
+
+.editor-header__breadcrumb a:hover { color: var(--product-accent, var(--primary)); }
+.editor-header__breadcrumb h1 {
+  overflow: hidden;
+  color: var(--product-text, var(--on-surface));
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-properties-popover {
+  position: absolute;
+  top: 58px;
+  right: 16px;
+  z-index: 25;
+  width: min(340px, calc(100vw - 32px));
+  max-height: calc(100vh - 82px);
+  overflow-y: auto;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: var(--product-radius-md, 10px);
+  background: var(--product-panel, var(--surface-1));
+  box-shadow: var(--shadow-lg);
+}
+
+.editor-properties-popover__header,
+.editor-properties-popover__body { padding: 14px 16px; }
+.editor-properties-popover__header { border-bottom: 1px solid var(--product-line-soft, var(--border)); }
+.editor-properties-popover__header h2 { font-size: 14px; font-weight: 700; }
+.editor-properties-popover .editor-metadata-panel__versions {
+  display: block;
+  padding: 12px 16px;
+  border-top: 1px solid var(--product-line-soft, var(--border));
+}
+
+.editor-selection-popover {
+  display: flex;
+  min-height: 38px;
+  align-items: center;
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: var(--product-radius-md, 10px);
+  background: var(--product-panel, var(--surface-1));
+  box-shadow: var(--shadow-md);
+}
+
+.editor-insert-backdrop { position: fixed; inset: 0; z-index: 40; }
+.editor-insert-popover {
+  position: absolute;
+  top: 142px;
+  left: max(16px, var(--editor-left-width));
+  min-width: 220px;
+  padding: 6px;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: var(--product-radius-md, 10px);
+  background: var(--product-panel, var(--surface-1));
+  box-shadow: var(--shadow-lg);
+}
+
+.editor-outline {
+  position: fixed;
+  top: 176px;
+  right: 18px;
+  z-index: 8;
+  width: 210px;
+  max-height: calc(100vh - 210px);
+  overflow: hidden;
+  border-left: 1px solid var(--product-line, var(--border));
+  background: var(--product-bg, var(--bg));
+}
+.editor-outline__toggle { padding: 8px 12px; font-size: 12px; font-weight: 700; }
+.editor-outline__content { display: grid; overflow-y: auto; padding: 4px 12px 12px; }
+.editor-outline__content button { min-height: 34px; overflow: hidden; color: var(--product-text-secondary); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.editor-header__outline-action { display: none; }
+.editor-outline-drawer-backdrop { display: none; }
+.editor-outline[data-pinned="false"] { right: 0; width: 18px; min-height: 65vh; border-left-width: 2px; }
+.editor-outline[data-pinned="false"] .editor-outline__content,
+.editor-outline[data-pinned="false"] .editor-outline__toggle { opacity: 0; }
+.editor-outline[data-pinned="false"]:hover,
+.editor-outline[data-pinned="false"]:focus-within { width: 210px; padding-left: 8px; }
+.editor-outline[data-pinned="false"]:hover .editor-outline__content,
+.editor-outline[data-pinned="false"]:hover .editor-outline__toggle,
+.editor-outline[data-pinned="false"]:focus-within .editor-outline__content,
+.editor-outline[data-pinned="false"]:focus-within .editor-outline__toggle { opacity: 1; }
+
+.editor-rich-editor[data-fullscreen="true"] { overflow-y: auto !important; }
+.editor-rich-editor[data-fullscreen="true"] .editor-toolbar { position: sticky; top: 0; z-index: 3; }
+.tiptap-content h1, .tiptap-content h2, .tiptap-content h3, .tiptap-content h4, .tiptap-content h5, .tiptap-content h6 { scroll-margin-top: 104px; }
+
+@media (max-width: 1279px) {
+  .editor-outline { display: none; }
+  .editor-header__outline-action { display: inline-flex; }
+  .editor-outline-drawer-backdrop { position: fixed; z-index: 70; inset: 0; display: flex; justify-content: flex-end; background: rgb(15 23 42 / 18%); }
+  .editor-outline-drawer { width: min(320px, 86vw); height: 100%; padding: 16px 12px; border-left: 1px solid var(--product-line); background: var(--product-panel); box-shadow: var(--shadow-md); }
+  .editor-outline-drawer__header { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 10px; }
 }
 
 .editor-header__title-block {

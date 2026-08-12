@@ -16,11 +16,11 @@ export function useTiptapCommentMarks({ editor, noteId, suppressSelectionRef, re
       try {
         if (readOnlyRef.current) return
         const { start, end, commentId } = (event as CustomEvent).detail || {}
-        if (typeof start === 'number' && typeof end === 'number') {
+        if (typeof start === 'number' && typeof end === 'number' && commentId) {
           // 程序化 setTextSelection 会触发 onSelectionChange；suppressSelectionRef 在短暂窗口内阻断它，
           // 避免虚假的新建评论事件。
           suppressSelectionRef.current = true
-          editor.chain().focus().setTextSelection({ from: start, to: end }).setMark('commentMark', { commentId: commentId || `local-${Date.now()}` }).run()
+          editor.chain().focus().setTextSelection({ from: start, to: end }).setMark('commentMark', { commentId }).run()
           setTimeout(() => { suppressSelectionRef.current = false }, 120)
         }
       } catch { }

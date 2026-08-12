@@ -64,15 +64,13 @@ test('read-only toolbar blocks mutating handlers but keeps read actions availabl
   const exec = jest.fn()
   render(<TiptapToolbar disabled exec={exec} />)
 
-  for (const name of ['插入更多内容', '插入图片', '插入链接', '保存', '打开评论']) {
+  for (const name of ['插入更多内容', '插入图片', '插入链接', '保存']) {
     expect(screen.getByRole('button', { name })).toBeDisabled()
   }
   fireEvent.change(screen.getByRole('combobox', { name: '样式' }), { target: { value: 'h2' } })
   expect(screen.getByRole('button', { name: '更多格式' })).toBeDisabled()
   expect(exec).not.toHaveBeenCalled()
 
-  fireEvent.click(screen.getByRole('button', { name: '协作成员' }))
-  expect(exec).toHaveBeenCalledWith('collab')
   expect(screen.getByRole('button', { name: '进入全屏' })).toBeEnabled()
 })
 
@@ -87,11 +85,10 @@ test('viewer sees a view action without a delete action', () => {
 
 test('read-only editor header describes viewing while retaining collaborator access', () => {
   const onOpenCollab = jest.fn()
-  render(<NoteEditorHeader note={note} editorMode="rich" leftCollapsed={false} rightCollapsed={false}
-    onModeChange={jest.fn()} onVisibilityChange={jest.fn()}
-    onToggleLeft={jest.fn()} onToggleRight={jest.fn()} onOpenCollab={onOpenCollab} readOnly />)
+  render(<NoteEditorHeader note={note} editorMode="rich" onOpenComments={jest.fn()}
+    onToggleProperties={jest.fn()} propertiesOpen={false} onOpenCollab={onOpenCollab} readOnly />)
 
-  expect(screen.getByText('查看笔记')).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '共享笔记' })).toBeInTheDocument()
   fireEvent.click(screen.getByRole('button', { name: '打开协作' }))
   expect(screen.queryByRole('button', { name: '返回笔记' })).not.toBeInTheDocument()
   expect(onOpenCollab).toHaveBeenCalledTimes(1)
@@ -112,14 +109,11 @@ test('viewer write attempts never issue note, tag, or comment requests while rea
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: scrollIntoView })
   render(<NoteEditorShell id="n1" initialData={note as any} />)
 
+  fireEvent.click(screen.getByRole('button', { name: '打开笔记属性' }))
   await waitFor(() => expect(screen.getByRole('option', { name: '分类一' })).toBeInTheDocument())
   expect(screen.getByRole('combobox', { name: '样式' })).toBeDisabled()
   expect(screen.getByRole('option', { name: '未分类' }).closest('select')).toBeDisabled()
   expect(screen.getByRole('button', { name: '标签一' })).toBeDisabled()
-
-  fireEvent.click(screen.getByText('同步只读内容'))
-  fireEvent.click(await screen.findByRole('button', { name: '只读目录' }))
-  expect(scrollIntoView).toHaveBeenCalledTimes(1)
 
   fireEvent.click(screen.getByRole('button', { name: '打开协作' }))
   expect((await screen.findAllByText('协作者')).length).toBeGreaterThan(0)

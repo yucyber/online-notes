@@ -1,4 +1,5 @@
-import { PanelLeftClose, PanelLeftOpen, PanelRightClose, PanelRightOpen, Users } from 'lucide-react'
+import { ChevronRight, ListTree, MessageSquare, Settings2, Users } from 'lucide-react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types'
 import { EditorSaveStatus } from './EditorSaveStatus'
@@ -7,59 +8,47 @@ import type { SaveState } from './useEditorAutoSave'
 type Props = {
   note: Note
   editorMode: 'rich' | 'markdown'
-  leftCollapsed: boolean
-  rightCollapsed: boolean
-  onModeChange: (event: React.ChangeEvent<HTMLSelectElement>) => void
-  onVisibilityChange: (visibility: string) => void | Promise<void>
-  onToggleLeft: () => void
-  onToggleRight: () => void
+  onOpenComments: () => void
   onOpenCollab: () => void
+  onToggleProperties: () => void
+  onToggleOutline?: () => void
+  propertiesOpen: boolean
   saveState?: SaveState
   readOnly?: boolean
 }
 
 export function NoteEditorHeader({
   note,
-  editorMode,
-  leftCollapsed,
-  rightCollapsed,
-  onToggleLeft,
-  onToggleRight,
+  onOpenComments,
   onOpenCollab,
+  onToggleProperties,
+  onToggleOutline,
+  propertiesOpen,
   saveState,
   readOnly = false,
 }: Props) {
   return (
-    <div className="editor-header">
-      <div className="editor-header__title-block">
-        <div className="editor-header__title-row">
-          <div>
-            <span className="editor-header__eyebrow">{editorMode === 'rich' ? '协同编辑' : 'Markdown'}</span>
-            <div className="editor-header__title-line">
-              <h1>{note.title || (readOnly ? '查看笔记' : '未命名笔记')}</h1>
-              <span className="editor-header__mode-status">{readOnly ? '查看笔记' : '持续保存'}</span>
-            </div>
-          </div>
-        </div>
-      </div>
+    <header className="editor-header">
+      <nav className="editor-header__breadcrumb" aria-label="编辑器面包屑">
+        <Link href="/dashboard/notes">我的笔记</Link>
+        <ChevronRight className="h-3 w-3" aria-hidden />
+        <h1>{note.title || (readOnly ? '查看笔记' : '未命名笔记')}</h1>
+      </nav>
       <div className="editor-header__actions">
         <EditorSaveStatus state={saveState || 'idle'} />
-        <span className="editor-tooltip" data-tooltip={leftCollapsed ? '展开左侧导航' : '收起左侧导航'}>
-          <Button variant="ghost" size="icon" aria-label={leftCollapsed ? '展开左侧导航' : '收起左侧导航'} aria-controls="editor-left-navigation" aria-expanded={!leftCollapsed} onClick={onToggleLeft}>
-            {leftCollapsed ? <PanelLeftOpen className="h-4 w-4" aria-hidden /> : <PanelLeftClose className="h-4 w-4" aria-hidden />}
-          </Button>
+        <span className="editor-tooltip editor-header__outline-action" data-tooltip="大纲">
+          <Button variant="ghost" size="icon" aria-label="打开大纲" onClick={onToggleOutline}><ListTree className="h-4 w-4" aria-hidden /></Button>
         </span>
-        <span className="editor-tooltip" data-tooltip={rightCollapsed ? '展开右侧面板' : '收起右侧面板'}>
-          <Button variant="ghost" size="icon" aria-label={rightCollapsed ? '展开右侧面板' : '收起右侧面板'} aria-controls="editor-right-metadata" aria-expanded={!rightCollapsed} onClick={onToggleRight}>
-            {rightCollapsed ? <PanelRightOpen className="h-4 w-4" aria-hidden /> : <PanelRightClose className="h-4 w-4" aria-hidden />}
-          </Button>
+        <span className="editor-tooltip" data-tooltip="评论">
+          <Button variant="ghost" size="icon" aria-label="打开评论" onClick={onOpenComments}><MessageSquare className="h-4 w-4" aria-hidden /></Button>
         </span>
         <span className="editor-tooltip" data-tooltip="协作成员">
-          <Button variant="ghost" size="icon" aria-label="打开协作" title="协作成员" onClick={onOpenCollab}>
-            <Users className="h-4 w-4" aria-hidden />
-          </Button>
+          <Button variant="ghost" size="icon" aria-label="打开协作" onClick={onOpenCollab}><Users className="h-4 w-4" aria-hidden /></Button>
+        </span>
+        <span className="editor-tooltip" data-tooltip="笔记属性">
+          <Button variant="ghost" size="icon" aria-label="打开笔记属性" aria-expanded={propertiesOpen} onClick={onToggleProperties}><Settings2 className="h-4 w-4" aria-hidden /></Button>
         </span>
       </div>
-    </div>
+    </header>
   )
 }

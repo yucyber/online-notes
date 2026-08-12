@@ -170,4 +170,19 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(editor).not.toContain("className={`border rounded-[8px]")
     expect(editor).not.toContain("boxShadow: 'var(--shadow-md)'")
   })
+
+  test('编辑器页面级操作不与工具栏和侧栏轨道重复', () => {
+    const sidebar = read('src/components/editor/EditorWorkspaceSidebar.tsx')
+    const header = read('src/components/editor/NoteEditorHeader.tsx')
+    const toolbar = read('src/components/editor/TiptapToolbar.tsx')
+    const shell = read('src/components/editor/NoteEditorShell.tsx')
+
+    expect(sidebar.indexOf('返回我的笔记')).toBeLessThan(sidebar.indexOf('editor-workspace-sidebar__search'))
+    expect(header).toContain('打开评论')
+    expect(header).toContain('打开笔记属性')
+    expect(header).not.toContain('持续保存')
+    expect(toolbar).not.toContain("exec('comments')")
+    expect(toolbar).not.toContain("dispatch('collab')")
+    expect(shell).not.toContain('rightRestoreButtonRef')
+  })
 })
