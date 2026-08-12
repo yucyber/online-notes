@@ -11,6 +11,7 @@ type Props = {
   commentsDrawerRef: React.RefObject<HTMLDivElement>
   onCloseCollab: () => void
   onCloseComments: () => void
+  readOnly?: boolean
 }
 
 export function NoteEditorDrawers({
@@ -21,6 +22,7 @@ export function NoteEditorDrawers({
   commentsDrawerRef,
   onCloseCollab,
   onCloseComments,
+  readOnly = false,
 }: Props) {
   return (
     <>
@@ -44,7 +46,7 @@ export function NoteEditorDrawers({
               <div className="rounded-lg border">
                 <div className="px-3 py-2 border-b text-xs font-medium">{"协作者"}</div>
                 <div className="p-3">
-                  <CollaboratorsPanel noteId={id} />
+                  <CollaboratorsPanel noteId={id} readOnly={readOnly} />
                 </div>
               </div>
             </div>
@@ -76,7 +78,7 @@ export function NoteEditorDrawers({
             <div className="p-4 overflow-auto h-full">
               <div className="rounded-lg border" style={{ borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)' }}>
                 <div className="p-3">
-                  <CommentsPanel noteId={id} selection={selection} />
+                  <CommentsPanel noteId={id} selection={selection} readOnly={readOnly} />
                 </div>
               </div>
             </div>

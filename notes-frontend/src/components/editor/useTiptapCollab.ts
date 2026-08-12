@@ -4,6 +4,7 @@ import { useEffect, useRef, useState } from 'react'
 import type * as Y from 'yjs'
 import { WebsocketProvider } from 'y-websocket'
 import { notesAPI } from '@/lib/api/notes'
+import { appToast } from '@/lib/app-toast'
 import type { CollabStatus } from './tiptap-utils'
 
 type CollabUser = { id: string; name: string }
@@ -93,8 +94,35 @@ export function useTiptapCollab(opts: {
 
     setProvider(p)
     setConnStatus('connecting')
+    let offlineToastVisible = false
+    let authFailureTerminal = false
+
+    const requestReconnect = () => {
+      setConnStatus('connecting')
+      setWsDebug((previous) => ({ ...previous, connecting: true, connected: false }))
+      try { p?.connect() } catch { }
+    }
+
+    const markUnavailable = () => {
+      // 鉴权失败是终态，provider 随后的通用 disconnected 事件不能降级成可重连网络错误。
+      if (authFailureTerminal) return
+      setConnStatus('disconnected')
+      setLocalMode(true)
+      setWsDebug((previous) => ({ ...previous, connecting: false, connected: false, synced: false }))
+      if (offlineToastVisible) return
+
+      offlineToastVisible = true
+      appToast.error({
+        id: `collab:${noteId}`,
+        title: '实时协作暂不可用',
+        message: '已切换为离线编辑，恢复服务后可重新连接。',
+        action: { label: '重新连接', onClick: requestReconnect },
+        persistent: true,
+      })
+    }
 
     const markAuthFailure = (status: CollabStatus) => {
+      authFailureTerminal = true
       setConnStatus(status)
       setLocalMode(true)
       setCollabEnabled(false)
@@ -106,17 +134,25 @@ export function useTiptapCollab(opts: {
       const message = String(e?.message || e || '')
       if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
         markAuthFailure('auth-failed')
+        return
       }
+      markUnavailable()
     })
     p.on('connection-close', (e: any) => {
       console.warn('[Collab] Connection closed:', e?.code, e?.reason)
       if (e?.code === 1008 || e?.code === 4401 || String(e?.reason || '').includes('401')) {
         markAuthFailure('auth-failed')
+        return
       }
+      markUnavailable()
     })
 
     const statusHandler = (status: any) => {
       const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
+      if (s === 'disconnected') {
+        markUnavailable()
+        return
+      }
       setConnStatus(s)
       setWsDebug((prev) => ({
         ...prev,
@@ -127,6 +163,10 @@ export function useTiptapCollab(opts: {
       if (s === 'connected') {
         setLocalMode(false)
         setCollabEnabled(true)
+        if (offlineToastVisible) {
+          offlineToastVisible = false
+          appToast.dismiss(`collab:${noteId}`)
+        }
 
         const aw = p!.awareness
         const u = userRef.current
@@ -228,7 +268,8 @@ export function useTiptapCollab(opts: {
       if (disconnected) {
         failCount++
         if (failCount >= 2) {
-          console.warn('[Collab] Connection unstable but keeping retry...')
+          console.warn('[Collab] Connection unavailable; switching to offline editing')
+          markUnavailable()
         }
       } else {
         failCount = 0
@@ -249,6 +290,7 @@ export function useTiptapCollab(opts: {
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
       }
+      if (offlineToastVisible) appToast.dismiss(`collab:${noteId}`)
       p?.off('status', statusHandler)
       p?.off('sync', syncHandler as any)
       p?.off('destroy', destroyHandler)
@@ -284,8 +326,8 @@ export function useTiptapCollab(opts: {
 
   const reconnect = () => {
     try { provider?.connect() } catch { }
-    setLocalMode(false)
-    setCollabEnabled(true)
+    setConnStatus('connecting')
+    setWsDebug((previous) => ({ ...previous, connecting: true, connected: false }))
   }
 
   return {

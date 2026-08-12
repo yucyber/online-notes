@@ -1,46 +1,41 @@
-import { render, screen, fireEvent } from '@testing-library/react'
-import '@testing-library/jest-dom'
+import * as fs from 'node:fs'
+import * as path from 'node:path'
+import * as vm from 'node:vm'
 
-jest.mock('react-markdown', () => ({
-  __esModule: true,
-  default: ({ children }: { children: unknown }) => <div>{children as any}</div>,
-}))
+jest.mock('marked', () => {
+  const packageRoot = path.dirname(path.resolve(process.cwd(), 'node_modules', 'marked', 'package.json'))
+  const context: Record<string, any> = {}
+  vm.runInNewContext(fs.readFileSync(path.join(packageRoot, 'lib', 'marked.umd.js'), 'utf8'), context)
+  return { marked: context.marked.marked }
+})
 
-jest.mock('rehype-raw', () => ({
-  __esModule: true,
-  default: () => null,
-}))
+import { normalizeEditorContent } from '@/components/editor/useTiptapEditorBridge'
 
-jest.mock('rehype-sanitize', () => ({
-  __esModule: true,
-  default: () => null,
-}))
+describe('旧 Markdown 内容兼容', () => {
+  it.each([
+    ['**粗体**', '<strong>粗体</strong>'],
+    ['1. 第一项\n2. 第二项', '<ol>'],
+    ['[旧链接](https://example.com)', '<a href="https://example.com">旧链接</a>'],
+  ])('统一转为后端仍可保存的 HTML：%s', (raw, fragment) => {
+    const result = normalizeEditorContent(raw)
 
-jest.mock('react-syntax-highlighter', () => ({
-  Prism: ({ children }: { children: unknown }) => <pre>{children as any}</pre>,
-}))
+    expect(result.source).toBe('markdown')
+    expect(result.html).toContain(fragment)
+  })
 
-jest.mock('react-syntax-highlighter/dist/esm/styles/prism', () => ({
-  dracula: {},
-}))
+  it('保留真实 marked 列表中 inline siblings 之间的语义空格', () => {
+    const result = normalizeEditorContent('- **foo** *bar*')
+    const doc = new DOMParser().parseFromString(result.html, 'text/html')
 
-jest.mock('@/lib/draftStore', () => ({
-  getDraft: jest.fn(async () => null),
-  putDraft: jest.fn(async () => undefined),
-  removeDraft: jest.fn(async () => undefined),
-}))
+    expect(result.source).toBe('markdown')
+    expect(doc.querySelector('li')?.textContent).toBe('foo bar')
+  })
 
-import MarkdownEditor from '@/components/editor/MarkdownEditor'
+  it('Markdown block 与 inline HTML 混合时仍按 Markdown 转换', () => {
+    const result = normalizeEditorContent('# 标题\n<strong>正文</strong>')
 
-describe('MarkdownEditor 边界', () => {
-  it('全区域输入与快捷保存', () => {
-    const onSave = jest.fn(async () => { })
-    const onSaveDraft = jest.fn(async () => { })
-    render(<MarkdownEditor initialContent={''} initialTitle={'t'} onSave={onSave} onSaveDraft={onSaveDraft} isNew draftKey={'new'} />)
-    const textarea = screen.getByPlaceholderText(/使用Markdown格式编写笔记/)
-    fireEvent.click(textarea)
-    fireEvent.change(textarea, { target: { value: 'abc' } })
-    fireEvent.keyDown(textarea, { ctrlKey: true, key: 's' })
-    expect(onSave).toHaveBeenCalled()
+    expect(result.source).toBe('markdown')
+    expect(result.html).toContain('<h1>标题</h1>')
+    expect(result.html).toContain('<strong>正文</strong>')
   })
 })

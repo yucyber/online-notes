@@ -3,7 +3,7 @@ import { aclAPI, invitationsAPI } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
-export function CollaboratorsPanel({ noteId }: { noteId: string }) {
+export function CollaboratorsPanel({ noteId, readOnly = false }: { noteId: string; readOnly?: boolean }) {
   const [acl, setAcl] = useState<{ userId: string; role: string }[]>([])
   const [visibility, setVisibility] = useState('private')
   const [email, setEmail] = useState('')
@@ -37,6 +37,7 @@ export function CollaboratorsPanel({ noteId }: { noteId: string }) {
     }
   }, [invites, lastInvite])
   const sendInvite = async () => {
+    if (readOnly) return
     if (!email) return
     const created = await invitationsAPI.create(noteId, role, email, 24)
     setLastInvite(created)
@@ -65,13 +66,13 @@ export function CollaboratorsPanel({ noteId }: { noteId: string }) {
         <div className="font-medium mb-2">发送邀请</div>
         <div className="flex gap-2">
           <label htmlFor="invite-email" className="sr-only">邀请邮箱</label>
-          <Input id="invite-email" aria-label="邀请邮箱" value={email} onChange={e => setEmail(e.target.value)} placeholder="邮箱" />
+          <Input id="invite-email" aria-label="邀请邮箱" value={email} onChange={e => setEmail(e.target.value)} placeholder="邮箱" disabled={readOnly} />
           <label htmlFor="invite-role" className="sr-only">权限角色</label>
-          <select id="invite-role" aria-label="权限角色" value={role} onChange={e => setRole(e.target.value as any)} className="border rounded px-2 text-sm" style={{ height: 44 }}>
+          <select id="invite-role" aria-label="权限角色" value={role} onChange={e => setRole(e.target.value as any)} className="border rounded px-2 text-sm" style={{ height: 44 }} disabled={readOnly}>
             <option value="viewer">只读</option>
             <option value="editor">可编辑</option>
           </select>
-          <Button onClick={sendInvite} aria-label="发送邀请">发送</Button>
+          <Button onClick={sendInvite} aria-label="发送邀请" disabled={readOnly}>发送</Button>
         </div>
         {lastInvite && (
           <div className="mt-3 text-xs bg-blue-50 border border-blue-200 text-blue-700 rounded px-3 py-2 flex items-center justify-between">

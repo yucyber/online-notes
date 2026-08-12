@@ -14,7 +14,7 @@ export const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className
   'auth-failed': { label: '协作鉴权失败', className: 'text-red-600', detail: '请重新登录后重连' },
   connecting: { label: '连接中', className: 'text-yellow-600' },
   connected: { label: '已连接', className: 'text-green-600' },
-  disconnected: { label: '已断开', className: 'text-red-600' },
+  disconnected: { label: '实时协作暂不可用，已离线编辑', className: 'text-amber-700' },
 }
 
 export function colorFromString(s: string) {

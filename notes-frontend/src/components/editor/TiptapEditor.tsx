@@ -1,6 +1,8 @@
 'use client'
 import { useEffect, useMemo, useState, useRef } from 'react'
 import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
+import type { Editor as TiptapEditorInstance } from '@tiptap/core'
+import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
@@ -8,9 +10,10 @@ import { createTiptapExtensions } from './tiptap-extensions'
 import { COLLAB_STATUS_META, colorFromString, hexToRgb, sanitizeHTML, srgb } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
 import { useTiptapPersistence } from './useTiptapPersistence'
-import { useTiptapEditorBridge } from './useTiptapEditorBridge'
+import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge, type NormalizedEditorContent } from './useTiptapEditorBridge'
 import { useTiptapCommentMarks } from './useTiptapCommentMarks'
 import { TiptapAiActions } from './TiptapAiActions'
+import { appToast } from '@/lib/app-toast'
 
 type Props = {
   noteId: string
@@ -26,7 +29,41 @@ type Props = {
   updatedAt?: string
 }
 
+const CONTENT_NORMALIZATION_VERSION = 1
+
+export function isLegacyRawMarkdownDocument(
+  editor: TiptapEditorInstance,
+  raw: string,
+  source: NormalizedEditorContent['source'],
+) {
+  if (source !== 'markdown' || typeof document === 'undefined') return false
+
+  try {
+    const container = document.createElement('div')
+    container.innerHTML = raw
+    const legacyDocument = ProseMirrorDOMParser.fromSchema(editor.state.schema).parse(container)
+    // 只有当前 Yjs document 与旧后端 raw 的历史 seed 完全一致，才允许格式迁移。
+    return editor.state.doc.eq(legacyDocument)
+  } catch {
+    return false
+  }
+}
+
 export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
+  const documentKey = `${noteId}:${versionKey || ''}`
+  const initialSeedRef = useRef<{
+    key: string
+    raw: string
+    updatedAt?: string
+    normalized: NormalizedEditorContent
+  } | null>(null)
+  if (!initialSeedRef.current || initialSeedRef.current.key !== documentKey) {
+    const raw = initialHTML || ''
+    initialSeedRef.current = { key: documentKey, raw, updatedAt, normalized: normalizeEditorContent(raw) }
+  }
+  // 同一 document 的保存响应只更新外围数据，不能重建 editor 或覆盖尚未保存的本地输入。
+  const initialSeed = initialSeedRef.current
+  const normalizedInitialContent = initialSeed.normalized
   const ydoc = useMemo(() => new Y.Doc(), [])
   const room = useMemo(() => `note:${String(noteId).toLowerCase()}${versionKey ? `:${versionKey}` : ''}`,
     [noteId, versionKey],
@@ -42,6 +79,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     reconnect,
   } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
   const effectiveReadOnly = readOnly || roomRole !== 'writer'
+  const effectiveReadOnlyRef = useRef(effectiveReadOnly)
+  effectiveReadOnlyRef.current = effectiveReadOnly
   const { idbSynced } = useTiptapPersistence(room, ydoc)
 
   const injectBusyRef = useRef(false)
@@ -56,16 +95,54 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const suppressSelectionRef = useRef(false)
   const lastSelectionRef = useRef<{ from: number; to: number }>({ from: -1, to: -1 })
   const selectionDebounceRef = useRef<number | null>(null)
+
+  useEffect(() => {
+    if (!normalizedInitialContent.preservedRaw) return
+    appToast.error({
+      id: `content-conversion:${noteId}`,
+      title: '内容格式转换失败',
+      message: '已保留原始文本，请检查内容后重试。',
+      persistent: true,
+    })
+  }, [normalizedInitialContent.preservedRaw, noteId])
+
   const editor = useEditor({
     extensions: createTiptapExtensions({ collabEnabled, ydoc, provider, user }),
     // 协作模式且非版本回溯时，Yjs 是正文真相源，不能用 initialHTML 覆盖编辑器内容；
     // 版本回溯或协作未启用时才需要将 HTML 设为初始内容。
-    content: ((collabEnabled && !versionKey) ? undefined : (initialHTML || '<p></p>')),
-    editorProps: { attributes: { class: 'tiptap-content min-h-full outline-none' } },
+    content: ((collabEnabled && !versionKey) ? undefined : normalizedInitialContent.html),
+    editorProps: {
+      attributes: { class: 'tiptap-content min-h-full outline-none' },
+      handlePaste: (view, event) => {
+        const clipboard = event.clipboardData
+        if (!clipboard) return false
+        const normalized = normalizeMarkdownPaste(
+          clipboard.getData('text/plain'),
+          clipboard.getData('text/html'),
+        )
+        if (!normalized) return false
+
+        event.preventDefault()
+        if (normalized.preservedRaw) {
+          appToast.error({
+            id: `content-conversion:${noteId}`,
+            title: '内容格式转换失败',
+            message: '已保留原始文本，请检查内容后重试。',
+            persistent: true,
+          })
+        }
+
+        const container = document.createElement('div')
+        container.innerHTML = sanitizeHTML(normalized.html)
+        const slice = ProseMirrorDOMParser.fromSchema(view.state.schema).parseSlice(container)
+        view.dispatch(view.state.tr.replaceSelection(slice).scrollIntoView())
+        return true
+      },
+    },
     editable: !effectiveReadOnly,
     immediatelyRender: false,
-  }, [provider, collabEnabled])
-  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef })
+  }, [provider, collabEnabled, documentKey])
+  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef, readOnly: effectiveReadOnly, readOnlyRef: effectiveReadOnlyRef })
 
   useEffect(() => {
     if (!editor) return
@@ -113,8 +190,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [editor, effectiveReadOnly])
 
   useEffect(() => {
+    if (!editor || effectiveReadOnly) return
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return
+      if (effectiveReadOnlyRef.current) return
       if (event.data?.type === 'INSERT_MINDMAP' && editor) {
         const { id } = event.data.payload
         editor.chain().focus().insertContent({
@@ -129,10 +208,10 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     window.addEventListener('message', handleMessage)
     return () => window.removeEventListener('message', handleMessage)
-  }, [editor])
+  }, [editor, effectiveReadOnly])
 
   useEffect(() => {
-    if (!editor || migratedOnceRef.current) return
+    if (!editor || migratedOnceRef.current || effectiveReadOnly) return
     try {
       const ranges: Array<{ from: number; to: number; label: string }> = []
       editor.state.doc.descendants((node: any, pos: number) => {
@@ -148,13 +227,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         }
       })
       ranges.sort((a, b) => b.from - a.from).forEach(r => {
+        if (effectiveReadOnlyRef.current) return
         suppressSelectionRef.current = true
         editor.chain().focus().setTextSelection({ from: r.from, to: r.to }).deleteSelection().insertStatusPill({ label: r.label, variant: 'inprogress' }).run()
         setTimeout(() => { suppressSelectionRef.current = false }, 120)
       })
     } catch { }
     migratedOnceRef.current = true
-  }, [editor])
+  }, [editor, effectiveReadOnly])
 
   useEffect(() => {
     if (!editor) return
@@ -198,8 +278,9 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   }, [editor, onContentChangeRef])
 
   useEffect(() => {
-    if (wsDebug.synced && editor && initialHTML && initialHTML !== '<p></p>' && provider) {
+    if (!effectiveReadOnly && wsDebug.synced && editor && normalizedInitialContent.html !== '<p></p>' && provider) {
       const timer = setTimeout(() => {
+        if (effectiveReadOnlyRef.current) return
         try {
           const meta = ydoc.getMap('meta')
           const clientId = provider.awareness.clientID
@@ -210,21 +291,31 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             hasLocalDocContent = frag && typeof frag.length === 'number' ? frag.length > 0 : false
           } catch { }
 
-          const currentText = editor.getText().trim()
-          const isDirtyMarkdown = currentText.startsWith('# ') || currentText.startsWith('## ')
-          const isCleanHTML = initialHTML.includes('<h') || initialHTML.includes('<ul') || initialHTML.includes('<ol')
-
           const lastUpdatedAt = meta.get('lastUpdatedAt') as number | undefined
-          const serverUpdatedAt = updatedAt ? new Date(updatedAt).getTime() : 0
+          const serverUpdatedAt = initialSeed.updatedAt ? new Date(initialSeed.updatedAt).getTime() : 0
           const isExternalUpdate = serverUpdatedAt > (lastUpdatedAt || 0) + 1000
+          const hasCurrentNormalization = meta.get('contentNormalizationVersion') === CONTENT_NORMALIZATION_VERSION
+          const matchesLegacyRaw = !hasCurrentNormalization && isLegacyRawMarkdownDocument(
+            editor,
+            initialSeed.raw,
+            normalizedInitialContent.source,
+          )
 
+          if (effectiveReadOnlyRef.current) return
           ydoc.transact(() => {
-            const shouldSeed = (!meta.get('seeded') && !hasLocalDocContent) || ((isDirtyMarkdown && isCleanHTML) && !hasLocalDocContent)
-            if (shouldSeed || isExternalUpdate) {
+            const shouldSeed = !meta.get('seeded') && !hasLocalDocContent
+            const shouldRepairLegacy = hasLocalDocContent && matchesLegacyRaw
+            // Markdown 外部快照不得覆盖已发生增量的协作文档；仅空文档或精确命中旧 raw 时可应用。
+            const shouldApplyExternal = isExternalUpdate
+              && (normalizedInitialContent.source !== 'markdown' || !hasLocalDocContent || matchesLegacyRaw)
+            if (shouldSeed || shouldRepairLegacy || shouldApplyExternal) {
               meta.set('seeded', { by: clientId, at: Date.now() })
               if (serverUpdatedAt > 0) meta.set('lastUpdatedAt', serverUpdatedAt)
-              editor.commands.setContent(initialHTML)
-              console.log('[Collab] seeded/repaired by', clientId, { isExternalUpdate, serverUpdatedAt, lastUpdatedAt })
+              if (normalizedInitialContent.source === 'markdown') {
+                meta.set('contentNormalizationVersion', CONTENT_NORMALIZATION_VERSION)
+              }
+              editor.commands.setContent(normalizedInitialContent.html)
+              console.log('[Collab] seeded/repaired by', clientId, { shouldRepairLegacy, shouldApplyExternal, serverUpdatedAt, lastUpdatedAt })
             } else {
               console.log('[Collab] skip seed, already seeded', meta.get('seeded'))
             }
@@ -235,12 +326,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }, Math.floor(Math.random() * 300) + 100)
       return () => clearTimeout(timer)
     }
-  }, [wsDebug.synced, editor, initialHTML, provider, updatedAt, idbSynced, ydoc])
+  }, [wsDebug.synced, editor, normalizedInitialContent, provider, initialSeed, idbSynced, ydoc, effectiveReadOnly])
 
   useEffect(() => {
-    if (!editor) return
+    if (!editor || effectiveReadOnly) return
     const setHandler = (e: Event) => {
       try {
+        if (effectiveReadOnlyRef.current) return
         const html = (e as CustomEvent).detail?.html as string
         if (typeof html === 'string') {
           if (injectBusyRef.current) return
@@ -250,6 +342,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           const p = provider
           const safe = sanitizeHTML(html || '<p></p>')
           const apply = () => {
+            if (effectiveReadOnlyRef.current) return
             injectBusyRef.current = true
             suppressSelectionRef.current = true
             if (collabEnabled && p) {
@@ -298,7 +391,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     }
     document.addEventListener('editor:setContent', setHandler as any)
     return () => { document.removeEventListener('editor:setContent', setHandler as any) }
-  }, [editor, provider, collabEnabled, ydoc])
+  }, [editor, provider, collabEnabled, ydoc, effectiveReadOnly])
 
   useEffect(() => {
     const card = document.getElementById('editor-card')
@@ -416,7 +509,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           连接状态：<span className={connMeta.className}>{connMeta.label}</span>
           {connMeta.detail && <span className="ml-2 text-xs text-gray-500">{connMeta.detail}</span>}
           <span className="ml-2 text-[11px] text-gray-500">ws[{wsDebug.connected ? 'on' : wsDebug.connecting ? 'dial' : 'off'}] sync[{wsDebug.synced ? 'ok' : '…'}]</span>
-          {localMode && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
+          {localMode && connStatus !== 'disconnected' && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
           {effectiveReadOnly && <span className="ml-2 text-xs font-medium text-amber-700">只读权限，无法修改内容</span>}
         </div>
         <div className="flex items-center gap-1" role="list" aria-label="在线协作者">

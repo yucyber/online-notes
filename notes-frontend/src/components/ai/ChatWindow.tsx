@@ -5,6 +5,7 @@ import { X, Trash2, Send, Bot, User as UserIcon, Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
+import { appToast } from '@/lib/app-toast';
 
 interface Message {
     role: 'user' | 'assistant';
@@ -61,16 +62,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
         localStorage.removeItem('ai_pet_conversation_id');
     };
 
-    const handleSend = async () => {
-        if (!input.trim() || isLoading) return;
-
-        const userMsg: Message = {
-            role: 'user',
-            content: input,
-        };
-
-        setMessages((prev) => [...prev, userMsg]);
-        setInput('');
+    const generateReply = async (userMsg: Message, appendUserMessage: boolean) => {
+        if (appendUserMessage) setMessages((prev) => [...prev, userMsg]);
         setIsLoading(true);
 
         try {
@@ -125,15 +118,31 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                     });
                 }
             }
+            appToast.dismiss('ai-pet:request');
         } catch (error) {
             console.error('Chat error:', error);
             setMessages((prev) => [
                 ...prev,
-                { role: 'assistant', content: 'Sorry, something went wrong. Please try again.' },
+                { role: 'assistant', content: 'AI 生成失败，请稍后重试。' },
             ]);
+            appToast.error({
+                id: 'ai-pet:request',
+                title: 'AI 生成失败',
+                message: '请检查网络后重试。',
+                action: { label: '重试生成', onClick: () => { void generateReply(userMsg, false); } },
+                persistent: true,
+            });
         } finally {
             setIsLoading(false);
         }
+    };
+
+    const handleSend = () => {
+        const content = input.trim();
+        if (!content || isLoading) return;
+
+        setInput('');
+        void generateReply({ role: 'user', content }, true);
     };
 
     if (!isOpen) return null;

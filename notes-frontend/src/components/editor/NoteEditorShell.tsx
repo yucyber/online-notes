@@ -3,15 +3,9 @@
 import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
-import { marked } from 'marked'
-import { htmlToMarkdown } from '@/utils/markdown-converter'
 import dynamic from 'next/dynamic'
-const MarkdownEditor = dynamic(() => import('@/components/editor/MarkdownEditor'), {
-  ssr: false,
-  loading: () => <div className="animate-pulse bg-gray-100 h-[500px] rounded" />,
-})
 import { Button } from '@/components/ui/button'
-import { ChevronDown, ChevronUp, Plus, Users } from 'lucide-react'
+import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
@@ -20,7 +14,11 @@ import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
 import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
+import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
+import type { EditorSnapshot } from '@/components/editor/editor-save-types'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
+import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
+import { appToast } from '@/lib/app-toast'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export interface NoteEditorShellProps {
@@ -45,11 +43,15 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
-  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('rich')
   const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
-  const [uiDegraded, setUiDegraded] = useState<boolean>(false)
+  const [currentTitle, setCurrentTitle] = useState(initialData?.title ?? '')
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const readOnly = !canWriteNote(note, me.id)
+  const rejectReadOnlyWrite = useCallback(() => {
+    if (!readOnly) return false
+    appToast.error({ id: `permission:${id}`, title: '当前笔记仅可查看' })
+    return true
+  }, [id, readOnly])
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
   const commentsDrawerRef = useRef<HTMLDivElement>(null)
@@ -62,39 +64,41 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     setLinkHref,
     setShowInsertMenu,
     setShowLinkDialog,
-    setShowSidebar,
     showInsertMenu,
     showLinkDialog,
-    showSidebar,
   } = useNoteEditorPage()
+  const { preferences, toggleLeft, toggleRight, setLeftWidth } = useEditorLayoutPreferences()
+  const leftRestoreButtonRef = useRef<HTMLButtonElement>(null)
+  const rightRestoreButtonRef = useRef<HTMLButtonElement>(null)
+  const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
+  const [isResizingLeft, setIsResizingLeft] = useState(false)
   const [showMeta, setShowMeta] = useState(true)
   useEffect(() => {
-    const open = () => setShowLinkDialog(true)
+    const open = () => {
+      if (rejectReadOnlyWrite()) return
+      setShowLinkDialog(true)
+    }
     document.addEventListener('open:link-dialog', open as any)
     return () => { document.removeEventListener('open:link-dialog', open as any) }
-  }, [setShowLinkDialog])
-
-  // 生成 Markdown 大纲
-  const extractHeadingsFromMarkdown = useCallback((md: string) => {
-    const lines = md.split(/\n+/)
-    const result: Array<{ id: string; text: string; level: number }> = []
-    for (const line of lines) {
-      const m = /^(#{1,6})\s+(.+)$/.exec(line.trim())
-      if (m) {
-        const level = m[1].length
-        const text = m[2].trim()
-        const id = text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + result.length
-        result.push({ id, text, level })
-      }
+  }, [rejectReadOnlyWrite, setShowLinkDialog])
+  useEffect(() => {
+    const open = () => {
+      if (rejectReadOnlyWrite()) return
+      setShowInsertMenu(true)
     }
-    setToc(prev => {
-      if (prev.length !== result.length) return result
-      for (let i = 0; i < prev.length; i++) {
-        if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
-      }
-      return prev
-    })
-  }, [])
+    document.addEventListener('open:insert-menu', open as any)
+    return () => { document.removeEventListener('open:insert-menu', open as any) }
+  }, [rejectReadOnlyWrite, setShowInsertMenu])
+  useEffect(() => {
+    if (!readOnly) return
+    const rejectHistoricalCommand = (event: Event) => {
+      event.preventDefault()
+      event.stopImmediatePropagation()
+      rejectReadOnlyWrite()
+    }
+    document.addEventListener('tiptap:exec', rejectHistoricalCommand, true)
+    return () => { document.removeEventListener('tiptap:exec', rejectHistoricalCommand, true) }
+  }, [readOnly, rejectReadOnlyWrite])
 
   // 生成 HTML 大纲（用于 TipTap）
   const extractHeadingsFromHTML = useCallback((html: string) => {
@@ -125,7 +129,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     if (u) setMe({ id: u.id, name: u.email })
   }, [])
 
-  // UI 降级：依据设备/网络/可及性偏好自动选择轻量模式，并上报 RUM 事件
+  // 仅保留低性能环境观测；统一编辑器后不能再降级到另一套内容格式。
   useEffect(() => {
     try {
       const nav: any = navigator
@@ -140,8 +144,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         saveData || isOffline || (downlink != null && downlink < 1.5) || (deviceMemory != null && deviceMemory < 4) || (hw != null && hw <= 4) || prefersReducedMotion
       )
       if (lowSpec) {
-        setEditorMode('markdown')
-        setUiDegraded(true)
         try {
           const evt = new CustomEvent('rum', {
             detail: {
@@ -156,14 +158,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       }
     } catch { }
   }, [])
-
-  // RUM：编辑器模式切换事件
-  useEffect(() => {
-    try {
-      const evt = new CustomEvent('rum', { detail: { type: 'collab', name: 'editor_mode_change', meta: { mode: editorMode, noteId: id } } })
-      document.dispatchEvent(evt)
-    } catch { }
-  }, [editorMode, id])
 
 
 
@@ -205,7 +199,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       if (active) {
         // 进入全屏时隐藏侧栏，禁用页面滚动，聚焦工具栏按钮以保可达性
         document.body.style.overflow = 'hidden'
-        setShowSidebar(false)
         const btn = document.getElementById('fullscreen-button') as HTMLButtonElement | null
         // 防止聚焦导致工具栏容器发生横向滚动
         try {
@@ -253,7 +246,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       document.removeEventListener('comments:hover', onCommentsHover as any)
       document.removeEventListener('comments:open', onCommentsOpen as any)
     }
-  }, [setIsFullscreen, setShowSidebar, setShowCommentsDrawer])
+  }, [setIsFullscreen, setShowCommentsDrawer])
 
   const handleToggleFullscreen = () => {
     const target = editorContainerRef.current || document.documentElement
@@ -288,19 +281,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       const data = await fetchNoteById(id)
       setNote(data)
       setCurrentContent(data?.content || '')
-      // 根据内容类型自动选择编辑器模式：Markdown 快照回退后避免富文本空白
-      try {
-        const raw = String(data?.content || '')
-        const isLikelyHTML = /<\/?[a-z][\s\S]*>/i.test(raw)
-        const isLikelyMarkdown = /(\n|^)\s{0,3}(#{1,6}\s+|[-*]\s+|\d+\.\s+|`{3,}|>|\[.+\]\(.+\))/m.test(raw)
-        // 若此前因 UI 降级已选择 markdown，则不强制改回
-        setEditorMode(prev => {
-          // 如果内容明显是 HTML，强制使用富文本模式，否则 Markdown 编辑器会显示源码，体验极差
-          if (isLikelyHTML) return 'rich'
-          if (prev === 'markdown') return prev
-          return (!isLikelyHTML && isLikelyMarkdown) ? 'markdown' : 'rich'
-        })
-      } catch { }
+      setCurrentTitle(data?.title || '')
       // 移除强制 setContent，避免与 Yjs 协同冲突导致内容重复或覆盖
       // try { document.dispatchEvent(new CustomEvent('editor:setContent', { detail: { html: String(data?.content || '<p></p>') } })) } catch { }
       setError('')
@@ -392,22 +373,58 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [note])
 
   const toggleTag = (tagId: string) => {
+    if (rejectReadOnlyWrite()) return
     setSelectedTags((prev) =>
       prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId]
     )
   }
 
-  const { handleSave, handleSaveDraft, addTagsByNames } = useNoteSave({
+  const { handleSave: persistNote, addTagsByNames: persistTags } = useNoteSave({
     id,
     selectedCategory,
     auxCategoryIds,
     selectedTags,
     categories,
     tags,
-    editorMode,
+    editorMode: 'rich',
     setNote: (updater) => setNote(prev => updater(prev)),
     setTags,
   })
+  const handleSave = useCallback(async (snapshot: EditorSnapshot) => {
+    if (rejectReadOnlyWrite()) return
+    await persistNote(snapshot.title, snapshot.content)
+  }, [persistNote, rejectReadOnlyWrite])
+  const addTagsByNames = useCallback(async (names: string[]) => {
+    if (rejectReadOnlyWrite()) return []
+    return persistTags(names)
+  }, [persistTags, rejectReadOnlyWrite])
+  const { state: saveState, saveNow } = useEditorAutoSave({
+    noteId: id,
+    snapshot: {
+      title: currentTitle,
+      content: currentContent,
+      visibility: note?.visibility,
+      categoryId: selectedCategory || undefined,
+      categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
+      tags: selectedTags,
+      status: 'published',
+    },
+    enabled: Boolean(note) && !readOnly,
+    save: handleSave,
+    delayMs: 400,
+  })
+
+  useEffect(() => {
+    const onSaveShortcut = (event: KeyboardEvent) => {
+      if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === 's') {
+        event.preventDefault()
+        if (rejectReadOnlyWrite()) return
+        void saveNow()
+      }
+    }
+    document.addEventListener('keydown', onSaveShortcut)
+    return () => { document.removeEventListener('keydown', onSaveShortcut) }
+  }, [rejectReadOnlyWrite, saveNow])
 
   const childrenByParent = (() => {
     const m: Record<string, Category[]> = {}
@@ -444,6 +461,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             checked={checked}
             disabled={readOnly}
             onChange={(e) => {
+              if (rejectReadOnlyWrite()) return
               const next = e.target.checked
                 ? Array.from(new Set([...auxCategoryIds, id]))
                 : auxCategoryIds.filter(x => x !== id)
@@ -462,40 +480,49 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     )
   }
 
-  const handleModeChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
-    const newMode = e.target.value as 'rich' | 'markdown'
-    if (newMode === editorMode) return
-
-    let newContent = currentContent
-    if (newMode === 'rich') {
-      // Markdown -> HTML
-      try {
-        newContent = await marked.parse(currentContent)
-      } catch (err) {
-        console.error('Markdown conversion failed:', err)
-      }
-    } else {
-      // HTML -> Markdown
-      newContent = htmlToMarkdown(currentContent)
-    }
-
-    setNote(prev => prev ? { ...prev, content: newContent } : null)
-    setCurrentContent(newContent)
-    setEditorMode(newMode)
-  }
-
   const handleBack = () => {
     router.push('/dashboard/notes')
   }
 
-  const handleMarkdownChange = useCallback((content: string) => {
-    setCurrentContent(content)
-    extractHeadingsFromMarkdown(content)
-  }, [extractHeadingsFromMarkdown])
+  const focusRestoreButton = (button: React.RefObject<HTMLButtonElement>) => {
+    window.requestAnimationFrame(() => button.current?.focus())
+  }
 
-  const handleSelectionChange = useCallback((start: number, end: number) => {
-    setSelection({ start, end })
-  }, [])
+  const handleToggleLeft = () => {
+    const isCollapsing = !preferences.leftCollapsed
+    toggleLeft()
+    if (isCollapsing) focusRestoreButton(leftRestoreButtonRef)
+  }
+
+  const handleToggleRight = () => {
+    const isCollapsing = !preferences.rightCollapsed
+    toggleRight()
+    if (isCollapsing) focusRestoreButton(rightRestoreButtonRef)
+  }
+
+  const finishLeftResize = () => {
+    const drag = dragRef.current
+    if (!drag) return
+    setLeftWidth(drag.width)
+    dragRef.current = null
+    setIsResizingLeft(false)
+  }
+
+  const cancelLeftResize = useCallback(() => {
+    const drag = dragRef.current
+    if (!drag) return
+    setLeftWidth(drag.startWidth, false, false)
+    dragRef.current = null
+    setIsResizingLeft(false)
+  }, [setLeftWidth])
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') cancelLeftResize()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [cancelLeftResize])
 
   if (loading) {
     return (
@@ -523,24 +550,27 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }
 
   return (
-    <div className="space-y-6 mx-auto w-full max-w-[1400px] px-4">
+    <div className="editor-shell">
 
       <NoteEditorHeader
         note={note}
         readOnly={readOnly}
-        editorMode={editorMode}
-        showSidebar={showSidebar}
+        editorMode="rich"
+        leftCollapsed={preferences.leftCollapsed}
+        rightCollapsed={preferences.rightCollapsed}
         onBack={handleBack}
-        onModeChange={handleModeChange}
+        onModeChange={() => undefined}
         onVisibilityChange={async (visibility) => {
-          if (readOnly) return
+          if (rejectReadOnlyWrite()) return
           try {
             await updateNote(id, { visibility: visibility as any })
             await loadNote()
           } catch { }
         }}
-        onToggleSidebar={() => setShowSidebar((current) => !current)}
+        onToggleLeft={handleToggleLeft}
+        onToggleRight={handleToggleRight}
         onOpenCollab={() => setShowCollabDrawer(true)}
+        saveState={saveState}
       />
       {error && (
         <div
@@ -600,7 +630,10 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                     className="w-full rounded-lg border p-3 text-sm"
                     style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
                     value={selectedCategory}
-                    onChange={(e) => setSelectedCategory(e.target.value)}
+                    onChange={(e) => {
+                      if (rejectReadOnlyWrite()) return
+                      setSelectedCategory(e.target.value)
+                    }}
                     disabled={readOnly || metaLoading || !!metaError}
                   >
                     <option value="">未分类</option>
@@ -634,9 +667,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                       type="text"
                       value={tagInput}
                       disabled={readOnly}
-                      onChange={(e) => setTagInput(e.target.value)}
+                      onChange={(e) => {
+                        if (rejectReadOnlyWrite()) return
+                        setTagInput(e.target.value)
+                      }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter') {
+                          if (rejectReadOnlyWrite()) return
                           const parts = tagInput.split(/[,\s]+/)
                           setTagInput('')
                           addTagsByNames(parts)
@@ -650,7 +687,10 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                       disabled={readOnly}
                       className="whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
                       style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                      onClick={() => setSelectedTags([])}
+                      onClick={() => {
+                        if (rejectReadOnlyWrite()) return
+                        setSelectedTags([])
+                      }}
                     >清空标签</button>
                   </div>
                   {tagInput && (
@@ -660,12 +700,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                         {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
                           const id = (t.id || (t as unknown as { _id?: string })?._id || '')
                           return (
-                            <button key={id || t.name} type="button" onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                            <button key={id || t.name} type="button" disabled={readOnly || !id} onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
                               {t.name}
                             </button>
                           )
                         })}
-                        <button type="button" onClick={() => { addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
+                        <button type="button" disabled={readOnly} onClick={() => { if (rejectReadOnlyWrite()) return; void addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
                           创建标签 “{tagInput}”
                         </button>
                       </div>
@@ -688,7 +728,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                             key={tagId || tag.name}
                             type="button"
                             onClick={() => tagId && toggleTag(tagId)}
-                            disabled={!tagId}
+                            disabled={readOnly || !tagId}
                             className="rounded-full border px-3 py-1 text-sm transition"
                             style={{
                               ...(isActive
@@ -713,24 +753,77 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           </div>
         )}
 
-        <div className="px-6 pb-2">
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-gray-500">编辑器</span>
-            <select className="rounded border px-2 py-1 text-xs" value={editorMode} onChange={handleModeChange}>
-              <option value="rich">富文本（协同）</option>
-              <option value="markdown">Markdown</option>
-            </select>
-            {uiDegraded && (
-              <span className="ml-2 text-[11px] px-2 py-0.5 rounded bg-yellow-50 border border-yellow-200 text-yellow-700">已自动降级为轻量模式，可手动切换</span>
-            )}
-          </div>
-        </div>
       </div>
-      <div className="grid gap-6 p-6 lg:grid-cols-12 xl:grid-cols-12">
-        <div className={showSidebar ? 'lg:col-span-10 xl:col-span-9' : 'lg:col-span-12 xl:col-span-12'}>
-          {editorMode === 'rich' ? (
-            <div ref={editorContainerRef} className="space-y-3" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}>
+      <div
+        className="editor-layout-grid"
+        data-right-collapsed={preferences.rightCollapsed}
+        style={{
+          '--editor-left-width': `${preferences.leftCollapsed ? 52 : preferences.leftWidth}px`,
+          '--editor-right-width': preferences.rightCollapsed ? '52px' : '240px',
+        } as React.CSSProperties}
+      >
+        <aside id="editor-left-navigation" className="editor-left-navigation" aria-label="左侧导航">
+          {preferences.leftCollapsed ? (
+            <button
+              ref={leftRestoreButtonRef}
+              type="button"
+              className="editor-layout-restore-button"
+              aria-label="展开左侧导航"
+              title="展开左侧导航"
+              onClick={handleToggleLeft}
+              onKeyDown={(event) => {
+                if (event.key !== 'Enter' && event.key !== ' ') return
+                event.preventDefault()
+                handleToggleLeft()
+              }}
+            >
+              导航
+            </button>
+          ) : (
+            <div className="editor-left-navigation__content">
+              <p className="text-sm font-medium">笔记导航</p>
+              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>使用页头按钮收起导航以扩大编辑空间。</p>
+            </div>
+          )}
+          {!preferences.leftCollapsed && (
+            <div
+              role="separator"
+              aria-orientation="vertical"
+              aria-label="调整左侧导航宽度"
+              className="editor-layout-resizer"
+              data-resizing={isResizingLeft}
+              onPointerDown={(event) => {
+                event.currentTarget.setPointerCapture(event.pointerId)
+                dragRef.current = {
+                  pointerId: event.pointerId,
+                  startX: event.clientX,
+                  startWidth: preferences.leftWidth,
+                  width: preferences.leftWidth,
+                }
+                setIsResizingLeft(true)
+              }}
+              onPointerMove={(event) => {
+                const drag = dragRef.current
+                if (!drag || drag.pointerId !== event.pointerId) return
+                drag.width = Math.min(360, Math.max(220, drag.startWidth + event.clientX - drag.startX))
+                // 拖动中只更新内存，避免连续写入 localStorage 影响编辑交互。
+                setLeftWidth(drag.width, false, false)
+              }}
+              onPointerUp={(event) => {
+                if (dragRef.current?.pointerId !== event.pointerId) return
+                finishLeftResize()
+              }}
+              onPointerCancel={cancelLeftResize}
+            />
+          )}
+        </aside>
+        <div className="editor-layout-main">
+          <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+                if (cmd === 'collab') { setShowCollabDrawer(true); return }
+                if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
+                if (rejectReadOnlyWrite()) return
+                if (cmd === 'link' && !payload) { setShowLinkDialog(true); return }
                 if (cmd === 'comments') {
                   try {
                     setShowCommentsDrawer(true)
@@ -744,42 +837,42 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                   } catch { }
                   return
                 }
-                if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
                 const ev = new CustomEvent('tiptap:exec', { detail: { cmd, payload } })
                 document.dispatchEvent(ev)
               }} />
-              <TiptapEditor
+              <div className="editor-paper">
+                <TiptapEditor
                 noteId={id}
                 initialHTML={note.content || '<p></p>'}
-                onSave={async (html: string) => { await handleSave(note.title || '', html) }}
+                onSave={async (html: string) => {
+                  if (rejectReadOnlyWrite()) return
+                  setCurrentContent(html)
+                  await saveNow()
+                }}
                 user={me}
                 readOnly={readOnly}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
                 onContentChange={(html) => {
-                  setCurrentContent(html)
                   extractHeadingsFromHTML(html)
+                  if (readOnly) return
+                  setCurrentContent(html)
                 }}
                 // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
                 versionKey={searchParams?.get('restored') || undefined}
                 updatedAt={note.updatedAt}
                 className="min-h-[calc(100vh-200px)]"
-              />
-            </div>
-          ) : (
-            <MarkdownEditor
-              initialContent={note.content || ''}
-              initialTitle={note.title || ''}
-              onSave={handleSave}
-              onSaveDraft={handleSaveDraft}
-              isNew={false}
-              draftKey={`note:${id}`}
-              onSelectionChange={handleSelectionChange}
-              onContentChange={handleMarkdownChange}
-              readOnly={readOnly}
-            />
-          )}
+                />
+              </div>
+          </div>
         </div>
-        <NoteEditorMetadataPanel id={id} toc={toc} showSidebar={showSidebar} isFullscreen={isFullscreen} />
+        <NoteEditorMetadataPanel
+          id={id}
+          toc={toc}
+          collapsed={preferences.rightCollapsed}
+          isFullscreen={isFullscreen}
+          onToggle={handleToggleRight}
+          restoreButtonRef={rightRestoreButtonRef}
+        />
       </div>
 
       <NoteEditorDrawers
@@ -790,29 +883,10 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         commentsDrawerRef={commentsDrawerRef as React.RefObject<HTMLDivElement>}
         onCloseCollab={() => setShowCollabDrawer(false)}
         onCloseComments={() => setShowCommentsDrawer(false)}
+        readOnly={readOnly}
       />
-      {/* 浮动协作按钮（语雀风格蓝色悬浮锚点） */}
-      <button
-        aria-label="打开协作抽屉"
-        title="打开协作"
-        className="fixed right-4 bottom-24 z-40 grid place-items-center rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 sm:right-6"
-        onClick={() => setShowCollabDrawer(true)}
-        style={{ width: '48px', height: '48px', backgroundColor: '#2468F2', color: '#fff' }}
-      >
-        <Users className="h-5 w-5" aria-hidden />
-      </button>
-      {/* 左侧浮动 “+” 插入菜单 */}
       {!isFullscreen && !readOnly && (
         <>
-          <button
-            aria-label="插入工具"
-            title="插入内容"
-            className="fixed right-4 bottom-40 z-40 grid place-items-center rounded-2xl shadow-lg transition hover:-translate-y-0.5 hover:shadow-xl active:translate-y-0 sm:right-6"
-            onClick={() => setShowInsertMenu(s => !s)}
-            style={{ width: '48px', height: '48px', backgroundColor: '#10b981', color: '#fff' }}
-          >
-            <Plus className="h-5 w-5" aria-hidden />
-          </button>
           {showInsertMenu && (
             <div className="fixed right-4 bottom-56 z-50 rounded-xl border bg-white shadow-xl sm:right-6"
               role="menu" aria-label="插入工具菜单"
@@ -854,7 +928,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         </>
       )}
       {/* 插入链接对话框 */}
-      {showLinkDialog && (
+      {showLinkDialog && !readOnly && (
         <div
           className="fixed inset-0 z-50 bg-black/30"
           role="dialog"
