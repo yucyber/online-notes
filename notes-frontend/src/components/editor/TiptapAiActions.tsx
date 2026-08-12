@@ -7,7 +7,7 @@ type Props = {
   readOnly: boolean
   aiWritingType: null | 'continue' | 'polish' | 'summary'
   setAiWritingType: (type: null | 'continue' | 'polish' | 'summary') => void
-  mode: 'continue' | 'selection'
+  mode: 'continue' | 'selection' | 'bubble'
 }
 
 export function TiptapAiActions({ editor, readOnly, aiWritingType, setAiWritingType, mode }: Props) {
@@ -38,8 +38,34 @@ export function TiptapAiActions({ editor, readOnly, aiWritingType, setAiWritingT
     )
   }
 
+  const runContinue = () => {
+    if (!editor) return
+    const { from } = editor.state.selection
+    const context = editor.state.doc.textBetween(Math.max(0, from - 500), from, '\n')
+    setAiWritingType('continue')
+    streamAIWriter({
+      context,
+      type: 'continue',
+      onChunk: (text) => editor.chain().focus().insertContent(text).run(),
+      onDone: () => setAiWritingType(null),
+      onError: () => setAiWritingType(null),
+    })
+  }
+
   return (
     <>
+      {mode === 'bubble' && (
+        <Button
+          aria-label="AI 续写"
+          title="AI 续写"
+          size="icon"
+          variant="ghost"
+          disabled={readOnly || !!aiWritingType}
+          onClick={runContinue}
+        >
+          {aiWritingType === 'continue' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
+        </Button>
+      )}
       <Button
         aria-label={"AI 润色"}
         title={"AI 润色"}

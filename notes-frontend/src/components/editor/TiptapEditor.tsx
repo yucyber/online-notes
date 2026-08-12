@@ -517,20 +517,20 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           tippyOptions={{
             duration: 150,
             appendTo: () => document.body,
+            theme: 'light-border',
           }}
         >
           <div
             className="editor-selection-popover"
             role="toolbar"
             aria-label="文本格式工具"
-            style={{ height: 44, paddingLeft: 8, paddingRight: 8, border: '1px solid var(--border)', borderRadius: 12, background: 'var(--surface-1)' }}
           >
             <TiptapAiActions
               editor={editor}
               readOnly={effectiveReadOnly}
               aiWritingType={aiWritingType}
               setAiWritingType={setAiWritingType}
-              mode="selection"
+              mode="bubble"
             />
 
             <Button aria-label="复制选中文本" size="icon" variant="ghost" onClick={() => navigator.clipboard?.writeText(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' '))}>
