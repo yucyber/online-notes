@@ -68,7 +68,7 @@ test('read-only toolbar blocks mutating handlers but keeps read actions availabl
     expect(screen.getByRole('button', { name })).toBeDisabled()
   }
   fireEvent.change(screen.getByRole('combobox', { name: '样式' }), { target: { value: 'h2' } })
-  fireEvent.change(screen.getByLabelText('文字颜色'), { target: { value: '#ff0000' } })
+  expect(screen.getByRole('button', { name: '更多格式' })).toBeDisabled()
   expect(exec).not.toHaveBeenCalled()
 
   fireEvent.click(screen.getByRole('button', { name: '协作成员' }))

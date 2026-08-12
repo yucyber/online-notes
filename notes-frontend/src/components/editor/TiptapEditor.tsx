@@ -7,7 +7,7 @@ import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
 import { createTiptapExtensions } from './tiptap-extensions'
-import { sanitizeHTML } from './tiptap-utils'
+import { COLLAB_STATUS_META, sanitizeHTML } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
 import { useTiptapPersistence } from './useTiptapPersistence'
 import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge, type NormalizedEditorContent } from './useTiptapEditorBridge'
@@ -71,6 +71,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const {
     provider,
     roomRole,
+    connStatus,
     collabEnabled,
     wsDebug,
   } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
@@ -496,8 +497,14 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
   if (!editor) return <div className="p-4 text-sm text-gray-500">编辑器加载中…</div>
 
+  const connMeta = COLLAB_STATUS_META[connStatus]
+
   return (
     <div>
+      <span className="sr-only" aria-live="polite" role="status">
+        <span>{connMeta.label}</span>
+        {connMeta.detail && <span>，{connMeta.detail}</span>}
+      </span>
       <div
         id="editor-card"
         className={`border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${className || ''}`}
