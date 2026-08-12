@@ -24,8 +24,6 @@ function NotesPageContent() {
     loading,
     error,
     fallbackMsg,
-    isCreateHovered,
-    setIsCreateHovered,
     categoryMap,
     pendingDeleteId,
     setPendingDeleteId,
@@ -94,27 +92,16 @@ function NotesPageContent() {
         </div>
       )}
 
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+      <div className="product-page-header flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
-          <h1
-            className="text-4xl font-bold"
-            style={{
-              background: 'linear-gradient(to right, #111827, #2563eb, #111827)',
-              WebkitBackgroundClip: 'text',
-              WebkitTextFillColor: 'transparent',
-              backgroundClip: 'text',
-            }}
-          >
-            我的笔记
-          </h1>
-          <p className="mt-2" style={{ color: 'var(--text-muted)' }}>管理和组织您的所有笔记</p>
+          <h1 className="page-heading">我的笔记</h1>
+          <p className="page-description">管理和组织您的所有笔记</p>
         </div>
         <div className="flex items-center gap-3">
           <Button
             variant="outline"
             onClick={toggleSelectionMode}
             className={isSelectionMode ? 'bg-blue-50 border-blue-200 text-blue-600' : ''}
-            style={{ height: '52px', borderRadius: '18px' }}
           >
             {isSelectionMode ? (
               <>
@@ -137,8 +124,7 @@ function NotesPageContent() {
               />
               <Button
                 onClick={handleGenerateSummary}
-                className="animate-in fade-in zoom-in duration-200 text-white"
-                style={{ height: '52px', borderRadius: '18px', background: 'linear-gradient(120deg, #8b5cf6, #d946ef)' }}
+                className="text-white"
               >
                 <Sparkles className="mr-2 h-4 w-4" />
                 生成摘要 ({selectedNoteIds.size})
@@ -147,73 +133,8 @@ function NotesPageContent() {
           )}
 
           {!isSelectionMode && (
-            <Link href="/dashboard/notes/new" className="relative inline-flex" style={{ borderRadius: '20px' }}>
-              <span
-                aria-hidden
-                style={{
-                  position: 'absolute',
-                  inset: 0,
-                  borderRadius: '20px',
-                  background: 'linear-gradient(120deg, rgba(59,130,246,0.65), rgba(147,51,234,0.55))',
-                  filter: isCreateHovered ? 'blur(18px)' : 'blur(26px)',
-                  opacity: isCreateHovered ? 0.85 : 0.5,
-                  transition: 'all 0.3s ease',
-                  pointerEvents: 'none',
-                }}
-              />
-              <Button
-                aria-label="新建笔记"
-                className="relative flex items-center gap-3 font-semibold tracking-wide text-white"
-                style={{
-                  background: 'linear-gradient(120deg, #5eead4, #2563eb 45%, #7c3aed)',
-                  borderRadius: '18px',
-                  padding: '0 32px',
-                  height: '52px',
-                  letterSpacing: '0.5px',
-                  boxShadow: isCreateHovered
-                    ? '0 30px 45px -25px rgba(37, 99, 235, 0.9)'
-                    : '0 20px 40px -28px rgba(37, 99, 235, 0.75)',
-                }}
-                onMouseEnter={() => setIsCreateHovered(true)}
-                onMouseLeave={() => setIsCreateHovered(false)}
-              >
-                <span
-                  aria-hidden
-                  style={{
-                    position: 'absolute',
-                    width: '160%',
-                    height: '160%',
-                    background: 'radial-gradient(circle at 15% 15%, rgba(255,255,255,0.65), transparent 55%)',
-                    transform: isCreateHovered ? 'translateX(18%)' : 'translateX(-15%)',
-                    opacity: 0.9,
-                    transition: 'transform 0.45s ease',
-                    pointerEvents: 'none',
-                    zIndex: 0,
-                  }}
-                />
-                <span
-                  className="relative z-10 flex h-9 w-9 items-center justify-center rounded-full"
-                  style={{
-                    backgroundColor: 'rgba(255,255,255,0.18)',
-                    boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.35)',
-                    backdropFilter: 'blur(6px)',
-                  }}
-                >
-                  <Plus className="h-5 w-5 text-white" />
-                </span>
-                <span className="relative z-10 text-base">新建笔记</span>
-                <span
-                  className="relative z-10 hidden sm:inline-flex text-[11px] uppercase tracking-[0.35em]"
-                  style={{
-                    padding: '4px 10px',
-                    borderRadius: '999px',
-                    border: '1px solid rgba(255,255,255,0.35)',
-                    backgroundColor: 'rgba(255,255,255,0.15)',
-                  }}
-                >
-                  快速创建
-                </span>
-              </Button>
+            <Link href="/dashboard/notes/new">
+              <Button aria-label="新建笔记"><Plus className="h-4 w-4" />新建笔记</Button>
             </Link>
           )}
         </div>
@@ -227,7 +148,7 @@ function NotesPageContent() {
             <div className="p-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">{error}</div>
           )}
 
-          <div className="flex items-center justify-between mb-2">
+          <div className="product-list-surface flex flex-wrap items-center justify-between gap-3">
             <PageSizeSelect size={size} onSizeChange={handlePageSizeChange} />
             <Pagination page={page} size={size} total={total} onPageChange={handlePageChange} />
           </div>
@@ -264,7 +185,7 @@ function NotesPageContent() {
               </CardContent>
             </Card>
           ) : (
-            <div className="grid gap-6 md:grid-cols-2">
+            <div className="product-list-surface divide-y divide-[var(--product-line-soft)]">
               {notes.map((note, i) => (
                 <NotesListCard
                   key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${i}`}

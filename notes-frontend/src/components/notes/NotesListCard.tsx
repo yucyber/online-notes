@@ -40,24 +40,14 @@ export function NotesListCard({
   return (
     <Card
       key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${index}`}
-      className={`card-hover relative group ${isSelectionMode && selectedNoteIds.has(note.id) ? 'ring-2 ring-blue-500' : ''}`}
+      className={`notes-list-item relative group rounded-none border-0 bg-transparent shadow-none ${isSelectionMode && selectedNoteIds.has(note.id) ? 'ring-2 ring-blue-500' : ''}`}
       style={{
-        borderRadius: '22px',
-        background: 'var(--surface-1)',
-        boxShadow: 'var(--shadow-md)',
-        border: '1px solid var(--border)',
-        transition: 'all 0.3s ease',
-      }}
-      onMouseEnter={(e) => {
-        e.currentTarget.style.boxShadow = 'var(--shadow-lg)'
-        e.currentTarget.style.transform = 'translateY(-4px)'
-      }}
-      onMouseLeave={(e) => {
-        e.currentTarget.style.boxShadow = 'var(--shadow-md)'
-        e.currentTarget.style.transform = 'none'
+        background: 'transparent',
+        boxShadow: 'none',
+        border: 0,
       }}
     >
-      <div className="absolute inset-0 rounded-[22px] overflow-hidden pointer-events-none">
+      <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {isSelectionMode && (
           <>
             <div
@@ -79,11 +69,6 @@ export function NotesListCard({
             </div>
           </>
         )}
-        <div
-          aria-hidden
-          className="absolute inset-x-10 top-0 h-1 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
-          style={{ background: 'var(--primary-600)', filter: 'blur(1px)' }}
-        />
       </div>
       <CardHeader className="relative pb-4 border-b" style={{ borderColor: 'var(--border)' }}>
         <div className="flex justify-between items-start gap-2">

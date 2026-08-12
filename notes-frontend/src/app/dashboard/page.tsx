@@ -102,7 +102,7 @@ export default function DashboardPage() {
 
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-col gap-3">
+      <div className="product-page-header flex flex-col gap-3">
         <h1 className="page-heading">
           仪表盘
         </h1>

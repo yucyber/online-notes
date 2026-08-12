@@ -95,6 +95,25 @@
   color: var(--product-accent);
 }
 
+.product-page-header {
+  padding-block: 4px 8px;
+}
+
+.product-toolbar,
+.product-list-surface {
+  border: 1px solid var(--product-line);
+  border-radius: var(--product-radius-md);
+  background: var(--product-panel);
+}
+
+.product-toolbar {
+  padding: 12px;
+}
+
+.product-list-surface {
+  overflow: hidden;
+}
+
 @media (max-width: 767px) {
   .page-container { padding: 16px; }
 }

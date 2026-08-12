@@ -132,4 +132,21 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(navigation).not.toContain('h-6 w-1 rounded-full')
     expect(navigation).not.toContain('<NetworkStatus')
   })
+
+  test('笔记管理页使用紧凑平面列表', () => {
+    const dashboard = read('src/app/dashboard/page.tsx')
+    const page = read('src/app/dashboard/notes/page.tsx')
+    const item = read('src/components/notes/NotesListCard.tsx')
+    const search = read('src/components/SearchFilterBar.tsx')
+
+    expect(dashboard).toContain('product-page-header')
+    expect(page).toContain('product-page-header')
+    expect(page).toContain('product-list-surface')
+    expect(page).not.toContain('linear-gradient')
+    expect(page).not.toContain('radial-gradient')
+    expect(item).toContain('notes-list-item')
+    expect(item).not.toContain("translateY('-4px')")
+    expect(search).toContain('product-toolbar')
+    expect(search).not.toContain('shadow mb-6')
+  })
 })
