@@ -1,5 +1,6 @@
 import './globals.css'
 import 'tippy.js/dist/tippy.css'
+import '@/styles/product-tokens.css'
 import '@/styles/editor-tokens.css'
 import RUMClient from '@/components/rum/RUMClient'
 import { AIProvider } from '@/context/AIContext'

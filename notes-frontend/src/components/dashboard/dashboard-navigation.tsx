@@ -1,7 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-import { Bell, BookOpenCheck, Bookmark, ChevronRight, Clock, FileText, LayoutDashboard, LogOut, Menu, Moon, Settings, Settings2, Sun, X } from 'lucide-react'
+import { Bell, BookOpenCheck, ChevronRight, Clock, FileText, FolderTree, LayoutDashboard, LogOut, Menu, Moon, Settings, Settings2, Sun, Tags, X } from 'lucide-react'
 import NetworkStatus from '@/components/security/NetworkStatus'
 import type { User } from '@/types'
 
@@ -14,8 +14,8 @@ export const navItems = [
   { label: '我的笔记', icon: <FileText className="h-5 w-5" />, href: '/dashboard/notes', hint: '全部记录' },
   { label: '知识库', icon: <BookOpenCheck className="h-5 w-5" />, href: '/dashboard/knowledge-bases', hint: '边界集合' },
   { label: '活动日志', icon: <Clock className="h-5 w-5" />, href: '/dashboard/activity', hint: '变更记录' },
-  { label: '分类管理', icon: <Bookmark className="h-5 w-5" />, href: '/dashboard/categories', hint: '整理结构' },
-  { label: '标签管理', icon: <Bookmark className="h-5 w-5" />, href: '/dashboard/tags', hint: '简单管理' },
+  { label: '分类管理', icon: <FolderTree className="h-5 w-5" />, href: '/dashboard/categories', hint: '整理结构' },
+  { label: '标签管理', icon: <Tags className="h-5 w-5" />, href: '/dashboard/tags', hint: '灵活标记' },
   { label: '设置', icon: <Settings className="h-5 w-5" />, href: '/dashboard/settings', hint: '系统偏好' },
 ]
 
@@ -41,11 +41,10 @@ export function DashboardSidebar({ pathname, isHidden, isMobileOpen, hoveredNav,
   onCloseMobile: () => void
 }) {
   return <>
-    {!isHidden && <aside className="relative hidden flex-col overflow-hidden lg:flex bg-[var(--surface-1)]" style={{ width: '240px', margin: '0', borderRight: '1px solid var(--border)' }}>
-      <div aria-hidden style={{ position: 'absolute', inset: 0, background: 'radial-gradient(circle at top left, rgba(59,130,246,0.45), transparent 45%)', opacity: 0.8 }} />
-      <div className="relative flex h-16 items-center gap-3 px-4 border-b border-gray-200"><div className="flex h-12 w-12 items-center justify-center rounded-2xl" style={{ backgroundColor: '#10b981', color: '#fff' }}><span className="text-2xl font-black text-white">N</span></div><div><p className="text-sm font-medium text-gray-900">{'在线笔记'}</p><p className="text-xs text-gray-500">Workspace</p></div></div>
+    {!isHidden && <aside className="relative hidden w-[236px] flex-col overflow-hidden border-r border-[var(--product-line)] bg-[var(--product-panel-soft)] lg:flex">
+      <div className="relative flex h-[70px] items-center gap-3 border-b border-[var(--product-line-soft)] px-4"><div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#263244] text-sm font-bold text-white">N</div><div><p className="text-sm font-semibold text-[var(--product-text)]">{'在线笔记'}</p><p className="text-[11px] text-[var(--product-muted)]">Workspace</p></div></div>
       <nav className="relative flex-1 overflow-auto px-3 py-4 space-y-1">{navItems.map((item) => { const active = isActiveRoute(pathname, item.href); return <Button key={item.href} variant="ghost" className="w-full justify-start" style={getNavButtonStyle(active, hoveredNav === item.href)} onMouseEnter={() => onHover(item.href)} onMouseLeave={() => onHover(null)} onClick={() => onNavigate(item.href)}><div className="flex items-center gap-3"><span className="h-6 w-1 rounded-full" style={{ backgroundColor: active ? 'var(--primary-600)' : '#e5e7eb' }} /><span className="mr-2" style={{ backgroundColor: active ? 'var(--surface-2)' : 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: '8px', width: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{item.icon}</span><div className="flex flex-col text-left leading-tight"><span>{item.label}</span><span className="text-[11px] text-gray-500">{item.hint}</span></div></div></Button> })}</nav>
-      <div className="relative p-4 border-t border-white/10"><Button variant="ghost" className="w-full justify-start text-white/80 backdrop-blur-sm" style={{ borderRadius: '16px', border: '1px solid rgba(239,68,68,0.4)', backgroundColor: 'rgba(239,68,68,0.12)', color: '#fecaca' }} onClick={onLogout}><LogOut className="mr-3 h-5 w-5" />{'退出登录'}</Button></div>
+      <div className="relative border-t border-[var(--product-line-soft)] p-3"><Button variant="ghost" className="w-full justify-start text-[var(--product-text-secondary)] hover:bg-[var(--product-danger-soft)] hover:text-[var(--product-danger)]" onClick={onLogout}><LogOut className="mr-3 h-5 w-5" />{'退出登录'}</Button></div>
     </aside>}
     {isMobileOpen && <div className="fixed inset-0 z-40 backdrop-blur-sm lg:hidden animate-fade-in" style={{ backgroundColor: 'var(--overlay)' }} role="button" tabIndex={0} onClick={onCloseMobile} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onCloseMobile() }}>
       <div className="fixed left-0 top-0 h-full w-64 bg-[var(--surface-1)] shadow-xl animate-slide-up" role="dialog" onMouseDown={(event) => event.stopPropagation()}>

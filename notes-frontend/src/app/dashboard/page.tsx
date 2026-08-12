@@ -103,18 +103,10 @@ export default function DashboardPage() {
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col gap-3">
-        <h1
-          className="text-4xl font-bold"
-          style={{
-            background: 'linear-gradient(to right, #111827, #2563eb, #111827)',
-            WebkitBackgroundClip: 'text',
-            WebkitTextFillColor: 'transparent',
-            backgroundClip: 'text',
-          }}
-        >
+        <h1 className="page-heading">
           仪表盘
         </h1>
-        <p className="text-lg" style={{ color: 'var(--text-muted)' }}>
+        <p className="page-description">
           快速了解知识库概况，继续完成您的创作与整理工作
         </p>
       </div>

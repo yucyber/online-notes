@@ -177,7 +177,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                         className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
                     >
                         <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 'bg-purple-100 text-purple-600'
+                            className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 'bg-[var(--product-accent-soft)] text-[var(--product-accent)]'
                                 }`}
                         >
                             {msg.role === 'user' ? <UserIcon size={16} /> : <Bot size={16} />}
@@ -196,7 +196,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 ))}
                 {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
                     <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-full bg-purple-100 text-purple-600 flex items-center justify-center flex-shrink-0">
+                        <div className="w-8 h-8 rounded-full bg-[var(--product-accent-soft)] text-[var(--product-accent)] flex items-center justify-center flex-shrink-0">
                             <Bot size={16} />
                         </div>
                         <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">

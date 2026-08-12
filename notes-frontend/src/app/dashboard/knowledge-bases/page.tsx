@@ -23,10 +23,10 @@ export default function KnowledgeBasesPage() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
         <div>
-          <h1 className="text-3xl font-bold" style={{ color: 'var(--on-surface)' }}>
+          <h1 className="page-heading">
             知识库
           </h1>
-          <p className="mt-2 text-sm" style={{ color: 'var(--text-muted)' }}>
+          <p className="page-description">
             用知识库划定笔记集合，后续图谱构建会以单个知识库为边界。
           </p>
         </div>

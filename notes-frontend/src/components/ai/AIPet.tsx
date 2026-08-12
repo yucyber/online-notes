@@ -17,7 +17,7 @@ export default function AIPet() {
                 onClick={() => setIsOpen(!isOpen)}
             >
                 <div className="relative">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-blue-600 text-white shadow-lg transition duration-200 group-hover:-translate-y-0.5 group-hover:bg-blue-700 group-hover:shadow-xl sm:h-14 sm:w-14">
+                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#263244] text-white shadow-[0_8px_18px_rgba(24,34,49,0.14)] transition-colors duration-150 group-hover:bg-[#344256] sm:h-14 sm:w-14">
                         <Bot className="h-6 w-6 sm:h-7 sm:w-7" />
                     </div>
                     {/* Online Status Indicator */}

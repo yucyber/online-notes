@@ -3,44 +3,7 @@ import React from 'react'
 export type CardProps = React.HTMLAttributes<HTMLDivElement>
 
 const Card = React.forwardRef<HTMLDivElement, CardProps>(
-  ({ className, ...props }, ref) => {
-    const [isHovered, setIsHovered] = React.useState(false);
-
-    return (
-      <div
-        ref={ref}
-        style={{
-          borderRadius: '12px',
-          borderWidth: '1px',
-          borderStyle: 'solid',
-          borderColor: isHovered ? 'var(--primary-600)' : 'var(--border)',
-          backgroundColor: 'var(--surface-1)',
-          color: 'var(--text-default)',
-          boxShadow: isHovered
-            ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
-            : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          WebkitBoxShadow: isHovered
-            ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
-            : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          MozBoxShadow: isHovered
-            ? '0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1)'
-            : '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          transform: isHovered ? 'translateY(-4px) scale(1.02)' : 'none',
-          WebkitTransform: isHovered ? 'translateY(-4px) scale(1.02)' : 'none',
-          MozTransform: isHovered ? 'translateY(-4px) scale(1.02)' : 'none',
-          msTransform: isHovered ? 'translateY(-4px) scale(1.02)' : 'none',
-          transition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          WebkitTransition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          MozTransition: 'all 0.3s cubic-bezier(0.4, 0, 0.2, 1)',
-          cursor: 'pointer',
-        }}
-        className={className || ''}
-        onMouseEnter={() => setIsHovered(true)}
-        onMouseLeave={() => setIsHovered(false)}
-        {...props}
-      />
-    );
-  }
+  ({ className, ...props }, ref) => <div ref={ref} className={`rounded-[12px] border border-[var(--product-line)] bg-[var(--product-panel)] text-[var(--product-text)] shadow-[0_1px_2px_rgba(24,34,49,0.04)] ${className || ''}`} {...props} />,
 )
 Card.displayName = 'Card'
 
@@ -62,7 +25,7 @@ const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h3
     ref={ref}
-    className={`text-2xl font-semibold leading-none tracking-tight ${className || ''}`}
+    className={`text-lg font-semibold leading-none tracking-tight ${className || ''}`}
     {...props}
   />
 ))

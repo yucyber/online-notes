@@ -10,8 +10,8 @@ export default function CategoriesPage() {
   return (
     <div className="space-y-8 animate-fade-in">
       <div className="flex flex-col gap-3">
-        <h1 className="text-4xl font-bold" style={{ background: 'linear-gradient(to right, #111827, #2563eb, #111827)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>分类管理</h1>
-        <p className="text-gray-600 text-lg">用颜色和描述快速区分不同的知识领域，支撑高效的笔记归档与检索</p>
+        <h1 className="page-heading">分类管理</h1>
+        <p className="page-description">用清晰的层级组织知识领域，支撑高效的笔记归档与检索</p>
       </div>
       {page.error && <div className="rounded-md border border-red-200 bg-red-50 p-4 text-sm text-red-600">{page.error}</div>}
       <div className="grid gap-6 lg:grid-cols-3">

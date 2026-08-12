@@ -78,11 +78,11 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!isReady) return <div className="flex min-h-screen items-center justify-center bg-gray-50"><div className="text-center text-gray-500">加载中...</div></div>
 
-  return <div className="flex min-h-screen bg-[var(--surface-2)]">
+  return <div className="app-shell">
     <DashboardSidebar pathname={pathname} isHidden={isSidebarHidden} isMobileOpen={isMobileMenuOpen} hoveredNav={hoveredNav} onHover={setHoveredNav} onNavigate={(href) => router.push(href)} onLogout={handleLogout} onCloseMobile={() => setIsMobileMenuOpen(false)} />
-    <main className="flex-1 overflow-auto bg-[var(--surface-2)]">
+    <main className="app-main">
       <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} />
-      <div className="p-4 md:p-6 lg:p-8"><div className={`mx-auto w-full ${isNotesFocusedRoute ? '' : 'max-w-7xl'} animate-fade-in rounded-xl p-4 md:p-6 bg-[var(--surface-1)] border shadow-sm`} style={{ borderColor: 'var(--border)' }}>{children}</div></div>
+      <div className={`page-container ${isNotesFocusedRoute ? '!max-w-none' : ''}`}>{children}</div>
     </main>
     <AIPet />
   </div>
