@@ -9,6 +9,10 @@ import { globalHotkeys } from '@/lib/hotkeys'
 import { listNotifications } from '@/lib/api'
 import type { User } from '@/types'
 
+export const isEditorWorkspaceRoute = (pathname: string | null) => (
+  Boolean(pathname && /^\/dashboard\/notes\/(new|[^/]+(?:\/edit)?)$/.test(pathname))
+)
+
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -20,7 +24,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [unreadCount, setUnreadCount] = useState(0)
   const [isDark, setIsDark] = useState(typeof document !== 'undefined' && document.documentElement.classList.contains('dark'))
 
-  const isNotesFocusedRoute = Boolean(pathname && /^\/dashboard\/notes\/(new|[^/]+(?:\/edit)?)/.test(pathname))
+  const isEditorWorkspace = isEditorWorkspaceRoute(pathname)
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -43,6 +47,8 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   }, [])
 
   useEffect(() => {
+    if (isEditorWorkspace) return
+
     const loadUnread = async () => {
       try {
         const response = await listNotifications(1, 1, undefined, 'unread')
@@ -58,7 +64,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       document.removeEventListener('notify:refresh', handleRefresh)
       document.removeEventListener('visibilitychange', handleVisibility)
     }
-  }, [])
+  }, [isEditorWorkspace])
 
   const handleLogout = () => { void logout().then(() => router.replace('/login')) }
   const toggleTheme = () => {
@@ -78,11 +84,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
   if (!isReady) return <div className="flex min-h-screen items-center justify-center bg-gray-50"><div className="text-center text-gray-500">加载中...</div></div>
 
+  if (isEditorWorkspace) {
+    return <div className="editor-workspace-route">{children}</div>
+  }
+
   return <div className="app-shell">
     <DashboardSidebar pathname={pathname} isHidden={isSidebarHidden} isMobileOpen={isMobileMenuOpen} hoveredNav={hoveredNav} onHover={setHoveredNav} onNavigate={(href) => router.push(href)} onLogout={handleLogout} onCloseMobile={() => setIsMobileMenuOpen(false)} />
     <main className="app-main">
       <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} />
-      <div className={`page-container ${isNotesFocusedRoute ? '!max-w-none' : ''}`}>{children}</div>
+      <div className="page-container">{children}</div>
     </main>
     <AIPet />
   </div>

@@ -44,7 +44,7 @@ test('编辑器路由使用专用工作区而不叠加 Dashboard 壳层', () => 
 
 - [ ] **Step 2: 验证测试按预期失败**
 
-Run: `npm.cmd test -- --runInBand __tests__/calm-minimal-foundation.spec.ts --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/calm-minimal-foundation.spec.ts`  
 Expected: FAIL，缺少 `isEditorWorkspaceRoute` 或 `editor-workspace-route`。
 
 - [ ] **Step 3: 实现最小路由分支**
@@ -65,7 +65,7 @@ if (isEditorWorkspaceRoute(pathname)) {
 
 - [ ] **Step 4: 运行聚焦测试与类型检查**
 
-Run: `npm.cmd test -- --runInBand __tests__/calm-minimal-foundation.spec.ts --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/calm-minimal-foundation.spec.ts`  
 Expected: PASS。  
 Run: `npm.cmd run type-check`  
 Expected: exit 0。
@@ -108,7 +108,7 @@ expect(container.querySelector('.editor-top-properties')).not.toBeInTheDocument(
 
 - [ ] **Step 2: 验证测试按预期失败**
 
-Run: `npm.cmd test -- --runInBand __tests__/responsive-editor-ui.spec.tsx --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/responsive-editor-ui.spec.tsx`  
 Expected: FAIL，缺少专用侧栏和右侧属性内容。
 
 - [ ] **Step 3: 提取纯展示属性组件**
@@ -129,7 +129,7 @@ Expected: FAIL，缺少专用侧栏和右侧属性内容。
 
 - [ ] **Step 7: 运行聚焦测试与类型检查**
 
-Run: `npm.cmd test -- --runInBand __tests__/responsive-editor-ui.spec.tsx __tests__/editor-layout-preferences.spec.tsx __tests__/readonly-controls.spec.tsx --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/responsive-editor-ui.spec.tsx __tests__/editor-layout-preferences.spec.tsx __tests__/readonly-controls.spec.tsx`  
 Expected: PASS。  
 Run: `npm.cmd run type-check`  
 Expected: exit 0。
@@ -167,7 +167,7 @@ expect(exec).toHaveBeenCalledWith('sup')
 
 - [ ] **Step 2: 验证测试按预期失败**
 
-Run: `npm.cmd test -- --runInBand __tests__/editor-css-contract.spec.ts __tests__/editor.tiptap.spec.tsx --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/editor-css-contract.spec.ts __tests__/editor.tiptap.spec.tsx`  
 Expected: FAIL，缺少更多菜单且桌面仍为 `overflow-x: auto`。
 
 - [ ] **Step 3: 实现低频命令菜单**
@@ -180,7 +180,7 @@ Expected: FAIL，缺少更多菜单且桌面仍为 `overflow-x: auto`。
 
 - [ ] **Step 5: 运行聚焦测试与类型检查**
 
-Run: `npm.cmd test -- --runInBand __tests__/editor-css-contract.spec.ts __tests__/editor.tiptap.spec.tsx --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/editor-css-contract.spec.ts __tests__/editor.tiptap.spec.tsx`  
 Expected: PASS。  
 Run: `npm.cmd run type-check`  
 Expected: exit 0。
@@ -211,7 +211,7 @@ git commit -m "feat(editor): 收敛编辑器工具栏层级"
 
 - [ ] **Step 2: 验证测试按预期失败**
 
-Run: `npm.cmd test -- --runInBand __tests__/editor-css-contract.spec.ts __tests__/calm-minimal-foundation.spec.ts --coverage=false`  
+Run: `npm.cmd run ci:test -- --coverage=false __tests__/editor-css-contract.spec.ts __tests__/calm-minimal-foundation.spec.ts`  
 Expected: FAIL，缺少新断点或仍存在临时样式。
 
 - [ ] **Step 3: 完成响应式和样式归位**

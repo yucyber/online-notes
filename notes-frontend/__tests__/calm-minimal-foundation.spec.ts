@@ -97,4 +97,12 @@ describe('Calm Minimal 全局界面基础契约', () => {
       expect(authPage).not.toContain('text-gray-600')
     }
   })
+
+  test('编辑器路由使用专用工作区而不叠加 Dashboard 壳层', () => {
+    const layout = read('src/app/dashboard/layout.tsx')
+
+    expect(layout).toContain('isEditorWorkspaceRoute')
+    expect(layout).toContain('editor-workspace-route')
+    expect(layout.indexOf('editor-workspace-route')).toBeLessThan(layout.indexOf('<DashboardSidebar'))
+  })
 })
