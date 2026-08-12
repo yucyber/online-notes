@@ -463,6 +463,16 @@ describe('TiptapToolbar', () => {
       expect(screen.getByRole('button', { name }).closest('[data-tooltip]')).toHaveAttribute('data-tooltip', name)
     }
   })
+
+  it('moves low-frequency formatting into an accessible more menu', () => {
+    const exec = jest.fn()
+    render(<TiptapToolbar disabled={false} exec={exec} />)
+
+    fireEvent.click(screen.getByRole('button', { name: '更多格式' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: '上标' }))
+
+    expect(exec).toHaveBeenCalledWith('sup')
+  })
 })
 
 describe('NoteEditorShell insertion affordances', () => {

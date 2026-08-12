@@ -1,6 +1,7 @@
 "use client"
 import { Button } from '@/components/ui/button'
-import { AlignCenter, AlignLeft, AlignRight, Bold, Code, Heading, Highlighter, Image as ImageIcon, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Maximize, MessageSquare, Minimize, Plus, Quote, Redo2, Save, Subscript, Superscript, Table, Underline, Undo2, Unlink, Users } from 'lucide-react'
+import { Bold, Code, Heading, Image as ImageIcon, Italic, Link as LinkIcon, List, ListChecks, ListOrdered, Maximize, MessageSquare, Minimize, Plus, Quote, Redo2, Save, Table, Underline, Undo2, Unlink, Users } from 'lucide-react'
+import { EditorToolbarMoreMenu } from './EditorToolbarMoreMenu'
 
 type Props = {
   disabled?: boolean
@@ -62,16 +63,7 @@ export default function TiptapToolbar({ disabled, exec: dispatch, isFullscreen }
           <Button size="icon" variant="ghost" aria-label="插入表格" title="插入表格 3x3" disabled={disabled} onClick={() => exec('table')}><Table className="w-4 h-4" aria-hidden /></Button>
         </div>
         <Button size="icon" variant="ghost" aria-label="取消链接" title="取消链接" disabled={disabled} onClick={() => exec('unlink')}><Unlink className="w-4 h-4" aria-hidden /></Button>
-        <div className="editor-toolbar__group">
-          <Button size="icon" variant="ghost" aria-label="左对齐" title="左对齐" disabled={disabled} onClick={() => exec('align', { align: 'left' })}><AlignLeft className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="居中" title="居中" disabled={disabled} onClick={() => exec('align', { align: 'center' })}><AlignCenter className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="右对齐" title="右对齐" disabled={disabled} onClick={() => exec('align', { align: 'right' })}><AlignRight className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="高亮" title="高亮" disabled={disabled} onClick={() => exec('highlight')}><Highlighter className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="上标" title="上标" disabled={disabled} onClick={() => exec('sup')}><Superscript className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="下标" title="下标" disabled={disabled} onClick={() => exec('sub')}><Subscript className="w-4 h-4" aria-hidden /></Button>
-          <Button size="icon" variant="ghost" aria-label="插入分隔线" title="插入分隔线" disabled={disabled} onClick={() => exec('hr')}><Highlighter className="w-4 h-4" aria-hidden /></Button>
-          <input type="color" aria-label="文字颜色" title="文字颜色" disabled={disabled} className="editor-toolbar__color" onChange={(event) => exec('color', { color: event.target.value })} />
-        </div>
+        <EditorToolbarMoreMenu disabled={disabled} exec={exec} />
         <div aria-hidden className="editor-toolbar__separator" />
         <Button size="icon" variant="ghost" aria-label="撤销" title="撤销 (Ctrl+Z)" disabled={disabled} onClick={() => exec('undo')}><Undo2 className="w-4 h-4" aria-hidden /></Button>
         <Button size="icon" variant="ghost" aria-label="重做" title="重做 (Ctrl+Y)" disabled={disabled} onClick={() => exec('redo')}><Redo2 className="w-4 h-4" aria-hidden /></Button>

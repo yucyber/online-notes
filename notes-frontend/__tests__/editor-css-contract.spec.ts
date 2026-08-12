@@ -56,7 +56,7 @@ describe('编辑器真实 CSS 响应式契约', () => {
     expect(toolbar.get('max-width')?.value).toBe('100%')
     expect(toolbar.get('overflow')?.value).toBe('hidden')
     expect(tools.get('min-width')?.value).toBe('0')
-    expect(tools.get('overflow-x')?.value).toBe('auto')
+    expect(tools.get('overflow-x')?.value).toBe('visible')
 
     const compact = findMedia(css, '(max-width: 1023px)')
     expect(declarations(findRule(compact, '.editor-layout-grid')).get('grid-template-columns')?.value)

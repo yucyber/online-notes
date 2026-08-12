@@ -332,8 +332,7 @@ html[data-theme="dark"] {
   min-width: 0;
   flex: 1;
   gap: 2px;
-  overflow-x: auto;
-  scrollbar-width: thin;
+  overflow-x: visible;
 }
 
 .editor-toolbar button {
@@ -390,6 +389,41 @@ html[data-theme="dark"] {
   width: 100%;
   min-width: 0;
   min-height: 100%;
+}
+
+.editor-toolbar-more {
+  position: relative;
+  display: inline-flex;
+}
+
+.editor-toolbar-more__menu {
+  position: absolute;
+  z-index: 70;
+  top: calc(100% + 8px);
+  right: 0;
+  display: grid;
+  min-width: 150px;
+  padding: 6px;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: var(--product-radius-md, 10px);
+  background: var(--product-panel, var(--surface-1));
+  box-shadow: var(--product-shadow-float, var(--shadow-md));
+}
+
+.editor-toolbar-more__menu button {
+  width: 100% !important;
+  min-height: 40px;
+  padding: 0 10px;
+  border-radius: var(--product-radius-sm, 8px) !important;
+  color: var(--product-text-secondary, var(--text-muted));
+  text-align: left;
+}
+
+.editor-toolbar-more__menu button:hover,
+.editor-toolbar-more__menu button:focus-visible {
+  outline: none;
+  background: var(--product-accent-soft, var(--primary-50));
+  color: var(--product-accent, var(--primary));
 }
 
 .editor-error-banner {
@@ -617,6 +651,11 @@ html[data-theme="dark"] {
 }
 
 @media (max-width: 767px) {
+  .editor-toolbar__tools {
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+
   .editor-paper {
     width: calc(100% - 32px);
     margin: 16px auto 28px;
