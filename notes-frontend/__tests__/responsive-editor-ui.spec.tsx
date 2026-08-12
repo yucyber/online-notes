@@ -130,7 +130,7 @@ describe('编辑页窄视口布局', () => {
     expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*height:\s*56px/s)
     expect(productCss).toMatch(/\.editor-workspace-sidebar\s*\{[^}]*gap:\s*12px/s)
     expect(productCss).toMatch(/\.editor-workspace-sidebar__search\s*\{[^}]*min-height:\s*32px/s)
-    expect(productCss).toMatch(/\.editor-outline\s*\{[^}]*top:\s*120px/s)
+    expect(productCss).toMatch(/\.editor-outline\s*\{[^}]*top:\s*48px/s)
     expect(productCss).toMatch(/\.editor-layout-main\s*\{[^}]*min-width:\s*0/s)
   })
 

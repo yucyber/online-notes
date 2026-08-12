@@ -415,11 +415,11 @@ html[data-theme="dark"] {
 .editor-edit-row .editor-rich-editor { flex: 1; min-width: 0; }
 .editor-outline {
   position: sticky;
-  top: 120px;
+  top: 48px;
   align-self: flex-start;
   flex: none;
   width: 220px;
-  height: calc(100vh - 120px);
+  height: calc(100vh - 48px);
   display: flex;
   flex-direction: column;
   background: transparent;
@@ -510,6 +510,8 @@ html[data-theme="dark"] {
   .editor-outline:hover .editor-outline__pin,
   .editor-outline:focus-within .editor-outline__view,
   .editor-outline:focus-within .editor-outline__pin { opacity: 1; }
+  /* 窄屏下工具栏不延申到大纲上方，避免横向溢出 */
+  .editor-toolbar { margin-right: 0; padding-right: 22px; width: 100%; }
 }
 
 .editor-header__title-block {
@@ -602,12 +604,18 @@ html[data-theme="dark"] {
 }
 
 .editor-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   min-width: 0;
   max-width: 100%;
   min-height: 48px;
   overflow: hidden;
   gap: 12px;
   padding: 6px 22px;
+  /* 让工具栏视觉宽度延申到大纲上方：负 margin-right + 等量 padding-right */
+  margin-right: -220px;
+  padding-right: calc(22px + 220px);
   border-bottom: 1px solid var(--border);
   background: var(--surface-1);
 }
