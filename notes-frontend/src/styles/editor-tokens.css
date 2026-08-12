@@ -121,7 +121,7 @@ html[data-theme="dark"] {
   position: sticky;
   top: 0;
   display: grid;
-  grid-template-rows: auto auto 1fr auto;
+  grid-template-rows: auto auto auto auto;
   gap: 12px;
   min-height: 100vh;
   padding: 12px 12px;
@@ -219,14 +219,15 @@ html[data-theme="dark"] {
 
 .editor-workspace-sidebar__search {
   display: flex;
-  min-height: 36px;
+  min-height: 32px;
   align-items: center;
-  gap: 8px;
-  padding: 0 10px;
+  gap: 6px;
+  padding: 0 8px;
   border: 1px solid var(--product-line, var(--border));
   border-radius: var(--product-radius-md, 10px);
   background: var(--product-panel, var(--surface-1));
   color: var(--product-text-muted, var(--text-muted));
+  font-size: 13px;
 }
 
 .editor-workspace-sidebar__search input {
@@ -414,15 +415,14 @@ html[data-theme="dark"] {
 .editor-edit-row .editor-rich-editor { flex: 1; min-width: 0; }
 .editor-outline {
   position: sticky;
-  top: 0;
+  top: 120px;
   align-self: flex-start;
   flex: none;
   width: 220px;
-  height: 100vh;
+  height: calc(100vh - 120px);
   display: flex;
   flex-direction: column;
-  border-left: 1px solid var(--product-line, var(--border));
-  background: var(--product-bg, var(--bg));
+  background: transparent;
 }
 .editor-outline__pin {
   display: flex;
