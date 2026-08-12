@@ -404,7 +404,7 @@ html[data-theme="dark"] {
   box-shadow: var(--shadow-lg);
 }
 
-/* 三栏文档流：编辑区内部 row，主区 flex:1，大纲为右侧 sticky 列 */
+/* 三栏文档流：编辑区内部 row，主区 flex:1，大纲 fixed 永远吸在视口顶（不受父容器高度限制） */
 .editor-edit-row {
   display: flex;
   flex-direction: row;
@@ -412,14 +412,14 @@ html[data-theme="dark"] {
   min-height: 0;
   align-items: stretch;
 }
-.editor-edit-row .editor-rich-editor { flex: 1; min-width: 0; }
+.editor-edit-row .editor-rich-editor { flex: 1; min-width: 0; margin-right: 220px; }
 .editor-outline {
-  position: sticky;
+  position: fixed;
   top: 48px;
-  align-self: flex-start;
-  flex: none;
+  right: 0;
   width: 220px;
   height: calc(100vh - 48px);
+  z-index: 4;
   display: flex;
   flex-direction: column;
   background: transparent;
@@ -512,6 +512,8 @@ html[data-theme="dark"] {
   .editor-outline:focus-within .editor-outline__pin { opacity: 1; }
   /* 窄屏下工具栏不延申到大纲上方，避免横向溢出 */
   .editor-toolbar { margin-right: 0; padding-right: 22px; width: 100%; }
+  /* 窄屏下编辑区不为大纲让出空间（大纲折叠为 18px 细条叠加在内容上） */
+  .editor-edit-row .editor-rich-editor { margin-right: 0; }
 }
 
 .editor-header__title-block {

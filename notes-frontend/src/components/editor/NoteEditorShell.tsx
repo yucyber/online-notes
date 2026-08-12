@@ -661,31 +661,31 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 />
               </div>
             </div>
-            {!isFullscreen && (
-              <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
-                <div className="editor-outline__pin">
-                  <span className="editor-outline__pin-text">大纲</span>
-                  <button
-                    type="button"
-                    className="editor-outline__hide"
-                    aria-label={outlinePinned ? '收起大纲' : '展开大纲'}
-                    onClick={() => setOutlinePinned((value) => !value)}
-                  >
-                    {outlinePinned ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}
-                  </button>
-                </div>
-                <div className="editor-outline__view">
-                  <div className="editor-outline__list">
-                    {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
-                      <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
-                        <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </aside>
-            )}
           </div>
+          {!isFullscreen && (
+            <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
+              <div className="editor-outline__pin">
+                <span className="editor-outline__pin-text">大纲</span>
+                <button
+                  type="button"
+                  className="editor-outline__hide"
+                  aria-label={outlinePinned ? '收起大纲' : '展开大纲'}
+                  onClick={() => setOutlinePinned((value) => !value)}
+                >
+                  {outlinePinned ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}
+                </button>
+              </div>
+              <div className="editor-outline__view">
+                <div className="editor-outline__list">
+                  {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
+                    <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
+                      <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </aside>
+          )}
         </div>
       </div>
 
