@@ -403,13 +403,22 @@ html[data-theme="dark"] {
   box-shadow: var(--shadow-lg);
 }
 
+/* 三栏文档流：编辑区内部 row，主区 flex:1，大纲为右侧 sticky 列 */
+.editor-edit-row {
+  display: flex;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  align-items: stretch;
+}
+.editor-edit-row .editor-rich-editor { flex: 1; min-width: 0; }
 .editor-outline {
-  position: fixed;
-  top: 176px;
-  right: 18px;
-  z-index: 8;
-  width: 210px;
-  max-height: calc(100vh - 210px);
+  position: sticky;
+  top: 0;
+  align-self: flex-start;
+  flex: none;
+  width: 220px;
+  height: 100vh;
   display: flex;
   flex-direction: column;
   border-left: 1px solid var(--product-line, var(--border));
@@ -475,11 +484,12 @@ html[data-theme="dark"] {
 .editor-outline__view::-webkit-scrollbar-track { background: transparent; }
 .editor-header__outline-action { display: none; }
 .editor-outline-drawer-backdrop { display: none; }
-.editor-outline[data-pinned="false"] { right: 0; width: 18px; min-height: 65vh; border-left-width: 2px; }
+/* 大纲隐藏态（pinned=false）：折叠为右侧细条，hover/focus 临时展开 */
+.editor-outline[data-pinned="false"] { width: 18px; }
 .editor-outline[data-pinned="false"] .editor-outline__view,
 .editor-outline[data-pinned="false"] .editor-outline__pin { opacity: 0; }
 .editor-outline[data-pinned="false"]:hover,
-.editor-outline[data-pinned="false"]:focus-within { width: 210px; padding-left: 8px; }
+.editor-outline[data-pinned="false"]:focus-within { width: 220px; }
 .editor-outline[data-pinned="false"]:hover .editor-outline__view,
 .editor-outline[data-pinned="false"]:hover .editor-outline__pin,
 .editor-outline[data-pinned="false"]:focus-within .editor-outline__view,
@@ -489,12 +499,17 @@ html[data-theme="dark"] {
 .editor-rich-editor[data-fullscreen="true"] .editor-toolbar { position: sticky; top: 0; z-index: 3; }
 .tiptap-content h1, .tiptap-content h2, .tiptap-content h3, .tiptap-content h4, .tiptap-content h5, .tiptap-content h6 { scroll-margin-top: 104px; }
 
+/* 窄屏：大纲折叠为右侧细条触点（不显示内容），hover 临时展开 */
 @media (max-width: 1279px) {
-  .editor-outline { display: none; }
-  .editor-header__outline-action { display: inline-flex; }
-  .editor-outline-drawer-backdrop { position: fixed; z-index: 70; inset: 0; display: flex; justify-content: flex-end; background: rgb(15 23 42 / 18%); }
-  .editor-outline-drawer { width: min(320px, 86vw); height: 100%; padding: 16px 12px; border-left: 1px solid var(--product-line); background: var(--product-panel); box-shadow: var(--shadow-md); }
-  .editor-outline-drawer__header { display: flex; align-items: center; justify-content: space-between; padding: 0 8px 10px; }
+  .editor-outline { width: 18px; }
+  .editor-outline .editor-outline__view,
+  .editor-outline .editor-outline__pin { opacity: 0; }
+  .editor-outline:hover,
+  .editor-outline:focus-within { width: 220px; box-shadow: var(--shadow-md); }
+  .editor-outline:hover .editor-outline__view,
+  .editor-outline:hover .editor-outline__pin,
+  .editor-outline:focus-within .editor-outline__view,
+  .editor-outline:focus-within .editor-outline__pin { opacity: 1; }
 }
 
 .editor-header__title-block {

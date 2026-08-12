@@ -1,4 +1,4 @@
-import { ChevronRight, ListTree, MessageSquare, Settings2, Users } from 'lucide-react'
+import { ChevronRight, MessageSquare, Settings2, Users } from 'lucide-react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types'
@@ -11,7 +11,6 @@ type Props = {
   onOpenComments: () => void
   onOpenCollab: () => void
   onToggleProperties: () => void
-  onToggleOutline?: () => void
   propertiesOpen: boolean
   saveState?: SaveState
   readOnly?: boolean
@@ -22,7 +21,6 @@ export function NoteEditorHeader({
   onOpenComments,
   onOpenCollab,
   onToggleProperties,
-  onToggleOutline,
   propertiesOpen,
   saveState,
   readOnly = false,
@@ -36,9 +34,6 @@ export function NoteEditorHeader({
       </nav>
       <div className="editor-header__actions">
         <EditorSaveStatus state={saveState || 'idle'} />
-        <span className="editor-tooltip editor-header__outline-action" data-tooltip="大纲">
-          <Button variant="ghost" size="icon" aria-label="打开大纲" onClick={onToggleOutline}><ListTree className="h-4 w-4" aria-hidden /></Button>
-        </span>
         <span className="editor-tooltip" data-tooltip="评论">
           <Button variant="ghost" size="icon" aria-label="打开评论" onClick={onOpenComments}><MessageSquare className="h-4 w-4" aria-hidden /></Button>
         </span>

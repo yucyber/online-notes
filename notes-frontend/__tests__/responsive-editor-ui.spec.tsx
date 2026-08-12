@@ -183,13 +183,13 @@ describe('编辑页窄视口布局', () => {
     expect(JSON.parse(localStorage.getItem('notes:editor-layout:v1') || '{}')).toMatchObject({ leftWidth: 296 })
   })
 
-  test('窄屏通过页头入口打开独立大纲抽屉', () => {
+  test('窄屏大纲作为右侧细条触点且无抽屉', () => {
     const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
     render(<NoteEditorShell id="n1" initialData={note} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '打开大纲' }))
-    expect(screen.getByRole('dialog', { name: '大纲' })).toBeInTheDocument()
-    fireEvent.click(screen.getByRole('button', { name: '关闭' }))
+    // 大纲以 complementary 形式存在（三栏文档流）
+    expect(screen.getByRole('complementary', { name: '大纲' })).toBeInTheDocument()
+    // 旧抽屉已移除
     expect(screen.queryByRole('dialog', { name: '大纲' })).not.toBeInTheDocument()
   })
 

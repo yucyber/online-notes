@@ -56,21 +56,24 @@ describe('编辑器大纲交互', () => {
     expect((evt as CustomEvent).detail.index).toBe(0)
   })
 
-  it('大纲隐藏按钮切换 pin 状态', () => {
+  it('大纲持续显示时按钮为有斜杠小眼睛，点击进入隐藏态', () => {
     render(<NoteEditorShell id="n1" initialData={note} />)
     const outline = screen.getByRole('complementary', { name: '大纲' })
-    fireEvent.click(within(outline).getByRole('button', { name: '隐藏大纲' }))
+    expect(outline).toHaveAttribute('data-pinned', 'true')
+    // pinned=true 时按钮 aria-label 为"收起大纲"（有斜杠小眼睛 EyeOff）
+    fireEvent.click(within(outline).getByRole('button', { name: '收起大纲' }))
     expect(outline).toHaveAttribute('data-pinned', 'false')
   })
 
-  it('抽屉大纲条目点击派发事件并关闭抽屉', () => {
-    const dispatch = jest.spyOn(document, 'dispatchEvent')
+  it('大纲隐藏态按钮为无斜杠小眼睛，点击正文不自动关闭', () => {
     render(<NoteEditorShell id="n1" initialData={note} />)
-    fireEvent.click(screen.getByRole('button', { name: '打开大纲' }))
-    const dialog = screen.getByRole('dialog', { name: '大纲' })
-    fireEvent.click(within(dialog).getByText('第一节'))
-    const evt = dispatch.mock.calls.map((c) => c[0] as CustomEvent).find((e) => e.type === 'editor:scrollToHeading')
-    expect(evt).toBeDefined()
-    expect(screen.queryByRole('dialog', { name: '大纲' })).not.toBeInTheDocument()
+    const outline = screen.getByRole('complementary', { name: '大纲' })
+    fireEvent.click(within(outline).getByRole('button', { name: '收起大纲' }))
+    expect(outline).toHaveAttribute('data-pinned', 'false')
+    // pinned=false 时按钮 aria-label 变为"展开大纲"（无斜杠小眼睛 Eye）
+    expect(within(outline).getByRole('button', { name: '展开大纲' })).toBeInTheDocument()
+    // 点击大纲条目不应自动关闭大纲（无抽屉/无自动隐藏）
+    fireEvent.click(within(outline).getByText('第一节'))
+    expect(screen.getByRole('complementary', { name: '大纲' })).toBeInTheDocument()
   })
 })

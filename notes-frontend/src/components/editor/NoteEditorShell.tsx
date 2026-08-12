@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
-import { ChevronRight } from 'lucide-react'
+import { Eye, EyeOff } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
@@ -76,7 +76,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const propertiesPanelRef = useRef<HTMLDivElement>(null)
   const [showProperties, setShowProperties] = useState(false)
   const [outlinePinned, setOutlinePinned] = useState(true)
-  const [showOutlineDrawer, setShowOutlineDrawer] = useState(false)
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
   const [isResizingLeft, setIsResizingLeft] = useState(false)
   useEffect(() => {
@@ -587,7 +586,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             onOpenComments={() => setShowCommentsDrawer(true)}
             onOpenCollab={() => setShowCollabDrawer(true)}
             onToggleProperties={() => setShowProperties((open) => !open)}
-            onToggleOutline={() => setShowOutlineDrawer((open) => !open)}
             propertiesOpen={showProperties}
             saveState={saveState}
           />
@@ -620,7 +618,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             )}
           />
           {error && <div className="editor-error-banner" role="alert">{error}</div>}
-          <div ref={editorContainerRef} className="editor-rich-editor" data-fullscreen={isFullscreen} style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg)' } : undefined}>
+          <div className="editor-edit-row">
+            <div ref={editorContainerRef} className="editor-rich-editor" data-fullscreen={isFullscreen} style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
                 if (cmd === 'collab') { setShowCollabDrawer(true); return }
                 if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
@@ -661,25 +660,31 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 className="min-h-[calc(100vh-200px)]"
                 />
               </div>
-              {!isFullscreen && (
-                <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
-                  <div className="editor-outline__pin">
-                    <span className="editor-outline__pin-text">大纲</span>
-                    <button type="button" className="editor-outline__hide" aria-label="隐藏大纲" onClick={() => setOutlinePinned(false)}>
-                      <ChevronRight className="w-4 h-4" aria-hidden />
-                    </button>
+            </div>
+            {!isFullscreen && (
+              <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
+                <div className="editor-outline__pin">
+                  <span className="editor-outline__pin-text">大纲</span>
+                  <button
+                    type="button"
+                    className="editor-outline__hide"
+                    aria-label={outlinePinned ? '收起大纲' : '展开大纲'}
+                    onClick={() => setOutlinePinned((value) => !value)}
+                  >
+                    {outlinePinned ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}
+                  </button>
+                </div>
+                <div className="editor-outline__view">
+                  <div className="editor-outline__list">
+                    {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
+                      <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
+                        <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
+                      </div>
+                    ))}
                   </div>
-                  <div className="editor-outline__view">
-                    <div className="editor-outline__list">
-                      {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
-                        <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
-                          <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </aside>
-              )}
+                </div>
+              </aside>
+            )}
           </div>
         </div>
       </div>
@@ -694,25 +699,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         onCloseComments={() => setShowCommentsDrawer(false)}
         readOnly={readOnly}
       />
-      {showOutlineDrawer && !isFullscreen && (
-        <div className="editor-outline-drawer-backdrop" onMouseDown={() => setShowOutlineDrawer(false)}>
-          <aside className="editor-outline-drawer" role="dialog" aria-label="大纲" onMouseDown={(event) => event.stopPropagation()}>
-            <div className="editor-outline-drawer__header">
-              <strong>大纲</strong>
-              <button type="button" onClick={() => setShowOutlineDrawer(false)}>关闭</button>
-            </div>
-            <div className="editor-outline__view">
-              <div className="editor-outline__list">
-                {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
-                  <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
-                    <button type="button" className="editor-outline__link" onClick={() => { document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } })); setShowOutlineDrawer(false) }}>{heading.text}</button>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </aside>
-        </div>
-      )}
       {!isFullscreen && !readOnly && (
         <>
           {showInsertMenu && (
