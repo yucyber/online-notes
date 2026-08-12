@@ -9,7 +9,7 @@ export default function CategoriesPage() {
   const page = useCategoriesPage()
   return (
     <div className="space-y-8 animate-fade-in">
-      <div className="flex flex-col gap-3">
+      <div className="product-page-header flex flex-col gap-3">
         <h1 className="page-heading">分类管理</h1>
         <p className="page-description">用清晰的层级组织知识领域，支撑高效的笔记归档与检索</p>
       </div>

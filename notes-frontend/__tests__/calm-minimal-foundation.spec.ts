@@ -149,4 +149,12 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(search).toContain('product-toolbar')
     expect(search).not.toContain('shadow mb-6')
   })
+
+  test('核心管理页共享统一标题区', () => {
+    const pages = ['activity', 'categories', 'knowledge-bases', 'notifications', 'settings', 'tags']
+
+    pages.forEach((name) => {
+      expect(read(`src/app/dashboard/${name}/page.tsx`)).toContain('product-page-header')
+    })
+  })
 })

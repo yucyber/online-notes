@@ -114,7 +114,7 @@ export default function TagsManagePage() {
             {errorMessage}
           </div>
         )}
-        <div className="flex items-center justify-between">
+        <div className="product-page-header flex items-center justify-between">
           <div>
             <h1 className="page-heading">标签管理</h1>
             <p className="page-description">创建、重命名和合并标签，让笔记检索保持清晰。</p>

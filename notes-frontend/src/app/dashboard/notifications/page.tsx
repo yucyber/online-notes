@@ -33,7 +33,7 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div><h1 className="page-heading">消息中心</h1><p className="page-description">集中处理协作邀请和未读通知。</p></div>
+      <div className="product-page-header"><h1 className="page-heading">消息中心</h1><p className="page-description">集中处理协作邀请和未读通知。</p></div>
       <div className="calm-panel space-y-3 p-5">
         <div className="text-sm font-medium">待接受邀请</div>
         <ul className="space-y-2">

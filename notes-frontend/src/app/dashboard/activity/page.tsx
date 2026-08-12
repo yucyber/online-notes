@@ -19,7 +19,7 @@ export default function ActivityPage() {
   }, [page, size])
   return (
     <div className="space-y-6">
-      <div><h1 className="page-heading">活动日志</h1><p className="page-description">查看账户与内容的近期变更记录。</p></div>
+      <div className="product-page-header"><h1 className="page-heading">活动日志</h1><p className="page-description">查看账户与内容的近期变更记录。</p></div>
       <div className="flex items-center justify-between">
         <PageSizeSelect size={size} onSizeChange={setSize} />
         <Pagination page={page} size={size} total={total} onPageChange={setPage} />

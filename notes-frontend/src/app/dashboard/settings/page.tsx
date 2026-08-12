@@ -41,7 +41,7 @@ export default function SettingsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col gap-2">
+      <div className="product-page-header flex flex-col gap-2">
         <h1 className="page-heading">设置</h1>
         <p className="page-description">管理您的账户和偏好设置</p>
       </div>
