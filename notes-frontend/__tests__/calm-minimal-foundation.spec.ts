@@ -55,4 +55,22 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(aiEntry).not.toContain('group-hover:-translate-y')
     expect(aiEntry).not.toContain('shadow-xl')
   })
+
+  test('核心页面内容不再使用旧的浮动卡片和厚重 AI 面板', () => {
+    const dashboard = read('src/app/dashboard/page.tsx')
+    const categories = read('src/components/categories/CategoryListPanel.tsx')
+    const tags = read('src/app/dashboard/tags/page.tsx')
+    const aiChat = read('src/components/ai/ChatWindow.tsx')
+
+    for (const source of [dashboard, categories, tags]) {
+      expect(source).not.toContain('card-hover')
+      expect(source).not.toContain('hover:-translate-y')
+      expect(source).not.toContain('shadow-2xl')
+    }
+    expect(dashboard).not.toContain('text-gray-900')
+    expect(tags).toContain('page-heading')
+    expect(aiChat).toContain('border-[var(--product-line)]')
+    expect(aiChat).not.toContain('shadow-2xl')
+    expect(aiChat).not.toContain('slide-in-from-bottom')
+  })
 })

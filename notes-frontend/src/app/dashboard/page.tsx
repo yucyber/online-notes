@@ -122,7 +122,7 @@ export default function DashboardPage() {
 
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
         {statCards.map((card) => (
-          <Card key={card.label} className="card-hover" style={{ borderColor: 'var(--border)', boxShadow: 'var(--shadow-md)' }}>
+          <Card key={card.label}>
             <CardHeader className="flex flex-row items-center justify-between pb-3">
               <CardTitle className="text-sm font-medium" style={{ color: 'var(--text-muted)' }}>{card.label}</CardTitle>
               <div aria-hidden style={{ background: 'var(--surface-2)', color: 'var(--primary-600)', border: '1px solid var(--border)', borderRadius: 12, padding: 12, boxShadow: 'var(--shadow-sm)' }}>
@@ -139,7 +139,7 @@ export default function DashboardPage() {
       <TopicClusters />
 
       <div className="grid gap-6 lg:grid-cols-2">
-        <Card className="card-hover" style={{ boxShadow: 'var(--shadow-md)', borderColor: 'var(--border)' }}>
+        <Card>
           <CardHeader className="flex flex-row items-center justify-between border-b pb-4" style={{ borderColor: 'var(--border)' }}>
             <div>
               <CardTitle className="text-xl font-bold" style={{ color: 'var(--on-surface)' }}>最近编辑</CardTitle>
@@ -220,10 +220,10 @@ export default function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white shadow-md hover:shadow-2xl card-hover">
-          <CardHeader className="flex flex-row items-center justify-between border-b border-gray-100 pb-4">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between border-b border-[var(--product-line-soft)] pb-4">
             <div>
-              <CardTitle className="text-xl font-bold text-gray-900">分类概览</CardTitle>
+              <CardTitle className="text-xl font-bold text-[var(--product-text)]">分类概览</CardTitle>
               <CardDescription className="mt-1">了解不同知识领域下的笔记数量</CardDescription>
             </div>
             <Link href="/dashboard/categories">

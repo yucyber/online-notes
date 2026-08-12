@@ -116,8 +116,8 @@ export default function TagsManagePage() {
         )}
         <div className="flex items-center justify-between">
           <div>
-            <h1 className="text-2xl font-bold">标签管理</h1>
-            <p className="text-gray-600">创建、重命名、配色、删除与合并标签，支持批量创建与限制合并源数。</p>
+            <h1 className="page-heading">标签管理</h1>
+            <p className="page-description">创建、重命名和合并标签，让笔记检索保持清晰。</p>
           </div>
           <Button variant="outline" size="sm" onClick={handleSync} disabled={syncing}>
             <RefreshCcw className={`h-4 w-4 mr-2 ${syncing ? 'animate-spin' : ''}`} />
@@ -125,7 +125,7 @@ export default function TagsManagePage() {
           </Button>
         </div>
 
-        <Card className="shadow-md" style={{ borderColor: 'var(--border)' }}>
+        <Card>
           <CardHeader>
             <CardTitle className="text-xl font-bold">快速操作</CardTitle>
             <CardDescription className="mt-1 text-sm">批量创建与搜索</CardDescription>
@@ -157,7 +157,7 @@ export default function TagsManagePage() {
           </CardContent>
         </Card>
 
-        <Card className="bg-white shadow-md">
+        <Card>
           <CardHeader>
             <CardTitle className="text-xl font-bold">全部标签</CardTitle>
             <CardDescription className="mt-1 text-sm">点击选择源（最多 3 个），选择目标进行合并</CardDescription>

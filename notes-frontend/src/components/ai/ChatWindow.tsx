@@ -148,8 +148,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed bottom-20 left-3 right-3 z-50 flex h-[min(600px,calc(100dvh-6rem))] flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-2xl animate-in fade-in slide-in-from-bottom-10 duration-300 dark:border-gray-700 dark:bg-gray-800 sm:bottom-24 sm:left-auto sm:right-6 sm:w-96">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700 flex justify-between items-center bg-primary/5">
+        <div className="fixed bottom-20 left-3 right-3 z-50 flex h-[min(600px,calc(100dvh-6rem))] flex-col overflow-hidden rounded-2xl border border-[var(--product-line)] bg-[var(--product-panel)] shadow-[var(--product-shadow-float)] sm:bottom-24 sm:left-auto sm:right-6 sm:w-96">
+            <div className="flex items-center justify-between border-b border-[var(--product-line-soft)] bg-[var(--product-panel-soft)] p-4">
                 <div className="flex items-center gap-2">
                     <Bot className="w-5 h-5 text-primary" />
                     <h3 className="font-semibold text-gray-800 dark:text-gray-100">AI 助手</h3>
@@ -164,7 +164,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-gray-50 dark:bg-gray-900/50">
+            <div className="flex-1 space-y-4 overflow-y-auto bg-[var(--product-bg)] p-4">
                 {messages.length === 0 && (
                     <div className="text-center text-gray-400 mt-20">
                         <Bot className="w-12 h-12 mx-auto mb-2 opacity-50" />
@@ -207,7 +207,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="p-4 bg-white dark:bg-gray-800 border-t border-gray-200 dark:border-gray-700">
+            <div className="border-t border-[var(--product-line-soft)] bg-[var(--product-panel)] p-4">
                 <div className="flex gap-2 items-end">
                     <Textarea
                         value={input}
