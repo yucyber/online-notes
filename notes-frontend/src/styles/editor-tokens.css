@@ -133,26 +133,34 @@ html[data-theme="dark"] {
 
 .editor-sidebar-collapse-handle {
   position: absolute;
-  top: 50%;
+  top: 80px;
   right: -14px;
   z-index: 4;
   display: grid;
   width: 28px;
-  height: 46px;
+  height: 56px;
   place-items: center;
   border: 1px solid var(--product-line, var(--border));
-  border-radius: 999px;
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
   background: var(--product-panel, var(--surface-1));
-  color: var(--product-text-secondary, var(--text-muted));
-  opacity: 0;
-  transform: translateY(-50%);
-  transition: opacity 150ms ease;
+  color: var(--product-text-muted, var(--text-muted));
+  box-shadow: var(--shadow-sm);
+  opacity: 0.6;
+  transition: opacity 200ms ease, color 200ms ease, background 200ms ease;
+  padding: 0;
+  cursor: pointer;
 }
 
-.editor-left-navigation:hover .editor-sidebar-collapse-handle,
-.editor-left-navigation:focus-within .editor-sidebar-collapse-handle {
+.editor-sidebar-collapse-handle:hover,
+.editor-sidebar-collapse-handle:focus-visible {
   opacity: 1;
+  color: var(--product-text, var(--on-surface));
+  background: #fff;
+  outline: none;
 }
+
+.editor-sidebar-collapse-handle svg { width: 16px; height: 16px; }
 
 .editor-left-edge-trigger {
   position: fixed;
@@ -211,7 +219,7 @@ html[data-theme="dark"] {
 
 .editor-workspace-sidebar__search {
   display: flex;
-  min-height: 42px;
+  min-height: 36px;
   align-items: center;
   gap: 8px;
   padding: 0 10px;

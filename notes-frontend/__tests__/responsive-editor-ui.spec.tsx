@@ -126,6 +126,8 @@ describe('编辑页窄视口布局', () => {
 
     expect(productCss).toMatch(/\.editor-left-edge-trigger\s*\{/)
     expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{/)
+    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*right:\s*-14px/s)
+    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*height:\s*56px/s)
     expect(productCss).toMatch(/\.editor-layout-main\s*\{[^}]*min-width:\s*0/s)
   })
 
