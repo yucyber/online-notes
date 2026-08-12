@@ -7,7 +7,7 @@ import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
 import { Bold, Italic, Underline as UnderlineIcon, MessageSquare } from 'lucide-react'
 import { createTiptapExtensions } from './tiptap-extensions'
-import { COLLAB_STATUS_META, colorFromString, hexToRgb, sanitizeHTML, srgb } from './tiptap-utils'
+import { sanitizeHTML } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
 import { useTiptapPersistence } from './useTiptapPersistence'
 import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge, type NormalizedEditorContent } from './useTiptapEditorBridge'
@@ -71,12 +71,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const {
     provider,
     roomRole,
-    connStatus,
-    participants,
     collabEnabled,
-    localMode,
     wsDebug,
-    reconnect,
   } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
   const effectiveReadOnly = readOnly || roomRole !== 'writer'
   const effectiveReadOnlyRef = useRef(effectiveReadOnly)
@@ -500,41 +496,8 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
 
   if (!editor) return <div className="p-4 text-sm text-gray-500">编辑器加载中…</div>
 
-  const connMeta = COLLAB_STATUS_META[connStatus]
-
   return (
-    <div className="space-y-2">
-      <div className="flex items-center gap-2">
-        <div className="text-xs" aria-live="polite" role="status">
-          连接状态：<span className={connMeta.className}>{connMeta.label}</span>
-          {connMeta.detail && <span className="ml-2 text-xs text-gray-500">{connMeta.detail}</span>}
-          <span className="ml-2 text-[11px] text-gray-500">ws[{wsDebug.connected ? 'on' : wsDebug.connecting ? 'dial' : 'off'}] sync[{wsDebug.synced ? 'ok' : '…'}]</span>
-          {localMode && connStatus !== 'disconnected' && <span className="ml-2 text-xs text-gray-500">已本地降级</span>}
-          {effectiveReadOnly && <span className="ml-2 text-xs font-medium text-amber-700">只读权限，无法修改内容</span>}
-        </div>
-        <div className="flex items-center gap-1" role="list" aria-label="在线协作者">
-          {participants.map((p, i) => {
-            const bg = colorFromString(p.name || p.id)
-            const { r, g, b } = hexToRgb(bg)
-            const lum = 0.2126 * srgb(r) + 0.7152 * srgb(g) + 0.0722 * srgb(b)
-            const textColor = lum > 0.5 ? '#111827' : '#FFFFFF'
-            return (
-              <span
-                key={i}
-                role="listitem"
-                className="rounded px-2 py-0.5 text-xs"
-                style={{ backgroundColor: bg, color: textColor }}
-                aria-label={`协作者：${p.name || p.id}`}
-              >
-                {p.name || p.id}
-              </span>
-            )
-          })}
-          {participants.length === 0 && <span className="text-xs text-gray-400">无在线协作者</span>}
-        </div>
-        <Button size="sm" variant="outline" onClick={reconnect}>重连</Button>
-        <Button size="sm" variant="outline" disabled={effectiveReadOnly || localMode} onClick={async () => { if (effectiveReadOnly || localMode) return; const html = editor.getHTML(); await onSave(html) }}>保存</Button>
-      </div>
+    <div>
       <div
         id="editor-card"
         className={`border rounded-[8px] p-3 min-h-[560px] focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-transparent ${className || ''}`}

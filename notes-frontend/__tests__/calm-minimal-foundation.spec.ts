@@ -105,4 +105,20 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(layout).toContain('editor-workspace-route')
     expect(layout.indexOf('editor-workspace-route')).toBeLessThan(layout.indexOf('<DashboardSidebar'))
   })
+
+  test('编辑器正文不显示开发诊断和常驻手动保存操作', () => {
+    const editor = read('src/components/editor/TiptapEditor.tsx')
+
+    expect(editor).not.toContain('ws[{wsDebug.connected')
+    expect(editor).not.toContain('连接状态：')
+    expect(editor).not.toContain('>重连</Button>')
+  })
+
+  test('窄屏抽屉在自身内部提供收起入口', () => {
+    const sidebar = read('src/components/editor/EditorWorkspaceSidebar.tsx')
+    const tokens = read('src/styles/editor-tokens.css')
+
+    expect(sidebar).toContain('editor-workspace-sidebar__mobile-close')
+    expect(tokens).toContain('.editor-workspace-sidebar__mobile-close')
+  })
 })

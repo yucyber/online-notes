@@ -1,4 +1,4 @@
-import { ArrowLeft, FileText, Search } from 'lucide-react'
+import { ArrowLeft, FileText, PanelLeftClose, Search } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 
 type Props = {
@@ -34,6 +34,9 @@ export function EditorWorkspaceSidebar({ collapsed, onBack, onOpenNotes, onToggl
             <strong>在线笔记</strong>
             <small>专注编辑</small>
           </span>
+          <Button type="button" variant="ghost" size="icon" className="editor-workspace-sidebar__mobile-close" aria-label="收起左侧导航" onClick={onToggle}>
+            <PanelLeftClose className="h-4 w-4" aria-hidden />
+          </Button>
         </div>
 
         <label className="editor-workspace-sidebar__search">

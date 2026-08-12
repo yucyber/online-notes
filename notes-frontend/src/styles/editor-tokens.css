@@ -133,6 +133,11 @@ html[data-theme="dark"] {
   padding: 0 4px;
 }
 
+.editor-workspace-sidebar__mobile-close {
+  display: none;
+  margin-left: auto;
+}
+
 .editor-workspace-sidebar__brand > span:last-child {
   display: grid;
   min-width: 0;
@@ -647,6 +652,10 @@ html[data-theme="dark"] {
 
   .editor-layout-resizer {
     display: none;
+  }
+
+  .editor-workspace-sidebar__mobile-close {
+    display: inline-flex;
   }
 }
 

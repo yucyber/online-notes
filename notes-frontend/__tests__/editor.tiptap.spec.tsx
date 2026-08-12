@@ -122,7 +122,7 @@ describe('TiptapEditor 全区域输入', () => {
   it('容器空白点击聚焦并在文末输入', () => {
     const onSave = jest.fn()
     render(<TiptapEditor noteId="n1" initialHTML={'<p>abc</p>'} onSave={async () => onSave('')} user={user} />)
-    const container = screen.getByText(/连接状态：/).closest('div')!.nextElementSibling as HTMLElement
+    const container = document.getElementById('editor-card') as HTMLElement
     const evt = new MouseEvent('mousedown', { bubbles: true })
     Object.defineProperty(evt, 'target', { value: container })
     Object.defineProperty(evt, 'currentTarget', { value: container })
@@ -133,11 +133,11 @@ describe('TiptapEditor 全区域输入', () => {
     expect(editable).toBeInTheDocument()
   })
 
-  it('只读态禁用保存', () => {
+  it('只读态禁用编辑且不显示手动保存', () => {
     const onSave = jest.fn()
     render(<TiptapEditor noteId="n1" initialHTML={'<p></p>'} onSave={async () => onSave('')} user={user} readOnly />)
-    const saveBtn = screen.getByRole('button', { name: '保存' })
-    expect(saveBtn).toBeDisabled()
+    expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'false')
+    expect(screen.queryByRole('button', { name: '保存' })).not.toBeInTheDocument()
   })
 
   it('只读态忽略所有程序化编辑事件且不改变编辑器内容', async () => {
