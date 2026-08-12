@@ -410,24 +410,80 @@ html[data-theme="dark"] {
   z-index: 8;
   width: 210px;
   max-height: calc(100vh - 210px);
-  overflow: hidden;
+  display: flex;
+  flex-direction: column;
   border-left: 1px solid var(--product-line, var(--border));
   background: var(--product-bg, var(--bg));
 }
-.editor-outline__toggle { padding: 8px 12px; font-size: 12px; font-weight: 700; }
-.editor-outline__content { display: grid; overflow-y: auto; padding: 4px 12px 12px; }
-.editor-outline__content button { min-height: 34px; overflow: hidden; color: var(--product-text-secondary); text-align: left; text-overflow: ellipsis; white-space: nowrap; }
+.editor-outline__pin {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 32px;
+  padding: 0 8px;
+  font-size: 12px;
+  font-weight: 700;
+  flex: none;
+}
+.editor-outline__hide {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--product-text-muted, var(--text-muted));
+  cursor: pointer;
+}
+.editor-outline__hide:hover { background: var(--product-panel, var(--surface-1)); }
+.editor-outline__hide svg { width: 16px; height: 16px; }
+.editor-outline__view {
+  overflow-y: auto;
+  overflow-x: hidden;
+  flex: 1;
+  min-height: 0;
+  padding: 4px 8px 12px;
+}
+.editor-outline__list { display: block; }
+.editor-outline__item { display: flex; align-items: stretch; }
+.editor-outline__link {
+  display: block;
+  width: 100%;
+  min-height: 34px;
+  padding: 6px 8px;
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--product-text-secondary);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+  font-size: 13px;
+}
+.editor-outline__item[data-depth="1"] .editor-outline__link { padding-left: 8px; }
+.editor-outline__item[data-depth="2"] .editor-outline__link { padding-left: 20px; }
+.editor-outline__item[data-depth="3"] .editor-outline__link { padding-left: 32px; }
+.editor-outline__item[data-depth="4"] .editor-outline__link { padding-left: 44px; }
+.editor-outline__item[data-depth="5"] .editor-outline__link { padding-left: 56px; }
+.editor-outline__item[data-depth="6"] .editor-outline__link { padding-left: 68px; }
+.editor-outline__link:hover { background: var(--product-panel, var(--surface-1)); }
+.editor-outline__empty { color: var(--product-text-muted, var(--text-muted)); font-size: 12px; padding: 8px; }
+.editor-outline__view::-webkit-scrollbar { width: 6px; }
+.editor-outline__view::-webkit-scrollbar-thumb { background: var(--product-line, var(--border)); border-radius: 3px; }
+.editor-outline__view::-webkit-scrollbar-track { background: transparent; }
 .editor-header__outline-action { display: none; }
 .editor-outline-drawer-backdrop { display: none; }
 .editor-outline[data-pinned="false"] { right: 0; width: 18px; min-height: 65vh; border-left-width: 2px; }
-.editor-outline[data-pinned="false"] .editor-outline__content,
-.editor-outline[data-pinned="false"] .editor-outline__toggle { opacity: 0; }
+.editor-outline[data-pinned="false"] .editor-outline__view,
+.editor-outline[data-pinned="false"] .editor-outline__pin { opacity: 0; }
 .editor-outline[data-pinned="false"]:hover,
 .editor-outline[data-pinned="false"]:focus-within { width: 210px; padding-left: 8px; }
-.editor-outline[data-pinned="false"]:hover .editor-outline__content,
-.editor-outline[data-pinned="false"]:hover .editor-outline__toggle,
-.editor-outline[data-pinned="false"]:focus-within .editor-outline__content,
-.editor-outline[data-pinned="false"]:focus-within .editor-outline__toggle { opacity: 1; }
+.editor-outline[data-pinned="false"]:hover .editor-outline__view,
+.editor-outline[data-pinned="false"]:hover .editor-outline__pin,
+.editor-outline[data-pinned="false"]:focus-within .editor-outline__view,
+.editor-outline[data-pinned="false"]:focus-within .editor-outline__pin { opacity: 1; }
 
 .editor-rich-editor[data-fullscreen="true"] { overflow-y: auto !important; }
 .editor-rich-editor[data-fullscreen="true"] .editor-toolbar { position: sticky; top: 0; z-index: 3; }

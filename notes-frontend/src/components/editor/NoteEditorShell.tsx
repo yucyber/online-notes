@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
+import { ChevronRight } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
@@ -662,11 +663,20 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
               </div>
               {!isFullscreen && (
                 <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
-                  <button type="button" className="editor-outline__toggle" aria-label={outlinePinned ? '隐藏大纲' : '显示大纲'} onClick={() => setOutlinePinned((value) => !value)}>大纲</button>
-                  <div className="editor-outline__content">
-                    {toc.length === 0 ? <span>暂无标题</span> : toc.map((heading) => (
-                      <button key={heading.id} type="button" style={{ paddingLeft: `${(heading.level - 1) * 10}px` }} onClick={() => document.getElementById(heading.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })}>{heading.text}</button>
-                    ))}
+                  <div className="editor-outline__pin">
+                    <span className="editor-outline__pin-text">大纲</span>
+                    <button type="button" className="editor-outline__hide" aria-label="隐藏大纲" onClick={() => setOutlinePinned(false)}>
+                      <ChevronRight className="w-4 h-4" aria-hidden />
+                    </button>
+                  </div>
+                  <div className="editor-outline__view">
+                    <div className="editor-outline__list">
+                      {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
+                        <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
+                          <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
+                        </div>
+                      ))}
+                    </div>
                   </div>
                 </aside>
               )}
@@ -691,10 +701,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
               <strong>大纲</strong>
               <button type="button" onClick={() => setShowOutlineDrawer(false)}>关闭</button>
             </div>
-            <div className="editor-outline__content">
-              {toc.length === 0 ? <span>暂无标题</span> : toc.map((heading) => (
-                <button key={heading.id} type="button" style={{ paddingLeft: `${(heading.level - 1) * 10}px` }} onClick={() => { document.getElementById(heading.id)?.scrollIntoView({ behavior: 'smooth', block: 'start' }); setShowOutlineDrawer(false) }}>{heading.text}</button>
-              ))}
+            <div className="editor-outline__view">
+              <div className="editor-outline__list">
+                {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
+                  <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
+                    <button type="button" className="editor-outline__link" onClick={() => { document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } })); setShowOutlineDrawer(false) }}>{heading.text}</button>
+                  </div>
+                ))}
+              </div>
             </div>
           </aside>
         </div>
