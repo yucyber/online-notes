@@ -152,31 +152,31 @@ describe('编辑页窄视口布局', () => {
     expect(main).toBeInTheDocument()
     expect(productCss).toMatch(/\.editor-layout-grid\s*\{[^}]*grid-template-columns:\s*var\(--editor-left-width\) minmax\(0, 1fr\) var\(--editor-right-width\)/s)
     expect(productCss).toMatch(/\.editor-layout-main\s*\{[^}]*min-width:\s*0/s)
-    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '240px'])
+    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '280px'])
 
     fireEvent.click(screen.getByRole('button', { name: '收起左侧导航' }))
     act(() => animationFrame?.(0))
     const leftRestore = within(container.querySelector('#editor-left-navigation') as HTMLElement)
       .getByRole('button', { name: '展开左侧导航' })
     expect(leftRestore).toHaveFocus()
-    expect(gridTracks()).toEqual(['52px', 'minmax(0, 1fr)', '240px'])
+    expect(gridTracks()).toEqual(['52px', 'minmax(0, 1fr)', '280px'])
 
     fireEvent.keyDown(leftRestore, { key: 'Enter', code: 'Enter' })
     fireEvent.keyUp(leftRestore, { key: 'Enter', code: 'Enter' })
     expect(screen.getByRole('button', { name: '收起左侧导航' })).toBeInTheDocument()
-    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '240px'])
+    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '280px'])
 
     fireEvent.click(screen.getByRole('button', { name: '收起右侧面板' }))
     act(() => animationFrame?.(0))
     const rightRestore = within(container.querySelector('#editor-right-metadata') as HTMLElement)
       .getByRole('button', { name: '展开右侧面板' })
     expect(rightRestore).toHaveFocus()
-    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '52px'])
+    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '52px'])
 
     fireEvent.keyDown(rightRestore, { key: ' ', code: 'Space' })
     fireEvent.keyUp(rightRestore, { key: ' ', code: 'Space' })
     expect(screen.getByRole('button', { name: '收起右侧面板' })).toBeInTheDocument()
-    expect(gridTracks()).toEqual(['280px', 'minmax(0, 1fr)', '240px'])
+    expect(gridTracks()).toEqual(['236px', 'minmax(0, 1fr)', '280px'])
   })
 
   test('Toast action 暴露明确名称并可由键盘操作', () => {
@@ -215,19 +215,19 @@ describe('编辑页窄视口布局', () => {
     const grid = container.querySelector('.editor-layout-grid') as HTMLElement
     const resizer = screen.getByRole('separator', { name: '调整左侧导航宽度' })
 
-    fireEvent(resizer, new MouseEvent('pointerdown', { bubbles: true, clientX: 280 }))
-    fireEvent(resizer, new MouseEvent('pointermove', { bubbles: true, clientX: 340 }))
-    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('340px')
+    fireEvent(resizer, new MouseEvent('pointerdown', { bubbles: true, clientX: 236 }))
+    fireEvent(resizer, new MouseEvent('pointermove', { bubbles: true, clientX: 296 }))
+    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('296px')
     expect(localStorage.getItem('notes:editor-layout:v1')).toBeNull()
 
     fireEvent.keyDown(window, { key: 'Escape' })
-    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('280px')
+    expect(grid.style.getPropertyValue('--editor-left-width')).toBe('236px')
     expect(localStorage.getItem('notes:editor-layout:v1')).toBeNull()
 
-    fireEvent(resizer, new MouseEvent('pointerdown', { bubbles: true, clientX: 280 }))
-    fireEvent(resizer, new MouseEvent('pointermove', { bubbles: true, clientX: 340 }))
-    fireEvent(resizer, new MouseEvent('pointerup', { bubbles: true, clientX: 340 }))
-    expect(JSON.parse(localStorage.getItem('notes:editor-layout:v1') || '{}')).toMatchObject({ leftWidth: 340 })
+    fireEvent(resizer, new MouseEvent('pointerdown', { bubbles: true, clientX: 236 }))
+    fireEvent(resizer, new MouseEvent('pointermove', { bubbles: true, clientX: 296 }))
+    fireEvent(resizer, new MouseEvent('pointerup', { bubbles: true, clientX: 296 }))
+    expect(JSON.parse(localStorage.getItem('notes:editor-layout:v1') || '{}')).toMatchObject({ leftWidth: 296 })
   })
 
   test('宽屏收起右侧后保留可见恢复轨道并转移焦点', () => {
@@ -241,5 +241,18 @@ describe('编辑页窄视口布局', () => {
     expect((container.querySelector('.editor-layout-grid') as HTMLElement).style.getPropertyValue('--editor-right-width')).toBe('52px')
     expect(restore.parentElement).toHaveStyle({ width: '52px' })
     expect(restore).toHaveFocus()
+  })
+
+  test('编辑器使用单一工作区侧栏并将笔记属性放入右侧面板', () => {
+    const note = { id: 'n1', title: '布局测试', content: '', tags: [], visibility: 'private' } as any
+    const { container } = render(<NoteEditorShell id="n1" initialData={note} />)
+
+    const navigation = screen.getByRole('complementary', { name: '编辑器导航' })
+    expect(within(navigation).getByRole('button', { name: '返回工作台' })).toBeInTheDocument()
+    expect(within(navigation).getByRole('searchbox', { name: '搜索笔记' })).toBeInTheDocument()
+
+    const properties = screen.getByRole('complementary', { name: '笔记属性' })
+    expect(within(properties).getByText('选择分类')).toBeInTheDocument()
+    expect(container.querySelector('.editor-top-properties')).not.toBeInTheDocument()
   })
 })

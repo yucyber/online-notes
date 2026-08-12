@@ -46,7 +46,7 @@ describe('useEditorLayoutPreferences', () => {
     Object.defineProperty(window, 'innerWidth', { configurable: true, value: 700 })
 
     const markup = renderToString(<LayoutPreferenceSnapshot />)
-    expect(markup).toContain('{&quot;leftCollapsed&quot;:false,&quot;rightCollapsed&quot;:false,&quot;leftWidth&quot;:280}')
+    expect(markup).toContain('{&quot;leftCollapsed&quot;:false,&quot;rightCollapsed&quot;:false,&quot;leftWidth&quot;:236}')
 
     const container = document.createElement('div')
     container.innerHTML = markup
@@ -103,7 +103,7 @@ describe('useEditorLayoutPreferences', () => {
     expect(result.current.preferences).toEqual({
       leftCollapsed: false,
       rightCollapsed: false,
-      leftWidth: 280,
+      leftWidth: 236,
     })
   })
 

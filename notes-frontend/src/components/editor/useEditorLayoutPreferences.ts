@@ -11,7 +11,7 @@ export type EditorLayoutPreferences = {
 const STORAGE_KEY = 'notes:editor-layout:v1'
 const MIN_LEFT_WIDTH = 220
 const MAX_LEFT_WIDTH = 360
-const DEFAULT_LEFT_WIDTH = 280
+const DEFAULT_LEFT_WIDTH = 236
 const SSR_DEFAULT_PREFERENCES: EditorLayoutPreferences = {
   leftCollapsed: false,
   rightCollapsed: false,

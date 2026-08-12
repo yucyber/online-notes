@@ -5,13 +5,14 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
-import { ChevronDown, ChevronUp } from 'lucide-react'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
 import { NoteEditorDrawers } from '@/components/editor/NoteEditorDrawers'
 import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
 import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
+import { EditorNoteProperties } from '@/components/editor/EditorNoteProperties'
+import { EditorWorkspaceSidebar } from '@/components/editor/EditorWorkspaceSidebar'
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
@@ -72,7 +73,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const rightRestoreButtonRef = useRef<HTMLButtonElement>(null)
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
   const [isResizingLeft, setIsResizingLeft] = useState(false)
-  const [showMeta, setShowMeta] = useState(true)
   useEffect(() => {
     const open = () => {
       if (rejectReadOnlyWrite()) return
@@ -426,62 +426,12 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     return () => { document.removeEventListener('keydown', onSaveShortcut) }
   }, [rejectReadOnlyWrite, saveNow])
 
-  const childrenByParent = (() => {
-    const m: Record<string, Category[]> = {}
-    categories.forEach(c => {
-      const pid = (c.parentId || '')
-      const key = pid || '__root__'
-      if (!m[key]) m[key] = []
-      m[key].push(c)
-    })
-    return m
-  })()
-
-  const renderCategoryNode = (cat: Category, level: number = 0) => {
-    const id = resolveCategoryId(cat)
-    const checked = auxCategoryIds.includes(id)
-    const hasChildren = (childrenByParent[id] || []).length > 0
-    const expanded = expandedCats[id]
-    return (
-      <div key={id || cat.name} className="py-1">
-        <div className="flex items-center gap-2" style={{ paddingLeft: `${level * 16}px` }}>
-          {hasChildren && (
-            <button
-              type="button"
-              onClick={() => setExpandedCats(prev => ({ ...prev, [id]: !prev[id] }))}
-              className="h-5 w-5 flex items-center justify-center rounded hover:bg-gray-100 text-gray-500"
-              aria-label={expanded ? '折叠' : '展开'}
-            >
-              {expanded ? '▾' : '▸'}
-            </button>
-          )}
-          {!hasChildren && <span className="h-5 w-5" />}
-          <input
-            type="checkbox"
-            checked={checked}
-            disabled={readOnly}
-            onChange={(e) => {
-              if (rejectReadOnlyWrite()) return
-              const next = e.target.checked
-                ? Array.from(new Set([...auxCategoryIds, id]))
-                : auxCategoryIds.filter(x => x !== id)
-              setAuxCategoryIds(next)
-            }}
-            className="h-4 w-4 rounded border-gray-300 text-primary focus:ring-primary"
-          />
-          <span className="text-gray-700 text-sm">{cat.name}</span>
-        </div>
-        {hasChildren && expanded && (
-          <div>
-            {(childrenByParent[id] || []).map(child => renderCategoryNode(child, level + 1))}
-          </div>
-        )}
-      </div>
-    )
-  }
-
   const handleBack = () => {
     router.push('/dashboard/notes')
+  }
+
+  const handleWorkspaceBack = () => {
+    router.push('/dashboard')
   }
 
   const focusRestoreButton = (button: React.RefObject<HTMLButtonElement>) => {
@@ -552,239 +502,21 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   return (
     <div className="editor-shell">
 
-      <NoteEditorHeader
-        note={note}
-        readOnly={readOnly}
-        editorMode="rich"
-        leftCollapsed={preferences.leftCollapsed}
-        rightCollapsed={preferences.rightCollapsed}
-        onBack={handleBack}
-        onModeChange={() => undefined}
-        onVisibilityChange={async (visibility) => {
-          if (rejectReadOnlyWrite()) return
-          try {
-            await updateNote(id, { visibility: visibility as any })
-            await loadNote()
-          } catch { }
-        }}
-        onToggleLeft={handleToggleLeft}
-        onToggleRight={handleToggleRight}
-        onOpenCollab={() => setShowCollabDrawer(true)}
-        saveState={saveState}
-      />
-      {error && (
-        <div
-          className="p-4 text-sm text-red-600"
-          style={{
-            backgroundColor: '#fef2f2',
-            border: '1px solid #fecaca',
-            borderRadius: '8px',
-            boxShadow: '0 1px 2px 0 rgba(0, 0, 0, 0.05)',
-          }}
-        >
-          {error}
-        </div>
-      )}
-
-      {/* 分类/标签等元信息 */}
-      <div
-        className="col-span-12 w-full"
-        style={{
-          borderRadius: '12px',
-          boxShadow: 'var(--shadow-md)',
-          background: 'var(--surface-1)'
-        }}
-      >
-        <div
-          role="button"
-          tabIndex={0}
-          className="flex items-center justify-between px-6 py-3 cursor-pointer select-none"
-          style={{ borderBottom: showMeta ? '1px solid var(--border)' : 'none' }}
-          onClick={() => setShowMeta(!showMeta)}
-          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setShowMeta(!showMeta) } }}
-        >
-          <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>笔记属性</span>
-          <button className="text-gray-500 hover:text-gray-700">
-            {showMeta ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          </button>
-        </div>
-
-        {showMeta && (
-          <div className="grid gap-6 p-6 lg:grid-cols-12" style={{ borderColor: 'var(--border)' }}>
-
-            <div
-              className="col-span-12 w-full"
-              style={{
-                borderRadius: '12px',
-                boxShadow: 'none',
-                background: 'transparent'
-              }}
-            >
-              <div className="grid gap-6 md:grid-cols-2">
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>选择分类</span>
-                    {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
-                  </div>
-                  <select
-                    className="w-full rounded-lg border p-3 text-sm"
-                    style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                    value={selectedCategory}
-                    onChange={(e) => {
-                      if (rejectReadOnlyWrite()) return
-                      setSelectedCategory(e.target.value)
-                    }}
-                    disabled={readOnly || metaLoading || !!metaError}
-                  >
-                    <option value="">未分类</option>
-                    {categories.map((category) => {
-                      const value = resolveCategoryId(category)
-                      return (
-                        <option key={value || category.name} value={value}>
-                          {category.name}
-                        </option>
-                      )
-                    })}
-                  </select>
-
-                  <div className="mt-4">
-                    <div className="mb-2 flex items-center justify-between">
-                      <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>附属分类（仅用于标签）</span>
-                    </div>
-                    <div className="max-h-56 overflow-auto rounded-lg border p-3" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-                      {(childrenByParent['__root__'] || []).map(root => renderCategoryNode(root, 0))}
-                    </div>
-                  </div>
-                </div>
-
-                <div>
-                  <div className="mb-2 flex items-center justify-between">
-                    <span className="text-sm font-medium" style={{ color: 'var(--on-surface)' }}>标签（可多选）</span>
-                    {metaLoading && <span className="text-xs text-gray-400">加载中...</span>}
-                  </div>
-                  <div className="mb-2 flex flex-col gap-2 sm:flex-row sm:items-center">
-                    <input
-                      type="text"
-                      value={tagInput}
-                      disabled={readOnly}
-                      onChange={(e) => {
-                        if (rejectReadOnlyWrite()) return
-                        setTagInput(e.target.value)
-                      }}
-                      onKeyDown={(e) => {
-                        if (e.key === 'Enter') {
-                          if (rejectReadOnlyWrite()) return
-                          const parts = tagInput.split(/[,\s]+/)
-                          setTagInput('')
-                          addTagsByNames(parts)
-                        }
-                      }}
-                      placeholder="输入标签，Enter 添加，支持逗号分隔"
-                      className="min-w-0 flex-1 rounded-lg border p-2 text-sm placeholder-muted"
-                      style={{ borderColor: 'var(--interactive-border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                    />
-                    <button
-                      disabled={readOnly}
-                      className="whitespace-nowrap rounded-lg border px-3 py-2 text-sm transition hover:bg-[var(--surface-2)]"
-                      style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}
-                      onClick={() => {
-                        if (rejectReadOnlyWrite()) return
-                        setSelectedTags([])
-                      }}
-                    >清空标签</button>
-                  </div>
-                  {tagInput && (
-                    <div className="mb-2 rounded-lg border p-2 shadow-sm" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>
-                      <div className="text-xs text-gray-500 mb-1">建议</div>
-                      <div className="flex flex-wrap gap-2">
-                        {tags.filter(t => t.name.toLowerCase().includes(tagInput.toLowerCase())).slice(0, 10).map(t => {
-                          const id = (t.id || (t as unknown as { _id?: string })?._id || '')
-                          return (
-                            <button key={id || t.name} type="button" disabled={readOnly || !id} onClick={() => id && toggleTag(id)} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
-                              {t.name}
-                            </button>
-                          )
-                        })}
-                        <button type="button" disabled={readOnly} onClick={() => { if (rejectReadOnlyWrite()) return; void addTagsByNames([tagInput]); setTagInput('') }} className="rounded-full border px-3 py-1 text-xs" style={{ borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }}>
-                          创建标签 “{tagInput}”
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {tags.length === 0 ? (
-                    <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
-                      {metaError || '暂无可用标签'}
-                    </p>
-                  ) : (
-                    <div className="flex flex-wrap gap-2">
-                      {tags.map((tag) => {
-                        const tagId =
-                          tag.id ||
-                          (tag as unknown as { _id?: string })?._id ||
-                          ''
-                        const isActive = tagId ? selectedTags.includes(tagId) : false
-                        return (
-                          <button
-                            key={tagId || tag.name}
-                            type="button"
-                            onClick={() => tagId && toggleTag(tagId)}
-                            disabled={readOnly || !tagId}
-                            className="rounded-full border px-3 py-1 text-sm transition"
-                            style={{
-                              ...(isActive
-                                ? { borderColor: 'var(--primary-100)', background: 'var(--primary-50)', color: 'var(--primary-600)' }
-                                : { borderColor: 'var(--border)', color: 'var(--on-surface)' }),
-                              minHeight: 44,
-                            }}
-                          >
-                            {tag.name}
-                          </button>
-                        )
-                      })}
-                    </div>
-                  )}
-                </div>
-
-                {metaError && (
-                  <p className="md:col-span-2 text-sm text-red-500">{metaError}</p>
-                )}
-              </div>
-            </div>
-          </div>
-        )}
-
-      </div>
       <div
         className="editor-layout-grid"
         data-right-collapsed={preferences.rightCollapsed}
         style={{
           '--editor-left-width': `${preferences.leftCollapsed ? 52 : preferences.leftWidth}px`,
-          '--editor-right-width': preferences.rightCollapsed ? '52px' : '240px',
+          '--editor-right-width': preferences.rightCollapsed ? '52px' : '280px',
         } as React.CSSProperties}
       >
-        <aside id="editor-left-navigation" className="editor-left-navigation" aria-label="左侧导航">
-          {preferences.leftCollapsed ? (
-            <button
-              ref={leftRestoreButtonRef}
-              type="button"
-              className="editor-layout-restore-button"
-              aria-label="展开左侧导航"
-              title="展开左侧导航"
-              onClick={handleToggleLeft}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' && event.key !== ' ') return
-                event.preventDefault()
-                handleToggleLeft()
-              }}
-            >
-              导航
-            </button>
-          ) : (
-            <div className="editor-left-navigation__content">
-              <p className="text-sm font-medium">笔记导航</p>
-              <p className="mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>使用页头按钮收起导航以扩大编辑空间。</p>
-            </div>
-          )}
+        <EditorWorkspaceSidebar
+          collapsed={preferences.leftCollapsed}
+          onBack={handleWorkspaceBack}
+          onOpenNotes={handleBack}
+          onToggle={handleToggleLeft}
+          restoreButtonRef={leftRestoreButtonRef}
+        >
           {!preferences.leftCollapsed && (
             <div
               role="separator"
@@ -816,8 +548,29 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
               onPointerCancel={cancelLeftResize}
             />
           )}
-        </aside>
+        </EditorWorkspaceSidebar>
         <div className="editor-layout-main">
+          <NoteEditorHeader
+            note={note}
+            readOnly={readOnly}
+            editorMode="rich"
+            leftCollapsed={preferences.leftCollapsed}
+            rightCollapsed={preferences.rightCollapsed}
+            onBack={handleBack}
+            onModeChange={() => undefined}
+            onVisibilityChange={async (visibility) => {
+              if (rejectReadOnlyWrite()) return
+              try {
+                await updateNote(id, { visibility: visibility as any })
+                await loadNote()
+              } catch { }
+            }}
+            onToggleLeft={handleToggleLeft}
+            onToggleRight={handleToggleRight}
+            onOpenCollab={() => setShowCollabDrawer(true)}
+            saveState={saveState}
+          />
+          {error && <div className="editor-error-banner" role="alert">{error}</div>}
           <div ref={editorContainerRef} className="editor-rich-editor" style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
                 if (cmd === 'collab') { setShowCollabDrawer(true); return }
@@ -872,6 +625,29 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           isFullscreen={isFullscreen}
           onToggle={handleToggleRight}
           restoreButtonRef={rightRestoreButtonRef}
+          properties={(
+            <EditorNoteProperties
+              categories={categories}
+              tags={tags}
+              selectedCategory={selectedCategory}
+              selectedTags={selectedTags}
+              auxCategoryIds={auxCategoryIds}
+              tagInput={tagInput}
+              expandedCats={expandedCats}
+              metaLoading={metaLoading}
+              metaError={metaError}
+              readOnly={readOnly}
+              resolveCategoryId={resolveCategoryId}
+              setSelectedCategory={setSelectedCategory}
+              setSelectedTags={setSelectedTags}
+              setAuxCategoryIds={setAuxCategoryIds}
+              setTagInput={setTagInput}
+              setExpandedCats={setExpandedCats}
+              toggleTag={toggleTag}
+              addTagsByNames={addTagsByNames}
+              rejectReadOnlyWrite={rejectReadOnlyWrite}
+            />
+          )}
         />
       </div>
 

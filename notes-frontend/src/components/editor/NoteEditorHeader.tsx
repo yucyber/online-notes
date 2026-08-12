@@ -34,17 +34,17 @@ export function NoteEditorHeader({
   return (
     <div className="editor-header">
       <div className="editor-header__title-block">
-        <div className="editor-header__breadcrumb">
+        <div className="editor-header__title-row">
           <Button variant="ghost" size="icon" aria-label="返回笔记" title="返回笔记" onClick={onBack}>
             <ArrowLeft className="h-4 w-4" aria-hidden />
           </Button>
-          <span>我的笔记</span>
-          <span aria-hidden>/</span>
-          <span>{editorMode === 'rich' ? '协同编辑' : 'Markdown'}</span>
-        </div>
-        <div className="editor-header__title-row">
-          <h1>{note.title || (readOnly ? '查看笔记' : '未命名笔记')}</h1>
-          <span className="editor-header__mode-status">{readOnly ? '查看笔记' : '持续保存'}</span>
+          <div>
+            <span className="editor-header__eyebrow">{editorMode === 'rich' ? '协同编辑' : 'Markdown'}</span>
+            <div className="editor-header__title-line">
+              <h1>{note.title || (readOnly ? '查看笔记' : '未命名笔记')}</h1>
+              <span className="editor-header__mode-status">{readOnly ? '查看笔记' : '持续保存'}</span>
+            </div>
+          </div>
         </div>
       </div>
       <div className="editor-header__actions">
