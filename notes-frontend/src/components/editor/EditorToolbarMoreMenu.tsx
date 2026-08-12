@@ -44,7 +44,7 @@ export function EditorToolbarMoreMenu({ disabled, exec }: Props) {
         <MoreHorizontal className="h-4 w-4" aria-hidden />
       </Button>
       {open && (
-        <div role="menu" aria-label="更多格式" className="editor-toolbar-more__menu" onKeyDown={(event) => {
+        <div role="menu" aria-label="更多格式" tabIndex={-1} className="editor-toolbar-more__menu" onKeyDown={(event) => {
           if (event.key !== 'Escape') return
           event.preventDefault()
           closeAndRestoreFocus()
