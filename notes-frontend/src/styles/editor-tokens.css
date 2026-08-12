@@ -122,9 +122,9 @@ html[data-theme="dark"] {
   top: 0;
   display: grid;
   grid-template-rows: auto auto 1fr auto;
-  gap: 18px;
+  gap: 12px;
   min-height: 100vh;
-  padding: 18px 14px;
+  padding: 12px 12px;
 }
 
 .editor-workspace-sidebar__back {
