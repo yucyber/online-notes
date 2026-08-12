@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { listComments, createComment, commentsAPI } from '@/lib/api'
+import { buildCommentIdempotencyKey } from '@/lib/comments-key'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 
@@ -50,8 +51,9 @@ export function CommentsPanel({ noteId, selection, readOnly = false }: Props) {
       return
     }
     try {
-      // 生成稳定的幂等键（同一笔记、同一选区、同一文本在短时间内只创建一次）
-      const idemKey = `${noteId}:${selection.start}:${selection.end}:${text.trim()}`
+      // 生成稳定的幂等键（同一笔记、同一选区、同一文本在短时间内只创建一次）。
+      // 用 SHA-1 编码，避免含冒号/中文的原始拼接触发后端 400。
+      const idemKey = await buildCommentIdempotencyKey(noteId, selection.start, selection.end, text.trim())
       const created: any = await createComment(noteId, selection.start, selection.end, text.trim(), { idempotencyKey: idemKey })
       setText('')
       await load()
