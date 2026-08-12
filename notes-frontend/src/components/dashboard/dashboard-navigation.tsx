@@ -1,74 +1,64 @@
 'use client'
 
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
-import { Bell, BookOpenCheck, ChevronRight, Clock, FileText, FolderTree, LayoutDashboard, LogOut, Menu, Moon, Settings, Settings2, Sun, Tags, X } from 'lucide-react'
-import NetworkStatus from '@/components/security/NetworkStatus'
+import { Bell, BookOpenCheck, ChevronDown, ChevronRight, Clock, FileText, FolderTree, LayoutDashboard, LogOut, Menu, Moon, Settings, Sun, Tags, Wifi, X } from 'lucide-react'
 import type { User } from '@/types'
 
 export const routeNames: Record<string, string> = {
-  dashboard: '工作台', notes: '我的笔记', 'knowledge-bases': '知识库', boards: '看板', mindmaps: '思维导图', tags: '标签管理', settings: '设置', trash: '回收站', new: '新建', edit: '编辑', categories: '分类管理', logs: '活动日志', profile: '个人资料', security: '安全设置', notifications: '通知', search: '搜索', invitations: '邀请',
+  dashboard: '工作台', notes: '我的笔记', 'knowledge-bases': '知识库', boards: '看板', mindmaps: '思维导图', tags: '标签管理', settings: '设置', new: '新建', edit: '编辑', categories: '分类管理', activity: '活动日志', notifications: '通知',
 }
 
-export const navItems = [
-  { label: '仪表盘', icon: <LayoutDashboard className="h-5 w-5" />, href: '/dashboard', hint: '全局概览' },
-  { label: '我的笔记', icon: <FileText className="h-5 w-5" />, href: '/dashboard/notes', hint: '全部记录' },
-  { label: '知识库', icon: <BookOpenCheck className="h-5 w-5" />, href: '/dashboard/knowledge-bases', hint: '边界集合' },
-  { label: '活动日志', icon: <Clock className="h-5 w-5" />, href: '/dashboard/activity', hint: '变更记录' },
-  { label: '分类管理', icon: <FolderTree className="h-5 w-5" />, href: '/dashboard/categories', hint: '整理结构' },
-  { label: '标签管理', icon: <Tags className="h-5 w-5" />, href: '/dashboard/tags', hint: '灵活标记' },
-  { label: '设置', icon: <Settings className="h-5 w-5" />, href: '/dashboard/settings', hint: '系统偏好' },
-]
+export const navGroups = [
+  { label: '主导航', items: [
+    { label: '仪表盘', icon: LayoutDashboard, href: '/dashboard' },
+    { label: '我的笔记', icon: FileText, href: '/dashboard/notes' },
+    { label: '知识库', icon: BookOpenCheck, href: '/dashboard/knowledge-bases' },
+    { label: '活动日志', icon: Clock, href: '/dashboard/activity' },
+  ] },
+  { label: '管理', items: [
+    { label: '分类管理', icon: FolderTree, href: '/dashboard/categories' },
+    { label: '标签管理', icon: Tags, href: '/dashboard/tags' },
+  ] },
+] as const
 
+const settingsItem = { label: '设置', icon: Settings, href: '/dashboard/settings' }
 const isActiveRoute = (pathname: string | null, href: string) => Boolean(pathname === href || (href !== '/dashboard' && pathname?.startsWith(href)))
-
 export const shouldUseOverlaySidebar = (viewportWidth: number) => viewportWidth < 1024
 
-const getNavButtonStyle = (isActive: boolean, isHovered: boolean): React.CSSProperties => {
-  const base: React.CSSProperties = { borderRadius: '10px', padding: '10px 12px', border: '1px solid var(--border)', backgroundColor: 'var(--surface-1)', color: 'var(--on-surface)', boxShadow: 'none', transform: 'none' }
-  if (isHovered && !isActive) return { ...base, backgroundColor: 'var(--surface-2)' }
-  if (isActive) return { ...base, backgroundColor: 'var(--primary-50)', border: '1px solid var(--primary-100)', color: 'var(--primary-600)' }
-  return base
+type NavigationItem = { label: string; icon: React.ComponentType<{ className?: string }>; href: string }
+
+function NavItem({ item, pathname, onNavigate, onHover }: { item: NavigationItem; pathname: string | null; onNavigate: (href: string) => void; onHover: (href: string | null) => void }) {
+  const active = isActiveRoute(pathname, item.href)
+  const Icon = item.icon
+  return <Button variant="ghost" className={`dashboard-nav-item ${active ? 'dashboard-nav-item--active' : ''}`} aria-current={active ? 'page' : undefined} onMouseEnter={() => onHover(item.href)} onMouseLeave={() => onHover(null)} onClick={() => onNavigate(item.href)}><Icon className="h-[18px] w-[18px]" /><span>{item.label}</span></Button>
 }
 
-export function DashboardSidebar({ pathname, isHidden, isMobileOpen, hoveredNav, onHover, onNavigate, onLogout, onCloseMobile }: {
-  pathname: string | null
-  isHidden: boolean
-  isMobileOpen: boolean
-  hoveredNav: string | null
-  onHover: (href: string | null) => void
-  onNavigate: (href: string) => void
-  onLogout: () => void
-  onCloseMobile: () => void
-}) {
+function SidebarContent({ pathname, onNavigate, onHover, onCloseMobile }: { pathname: string | null; onNavigate: (href: string) => void; onHover: (href: string | null) => void; onCloseMobile?: () => void }) {
+  const navigate = (href: string) => { onNavigate(href); onCloseMobile?.() }
   return <>
-    {!isHidden && <aside className="relative hidden w-[236px] flex-col overflow-hidden border-r border-[var(--product-line)] bg-[var(--product-panel-soft)] lg:flex">
-      <div className="relative flex h-[70px] items-center gap-3 border-b border-[var(--product-line-soft)] px-4"><div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#263244] text-sm font-bold text-white">N</div><div><p className="text-sm font-semibold text-[var(--product-text)]">{'在线笔记'}</p><p className="text-[11px] text-[var(--product-muted)]">Workspace</p></div></div>
-      <nav className="relative flex-1 overflow-auto px-3 py-4 space-y-1">{navItems.map((item) => { const active = isActiveRoute(pathname, item.href); return <Button key={item.href} variant="ghost" className="w-full justify-start" style={getNavButtonStyle(active, hoveredNav === item.href)} onMouseEnter={() => onHover(item.href)} onMouseLeave={() => onHover(null)} onClick={() => onNavigate(item.href)}><div className="flex items-center gap-3"><span className="h-6 w-1 rounded-full" style={{ backgroundColor: active ? 'var(--primary-600)' : '#e5e7eb' }} /><span className="mr-2" style={{ backgroundColor: active ? 'var(--surface-2)' : 'var(--surface-3)', border: '1px solid var(--border)', borderRadius: '8px', width: '32px', height: '32px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>{item.icon}</span><div className="flex flex-col text-left leading-tight"><span>{item.label}</span><span className="text-[11px] text-gray-500">{item.hint}</span></div></div></Button> })}</nav>
-      <div className="relative border-t border-[var(--product-line-soft)] p-3"><Button variant="ghost" className="w-full justify-start text-[var(--product-text-secondary)] hover:bg-[var(--product-danger-soft)] hover:text-[var(--product-danger)]" onClick={onLogout}><LogOut className="mr-3 h-5 w-5" />{'退出登录'}</Button></div>
-    </aside>}
-    {isMobileOpen && <div className="fixed inset-0 z-40 backdrop-blur-sm lg:hidden animate-fade-in" style={{ backgroundColor: 'var(--overlay)' }} role="button" tabIndex={0} onClick={onCloseMobile} onKeyDown={(event) => { if (event.key === 'Enter' || event.key === ' ') onCloseMobile() }}>
-      <div className="fixed left-0 top-0 h-full w-64 bg-[var(--surface-1)] shadow-xl animate-slide-up" role="dialog" onMouseDown={(event) => event.stopPropagation()}>
-        <div className="flex h-16 items-center justify-between border-b border-gray-200 px-4"><h1 className="text-base font-semibold text-gray-900">{'导航菜单'}</h1><Button variant="ghost" size="icon" className="text-[var(--on-surface)] hover:bg-[var(--surface-2)]" onClick={onCloseMobile}><X className="h-6 w-6" /></Button></div>
-        <nav className="flex-1 overflow-auto p-4 space-y-1">{navItems.map((item) => { const active = isActiveRoute(pathname, item.href); return <Button key={item.href} variant="ghost" className={`w-full justify-start transition-all duration-200 ${active ? 'bg-[var(--primary-50)] text-[var(--primary-700)] hover:bg-[var(--primary-100)] font-medium shadow-sm' : 'text-[var(--on-surface)] hover:text-[var(--on-surface)] hover:bg-[var(--surface-2)]'}`} onClick={() => { onNavigate(item.href); onCloseMobile() }}><span className={`mr-3 transition-transform duration-200 ${active ? 'scale-110' : ''}`}>{item.icon}</span><div className="flex flex-col text-left leading-tight"><span>{item.label}</span><span className="text-[11px] text-gray-500">{item.hint}</span></div></Button> })}</nav>
-        <div className="p-4 border-t border-gray-200"><Button variant="ghost" className="w-full justify-start text-gray-600 hover:text-red-600 hover:bg-red-50 transition-colors duration-200" onClick={onLogout}><LogOut className="mr-3 h-5 w-5" />{'退出登录'}</Button></div>
-      </div>
-    </div>}
+    <div className="flex h-[64px] items-center gap-3 border-b border-[var(--product-line-soft)] px-4"><div className="flex h-9 w-9 items-center justify-center rounded-[10px] bg-[#263244] text-sm font-bold text-white">N</div><div><p className="text-sm font-semibold text-[var(--product-text)]">在线笔记</p><p className="text-[11px] text-[var(--product-muted)]">Workspace</p></div></div>
+    <nav className="flex-1 overflow-auto px-3 py-4" aria-label="工作台导航">{navGroups.map((group) => <section key={group.label} className="mb-5" aria-labelledby={`nav-${group.label}`}><h2 id={`nav-${group.label}`} className="px-3 pb-1.5 text-[11px] font-medium tracking-wide text-[var(--product-muted)]">{group.label}</h2><div className="space-y-1">{group.items.map((item) => <NavItem key={item.href} item={item} pathname={pathname} onNavigate={navigate} onHover={onHover} />)}</div></section>)}</nav>
+    <div className="border-t border-[var(--product-line-soft)] p-3"><NavItem item={settingsItem} pathname={pathname} onNavigate={navigate} onHover={onHover} /></div>
   </>
 }
 
-export function DashboardHeader({ pathname, user, isDark, isSidebarHidden, unreadCount, onToggleSidebar, onToggleTheme, onNavigate }: {
-  pathname: string | null
-  user: User | null
-  isDark: boolean
-  isSidebarHidden: boolean
-  unreadCount: number
-  onToggleSidebar: () => void
-  onToggleTheme: () => void
-  onNavigate: (href: string) => void
-}) {
-  return <div className="sticky top-0 z-10 px-4 pt-3 pb-3 md:px-6 md:pt-3 md:pb-3 bg-[var(--surface-1)] border-b" style={{ borderColor: 'var(--border)' }}><header className="flex h-12 items-center justify-between px-0 gap-4"><div className="flex items-center gap-3"><Button variant="ghost" size="icon" className="h-8 w-8 text-[var(--on-surface)] hover:bg-[var(--surface-2)]" onClick={onToggleSidebar} aria-label={isSidebarHidden ? '显示侧边栏' : '隐藏侧边栏'}><Menu className="h-4 w-4" /></Button><div className="hidden md:flex items-center gap-2"><div className="h-5 w-5 rounded-md bg-primary-600/90 flex items-center justify-center text-white text-xs font-bold">N</div><span className="text-sm font-semibold text-text-secondary">{'在线笔记'}</span></div><div className="hidden md:block h-4 w-[1px] bg-border/60 mx-1" /><Breadcrumb pathname={pathname} onNavigate={onNavigate} /></div><div className="flex items-center gap-2"><Button variant="ghost" size="icon" className="h-8 w-8 hover:bg-[var(--surface-2)]" aria-label={isDark ? '切换到浅色主题' : '切换到深色主题'} aria-pressed={isDark} onClick={onToggleTheme} title={isDark ? '浅色主题' : '深色主题'}>{isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</Button><span className="hidden md:inline text-[10px]" aria-live="polite" style={{ color: 'var(--text-muted)' }}>{isDark ? '深色' : '浅色'}</span><div className="relative"><Button variant="ghost" size="icon" className="h-8 w-8 text-[var(--on-surface)] hover:bg-[var(--surface-2)]" onClick={() => onNavigate('/dashboard/notifications')} aria-label={unreadCount > 0 ? `消息中心，未读 ${unreadCount} 条` : '打开消息中心'} aria-describedby="notify-unread-status"><Bell className="h-4 w-4" /></Button>{unreadCount > 0 && <span className="absolute top-1.5 right-1.5 min-w-[6px] h-[6px] rounded-full bg-red-600 ring-2 ring-surface-1" />}<div id="notify-unread-status" role="status" aria-live="polite" aria-atomic="true" className="sr-only">未读 {unreadCount} 条</div></div><Button variant="ghost" size="icon" className="h-8 w-8 text-[var(--on-surface)] hover:bg-[var(--surface-2)]" onClick={() => onNavigate('/dashboard/settings')} aria-label="打开设置"><Settings2 className="h-4 w-4" /></Button><div className="flex items-center gap-2 rounded-lg px-2 py-1 border border-border/40 bg-surface-1 hover:bg-surface-2 transition-colors cursor-default"><div className="h-6 w-6 rounded-full flex items-center justify-center text-xs font-semibold text-white shadow-sm" style={{ backgroundColor: '#2468F2' }}>{String(user?.email || 'U').charAt(0).toUpperCase()}</div><div className="text-right hidden sm:block"><p className="text-xs font-medium text-text-default leading-tight">{user?.email?.split('@')[0] || '用户'}</p><p className="text-[10px] text-text-muted flex items-center gap-1 justify-end leading-tight"><span className="inline-block w-1.5 h-1.5 bg-green-500 rounded-full" />{'在线'}</p></div></div><div className="hidden md:block scale-90 origin-right"><NetworkStatus onReconnect={() => { /* API 层会广播同步事件 */ }} /></div></div></header></div>
+export function DashboardSidebar({ pathname, isHidden, isMobileOpen, hoveredNav: _hoveredNav, onHover, onNavigate, onLogout: _onLogout, onCloseMobile }: { pathname: string | null; isHidden: boolean; isMobileOpen: boolean; hoveredNav: string | null; onHover: (href: string | null) => void; onNavigate: (href: string) => void; onLogout: () => void; onCloseMobile: () => void }) {
+  return <>
+    {!isHidden && <aside className="hidden w-[236px] flex-col overflow-hidden border-r border-[var(--product-line)] bg-[var(--product-panel-soft)] lg:flex"><SidebarContent pathname={pathname} onNavigate={onNavigate} onHover={onHover} /></aside>}
+    {isMobileOpen && <div className="fixed inset-0 z-40 bg-black/30 lg:hidden" role="presentation" onMouseDown={onCloseMobile}><aside className="fixed left-0 top-0 flex h-full w-[min(280px,calc(100vw-48px))] flex-col bg-[var(--product-panel)]" role="dialog" aria-modal="true" aria-label="工作台导航" onMouseDown={(event) => event.stopPropagation()}><Button variant="ghost" size="icon" className="absolute right-2 top-2 z-10" onClick={onCloseMobile} aria-label="关闭导航"><X className="h-5 w-5" /></Button><SidebarContent pathname={pathname} onNavigate={onNavigate} onHover={onHover} onCloseMobile={onCloseMobile} /></aside></div>}
+  </>
+}
+
+export function DashboardHeader({ pathname, user, isDark, isSidebarHidden, unreadCount, onToggleSidebar, onToggleTheme, onNavigate, onLogout }: { pathname: string | null; user: User | null; isDark: boolean; isSidebarHidden: boolean; unreadCount: number; onToggleSidebar: () => void; onToggleTheme: () => void; onNavigate: (href: string) => void; onLogout: () => void }) {
+  const [isUserMenuOpen, setIsUserMenuOpen] = useState(false)
+  const displayName = user?.email?.split('@')[0] || '用户'
+  return <header className="sticky top-0 z-20 flex h-16 items-center justify-between gap-4 border-b border-[var(--product-line)] bg-[var(--product-panel)] px-4 md:px-6">
+    <div className="flex min-w-0 items-center gap-3"><Button variant="ghost" size="icon" onClick={onToggleSidebar} aria-label={isSidebarHidden ? '显示侧边栏' : '隐藏侧边栏'}><Menu className="h-4 w-4" /></Button><Breadcrumb pathname={pathname} onNavigate={onNavigate} /></div>
+    <div className="flex items-center gap-1"><div className="hidden items-center gap-1.5 px-2 text-xs text-[var(--product-text-secondary)] sm:flex" title="服务在线"><Wifi className="h-4 w-4 text-emerald-600" /><span>在线</span></div><Button variant="ghost" size="icon" aria-label={isDark ? '切换到浅色主题' : '切换到深色主题'} aria-pressed={isDark} onClick={onToggleTheme}>{isDark ? <Sun className="h-4 w-4" /> : <Moon className="h-4 w-4" />}</Button><div className="relative"><Button variant="ghost" size="icon" onClick={() => onNavigate('/dashboard/notifications')} aria-label={unreadCount > 0 ? `消息中心，未读 ${unreadCount} 条` : '打开消息中心'}><Bell className="h-4 w-4" /></Button>{unreadCount > 0 && <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-[var(--product-danger)]" />}</div><div className="relative"><Button variant="ghost" className="h-11 gap-2 px-2" aria-haspopup="menu" aria-expanded={isUserMenuOpen} onClick={() => setIsUserMenuOpen((open) => !open)}><span className="flex h-7 w-7 items-center justify-center rounded-full bg-[var(--product-accent)] text-xs font-semibold text-white">{displayName.charAt(0).toUpperCase()}</span><span className="hidden text-sm font-medium text-[var(--product-text)] sm:inline">{displayName}</span><ChevronDown className="hidden h-3.5 w-3.5 sm:block" /></Button>{isUserMenuOpen && <div role="menu" tabIndex={-1} className="absolute right-0 top-[calc(100%+8px)] w-48 rounded-[10px] border border-[var(--product-line)] bg-[var(--product-panel)] p-1.5 shadow-[var(--product-shadow)]"><div className="border-b border-[var(--product-line-soft)] px-2 py-2 text-xs text-[var(--product-text-secondary)]">{user?.email || displayName}</div><button role="menuitem" className="mt-1 flex w-full items-center gap-2 rounded-[7px] px-2 py-2 text-left text-sm text-[var(--product-text)] hover:bg-[var(--product-panel-soft)]" onClick={() => { setIsUserMenuOpen(false); onNavigate('/dashboard/settings') }}><Settings className="h-4 w-4" />设置</button><button role="menuitem" className="flex w-full items-center gap-2 rounded-[7px] px-2 py-2 text-left text-sm text-[var(--product-danger)] hover:bg-[var(--product-danger-soft)]" onClick={onLogout}><LogOut className="h-4 w-4" />退出登录</button></div>}</div></div>
+  </header>
 }
 
 function Breadcrumb({ pathname, onNavigate }: { pathname: string | null; onNavigate: (href: string) => void }) {
-  return <nav aria-label="Breadcrumb" className="hidden md:flex items-center">{pathname?.split('/').filter(Boolean).map((segment, index, array) => { const isLast = index === array.length - 1; const path = `/${array.slice(0, index + 1).join('/')}`; const name = routeNames[segment] || (segment.length > 20 ? `${segment.slice(0, 8)}...` : segment); return <div key={path} className="flex items-center">{index > 0 && <ChevronRight className="mx-1 h-3 w-3 text-text-muted/60" />}{isLast ? <span className="px-1.5 py-0.5 text-xs font-medium text-text-primary bg-surface-2/50 rounded-md">{name}</span> : <button onClick={() => onNavigate(path)} className="px-1.5 py-0.5 text-xs text-text-secondary hover:text-primary-600 hover:bg-surface-2 rounded-md transition-all">{name}</button>}</div> })}</nav>
+  return <nav aria-label="面包屑" className="hidden min-w-0 items-center md:flex">{pathname?.split('/').filter(Boolean).map((segment, index, array) => { const isLast = index === array.length - 1; const path = `/${array.slice(0, index + 1).join('/')}`; const name = routeNames[segment] || (segment.length > 20 ? `${segment.slice(0, 8)}...` : segment); return <div key={path} className="flex min-w-0 items-center">{index > 0 && <ChevronRight className="mx-1 h-3 w-3 shrink-0 text-[var(--product-muted)]" />}{isLast ? <span className="truncate px-1.5 text-sm font-medium text-[var(--product-text)]">{name}</span> : <button onClick={() => onNavigate(path)} className="truncate px-1.5 text-sm text-[var(--product-text-secondary)] hover:text-[var(--product-accent)]">{name}</button>}</div> })}</nav>
 }

@@ -121,4 +121,15 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(sidebar).toContain('editor-workspace-sidebar__mobile-close')
     expect(tokens).toContain('.editor-workspace-sidebar__mobile-close')
   })
+
+  test('工作台导航使用平面分组且不持续展开技术状态', () => {
+    const navigation = read('src/components/dashboard/dashboard-navigation.tsx')
+
+    expect(navigation).toContain('主导航')
+    expect(navigation).toContain('管理')
+    expect(navigation).toContain('dashboard-nav-item')
+    expect(navigation).not.toContain('item.hint')
+    expect(navigation).not.toContain('h-6 w-1 rounded-full')
+    expect(navigation).not.toContain('<NetworkStatus')
+  })
 })

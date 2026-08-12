@@ -91,7 +91,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return <div className="app-shell">
     <DashboardSidebar pathname={pathname} isHidden={isSidebarHidden} isMobileOpen={isMobileMenuOpen} hoveredNav={hoveredNav} onHover={setHoveredNav} onNavigate={(href) => router.push(href)} onLogout={handleLogout} onCloseMobile={() => setIsMobileMenuOpen(false)} />
     <main className="app-main">
-      <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} />
+      <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} onLogout={handleLogout} />
       <div className="page-container">{children}</div>
     </main>
     <AIPet />
