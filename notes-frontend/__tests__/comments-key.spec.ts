@@ -1,8 +1,8 @@
+import { webcrypto } from 'node:crypto'
 import { buildCommentIdempotencyKey } from '@/lib/comments-key'
 
 // jest-environment-jsdom 未注入 WebCrypto subtle，注入 Node 原生实现供测试使用。
 beforeAll(() => {
-  const { webcrypto } = require('node:crypto')
   Object.defineProperty(globalThis, 'crypto', {
     configurable: true,
     value: webcrypto,
