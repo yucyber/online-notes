@@ -111,7 +111,7 @@
 }
 
 .product-list-surface {
-  overflow: hidden;
+  /* 不设置 overflow:hidden，避免裁剪列表项 hover 浮卡；圆角由首尾行各自处理 */
 }
 
 @media (max-width: 767px) {
