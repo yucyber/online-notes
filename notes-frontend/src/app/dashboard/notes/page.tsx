@@ -140,18 +140,13 @@ function NotesPageContent() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <div className="lg:col-span-3 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 items-start">
+        <div className="space-y-6 min-w-0">
           <SearchFilterBar />
 
           {error && notes.length === 0 && (
             <div className="p-4 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">{error}</div>
           )}
-
-          <div className="product-list-surface flex flex-wrap items-center justify-between gap-3">
-            <PageSizeSelect size={size} onSizeChange={handlePageSizeChange} />
-            <Pagination page={page} size={size} total={total} onPageChange={handlePageChange} />
-          </div>
 
           {notes.length === 0 ? (
             <Card
@@ -203,9 +198,16 @@ function NotesPageContent() {
               ))}
             </div>
           )}
+
+          {notes.length > 0 && (
+            <div className="product-list-surface flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+              <PageSizeSelect size={size} onSizeChange={handlePageSizeChange} />
+              <Pagination page={page} size={size} total={total} onPageChange={handlePageChange} />
+            </div>
+          )}
         </div>
 
-        <div className="lg:col-span-1">
+        <div className="lg:sticky lg:top-6 lg:self-start">
           <SmartRecommendations
             context={{
               keyword: searchParams.get('keyword') || undefined,
