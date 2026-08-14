@@ -17,3 +17,5 @@ export class LoginUserDto {
   @IsString({ message: '密码必须是字符串' })
   password: string;
 }
+
+export { UpdateProfileDto } from './update-profile.dto';

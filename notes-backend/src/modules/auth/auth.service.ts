@@ -16,6 +16,7 @@ export class AuthService {
       user: {
         id: (user as any).id,
         email: user.email,
+        displayName: user.displayName,
         createdAt: (user as any).createdAt,
         updatedAt: (user as any).updatedAt,
       },
