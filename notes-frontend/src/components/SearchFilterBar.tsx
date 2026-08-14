@@ -11,26 +11,26 @@ export default function SearchFilterBar() {
   return <div className="prototype-search-shell">
     <div className="prototype-search-toolbar" aria-label="笔记搜索与筛选">
       <label className="prototype-search-box">
-        <svg aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
         <input id="global-search" type="text" placeholder="搜索标题、内容或标签" value={page.keyword} onChange={setValue(page.setKeyword)} onKeyDown={(event) => event.key === 'Enter' && page.handleSearch('enter')} />
       </label>
 
       <label className="prototype-filter-select">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="m8 10 4 4 4-4"/></svg>
         <select aria-label="分类" value={page.categoryId} onChange={setValue(page.setCategoryId)}><option value="">全部分类</option>{page.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
-        <svg aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
       </label>
 
       <label className="prototype-filter-select">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="m8 10 4 4 4-4"/></svg>
         <select aria-label="状态" value={page.status} onChange={setValue(page.setStatus)}><option value="">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option></select>
-        <svg aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
       </label>
 
       <button type="button" className="prototype-filter-action" aria-expanded={page.isOpen} onClick={() => page.handleFilterToggle()}>
-        <svg aria-hidden="true"><path d="M4 5h16l-6 7v5l-4 2v-7z"/></svg>筛选
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M4 5h16l-6 7v5l-4 2v-7z"/></svg>筛选
       </button>
 
       <button type="button" className="prototype-semantic-button" aria-pressed={page.nlqEnabled} aria-expanded={page.isSemanticOpen} onClick={() => page.handleSemanticSearch()}>
-        <svg aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>语义搜索
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.7" strokeLinecap="round" strokeLinejoin="round"><path d="M12 3v18M3 12h18"/></svg>语义搜索
       </button>
     </div>
 
