@@ -1,0 +1,220 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="editor-light">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>设置 · Calm Minimal 设计稿（仅含实际功能）</title>
+<style>
+  :root {
+    --product-bg: #f7f7f6;
+    --product-panel: #ffffff;
+    --product-panel-soft: #f1f1ef;
+    --product-surface-muted: #f5f5f3;
+    --product-surface-hover: #efefed;
+    --product-line: #e4e4e1;
+    --product-line-soft: #e4e4e1;
+    --product-line-strong: #d4d4d0;
+    --product-text: #20201e;
+    --product-text-secondary: #5f5f5a;
+    --product-muted: #85857e;
+    --product-accent: #58728f;
+    --product-accent-soft: #e8ecef;
+    --product-brand: #20201e;
+    --product-danger: #b42318;
+    --product-danger-soft: #fff1f0;
+    --product-radius-sm: 8px;
+    --product-radius-md: 10px;
+    --product-radius-lg: 16px;
+    --product-shadow-float: 0 18px 48px rgba(24, 24, 22, 0.12);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+    background: var(--product-bg);
+    color: var(--product-text);
+  }
+
+  /* ===== 壳层 ===== */
+  .app-shell { display: grid; grid-template-columns: 224px minmax(0, 1fr); min-height: 100vh; }
+  .dashboard-sidebar { position: sticky; top: 0; display: flex; width: 224px; height: 100vh; flex-direction: column; overflow: hidden; border-right: 1px solid var(--product-line); background: var(--product-panel-soft); }
+  .dashboard-brand { display: flex; height: 68px; align-items: center; gap: 11px; padding: 0 16px; }
+  .dashboard-brand span { display: grid; width: 32px; height: 32px; place-items: center; border-radius: 9px; background: var(--product-brand); color: var(--product-panel); font: 700 13px/1 Georgia, serif; letter-spacing: -.04em; }
+  .dashboard-brand b { font-size: 14px; font-weight: 650; letter-spacing: -.01em; }
+  .dashboard-nav-scroll { flex: 1; overflow: auto; padding: 10px; }
+  .dashboard-nav-group { margin-bottom: 20px; }
+  .dashboard-nav-group h2 { padding: 0 10px 6px; color: var(--product-muted); font-size: 11px; font-weight: 600; letter-spacing: .06em; }
+  .dashboard-nav-item { width: 100%; height: 40px; display: flex; align-items: center; gap: 10px; padding: 0 10px; border: 0; border-radius: 8px; background: transparent; color: var(--product-text-secondary); font-weight: 500; font-size: 13px; text-align: left; cursor: pointer; transition: background .15s, color .15s; }
+  .dashboard-nav-item svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .dashboard-nav-item:hover { background: var(--product-surface-hover); color: var(--product-text); }
+  .dashboard-nav-item--active { background: #deded9; color: #1e1e1c; font-weight: 600; }
+  .dashboard-nav-bottom { padding: 10px; border-top: 1px solid var(--product-line); }
+
+  .app-main { min-width: 0; overflow: auto; }
+  .dashboard-topbar { position: sticky; top: 0; z-index: 30; height: 60px; display: flex; align-items: center; justify-content: space-between; padding: 0 24px; border-bottom: 1px solid var(--product-line); background: color-mix(in srgb, var(--product-panel) 94%, transparent); backdrop-filter: blur(12px); }
+  .dashboard-topbar-left, .dashboard-crumbs { display: flex; align-items: center; gap: 7px; }
+  .dashboard-crumbs { color: var(--product-muted); font-size: 13px; }
+  .dashboard-crumbs b { color: var(--product-text); font-weight: 600; }
+  .dashboard-crumbs span { display: flex; align-items: center; gap: 7px; }
+  .dashboard-crumbs svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }
+  .dashboard-topbar-right { display: flex; align-items: center; gap: 3px; }
+  .prototype-icon-button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--product-text-secondary); cursor: pointer; transition: background .15s, color .15s; }
+  .prototype-icon-button:hover { background: var(--product-surface-muted); color: var(--product-text); }
+  .prototype-icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .dashboard-avatar { width: 30px; height: 30px; margin-left: 4px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--product-brand); color: var(--product-panel); font-size: 12px; font-weight: 700; }
+
+  .page-container { width: 100%; max-width: 1260px; margin-inline: auto; padding: 44px 40px 64px; }
+
+  /* ===== 设置页内容 ===== */
+  .page-heading { color: var(--product-text); font-size: 28px; font-weight: 720; line-height: 1.18; letter-spacing: -0.035em; margin: 0; }
+  .page-description { margin-top: 8px; color: var(--product-text-secondary); font-size: 13px; line-height: 1.5; }
+  .product-page-header { margin-bottom: 28px; }
+
+  .settings-layout { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 40px; align-items: start; }
+  .settings-nav { position: sticky; top: 104px; display: flex; flex-direction: column; gap: 2px; }
+  .settings-nav a { padding: 9px 10px; border-radius: 8px; color: var(--product-text-secondary); font-size: 13px; text-decoration: none; transition: background .15s, color .15s; }
+  .settings-nav a:hover { background: var(--product-surface-hover); color: var(--product-text); }
+  .settings-nav a.is-active { background: var(--product-accent-soft); color: var(--product-accent); font-weight: 600; }
+
+  .settings-sections { display: flex; flex-direction: column; gap: 24px; max-width: 720px; }
+
+  .calm-panel { border: 1px solid var(--product-line); border-radius: var(--product-radius-md); background: var(--product-panel); box-shadow: 0 1px 2px rgba(24, 34, 49, 0.04); }
+  .panel-head { display: flex; align-items: center; gap: 10px; padding: 16px 20px; border-bottom: 1px solid var(--product-line); }
+  .panel-head svg { width: 18px; height: 18px; fill: none; stroke: var(--product-muted); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .panel-head h2 { margin: 0; font-size: 15px; font-weight: 650; }
+  .panel-head p { margin: 2px 0 0; color: var(--product-muted); font-size: 11px; }
+  .panel-body { padding: 8px 20px 16px; }
+
+  .field-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 24px; padding: 16px 0; border-bottom: 1px solid var(--product-line); }
+  .field-row:last-child { border-bottom: 0; }
+  .field-label b { display: block; font-size: 13px; font-weight: 600; }
+  .field-label small { display: block; margin-top: 4px; color: var(--product-muted); font-size: 11px; line-height: 1.5; }
+
+  .text-input { min-height: 40px; width: 260px; padding: 0 12px; border: 1px solid var(--product-line); border-radius: 8px; background: var(--product-surface-muted); color: var(--product-text); font: inherit; font-size: 13px; outline: 0; }
+  .text-input:focus-visible { border-color: var(--product-accent); box-shadow: 0 0 0 2px var(--product-accent-soft); }
+  .text-input:disabled { color: var(--product-muted); cursor: not-allowed; }
+
+  /* 危险操作区 */
+  .danger-panel { border-color: color-mix(in srgb, var(--product-danger) 30%, var(--product-line)); }
+  .danger-panel .panel-head svg { stroke: var(--product-danger); }
+  .danger-panel .panel-head h2 { color: var(--product-danger); }
+  .btn { min-height: 40px; display: inline-flex; align-items: center; justify-content: center; gap: 8px; padding: 0 14px; border: 1px solid var(--product-line-strong); border-radius: 8px; background: var(--product-panel); color: var(--product-text); font-size: 13px; font-weight: 600; line-height: 1; white-space: nowrap; cursor: pointer; transition: background .15s, border-color .15s, transform .15s; }
+  .btn:hover { background: var(--product-surface-muted); }
+  .btn:active { transform: translateY(1px); }
+  .btn--danger { border-color: color-mix(in srgb, var(--product-danger) 40%, var(--product-line)); color: var(--product-danger); }
+  .btn--danger:hover { background: var(--product-danger-soft); }
+  .btn:disabled { opacity: .5; cursor: not-allowed; }
+  .btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .field-note { font-size: 11px; color: var(--product-muted); margin-top: 4px; }
+
+  @media (max-width: 900px) {
+    .settings-layout { grid-template-columns: 1fr; gap: 20px; }
+    .settings-nav { position: static; flex-direction: row; flex-wrap: wrap; gap: 4px; padding-bottom: 12px; border-bottom: 1px solid var(--product-line); }
+    .settings-nav a { padding: 8px 12px; border: 1px solid var(--product-line); }
+    .field-row { flex-direction: column; gap: 12px; }
+    .text-input { width: 100%; }
+  }
+  @media (max-width: 767px) {
+    .app-shell { display: block; }
+    .dashboard-sidebar { display: none; }
+    .page-container { padding: 32px 20px 48px; }
+    .dashboard-crumbs { display: none; }
+  }
+</style>
+</head>
+<body>
+<div class="app-shell">
+  <!-- 侧边导航 -->
+  <aside class="dashboard-sidebar">
+    <div class="dashboard-brand"><span>N</span><b>在线笔记</b></div>
+    <nav class="dashboard-nav-scroll" aria-label="工作台导航">
+      <section class="dashboard-nav-group">
+        <h2>工作台</h2>
+        <button class="dashboard-nav-item"><svg><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>仪表盘</span></button>
+        <button class="dashboard-nav-item"><svg><path d="M14 2H6a2 0 0 0-2 2v16a2 0 0 0 2 2h12a2 0 0 0 2-2V8z"/><path d="M14 2v6h6M8 13h8M8 17h6"/></svg><span>我的笔记</span></button>
+        <button class="dashboard-nav-item"><svg><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20V4H6.5A2.5 2.5 0 0 0 4 6.5z"/><path d="M4 6.5v13"/></svg><span>知识库</span></button>
+        <button class="dashboard-nav-item"><svg><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg><span>活动日志</span></button>
+      </section>
+      <section class="dashboard-nav-group">
+        <h2>管理</h2>
+        <button class="dashboard-nav-item"><svg><path d="M3 6h6l2 2h10v10H3z"/><path d="M8 12h8M8 15h5"/></svg><span>分类管理</span></button>
+        <button class="dashboard-nav-item"><svg><path d="M20 12 12 20 4 12V4h8z"/><circle cx="9" cy="9" r="1"/></svg><span>标签管理</span></button>
+      </section>
+    </nav>
+    <div class="dashboard-nav-bottom">
+      <button class="dashboard-nav-item dashboard-nav-item--active"><svg><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1z"/></svg><span>设置</span></button>
+    </div>
+  </aside>
+
+  <!-- 主区域 -->
+  <main class="app-main">
+    <header class="dashboard-topbar">
+      <div class="dashboard-topbar-left">
+        <button class="prototype-icon-button" aria-label="隐藏侧边栏"><svg><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
+        <nav class="dashboard-crumbs" aria-label="面包屑"><span><b>设置</b></span></nav>
+      </div>
+      <div class="dashboard-topbar-right">
+        <button class="prototype-icon-button" aria-label="切换到深色主题"><svg><path d="M21 12.8A9 9 0 1 1 11.2 3 7 7 0 0 0 21 12.8z"/></svg></button>
+        <button class="prototype-icon-button" aria-label="消息中心"><svg><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></svg></button>
+        <button class="dashboard-avatar" aria-label="打开用户菜单">U</button>
+      </div>
+    </header>
+
+    <div class="page-container">
+      <header class="product-page-header">
+        <h1 class="page-heading">设置</h1>
+        <p class="page-description">查看账户信息并管理登录状态。</p>
+      </header>
+
+      <div class="settings-layout">
+        <nav class="settings-nav" aria-label="设置分组">
+          <a href="#account" class="is-active">账户信息</a>
+          <a href="#danger">危险操作</a>
+        </nav>
+
+        <div class="settings-sections">
+          <!-- 账户信息 -->
+          <section class="calm-panel" id="account" aria-label="账户信息">
+            <div class="panel-head">
+              <svg><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 4-6 8-6s8 2 8 6"/></svg>
+              <div><h2>账户信息</h2><p>来自当前登录用户（getCurrentUser）</p></div>
+            </div>
+            <div class="panel-body">
+              <div class="field-row">
+                <div class="field-label"><b>邮箱地址</b><small>用于登录，由后端唯一标识，无法修改</small></div>
+                <input class="text-input" type="email" value="user@example.com" disabled />
+              </div>
+              <div class="field-row">
+                <div class="field-label"><b>账户创建时间</b><small>对应 User.createdAt（只读）</small></div>
+                <input class="text-input" type="text" value="2026年3月12日" disabled />
+              </div>
+            </div>
+          </section>
+
+          <!-- 危险操作 -->
+          <section class="calm-panel danger-panel" id="danger" aria-label="危险操作">
+            <div class="panel-head">
+              <svg><path d="M12 9v4M12 17h.01M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/></svg>
+              <div><h2>危险操作</h2><p>这些操作可能会影响您的账户安全</p></div>
+            </div>
+            <div class="panel-body">
+              <div class="field-row">
+                <div class="field-label"><b>退出登录</b><small>调用 /api/auth/logout 清除登录态，再清除本地用户信息</small></div>
+                <button class="btn btn--danger"><svg><path d="M9 21H5a2 0 0 1-2-2V5a2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>退出登录</button>
+              </div>
+              <div class="field-row">
+                <div class="field-label"><b>删除账户</b><small>后端尚未提供删除账户接口，此功能暂未开放</small></div>
+                <button class="btn btn--danger" disabled><svg><path d="M3 6h18M8 6V4h8v2M19 6l-1 15H6L5 6M10 11v6M14 11v6"/></svg>删除账户</button>
+                <p class="field-note">此功能暂未开放</p>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+</body>
+</html>

@@ -1,0 +1,131 @@
+<style>
+  .direction-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 18px; margin-top: 18px; }
+  .direction-card { border: 1px solid #dbe3ef; border-radius: 14px; overflow: hidden; background: #ffffff; cursor: pointer; transition: border-color 160ms ease, transform 160ms ease, box-shadow 160ms ease; }
+  .direction-card:hover { transform: translateY(-2px); border-color: #2563eb; box-shadow: 0 14px 30px rgba(15, 23, 42, 0.10); }
+  .direction-card.selected { border-color: #2563eb; box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.18); }
+  .mock-shell { height: 360px; display: grid; grid-template-columns: 58px 194px 1fr; background: #edf2f8; color: #152033; font-family: "Plus Jakarta Sans", "Inter", system-ui, sans-serif; }
+  .rail { background: #0f766e; color: white; padding: 14px 10px; display: flex; flex-direction: column; align-items: center; gap: 14px; }
+  .rail-mark { width: 32px; height: 32px; border-radius: 9px; display: grid; place-items: center; font-weight: 800; background: rgba(255,255,255,0.18); }
+  .rail-dot { width: 30px; height: 30px; border-radius: 8px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.14); }
+  .side { background: #f8fafc; border-right: 1px solid #dbe3ef; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+  .side-title { font-weight: 800; font-size: 15px; line-height: 1.2; }
+  .side-item { min-height: 44px; border-radius: 10px; display: grid; grid-template-columns: 30px 1fr; align-items: center; gap: 8px; padding: 0 10px; color: #465569; }
+  .side-item.active { background: #ffffff; color: #14532d; box-shadow: inset 3px 0 0 #10b981; border: 1px solid #dbe3ef; }
+  .side-icon { width: 28px; height: 28px; border-radius: 8px; display: grid; place-items: center; background: #eef4ff; font-size: 12px; font-weight: 800; color: #2563eb; }
+  .work { min-width: 0; display: grid; grid-template-rows: auto auto 1fr auto; background: #ffffff; }
+  .topbar { min-height: 58px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 14px; align-items: center; padding: 10px 16px; border-bottom: 1px solid #e5edf6; }
+  .title { min-width: 0; font-weight: 800; font-size: 17px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .status-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 4px; }
+  .pill { height: 24px; padding: 0 9px; border-radius: 999px; display: inline-flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 700; border: 1px solid #d9e2ef; background: #f8fafc; color: #475569; }
+  .pill.good { background: #ecfdf5; border-color: #bbf7d0; color: #047857; }
+  .pill.warn { background: #fff7ed; border-color: #fed7aa; color: #c2410c; }
+  .actions { display: flex; gap: 8px; align-items: center; }
+  .btn { height: 34px; min-width: 34px; padding: 0 11px; border-radius: 9px; border: 1px solid #d7dfeb; background: #ffffff; color: #334155; display: inline-flex; align-items: center; justify-content: center; font-size: 12px; font-weight: 750; }
+  .btn.primary { border-color: #0f766e; background: #0f766e; color: white; }
+  .toolbar { min-height: 46px; display: flex; align-items: center; gap: 5px; padding: 6px 16px; border-bottom: 1px solid #e5edf6; overflow: hidden; background: #fbfdff; }
+  .tool { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; border: 1px solid transparent; color: #475569; font-size: 12px; font-weight: 800; }
+  .tool.active { background: #e0f2fe; color: #075985; border-color: #bae6fd; }
+  .divider { width: 1px; height: 20px; background: #dbe3ef; margin: 0 3px; }
+  .doc { display: grid; grid-template-columns: minmax(0, 1fr) 170px; min-height: 0; }
+  .paper { padding: 26px 42px; overflow: hidden; }
+  .paper-title { width: 66%; height: 24px; border-radius: 7px; background: #1e293b; margin-bottom: 20px; }
+  .line { height: 9px; border-radius: 99px; background: #dbe3ef; margin: 11px 0; }
+  .line.short { width: 62%; }
+  .aside { border-left: 1px solid #e5edf6; background: #f8fafc; padding: 14px; display: grid; align-content: start; gap: 10px; }
+  .aside-card { border-radius: 10px; background: white; border: 1px solid #e5edf6; padding: 10px; }
+  .float-stack { position: absolute; right: 14px; bottom: 14px; display: grid; gap: 8px; }
+  .fab { width: 40px; height: 40px; border-radius: 12px; display: grid; place-items: center; color: white; background: #2563eb; box-shadow: 0 10px 18px rgba(37, 99, 235, 0.25); font-weight: 900; }
+  .caption { padding: 13px 14px 15px; border-top: 1px solid #e5edf6; }
+  .caption h3 { margin: 0 0 6px; font-size: 15px; }
+  .caption p { margin: 0; color: #64748b; font-size: 12px; line-height: 1.45; }
+  .compact .mock-shell { grid-template-columns: 64px 152px 1fr; background: #f6f7f9; }
+  .compact .rail { background: #172033; }
+  .compact .side-item { border-radius: 8px; }
+  .compact .topbar { min-height: 50px; padding: 8px 14px; }
+  .compact .toolbar { min-height: 40px; padding: 4px 14px; }
+  .compact .tool { width: 28px; height: 28px; border-radius: 7px; }
+  .studio .mock-shell { grid-template-columns: 210px 1fr; background: #f3f6fb; }
+  .studio .rail { display: none; }
+  .studio .side { background: #ffffff; }
+  .studio .work { background: #f9fbff; }
+  .studio .paper { margin: 18px; border: 1px solid #e2e8f0; background: #ffffff; border-radius: 16px; padding: 26px 34px; }
+  .studio .toolbar { margin: 10px 16px 0; border: 1px solid #dbe3ef; border-radius: 12px; }
+  @media (max-width: 1100px) { .direction-grid { grid-template-columns: 1fr; } }
+</style>
+
+<h2>笔记编辑器 UI 第一版方向</h2>
+<p class="subtitle">先选整体气质和布局策略。三个方向都保留当前 Next.js + Tailwind + 自研 UI 组件，只是收敛视觉语言和信息层级。</p>
+
+<div class="direction-grid">
+  <div class="direction-card" data-choice="a" onclick="toggleSelect(this)">
+    <div class="mock-shell" style="position:relative">
+      <div class="rail"><div class="rail-mark">N</div><div class="rail-dot"></div><div class="rail-dot"></div><div class="rail-dot"></div></div>
+      <div class="side">
+        <div class="side-title">在线笔记<br><span style="font-weight:600;color:#64748b;font-size:11px">Workspace</span></div>
+        <div class="side-item active"><div class="side-icon">D</div><div>仪表盘</div></div>
+        <div class="side-item"><div class="side-icon">N</div><div>我的笔记</div></div>
+        <div class="side-item"><div class="side-icon">K</div><div>知识库</div></div>
+        <div class="side-item"><div class="side-icon">S</div><div>设置</div></div>
+      </div>
+      <div class="work">
+        <div class="topbar"><div><div class="title">产品复盘会议记录</div><div class="status-row"><span class="pill good">API 正常</span><span class="pill warn">协作本地降级</span><span class="pill">只读视图</span></div></div><div class="actions"><div class="btn">重试</div><div class="btn primary">保存</div></div></div>
+        <div class="toolbar"><div class="tool active">B</div><div class="tool">I</div><div class="tool">U</div><div class="divider"></div><div class="tool">H</div><div class="tool">L</div><div class="tool">Q</div><div class="divider"></div><div class="tool">A</div><div class="tool">T</div><div class="tool">C</div><div class="tool">F</div></div>
+        <div class="doc"><div class="paper"><div class="paper-title"></div><div class="line"></div><div class="line"></div><div class="line short"></div><div class="line"></div><div class="line short"></div></div><div class="aside"><div class="aside-card"><strong>目录</strong><div class="line"></div><div class="line short"></div></div><div class="aside-card"><strong>协作者</strong><div class="line short"></div></div></div></div>
+        <div></div>
+      </div>
+      <div class="float-stack"><div class="fab">AI</div><div class="fab" style="background:#0f766e">+</div></div>
+    </div>
+    <div class="caption">
+      <h3>A. Calm Workspace 推荐</h3>
+      <p>最像成熟生产力工具：左侧窄 rail + 功能侧栏，顶部状态合并成可扫描 pill，工具栏低高度且分组。适合长期维护。</p>
+    </div>
+  </div>
+
+  <div class="direction-card compact" data-choice="b" onclick="toggleSelect(this)">
+    <div class="mock-shell" style="position:relative">
+      <div class="rail"><div class="rail-mark">N</div><div class="rail-dot"></div><div class="rail-dot"></div><div class="rail-dot"></div></div>
+      <div class="side">
+        <div class="side-title">笔记</div>
+        <div class="side-item active"><div class="side-icon">N</div><div>全部</div></div>
+        <div class="side-item"><div class="side-icon">K</div><div>知识库</div></div>
+        <div class="side-item"><div class="side-icon">A</div><div>活动</div></div>
+      </div>
+      <div class="work">
+        <div class="topbar"><div><div class="title">产品复盘会议记录</div><div class="status-row"><span class="pill good">在线</span><span class="pill">55ms</span></div></div><div class="actions"><div class="btn">...</div><div class="btn primary">保存</div></div></div>
+        <div class="toolbar"><div class="tool active">B</div><div class="tool">I</div><div class="tool">H</div><div class="tool">L</div><div class="tool">Q</div><div class="tool">A</div><div class="tool">T</div><div class="tool">+</div></div>
+        <div class="doc" style="grid-template-columns:1fr 138px"><div class="paper" style="padding:22px 28px"><div class="paper-title"></div><div class="line"></div><div class="line short"></div><div class="line"></div></div><div class="aside"><div class="aside-card"><strong>大纲</strong><div class="line"></div></div></div></div>
+        <div></div>
+      </div>
+    </div>
+    <div class="caption">
+      <h3>B. Dense Console</h3>
+      <p>信息最密、效率最高，适合大屏和高频编辑；代价是亲和力弱一些，小屏需要更多折叠规则。</p>
+    </div>
+  </div>
+
+  <div class="direction-card studio" data-choice="c" onclick="toggleSelect(this)">
+    <div class="mock-shell" style="position:relative">
+      <div class="side">
+        <div class="side-title">在线笔记</div>
+        <div class="side-item active"><div class="side-icon">N</div><div>我的笔记</div></div>
+        <div class="side-item"><div class="side-icon">K</div><div>知识库</div></div>
+        <div class="side-item"><div class="side-icon">A</div><div>AI 助手</div></div>
+      </div>
+      <div class="work">
+        <div class="topbar"><div><div class="title">产品复盘会议记录</div><div class="status-row"><span class="pill good">已同步</span><span class="pill warn">本地降级</span></div></div><div class="actions"><div class="btn">分享</div><div class="btn primary">保存</div></div></div>
+        <div class="toolbar"><div class="tool active">B</div><div class="tool">I</div><div class="tool">U</div><div class="divider"></div><div class="tool">H</div><div class="tool">L</div><div class="tool">Q</div><div class="tool">+</div></div>
+        <div class="doc" style="grid-template-columns:1fr"><div class="paper"><div class="paper-title"></div><div class="line"></div><div class="line"></div><div class="line short"></div><div class="line"></div></div></div>
+        <div></div>
+      </div>
+      <div class="float-stack"><div class="fab">AI</div></div>
+    </div>
+    <div class="caption">
+      <h3>C. Soft Studio</h3>
+      <p>阅读和写作氛围更舒服，视觉更轻；但会牺牲一点管理效率，和你现在的工作台导航差异更大。</p>
+    </div>
+  </div>
+</div>
+
+<div class="section" style="margin-top:18px">
+  <p class="subtitle">我个人建议选 A：它最能修复你截图里的“挤、乱、按钮重”的问题，又不会把系统变成另一个产品。你也可以点击 B/C，我会按选择继续细化顶部栏、工具栏、侧栏和悬浮 AI 入口。</p>
+</div>
