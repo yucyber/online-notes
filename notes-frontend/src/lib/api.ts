@@ -1,6 +1,7 @@
 /** Domain-split API modules with transitional re-exports for existing `@/lib/api` imports. */
 export { default as api } from './api/client'
 export { authAPI } from './api/auth'
+export { usersAPI } from './api/users'
 export { notesAPI, clearNotesCache } from './api/notes'
 export { semanticAPI } from './api/semantic'
 export type { SemanticSearchItem, SemanticSearchPage } from './api/semantic'

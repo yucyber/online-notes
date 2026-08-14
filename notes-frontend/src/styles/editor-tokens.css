@@ -425,11 +425,34 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
 .editor-header__breadcrumb h1 {
   overflow: hidden;
   color: var(--product-text, var(--on-surface));
-  font-size: 13px;
+  font-size: 15px;
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.editor-title-editable { cursor: text; }
+.editor-title-editable:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--product-accent-line, var(--product-line));
+  text-underline-offset: 3px;
+}
+/* 编辑态标题输入框：与面包屑 h1 同字号、同字重，切换时保持尺寸一致 */
+.editor-title-input {
+  min-width: 160px;
+  max-width: 420px;
+  height: 28px;
+  padding: 0 7px;
+  border: 1px solid var(--product-accent, var(--primary));
+  border-radius: 6px;
+  background: var(--product-panel, var(--surface-1));
+  color: var(--product-text, var(--on-surface));
+  font-size: 15px;
+  font-weight: 650;
+  outline: 0;
+  box-shadow: 0 0 0 2px var(--product-accent-soft, rgba(29, 78, 216, .15));
+}
+.editor-title-input:disabled { opacity: .7; }
 
 .editor-properties-popover {
   position: absolute;

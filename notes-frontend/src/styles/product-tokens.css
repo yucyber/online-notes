@@ -46,7 +46,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 .app-shell {
   display: grid;
   grid-template-columns: 224px minmax(0, 1fr);
-  min-height: 100vh;
+  height: 100dvh;
+  min-height: 0;
   background: var(--product-bg);
   color: var(--product-text);
 }
@@ -128,8 +129,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 .dashboard-topbar-left { gap: 10px; }.dashboard-topbar-right { gap: 3px; }
 .prototype-icon-button { width: 40px; height: 40px; display: grid; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--product-text-secondary); transition: background .15s, color .15s; }
 .prototype-icon-button:hover { background: var(--product-surface-muted); color: var(--product-text); }
-.prototype-icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
-.dashboard-crumbs { gap: 7px; color: var(--product-muted); font-size: 13px; }.dashboard-crumbs span { gap: 7px; }.dashboard-crumbs svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.7; }.dashboard-crumbs button { border: 0; background: transparent; color: var(--product-muted); }.dashboard-crumbs b { color: var(--product-text); font-weight: 600; }
+.prototype-icon-button svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.dashboard-crumbs { gap: 7px; color: var(--product-muted); font-size: 13px; }.dashboard-crumbs span { gap: 6px; }.dashboard-crumbs svg { width: 12px; height: 12px; fill: none; stroke: currentColor; stroke-width: 1.6; }.dashboard-crumbs button { border: 0; background: transparent; color: var(--product-muted); }.dashboard-crumbs b { color: var(--product-text); font-weight: 600; }
 .dashboard-avatar { width: 30px; height: 30px; margin-left: 4px; display: grid; place-items: center; border: 0; border-radius: 50%; background: var(--product-brand); color: var(--product-panel); font-size: 12px; font-weight: 700; }
 .dashboard-notification { position: relative; }.dashboard-notification::after { position: absolute; right: 10px; top: 9px; width: 6px; height: 6px; border: 2px solid var(--product-panel); border-radius: 50%; background: var(--product-danger); content: ""; }
 .dashboard-user-menu { position: absolute; right: 0; top: calc(100% + 8px); width: 192px; padding: 6px; border: 1px solid var(--product-line); border-radius: 10px; background: var(--product-panel); box-shadow: var(--product-shadow-float); }.dashboard-user-menu div { padding: 8px; border-bottom: 1px solid var(--product-line); color: var(--product-muted); font-size: 11px; }.dashboard-user-menu button { width: 100%; padding: 9px 8px; border: 0; border-radius: 7px; background: transparent; color: var(--product-text); text-align: left; }.dashboard-user-menu button:hover { background: var(--product-surface-muted); }
@@ -222,18 +223,18 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 
 .prototype-search-shell { position: relative; margin-bottom: 22px; }
 .prototype-search-toolbar { display: flex; align-items: center; gap: 8px; padding: 8px; border: 1px solid var(--product-line); border-radius: 10px; background: var(--product-panel); }
-.prototype-search-box { min-width: 180px; height: 38px; flex: 1; display: flex; align-items: center; gap: 9px; padding: 0 10px; color: var(--product-muted); }
-.prototype-search-box svg { width: 16px; height: 16px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }.prototype-search-box input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--product-text); font-size: 13px; }.prototype-search-box input::placeholder { color: var(--product-muted); }
+.prototype-search-box { min-width: 180px; height: 38px; flex: 1; display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--product-muted); }
+.prototype-search-box svg { width: 14px; height: 14px; flex: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }.prototype-search-box input { min-width: 0; width: 100%; border: 0; outline: 0; background: transparent; color: var(--product-text); font-size: 13px; }.prototype-search-box input::placeholder { color: var(--product-muted); }
 .prototype-rail-empty { margin-left: -10px; padding: 10px; color: var(--product-muted); font-size: 11px; line-height: 1.6; }
 .prototype-filter-select { position: relative; display: inline-flex; height: 36px; align-items: center; border-radius: 7px; background: var(--product-surface-muted); color: var(--product-text-secondary); white-space: nowrap; }
-.prototype-filter-select select { height: 36px; appearance: none; border: 0; border-radius: inherit; padding: 0 28px 0 10px; background: transparent; color: inherit; outline: 0; font-size: 12px; }
-.prototype-filter-select svg { position: absolute; right: 8px; width: 14px; height: 14px; pointer-events: none; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.prototype-filter-select select { height: 36px; appearance: none; border: 0; border-radius: inherit; padding: 0 10px 0 26px; background: transparent; color: inherit; outline: 0; font-size: 12px; }
+.prototype-filter-select svg { position: absolute; left: 9px; width: 13px; height: 13px; pointer-events: none; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .prototype-semantic-button { display: inline-flex; height: 36px; align-items: center; gap: 6px; border: 0; border-radius: 7px; padding: 0 10px; background: var(--product-surface-muted); color: var(--product-text-secondary); font-size: 12px; white-space: nowrap; }
 .prototype-filter-action { display: inline-flex; height: 36px; align-items: center; gap: 6px; border: 0; border-radius: 7px; padding: 0 10px; background: var(--product-surface-muted); color: var(--product-text-secondary); font-size: 12px; white-space: nowrap; }
 .prototype-filter-action:hover { background: var(--product-surface-hover); color: var(--product-text); }
-.prototype-filter-action svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+.prototype-filter-action svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
 .prototype-semantic-button[aria-pressed="true"] { color: var(--product-text); box-shadow: inset 0 0 0 1px var(--product-line-strong); }
-.prototype-semantic-button svg { width: 14px; height: 14px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; }
+.prototype-semantic-button svg { width: 13px; height: 13px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; }
 .prototype-filter-popover,.prototype-semantic-popover { position: absolute; top: calc(100% + 8px); z-index: 45; border: 1px solid var(--product-line-strong); border-radius: 10px; background: var(--product-panel); box-shadow: var(--product-shadow-float); color: var(--product-text); }
 .prototype-filter-popover { right: 0; width: min(430px,100%); padding: 16px; }.prototype-filter-popover header { display: flex; align-items: flex-start; justify-content: space-between; margin-bottom: 14px; }.prototype-filter-popover header strong,.prototype-semantic-popover>strong { display: block; font-size: 13px; }.prototype-filter-popover header span,.prototype-semantic-popover>span { display: block; margin-top: 3px; color: var(--product-muted); font-size: 10px; }.prototype-filter-popover header button { border: 0; background: transparent; color: var(--product-muted); font-size: 18px; }
 .prototype-filter-popover__dates { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }.prototype-filter-popover__dates label>span,.prototype-filter-popover section>span { display: block; margin-bottom: 6px; color: var(--product-text-secondary); font-size: 11px; }.prototype-filter-popover input { width: 100%; height: 36px; padding: 0 9px; border: 1px solid var(--product-line); border-radius: 7px; background: var(--product-surface-muted); color: var(--product-text); color-scheme: light dark; }

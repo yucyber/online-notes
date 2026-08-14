@@ -163,4 +163,54 @@ describe('useEditorLayoutPreferences', () => {
     })
     expect(JSON.parse(localStorage.getItem('notes:editor-layout:v1') || '{}')).toMatchObject({ leftWidth: 340 })
   })
+
+  it('keeps separate hook consumers in sync through one shared state source', () => {
+    const first = renderHook(() => useEditorLayoutPreferences())
+    const second = renderHook(() => useEditorLayoutPreferences())
+
+    act(() => {
+      first.result.current.toggleLeft()
+      first.result.current.setLeftWidth(360)
+    })
+
+    expect(second.result.current.preferences).toMatchObject({
+      leftCollapsed: true,
+      leftWidth: 360,
+    })
+  })
+
+  it('disables layout persistence, clears saved values, and restores saving when re-enabled', () => {
+    const { result, unmount } = renderHook(() => useEditorLayoutPreferences())
+
+    act(() => {
+      result.current.setLeftWidth(340)
+    })
+    expect(localStorage.getItem('notes:editor-layout:v1')).not.toBeNull()
+
+    act(() => {
+      result.current.setAutoSaveLayout(false)
+    })
+    expect(result.current.autoSaveLayout).toBe(false)
+    expect(result.current.preferences.leftWidth).toBe(236)
+    expect(localStorage.getItem('notes:editor-layout:v1')).toBeNull()
+    expect(localStorage.getItem('notes:editor-layout:auto-save:v1')).toBe('false')
+
+    act(() => {
+      result.current.setLeftWidth(333)
+      result.current.toggleLeft()
+    })
+    expect(result.current.preferences.leftWidth).toBe(333)
+    expect(localStorage.getItem('notes:editor-layout:v1')).toBeNull()
+
+    unmount()
+    const reopened = renderHook(() => useEditorLayoutPreferences())
+    expect(reopened.result.current.preferences.leftWidth).toBe(236)
+
+    act(() => {
+      reopened.result.current.setAutoSaveLayout(true)
+      reopened.result.current.setLeftWidth(318)
+    })
+    expect(localStorage.getItem('notes:editor-layout:auto-save:v1')).toBe('true')
+    expect(JSON.parse(localStorage.getItem('notes:editor-layout:v1') || '{}')).toMatchObject({ leftWidth: 318 })
+  })
 })

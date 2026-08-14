@@ -1,3 +1,4 @@
+import { useState, useRef, useEffect } from 'react'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -15,6 +16,7 @@ type Props = {
   saveState?: SaveState
   readOnly?: boolean
   collaborators?: Array<{ id: string; name?: string }>
+  onChangeTitle?: (value: string) => Promise<void> | void
 }
 
 const COLLAB_AVATAR_COLORS = [
@@ -42,15 +44,84 @@ export function NoteEditorHeader({
   saveState,
   readOnly = false,
   collaborators = [],
+  onChangeTitle,
 }: Props) {
   const shown = collaborators.slice(0, 3)
   const overflow = collaborators.length - shown.length
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(note.title)
+  const [saving, setSaving] = useState(false)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    if (!editing) setDraft(note.title)
+  }, [note.title, editing])
+
+  useEffect(() => {
+    if (editing) inputRef.current?.focus()
+  }, [editing])
+
+  const startEdit = () => {
+    if (readOnly || !onChangeTitle) return
+    setDraft(note.title)
+    setEditing(true)
+  }
+
+  const commit = async () => {
+    const next = draft.trim()
+    if (next === note.title || next.length === 0) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    try {
+      await onChangeTitle(next)
+      setEditing(false)
+    } catch {
+      setDraft(note.title)
+      setEditing(false)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const placeholder = readOnly ? '查看笔记' : '未命名笔记'
   return (
     <header className="editor-header">
       <nav className="editor-header__breadcrumb" aria-label="编辑器面包屑">
         <Link href="/dashboard/notes">我的笔记</Link>
         <PrototypeGlyph name="chevron-right" className="h-3 w-3" />
-        <h1>{note.title || (readOnly ? '查看笔记' : '未命名笔记')}</h1>
+        {editing ? (
+          <input
+            ref={inputRef}
+            className="editor-title-input"
+            value={draft}
+            disabled={saving}
+            maxLength={200}
+            placeholder="未命名笔记"
+            aria-label="编辑笔记标题"
+            onChange={(e) => setDraft(e.target.value)}
+            onBlur={commit}
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') {
+                e.preventDefault()
+                void commit()
+              } else if (e.key === 'Escape') {
+                e.preventDefault()
+                setDraft(note.title)
+                setEditing(false)
+              }
+            }}
+          />
+        ) : (
+          <h1
+            className={onChangeTitle && !readOnly ? 'editor-title-editable' : undefined}
+            title={onChangeTitle && !readOnly ? '点击修改标题' : undefined}
+            onClick={startEdit}
+          >
+            {note.title || placeholder}
+          </h1>
+        )}
       </nav>
       <div className="editor-header__actions">
         {collaborators.length > 0 && (

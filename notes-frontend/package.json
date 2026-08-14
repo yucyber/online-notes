@@ -87,6 +87,7 @@
     "@testing-library/jest-dom": "^6.4.2",
     "@testing-library/react": "^14.2.1",
     "@types/jest": "^29.5.12",
+    "baseline-browser-mapping": "^2.11.14",
     "chromedriver": "^142.0.3",
     "eslint": "^9.39.1",
     "eslint-config-next": "^15.0.0",

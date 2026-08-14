@@ -38,6 +38,18 @@ export const appToast = {
       },
     )
   },
+  success(options: AppToastOptions) {
+    rememberToastId(options.id)
+
+    return toast.custom(
+      (instance) => <AppToastCard toastId={instance.id} tone="success" {...options} />,
+      {
+        id: options.id,
+        duration: options.persistent ? Infinity : 4000,
+        position: 'top-right',
+      },
+    )
+  },
   dismiss(id?: string) {
     toast.dismiss(id)
   },

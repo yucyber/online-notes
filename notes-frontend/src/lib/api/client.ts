@@ -143,4 +143,8 @@ export async function postTyped<T>(url: string, body?: any): Promise<T> {
   return api.post(url, body) as unknown as Promise<T>
 }
 
+export async function patchTyped<T>(url: string, body?: any): Promise<T> {
+  return api.patch(url, body) as unknown as Promise<T>
+}
+
 export default api

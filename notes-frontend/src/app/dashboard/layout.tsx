@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import AIPet from '@/components/ai/AIPet'
 import { DashboardHeader, DashboardSidebar, shouldUseOverlaySidebar } from '@/components/dashboard/dashboard-navigation'
-import { getCurrentUser, isAuthenticated, logout } from '@/lib/auth'
+import { AUTH_CHANGED_EVENT, getCurrentUser, isAuthenticated, logout } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
 import { listNotifications } from '@/lib/api'
 import type { User } from '@/types'
@@ -41,6 +41,12 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     globalHotkeys.register('Ctrl+Shift+F', () => document.dispatchEvent(new CustomEvent('editor:toggleFullscreen')))
     return () => detach()
   }, [router])
+
+  useEffect(() => {
+    const handleAuthChanged = () => setUser(getCurrentUser())
+    window.addEventListener(AUTH_CHANGED_EVENT, handleAuthChanged)
+    return () => window.removeEventListener(AUTH_CHANGED_EVENT, handleAuthChanged)
+  }, [])
 
   useEffect(() => {
     try { setIsSidebarHidden(localStorage.getItem('sidebarHidden') === 'true') } catch { /* storage is optional */ }

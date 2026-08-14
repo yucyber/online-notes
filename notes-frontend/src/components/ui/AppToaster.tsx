@@ -1,20 +1,27 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { AlertCircle, X } from 'lucide-react'
+import { AlertCircle, CheckCircle, X } from 'lucide-react'
 import { Toaster, toast } from 'react-hot-toast'
 import tippy from 'tippy.js'
 
 type AppToastCardProps = {
   toastId: string
-  tone: 'error'
+  tone: 'error' | 'success'
   title: string
   message?: string
   action?: { label: string; onClick: () => void }
 }
 
+const TONE_STYLES: Record<AppToastCardProps['tone'], { border: string; icon: typeof AlertCircle; iconColor: string }> = {
+  error: { border: 'border-red-200', icon: AlertCircle, iconColor: 'text-red-600' },
+  success: { border: 'border-green-200', icon: CheckCircle, iconColor: 'text-green-600' },
+}
+
 export function AppToastCard({ toastId, tone, title, message, action }: AppToastCardProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null)
+  const toneStyle = TONE_STYLES[tone]
+  const ToneIcon = toneStyle.icon
 
   useEffect(() => {
     if (!closeButtonRef.current) return
@@ -29,10 +36,10 @@ export function AppToastCard({ toastId, tone, title, message, action }: AppToast
 
   return (
     <div
-      className="flex w-[360px] items-start gap-3 rounded-xl border border-red-200 bg-[var(--surface-1)] p-4 text-[var(--on-surface)] shadow-lg"
+      className={`flex w-[360px] items-start gap-3 rounded-xl ${toneStyle.border} bg-[var(--surface-1)] p-4 text-[var(--on-surface)] shadow-lg`}
       role="status"
     >
-      <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" aria-hidden="true" />
+      <ToneIcon className={`mt-0.5 h-5 w-5 shrink-0 ${toneStyle.iconColor}`} aria-hidden="true" />
       <div className="min-w-0 flex-1">
         <p className="text-sm font-semibold">{title}</p>
         {message && <p className="mt-1 text-sm text-[var(--text-secondary)]">{message}</p>}

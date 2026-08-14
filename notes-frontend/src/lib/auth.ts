@@ -48,6 +48,10 @@ export const getCurrentUser = (): User | null => {
   return getStoredUser()
 }
 
+export const setCurrentUser = (user: User): void => {
+  setStoredUser(user)
+}
+
 // 登录/注册成功后持久化用户信息；token 由后端写入 HttpOnly Cookie，无需前端传递
 export const persistAuthSession = (user: User): void => {
   setStoredUser(user)

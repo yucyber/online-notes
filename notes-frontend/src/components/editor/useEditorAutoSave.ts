@@ -284,5 +284,11 @@ export function useEditorAutoSave({ noteId, snapshot, enabled, save, delayMs }: 
     return () => { window.removeEventListener('online', retryOnOnline) }
   }, [enqueue])
 
-  return { state, saveNow, retry, lastSavedSnapshot }
+  // 标题等单字段保存成功后，复用同一「已自动保存」轻量状态，不弹独立 Toast。
+  const markSaved = useCallback(() => {
+    setState('saved')
+    appToast.dismiss(`save:${noteId}`)
+  }, [noteId])
+
+  return { state, saveNow, retry, lastSavedSnapshot, markSaved }
 }

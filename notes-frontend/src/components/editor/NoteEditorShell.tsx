@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
@@ -433,11 +433,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     if (rejectReadOnlyWrite()) return
     await persistNote(snapshot.title, snapshot.content)
   }, [persistNote, rejectReadOnlyWrite])
-  const addTagsByNames = useCallback(async (names: string[]) => {
-    if (rejectReadOnlyWrite()) return []
-    return persistTags(names)
-  }, [persistTags, rejectReadOnlyWrite])
-  const { state: saveState, saveNow } = useEditorAutoSave({
+
+  const { state: saveState, saveNow, markSaved } = useEditorAutoSave({
     noteId: id,
     snapshot: {
       title: currentTitle,
@@ -452,6 +449,24 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     save: handleSave,
     delayMs: 400,
   })
+
+  const handleChangeTitle = useCallback(async (value: string) => {
+    if (rejectReadOnlyWrite()) return
+    try {
+      const updated = await updateNote(id, { title: value })
+      setNote(prev => (prev ? { ...prev, title: updated.title ?? value } : prev))
+      setCurrentTitle(updated.title ?? value)
+      // 标题保存属轻量自动保存，复用顶部「已自动保存」状态，不弹独立 Toast
+      markSaved()
+    } catch (error) {
+      appToast.error({ id: `title:${id}`, title: '标题保存失败', message: String((error as any)?.message || error) })
+      throw error
+    }
+  }, [id, rejectReadOnlyWrite, markSaved])
+  const addTagsByNames = useCallback(async (names: string[]) => {
+    if (rejectReadOnlyWrite()) return []
+    return persistTags(names)
+  }, [persistTags, rejectReadOnlyWrite])
 
   useEffect(() => {
     const onSaveShortcut = (event: KeyboardEvent) => {
@@ -591,6 +606,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             onToggleProperties={() => setShowProperties((open) => !open)}
             propertiesOpen={showProperties}
             saveState={saveState}
+            onChangeTitle={handleChangeTitle}
           />
           <NoteEditorMetadataPanel
             id={id}

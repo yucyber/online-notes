@@ -1,19 +1,60 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { AlertTriangle, LogOut, PanelLeft, Save, Trash2, UserRound } from 'lucide-react'
+import { toast } from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
-import { getCurrentUser, logout } from '@/lib/auth'
+import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
+import { usersAPI } from '@/lib/api/users'
+import { appToast } from '@/lib/app-toast'
+import { getCurrentUser, logout, setCurrentUser } from '@/lib/auth'
 import type { User } from '@/types'
-import { LogOut, User as UserIcon, Bell, Settings } from 'lucide-react'
-import NetworkStatus from '@/components/security/NetworkStatus'
+
+function PanelHeader({ icon, title, description, danger = false }: {
+  icon: React.ReactNode
+  title: string
+  description: string
+  danger?: boolean
+}) {
+  return (
+    <header className="flex items-center gap-3 border-b border-[var(--product-line)] px-5 py-4">
+      <span className={danger ? 'text-[var(--product-danger)]' : 'text-[var(--product-muted)]'} aria-hidden="true">
+        {icon}
+      </span>
+      <div>
+        <h2 className={`text-[15px] font-semibold ${danger ? 'text-[var(--product-danger)]' : 'text-[var(--product-text)]'}`}>
+          {title}
+        </h2>
+        <p className="mt-0.5 text-xs text-[var(--product-muted)]">{description}</p>
+      </div>
+    </header>
+  )
+}
+
+function FieldRow({ title, description, children }: {
+  title: string
+  description: string
+  children: React.ReactNode
+}) {
+  return (
+    <div className="flex flex-col gap-3 px-5 py-5 sm:flex-row sm:items-center sm:justify-between sm:gap-8">
+      <div className="min-w-0">
+        <p className="text-sm font-semibold text-[var(--product-text)]">{title}</p>
+        <p className="mt-1 text-xs leading-5 text-[var(--product-muted)]">{description}</p>
+      </div>
+      <div className="w-full shrink-0 sm:w-[330px]">{children}</div>
+    </div>
+  )
+}
 
 export default function SettingsPage() {
   const router = useRouter()
+  const { autoSaveLayout, setAutoSaveLayout } = useEditorLayoutPreferences()
   const [user, setUser] = useState<User | null>(null)
+  const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
 
   useEffect(() => {
     const currentUser = getCurrentUser()
@@ -22,8 +63,32 @@ export default function SettingsPage() {
       return
     }
     setUser(currentUser)
+    setDisplayName(currentUser.displayName ?? '')
     setLoading(false)
   }, [router])
+
+  const trimmedDisplayName = displayName.trim()
+  const canSave = Boolean(trimmedDisplayName) && trimmedDisplayName !== (user?.displayName ?? '') && !saving
+
+  const handleSaveProfile = async () => {
+    if (!user || !canSave) return
+    setSaving(true)
+    try {
+      const updatedUser = await usersAPI.updateProfile({ displayName: trimmedDisplayName })
+      setUser(updatedUser)
+      setDisplayName(updatedUser.displayName ?? '')
+      setCurrentUser(updatedUser)
+      toast.success('显示名称已更新')
+    } catch (error) {
+      appToast.error({
+        id: 'settings:profile',
+        title: '显示名称保存失败',
+        message: error instanceof Error ? error.message : '请稍后重试',
+      })
+    } finally {
+      setSaving(false)
+    }
+  }
 
   const handleLogout = () => {
     if (window.confirm('确定要退出登录吗？')) {
@@ -33,143 +98,108 @@ export default function SettingsPage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center h-64">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600"></div>
+      <div className="flex h-64 items-center justify-center" role="status" aria-label="正在加载设置">
+        <div className="h-8 w-8 animate-spin rounded-full border-2 border-[var(--product-line-strong)] border-t-[var(--product-accent)]" />
       </div>
     )
   }
 
   return (
-    <div className="space-y-6">
-      <div className="product-page-header flex flex-col gap-2">
+    <div>
+      <header className="product-page-header mb-7">
         <h1 className="page-heading">设置</h1>
-        <p className="page-description">管理您的账户和偏好设置</p>
+        <p className="page-description">管理账户资料与笔记编辑体验。</p>
+      </header>
+
+      <div className="grid items-start gap-5 lg:grid-cols-[180px_minmax(0,720px)] lg:gap-10">
+        <nav className="flex flex-wrap gap-1 border-b border-[var(--product-line)] pb-3 lg:sticky lg:top-20 lg:self-start lg:flex-col lg:border-0 lg:pb-0" aria-label="设置分组">
+          {[
+            ['account', '账户信息'],
+            ['editor', '编辑偏好'],
+            ['danger', '危险操作'],
+          ].map(([id, label], index) => (
+            <a
+              key={id}
+              href={`#${id}`}
+              className={`rounded-lg px-3 py-2 text-[13px] transition-colors ${index === 0 ? 'bg-[var(--product-accent-soft)] font-semibold text-[var(--product-accent)]' : 'text-[var(--product-text-secondary)] hover:bg-[var(--product-surface-hover)] hover:text-[var(--product-text)]'}`}
+            >
+              {label}
+            </a>
+          ))}
+        </nav>
+
+        <div className="flex min-w-0 flex-col gap-6">
+          <section id="account" className="calm-panel scroll-mt-24" aria-label="账户信息">
+            <PanelHeader icon={<UserRound className="h-[18px] w-[18px]" />} title="账户信息" description="显示名称会用于侧栏和协作场景" />
+            <div className="divide-y divide-[var(--product-line)]">
+              <FieldRow title="显示名称" description="1–32 个字符，保存后立即同步到当前登录态">
+                <div className="flex gap-2">
+                  <input
+                    id="display-name"
+                    aria-label="显示名称"
+                    value={displayName}
+                    maxLength={32}
+                    onChange={(event) => setDisplayName(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') void handleSaveProfile()
+                    }}
+                    className="h-10 min-w-0 flex-1 rounded-lg border border-[var(--product-line-strong)] bg-[var(--product-panel)] px-3 text-sm text-[var(--product-text)] outline-none transition focus:border-[var(--product-accent)] focus:ring-2 focus:ring-[var(--product-accent-soft)]"
+                  />
+                  <Button size="sm" onClick={() => void handleSaveProfile()} disabled={!canSave} aria-label="保存显示名称">
+                    <Save className="h-4 w-4" />
+                    {saving ? '保存中' : '保存'}
+                  </Button>
+                </div>
+              </FieldRow>
+              <FieldRow title="邮箱地址" description="用于登录，由后端唯一标识，无法修改">
+                <input aria-label="邮箱地址" value={user?.email ?? ''} disabled className="h-10 w-full rounded-lg border border-[var(--product-line)] bg-[var(--product-surface-muted)] px-3 text-sm text-[var(--product-muted)]" />
+              </FieldRow>
+              <FieldRow title="账户创建时间" description="账户首次注册的日期，只读">
+                <input aria-label="账户创建时间" value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('zh-CN') : ''} disabled className="h-10 w-full rounded-lg border border-[var(--product-line)] bg-[var(--product-surface-muted)] px-3 text-sm text-[var(--product-muted)]" />
+              </FieldRow>
+            </div>
+          </section>
+
+          <section id="editor" className="calm-panel scroll-mt-24" aria-label="编辑偏好">
+            <PanelHeader icon={<PanelLeft className="h-[18px] w-[18px]" />} title="编辑偏好" description="控制编辑器布局是否在下次打开时恢复" />
+            <FieldRow title="自动保存布局" description="保存左栏宽度与折叠状态；关闭后每次打开编辑器都使用默认布局">
+              <div className="flex justify-start sm:justify-end">
+                <button
+                  type="button"
+                  role="switch"
+                  aria-label="自动保存编辑器布局"
+                  aria-checked={autoSaveLayout}
+                  onClick={() => setAutoSaveLayout(!autoSaveLayout)}
+                  className={`relative h-7 w-12 rounded-full transition-colors ${autoSaveLayout ? 'bg-[var(--product-accent)]' : 'bg-[var(--product-line-strong)]'}`}
+                >
+                  <span className={`absolute left-1 top-1 h-5 w-5 rounded-full bg-white shadow-sm transition-transform ${autoSaveLayout ? 'translate-x-5' : 'translate-x-0'}`} />
+                </button>
+              </div>
+            </FieldRow>
+          </section>
+
+          <section id="danger" className="calm-panel scroll-mt-24 border-[color-mix(in_srgb,var(--product-danger)_30%,var(--product-line))]" aria-label="危险操作">
+            <PanelHeader icon={<AlertTriangle className="h-[18px] w-[18px]" />} title="危险操作" description="这些操作可能会影响您的账户安全" danger />
+            <div className="divide-y divide-[var(--product-line)]">
+              <FieldRow title="退出登录" description="清除当前登录态，之后需要重新登录">
+                <div className="flex justify-start sm:justify-end">
+                  <Button variant="outline" onClick={handleLogout} className="text-[var(--product-danger)]">
+                    <LogOut className="h-4 w-4" />退出登录
+                  </Button>
+                </div>
+              </FieldRow>
+              <FieldRow title="删除账户" description="后端尚未提供删除账户接口，此功能暂未开放">
+                <div className="flex items-center justify-start gap-3 sm:justify-end">
+                  <span className="text-xs text-[var(--product-muted)]">暂未开放</span>
+                  <Button variant="outline" disabled className="text-[var(--product-danger)]">
+                    <Trash2 className="h-4 w-4" />删除账户
+                  </Button>
+                </div>
+              </FieldRow>
+            </div>
+          </section>
+        </div>
       </div>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <UserIcon className="h-5 w-5 text-[var(--text-muted)]" />
-            <CardTitle>账户信息</CardTitle>
-          </div>
-          <CardDescription>查看和管理您的账户基本信息</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-default)] mb-1">
-              邮箱地址
-            </label>
-            <Input
-              type="email"
-              value={user?.email || ''}
-              disabled
-              className="bg-[var(--surface-2)]"
-            />
-            <p className="mt-1 text-xs text-[var(--text-muted)]">
-              邮箱地址用于登录，无法修改
-            </p>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-[var(--text-default)] mb-1">
-              账户创建时间
-            </label>
-            <Input
-              type="text"
-              value={user?.createdAt ? new Date(user.createdAt).toLocaleDateString('zh-CN') : ''}
-              disabled
-              className="bg-[var(--surface-2)]"
-            />
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Bell className="h-5 w-5 text-[var(--text-muted)]" />
-            <CardTitle>偏好设置</CardTitle>
-          </div>
-          <CardDescription>自定义您的使用体验</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-[var(--on-surface)]">自动保存</p>
-              <p className="text-xs text-[var(--text-muted)]">编辑笔记时自动保存内容</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer" style={{ minHeight: '44px' }} aria-label="自动保存开关">
-              <input type="checkbox" className="sr-only peer" defaultChecked />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-[var(--on-surface)]">邮件通知</p>
-              <p className="text-xs text-[var(--text-muted)]">接收重要更新和通知邮件</p>
-            </div>
-            <label className="relative inline-flex items-center cursor-pointer" style={{ minHeight: '44px' }} aria-label="邮件通知开关">
-              <input type="checkbox" className="sr-only peer" />
-              <div className="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-            </label>
-          </div>
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Settings className="h-5 w-5 text-[var(--text-muted)]" />
-            <CardTitle>安全中心 · 网络访问状态</CardTitle>
-          </div>
-          <CardDescription>查看当前 API 地址、连通性与诊断入口</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-            <div className="text-sm">
-            <div className="mb-2"><span className="font-medium">当前 API 地址：</span><code className="bg-[var(--surface-2)] px-2 py-1 rounded">{process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'}</code></div>
-          </div>
-          <NetworkStatus onReconnect={() => { /* 可在此触发全局数据刷新 */ }} />
-        </CardContent>
-      </Card>
-
-      <Card className="border-red-200">
-        <CardHeader>
-          <CardTitle className="text-red-600">危险操作</CardTitle>
-          <CardDescription>这些操作可能会影响您的账户安全</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm font-medium text-gray-900">退出登录</p>
-              <p className="text-xs text-gray-500">退出当前账户，需要重新登录</p>
-            </div>
-            <Button
-              variant="outline"
-              onClick={handleLogout}
-              className="text-red-600 border-red-300 hover:bg-red-50"
-            >
-              <LogOut className="mr-2 h-4 w-4" />
-              退出登录
-            </Button>
-          </div>
-
-          <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-            <div>
-              <p className="text-sm font-medium text-red-600">删除账户</p>
-              <p className="text-xs text-gray-500">永久删除您的账户和所有数据</p>
-            </div>
-            <Button
-              variant="outline"
-              disabled
-              className="text-red-600 border-red-300 hover:bg-red-50 opacity-50 cursor-not-allowed"
-            >
-              删除账户
-            </Button>
-            <p className="text-xs text-gray-400 mt-1">此功能暂未开放</p>
-          </div>
-        </CardContent>
-      </Card>
     </div>
   )
 }
