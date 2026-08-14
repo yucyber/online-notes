@@ -54,3 +54,9 @@ notes-backend/tsconfig.tsbuildinfo
 .runtime/
 .worktrees/
 
+# Next.js dev console log
+**/.next-dev-console.log
+
+# superpowers runtime process state (not docs/plans)
+.superpowers/**/state/
+
