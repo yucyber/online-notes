@@ -2,8 +2,6 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
-import { Lightbulb, Clock, PencilLine } from 'lucide-react';
-import { truncateText } from '@/utils'
 import { notesAPI } from '@/lib/api';
 import type { NoteFilterParams } from '@/types'
 import { Note } from '@/types';
@@ -87,17 +85,13 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
 
   if (recommendations.length === 0) {
     return (
-      <div className="p-4 rounded-lg shadow h-fit border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
-        <div className="flex items-center gap-2 mb-2" style={{ color: 'var(--primary-600)' }}>
-          <Lightbulb className="h-5 w-5" />
-          <h3 className="font-medium">猜你想看</h3>
-        </div>
+      <aside className="prototype-assistant-rail"><section><h3>猜你喜欢</h3>
         {error ? (
           <div className="text-xs rounded p-2 border" style={{ color: 'var(--on-surface)', background: 'var(--surface-2)', borderColor: 'var(--border)' }}>{error}</div>
         ) : (
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>暂无推荐内容，稍后再试或新建笔记提升推荐效果。</div>
         )}
-      </div>
+      </section></aside>
     );
   }
 
@@ -105,69 +99,44 @@ export default function SmartRecommendations({ currentNoteId, context }: { curre
   const drafts = recommendations.filter(n => n.status === 'draft')
 
   return (
-    <div className="p-4 rounded-lg shadow h-fit border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
+    <aside className="prototype-assistant-rail">
       {published.length > 0 && (
         <>
-          <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--primary-600)' }}>
-            <Lightbulb className="h-5 w-5" />
-            <h3 className="font-medium">猜你想看</h3>
-          </div>
-          <div className="space-y-3 mb-4">
+          <section><h3>猜你喜欢</h3><div>
             {published.map((note, i) => (
               <Link key={`${note.id}:${i}`} href={`/dashboard/notes/${note.id}`} className="block group">
-                <div className="p-3 rounded-md transition-colors border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
-                  <div className="flex items-start justify-between">
-                    <h4 className="font-medium text-sm line-clamp-1" style={{ color: 'var(--on-surface)' }}>
+                <div className="prototype-rail-item">
+                    <h4>
                       {note.title || '无标题'}
                     </h4>
-                  </div>
-                  <div className="mt-1 text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                    {truncateText(String(note.content || '').replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
-                  </div>
-                  <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    <Clock className="h-3 w-3" />
-                    <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
-                  </div>
+                  <span>{new Date(note.updatedAt).toLocaleDateString()} 更新</span>
                 </div>
               </Link>
             ))}
-          </div>
+          </div></section>
         </>
       )}
 
-      <div className="mt-2">
-        <div className="flex items-center gap-2 mb-3" style={{ color: 'var(--warning)' }}>
-          <PencilLine className="h-5 w-5" />
-          <h3 className="font-medium">继续写作</h3>
-        </div>
+      <section><h3>继续写作</h3>
         {drafts.length > 0 ? (
-          <div className="space-y-3">
+          <div>
             {drafts.map((note, i) => (
               <Link key={`${note.id}:${i}`} href={`/dashboard/notes/${note.id}`} className="block group">
-                <div className="p-3 rounded-md transition-colors border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)' }}>
-                  <div className="flex items-start justify-between">
-                    <h4 className="font-medium text-sm line-clamp-1" style={{ color: 'var(--on-surface)' }}>
+                <div className="prototype-rail-item">
+                    <h4>
                       {note.title || '未命名草稿'}
                     </h4>
-                    <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'var(--surface-2)', color: 'var(--on-surface)', border: '1px solid var(--border)' }}>草稿</span>
-                  </div>
-                  <div className="mt-1 text-xs line-clamp-2" style={{ color: 'var(--text-muted)' }}>
-                    {truncateText(String(note.content || '').replace(/<[^>]+>/g, '').replace(/[#*`_~>\[\]()]/g, ''), 90)}
-                  </div>
-                  <div className="flex items-center gap-2 mt-2 text-xs" style={{ color: 'var(--text-muted)' }}>
-                    <Clock className="h-3 w-3" />
-                    <span>{new Date(note.updatedAt).toLocaleDateString()}</span>
-                  </div>
+                  <span>草稿 · {new Date(note.updatedAt).toLocaleDateString()}</span>
                 </div>
               </Link>
             ))}
           </div>
         ) : (
-          <div className="text-xs rounded p-3 border" style={{ color: 'var(--text-muted)', background: 'var(--surface-2)', borderColor: 'var(--border)' }}>
+          <div className="prototype-rail-empty">
             暂无草稿，点击上方“新建笔记”或将笔记保存为草稿后，这里会显示待继续的内容。
           </div>
         )}
-      </div>
-    </div>
+      </section>
+    </aside>
   );
 }

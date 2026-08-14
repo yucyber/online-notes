@@ -9,6 +9,7 @@ export function useSearchFilterBar() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [isOpen, setIsOpen] = useState(false)
+  const [isSemanticOpen, setIsSemanticOpen] = useState(false)
   const [categories, setCategories] = useState<Category[]>([])
   const [tags, setTags] = useState<Tag[]>([])
   const [savedFilters, setSavedFilters] = useState<SavedFilter[]>([])
@@ -49,7 +50,7 @@ export function useSearchFilterBar() {
   // 选中多个标签时自动切换为 all 模式；单个标签恢复 any，避免用户手动调整。
   useEffect(() => { const next = selectedTagIds.length > 1 ? 'all' : 'any'; if (tagsMode !== next) setTagsMode(next) }, [selectedTagIds, tagsMode])
 
-  const buildParams = () => {
+  const buildParams = (overrides?: { nlqEnabled?: boolean; nlqMode?: 'keyword' | 'vector' | 'hybrid' }) => {
     const params = new URLSearchParams()
     if (keyword) params.set('keyword', keyword)
     if (categoryId) params.set('categoryId', categoryId)
@@ -60,7 +61,7 @@ export function useSearchFilterBar() {
     if (startDate) params.set('startDate', startDate)
     if (endDate) params.set('endDate', endDate)
     if (status) params.set('status', status)
-    if (nlqEnabled) { params.set('nlq', '1'); params.set('mode', nlqMode) }
+    if (overrides?.nlqEnabled ?? nlqEnabled) { params.set('nlq', '1'); params.set('mode', overrides?.nlqMode ?? nlqMode) }
     return params
   }
 
@@ -72,6 +73,24 @@ export function useSearchFilterBar() {
     document.dispatchEvent(new CustomEvent('search:trigger', { detail: { searchId, source, keyword, categoryId, categoryIds: selectedCategoryIds, tagIds: Array.from(new Set(selectedTagIds.filter(Boolean))), categoriesMode, tagsMode, startDate, endDate, status, nlqEnabled, nlqMode, nextQuery, time: new Date().toISOString() } }))
     document.dispatchEvent(new CustomEvent('rum', { detail: { type: 'ui:search_trigger', name: 'Search', value: 1, meta: { searchId, source } } }))
     if (nextQuery !== currentQuery) router.push(`/dashboard/notes?${nextQuery}`)
+  }
+
+  const handleFilterToggle = () => { setIsOpen((open) => !open); setIsSemanticOpen(false) }
+  const handleSemanticSearch = () => { setIsSemanticOpen((open) => !open); setIsOpen(false) }
+
+  const handleSemanticMode = (mode: 'keyword' | 'vector' | 'hybrid') => {
+    setNlqEnabled(true)
+    setNlqMode(mode)
+    setIsSemanticOpen(false)
+    const nextQuery = buildParams({ nlqEnabled: true, nlqMode: mode }).toString()
+    router.push(`/dashboard/notes?${nextQuery}`)
+  }
+
+  const handleDisableSemanticSearch = () => {
+    setNlqEnabled(false)
+    setIsSemanticOpen(false)
+    const nextQuery = buildParams({ nlqEnabled: false }).toString()
+    router.push(nextQuery ? `/dashboard/notes?${nextQuery}` : '/dashboard/notes')
   }
 
   const handleClear = () => { setKeyword(''); setCategoryId(''); setSelectedCategoryIds([]); setCategoriesMode('any'); setSelectedTagIds([]); setStartDate(''); setEndDate(''); setStatus(''); setTagsMode('any'); setNlqEnabled(false); setNlqMode('hybrid'); router.push('/dashboard/notes') }
@@ -97,5 +116,5 @@ export function useSearchFilterBar() {
   const setLastWeek = () => { const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 7); setStartDate(start.toISOString().split('T')[0]); setEndDate(end.toISOString().split('T')[0]) }
   const setLastMonth = () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); setStartDate(start.toISOString().split('T')[0]); setEndDate(end.toISOString().split('T')[0]) }
 
-  return { isOpen, setIsOpen, categories, tags, savedFilters, keyword, setKeyword, categoryId, setCategoryId, selectedTagIds, setSelectedTagIds, selectedCategoryIds, setSelectedCategoryIds, categoriesMode, setCategoriesMode, tagsMode, setTagsMode, startDate, setStartDate, endDate, setEndDate, status, setStatus, nlqEnabled, setNlqEnabled, nlqMode, setNlqMode, isSaveModalOpen, setIsSaveModalOpen, newFilterName, setNewFilterName, handleSearch, handleClear, handleSaveFilter, applySavedFilter, toggleTag, setLastWeek, setLastMonth }
+  return { isOpen, setIsOpen, isSemanticOpen, categories, tags, savedFilters, keyword, setKeyword, categoryId, setCategoryId, selectedTagIds, setSelectedTagIds, selectedCategoryIds, setSelectedCategoryIds, categoriesMode, setCategoriesMode, tagsMode, setTagsMode, startDate, setStartDate, endDate, setEndDate, status, setStatus, nlqEnabled, setNlqEnabled, nlqMode, setNlqMode, isSaveModalOpen, setIsSaveModalOpen, newFilterName, setNewFilterName, handleSearch, handleFilterToggle, handleSemanticSearch, handleSemanticMode, handleDisableSemanticSearch, handleClear, handleSaveFilter, applySavedFilter, toggleTag, setLastWeek, setLastMonth }
 }

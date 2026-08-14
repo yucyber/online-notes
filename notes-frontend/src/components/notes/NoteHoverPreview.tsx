@@ -18,26 +18,22 @@ export function NoteHoverPreview({ note, categoryLabel, resolveTagId, resolveTag
   const tags = note.tags.slice(0, 4)
 
   return (
-    <div className="absolute left-3 top-full z-30 mt-2 w-[280px] rounded-xl border border-[var(--border)] bg-white p-3.5 opacity-0 shadow-[0_8px_28px_rgba(0,0,0,0.12)] transition-all duration-150 group-hover:opacity-100 group-focus-within:opacity-100 pointer-events-none translate-y-[-4px] group-hover:translate-y-0">
-      <div className="mb-1.5 line-clamp-1 text-[14px] font-semibold text-[var(--on-surface)]">
+    <div className="prototype-note-preview">
+      <div className="prototype-note-preview__title line-clamp-1">
         {note.title || '无标题'}
       </div>
-      <div className="line-clamp-3 text-[12px] leading-relaxed text-[var(--text-muted)]">
+      <div className="prototype-note-preview__copy line-clamp-3">
         {note.summary || fallback}
       </div>
       {tags.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-1.5">
+        <div className="prototype-note-preview__tags">
           {tags.map((tag, idx) => {
             const id = resolveTagId(tag)
             const label = resolveTagLabel(tag)
             if (!label) return null
             const keySafe = id ? id : `${note.id}:${label}:${idx}`
             return (
-              <span
-                key={keySafe}
-                className="rounded-full border border-[var(--primary-100)] px-2 py-0.5 text-[11px] font-medium"
-                style={{ background: 'var(--primary-50)', color: 'var(--primary-600)' }}
-              >
+              <span key={keySafe}>
                 {label}
               </span>
             )

@@ -1,5 +1,5 @@
 import React from 'react'
-import { render, fireEvent, screen, waitFor } from '@testing-library/react'
+import { act, render, fireEvent, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 jest.mock('next/navigation', () => {
@@ -47,11 +47,12 @@ describe('搜索→控制台联动', () => {
     document.addEventListener('search:trigger', (e: any) => { triggerDetail = e.detail })
 
     render(<SearchFilterBar />)
+    await act(async () => { await Promise.resolve() })
 
-    const input = screen.getByPlaceholderText('搜索笔记...') as HTMLInputElement
+    const input = screen.getByPlaceholderText('搜索标题、内容或标签') as HTMLInputElement
     fireEvent.change(input, { target: { value: 'hello' } })
-    const btn = screen.getByText('搜索')
-    fireEvent.click(btn)
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }))
+    fireEvent.click(screen.getByRole('button', { name: '应用筛选' }))
 
     await waitFor(() => {
       expect(triggerDetail).toBeTruthy()
@@ -59,6 +60,24 @@ describe('搜索→控制台联动', () => {
       expect(sessionStorage.getItem('lastSearchId')).toBe(triggerDetail.searchId)
       expect(triggerDetail.source).toBe('button')
     })
+  })
+
+  test('筛选与语义搜索展示可操作选项且互不覆盖', async () => {
+    const { default: SearchFilterBar } = await import('@/components/SearchFilterBar')
+    render(<SearchFilterBar />)
+    await act(async () => { await Promise.resolve() })
+
+    fireEvent.click(screen.getByRole('button', { name: '筛选' }))
+    expect(screen.getByRole('dialog', { name: '高级筛选' })).toBeVisible()
+    expect(screen.queryByRole('dialog', { name: '语义搜索模式' })).not.toBeInTheDocument()
+
+    fireEvent.click(screen.getByRole('button', { name: '语义搜索' }))
+    expect(screen.queryByRole('dialog', { name: '高级筛选' })).not.toBeInTheDocument()
+    const semanticDialog = screen.getByRole('dialog', { name: '语义搜索模式' })
+    expect(semanticDialog).toBeVisible()
+    expect(screen.getByRole('button', { name: /混合检索/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /语义优先/ })).toBeVisible()
+    expect(screen.getByRole('button', { name: /关键词优先/ })).toBeVisible()
   })
 
   test('NotesPage 完成加载后派发 search:result 与 RUM 事件', async () => {

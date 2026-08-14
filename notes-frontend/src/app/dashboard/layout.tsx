@@ -88,7 +88,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
     return <div className="editor-workspace-route">{children}</div>
   }
 
-  return <div className="app-shell">
+  return <div className={isSidebarHidden ? 'app-shell app-shell--sidebar-hidden' : 'app-shell'}>
     <DashboardSidebar pathname={pathname} isHidden={isSidebarHidden} isMobileOpen={isMobileMenuOpen} hoveredNav={hoveredNav} onHover={setHoveredNav} onNavigate={(href) => router.push(href)} onLogout={handleLogout} onCloseMobile={() => setIsMobileMenuOpen(false)} />
     <main className="app-main">
       <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} onLogout={handleLogout} />

@@ -73,7 +73,7 @@ describe('编辑页窄视口布局', () => {
       />,
     )
 
-    expect(container.querySelector('aside')).toHaveClass('hidden', 'lg:flex')
+    expect(container.querySelector('aside')).toHaveClass('dashboard-sidebar')
   })
 
   test('侧栏按钮在 1024px 以下打开覆盖层导航', () => {
@@ -126,10 +126,12 @@ describe('编辑页窄视口布局', () => {
 
     expect(productCss).toMatch(/\.editor-left-edge-trigger\s*\{/)
     expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{/)
-    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*right:\s*-14px/s)
-    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*height:\s*56px/s)
+    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*right:\s*-4px/s)
+    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*width:\s*20px/s)
+    expect(productCss).toMatch(/\.editor-sidebar-collapse-handle\s*\{[^}]*height:\s*40px/s)
     expect(productCss).toMatch(/\.editor-workspace-sidebar\s*\{[^}]*gap:\s*12px/s)
-    expect(productCss).toMatch(/\.editor-workspace-sidebar__search\s*\{[^}]*min-height:\s*32px/s)
+    expect(productCss).toMatch(/\.editor-workspace-sidebar__search\s*\{[^}]*min-height:\s*40px/s)
+    expect(productCss).toMatch(/\.editor-outline\s*\{[^}]*width:\s*220px/s)
     expect(productCss).toMatch(/\.editor-outline\s*\{[^}]*position:\s*fixed/s)
     expect(productCss).toMatch(/\.editor-layout-main\s*\{[^}]*min-width:\s*0/s)
   })
@@ -161,7 +163,7 @@ describe('编辑页窄视口布局', () => {
     )
 
     expect(screen.getByTestId('toast-position')).toHaveAttribute('data-position', 'top-right')
-    expect(screen.getByRole('button', { name: '切换 AI 助手' })).toHaveClass('fixed', 'bottom-4', 'right-4')
+    expect(screen.getByRole('button', { name: '打开墨点助手' })).toHaveClass('fixed', 'bottom-6', 'right-6')
   })
 
   test('拖拽实时调整左栏，提交后才持久化，Escape 恢复起始宽度', () => {
@@ -207,5 +209,32 @@ describe('编辑页窄视口布局', () => {
     const properties = screen.getByRole('dialog', { name: '笔记属性' })
     expect(within(properties).getByText('选择分类')).toBeInTheDocument()
     expect(container.querySelector('.editor-top-properties')).not.toBeInTheDocument()
+  })
+  test('editor note directory matches the compact prototype treatment', () => {
+    const sidebar = readFileSync(resolve(process.cwd(), 'src/components/editor/EditorWorkspaceSidebar.tsx'), 'utf8')
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
+
+    expect(sidebar).not.toContain('<PrototypeGlyph name="file"')
+    expect(css).toMatch(/\.editor-note-directory__item\s*\{[^}]*min-height:\s*40px/s)
+    expect(css).toMatch(/\.editor-note-directory__item\[data-active="true"\]\s*\{[^}]*border:\s*1px solid/s)
+  })
+
+  test('editor gives the document and outline independent full-height scroll surfaces', () => {
+    const shell = readFileSync(resolve(process.cwd(), 'src/components/editor/NoteEditorShell.tsx'), 'utf8')
+    const tiptap = readFileSync(resolve(process.cwd(), 'src/components/editor/TiptapEditor.tsx'), 'utf8')
+    const css = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
+
+    expect(shell).not.toContain('className="min-h-[calc(100vh-200px)]"')
+    expect(css).toMatch(/\.editor-layout-grid\s*\{[^}]*height:\s*100dvh/s)
+    expect(css).toMatch(/\.editor-edit-row \.editor-rich-editor\s*\{[^}]*grid-template-rows:\s*auto minmax\(0, 1fr\)[^}]*overflow:\s*hidden/s)
+    expect(css).toMatch(/\.editor-paper\s*\{[^}]*height:\s*100%[^}]*overflow-y:\s*auto[^}]*background:\s*var\(--editor-canvas-bg\)/s)
+    expect(css).not.toMatch(/\.editor-paper\s*\{[^}]*min-height:\s*calc\(100dvh/s)
+    expect(css).toMatch(/\.editor-outline\s*\{[^}]*height:\s*100%/s)
+    expect(css).not.toMatch(/\.editor-outline\s*\{[^}]*border-left:\s*1px/s)
+    expect(css).toMatch(/\.editor-outline__view\s*\{[^}]*overflow-y:\s*auto[^}]*overflow-x:\s*hidden/s)
+    expect(css).toMatch(/\.editor-outline\[data-pinned="false"\]\s*\{[^}]*position:\s*absolute[^}]*right:\s*0[^}]*width:\s*18px/s)
+    expect(css).toMatch(/\.editor-left-navigation\s*\{[^}]*--editor-sidebar-bg:\s*var\(--product-panel-soft\)[^}]*background:\s*var\(--editor-sidebar-bg\)/s)
+    expect(tiptap).not.toContain("background: 'var(--surface-1)'")
+    expect(shell).toContain('event.currentTarget.blur()')
   })
 })

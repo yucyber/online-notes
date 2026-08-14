@@ -45,35 +45,35 @@ html[data-theme="editor-duotone"] {
 }
 
 html[data-theme="editor-dark"] {
-  --bg: #0b1220; --bg-elev: #0f172a;
-  --text: #e5e7eb; --text-muted: #94a3b8;
-  --border: #334155;
-  --primary: #60a5fa; --primary-hover: #93c5fd;
+  --bg: #181817; --bg-elev: #232322;
+  --text: #f2f2ef; --text-muted: #92928b;
+  --border: #393936;
+  --primary: #9eb2c7; --primary-hover: #c0cfdd;
   --success: #86efac; --warning: #fcd34d; --danger: #fca5a5;
-  --icon-primary: #e5e7eb; --icon-disabled: #475569;
-  --primary-50: #0b1220; --primary-100: #111827; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1f2937;
+  --icon-primary: #f2f2ef; --icon-disabled: #5a5a55;
+  --primary-50: #30383f; --primary-100: #3a454e; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #252b30;
   --text-default: var(--text); --text-secondary: var(--text-muted);
   /* 桥接 surface/on-surface 语义变量 */
   --surface-1: var(--bg-elev);
   --surface-2: var(--bg);
-  --surface-3: #0b1119;
+  --surface-3: #2a2a28;
   --on-surface: var(--text);
 }
 
 /* 兼容 html[data-theme="dark"] 的主题取值，以适配全局布局脚本 */
 html[data-theme="dark"] {
-  --bg: #0b1220; --bg-elev: #0f172a;
-  --text: #e5e7eb; --text-muted: #94a3b8;
-  --border: #334155;
-  --primary: #60a5fa; --primary-hover: #93c5fd;
+  --bg: #181817; --bg-elev: #232322;
+  --text: #f2f2ef; --text-muted: #92928b;
+  --border: #393936;
+  --primary: #9eb2c7; --primary-hover: #c0cfdd;
   --success: #86efac; --warning: #fcd34d; --danger: #fca5a5;
-  --icon-primary: #e5e7eb; --icon-disabled: #475569;
-  --primary-50: #0b1220; --primary-100: #111827; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #1f2937;
+  --icon-primary: #f2f2ef; --icon-disabled: #5a5a55;
+  --primary-50: #30383f; --primary-100: #3a454e; --primary-500: var(--primary); --primary-600: var(--primary-hover); --primary-700: #252b30;
   --text-default: var(--text); --text-secondary: var(--text-muted);
   /* 桥接 surface/on-surface 语义变量 */
   --surface-1: var(--bg-elev);
   --surface-2: var(--bg);
-  --surface-3: #0b1119;
+  --surface-3: #2a2a28;
   --on-surface: var(--text);
 }
 
@@ -90,12 +90,29 @@ html[data-theme="dark"] {
 }
 
 .editor-layout-grid {
+  --editor-canvas-bg: var(--product-bg, var(--bg));
   display: grid;
-  grid-template-columns: var(--editor-left-width) minmax(0, 1fr) var(--editor-right-width);
+  grid-template-columns: var(--editor-left-width) minmax(0, 1fr);
+  grid-template-rows: auto 1fr;
   gap: 0;
   position: relative;
-  min-height: calc(100vh - var(--editor-header-height));
-  background: var(--bg);
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--editor-canvas-bg);
+}
+
+.editor-left-navigation {
+  grid-column: 1;
+  grid-row: 1 / span 2;
+  position: relative;
+  overflow: hidden;
+}
+.editor-layout-main {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .editor-left-navigation,
@@ -104,45 +121,62 @@ html[data-theme="dark"] {
 }
 
 .editor-left-navigation {
-  position: relative;
-  min-height: 100vh;
+  --editor-sidebar-bg: var(--product-panel-soft);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  height: 100%;
   border-right: 1px solid var(--product-line, var(--border));
-  background: var(--product-panel-muted, var(--surface-1));
+  background: var(--editor-sidebar-bg);
 }
 
 .editor-left-navigation--collapsed {
+  position: relative;
   display: flex;
   justify-content: center;
   padding-top: 14px;
+  border-right-color: transparent;
+  background: transparent;
+}
+.editor-left-navigation--collapsed .editor-workspace-sidebar {
+  transform: translateX(calc(-1 * var(--editor-left-width) - 14px));
+  pointer-events: none;
+  opacity: 0;
+  transition: transform 200ms ease, opacity 200ms ease;
+}
+.editor-left-navigation--collapsed .editor-left-edge-trigger {
+  pointer-events: auto;
 }
 
 .editor-workspace-sidebar {
   position: relative;
-  position: sticky;
-  top: 0;
-  display: grid;
-  grid-template-rows: auto auto auto auto;
+  display: flex;
+  flex-direction: column;
   gap: 12px;
-  min-height: 100vh;
-  padding: 12px 12px;
+  height: 100%;
+  min-height: 100%;
+  padding: 14px 12px 12px;
 }
 
 .editor-workspace-sidebar__back {
-  margin-top: -4px;
+  flex: none;
+  margin-top: 0;
+  min-height: 32px;
+  padding: 0 10px;
 }
 
 .editor-sidebar-collapse-handle {
   position: absolute;
-  top: 80px;
-  right: -14px;
+  top: 160px;
+  right: -4px;
   z-index: 4;
   display: grid;
-  width: 28px;
-  height: 56px;
+  width: 20px;
+  height: 40px;
   place-items: center;
   border: 1px solid var(--product-line, var(--border));
-  border-left: 0;
-  border-radius: 0 10px 10px 0;
+  border-right: 0;
+  border-radius: 10px 0 0 10px;
   background: var(--product-panel, var(--surface-1));
   color: var(--product-text-muted, var(--text-muted));
   box-shadow: var(--shadow-sm);
@@ -164,24 +198,55 @@ html[data-theme="dark"] {
 
 .editor-left-edge-trigger {
   position: fixed;
-  top: 50%;
-  left: -12px;
+  top: 160px;
+  left: -4px;
   z-index: 20;
-  width: 30px !important;
-  border: 1px solid var(--product-line, var(--border)) !important;
-  border-radius: 0 999px 999px 0 !important;
-  background: var(--product-panel, var(--surface-1)) !important;
-  opacity: .45;
-  transform: translateY(-50%);
+  width: 20px;
+  height: 40px;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--product-line, var(--border));
+  border-left: 0;
+  border-radius: 0 10px 10px 0;
+  background: var(--product-panel, var(--surface-1));
+  color: var(--product-text-muted, var(--text-muted));
+  box-shadow: var(--shadow-sm);
+  opacity: 0.6;
+  cursor: pointer;
+  transition: opacity 200ms ease, color 200ms ease, background 200ms ease;
 }
 
+/* 非暗色主题下，两个伸缩按钮统一使用更明显的悬停样式（白底 + 变色）。
+   暗色主题见文件末尾的覆盖规则，改用安静的悬停（仅提升不透明度）。 */
 .editor-left-edge-trigger:hover,
-.editor-left-edge-trigger:focus-visible { left: 0; opacity: 1; }
+.editor-left-edge-trigger:focus-visible {
+  opacity: 1;
+  color: var(--product-text, var(--on-surface));
+  background: #fff;
+  outline: none;
+}
+
+/* 暗色主题：两个伸缩按钮统一使用安静的悬停样式（仅提升不透明度，不变色、不变底），
+   避免白底在深色背景下突兀。 */
+html[data-theme="editor-dark"] .editor-sidebar-collapse-handle:hover,
+html[data-theme="editor-dark"] .editor-sidebar-collapse-handle:focus-visible,
+html[data-theme="editor-dark"] .editor-left-edge-trigger:hover,
+html[data-theme="editor-dark"] .editor-left-edge-trigger:focus-visible,
+html[data-theme="dark"] .editor-sidebar-collapse-handle:hover,
+html[data-theme="dark"] .editor-sidebar-collapse-handle:focus-visible,
+html[data-theme="dark"] .editor-left-edge-trigger:hover,
+html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
+  opacity: 1;
+  color: var(--product-text-muted, var(--text-muted));
+  background: var(--product-panel, var(--surface-1));
+}
 
 .editor-workspace-sidebar__brand {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex: none;
+  margin: -2px 0 4px;
   padding: 0 4px;
 }
 
@@ -212,19 +277,20 @@ html[data-theme="dark"] {
   flex: none;
   place-items: center;
   border-radius: var(--product-radius-md, 10px);
-  background: var(--product-brand, #1f2937);
-  color: white;
+  background: var(--product-brand);
+  color: var(--product-panel);
   font-weight: 750;
 }
 
 .editor-workspace-sidebar__search {
   display: flex;
-  min-height: 32px;
+  min-height: 40px;
   align-items: center;
+  flex: none;
   gap: 6px;
   padding: 0 8px;
   border: 1px solid var(--product-line, var(--border));
-  border-radius: var(--product-radius-md, 10px);
+  border-radius: var(--product-radius-sm, 8px);
   background: var(--product-panel, var(--surface-1));
   color: var(--product-text-muted, var(--text-muted));
   font-size: 13px;
@@ -247,16 +313,19 @@ html[data-theme="dark"] {
 }
 
 .editor-note-directory {
+  flex: 1;
   min-height: 0;
   overflow-y: auto;
+  margin: 0 -4px;
+  padding: 0 4px;
 }
 
 .editor-note-directory__heading {
-  padding: 4px 10px 8px;
+  padding: 6px 10px 8px;
   color: var(--product-text-muted, var(--text-muted));
   font-size: 11px;
   font-weight: 700;
-  letter-spacing: .08em;
+  letter-spacing: 0;
 }
 
 .editor-note-directory__item {
@@ -266,6 +335,7 @@ html[data-theme="dark"] {
   align-items: center;
   gap: 9px;
   padding: 8px 10px;
+  border: 1px solid transparent;
   border-radius: var(--product-radius-sm, 8px);
   color: var(--product-text-secondary, var(--text-muted));
   text-align: left;
@@ -277,10 +347,15 @@ html[data-theme="dark"] {
   white-space: nowrap;
 }
 
-.editor-note-directory__item:hover,
-.editor-note-directory__item[data-active="true"] {
+.editor-note-directory__item:hover {
   background: var(--product-accent-soft, var(--surface-2));
   color: var(--product-accent, var(--primary));
+}
+
+.editor-note-directory__item[data-active="true"] {
+  border: 1px solid var(--product-line-strong, var(--border));
+  background: var(--product-surface-muted, var(--surface-2));
+  color: var(--product-text, var(--on-surface));
 }
 
 .editor-note-directory__empty {
@@ -308,9 +383,16 @@ html[data-theme="dark"] {
 
 .editor-layout-main {
   position: relative;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   min-width: 0;
+  min-height: 0;
   overflow: hidden;
 }
+.editor-layout-main > .editor-header { grid-row: 1; grid-column: 1; }
+.editor-layout-main > .editor-edit-row { grid-row: 2; grid-column: 1; min-height: 0; }
+.editor-layout-main > .editor-error-banner { position: absolute; left: 16px; right: 16px; top: 60px; z-index: 5; }
 
 .editor-shell {
   width: 100%;
@@ -385,6 +467,24 @@ html[data-theme="dark"] {
   box-shadow: var(--shadow-md);
   color: var(--product-text, var(--on-surface));
 }
+/* Tiptap 的 BubbleMenu 用 Tippy.js 渲染，外层 .tippy-box 默认是深色 #333 背景、
+   白字、4px 圆角，会在内部 .editor-selection-popover 周围盖一圈很突兀的深色背景。
+   通过 :has() 反向选中承载编辑器 popover 的 tippy 容器并彻底透明化。 */
+.tippy-box:has(> .tippy-content .editor-selection-popover) {
+  background-color: transparent;
+  color: inherit;
+  border-radius: var(--product-radius-md, 10px);
+  outline: none;
+}
+.tippy-box:has(> .tippy-content .editor-selection-popover) > .tippy-content {
+  padding: 0;
+  background-color: transparent;
+  color: inherit;
+}
+/* Popper 生成的箭头定位在容器外但属于同根，强制隐藏避免漏出色 */
+.tippy-box:has(> .tippy-content .editor-selection-popover) > .tippy-arrow {
+  display: none;
+}
 .editor-selection-popover > button {
   min-width: 36px;
   min-height: 32px;
@@ -393,18 +493,31 @@ html[data-theme="dark"] {
 
 .editor-insert-backdrop { position: fixed; inset: 0; z-index: 40; }
 .editor-insert-popover {
-  position: absolute;
-  top: 142px;
-  left: max(16px, var(--editor-left-width));
+  position: fixed;
   min-width: 220px;
   padding: 6px;
-  border: 1px solid var(--product-line, var(--border));
-  border-radius: var(--product-radius-md, 10px);
-  background: var(--product-panel, var(--surface-1));
-  box-shadow: var(--shadow-lg);
+  border: 1px solid var(--product-line);
+  border-radius: var(--product-radius-lg);
+  background: var(--product-panel);
+  box-shadow: var(--product-shadow-float);
 }
 
-/* 三栏文档流：编辑区内部 row，主区 flex:1，大纲 fixed 永远吸在视口顶（不受父容器高度限制） */
+.editor-insert-popover [role="menuitem"] {
+  width: 100%;
+  border-radius: var(--product-radius-sm, 6px);
+  color: var(--product-text);
+  background: transparent;
+  transition: background-color 150ms ease, color 150ms ease;
+}
+
+.editor-insert-popover [role="menuitem"]:hover,
+.editor-insert-popover [role="menuitem"]:focus-visible {
+  background: var(--product-surface-muted);
+  color: var(--product-text);
+  outline: none;
+}
+
+/* 编辑区内部 row，正文 flex:1；大纲作为主区右列（非页面第三列），随主区高度延伸 */
 .editor-edit-row {
   display: flex;
   flex-direction: row;
@@ -412,17 +525,30 @@ html[data-theme="dark"] {
   min-height: 0;
   align-items: stretch;
 }
-.editor-edit-row .editor-rich-editor { flex: 1; min-width: 0; margin-right: 220px; }
+.editor-edit-row .editor-rich-editor {
+  flex: 1;
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr) auto;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--editor-canvas-bg);
+}
+.editor-edit-row .editor-rich-editor > .editor-toolbar { grid-row: 1; grid-column: 1 / span 2; }
+.editor-edit-row .editor-rich-editor > .editor-paper { grid-row: 2; grid-column: 1; min-height: 0; }
+.editor-edit-row .editor-rich-editor > .editor-outline { grid-row: 2; grid-column: 2; min-height: 0; }
 .editor-outline {
-  position: fixed;
-  top: 48px;
-  right: 0;
+  position: relative;
+  align-self: stretch;
   width: 220px;
-  height: calc(100vh - 48px);
-  z-index: 4;
+  height: 100%;
+  min-height: 0;
   display: flex;
   flex-direction: column;
-  background: transparent;
+  background: var(--product-panel, var(--surface-1));
 }
 .editor-outline__pin {
   display: flex;
@@ -479,17 +605,40 @@ html[data-theme="dark"] {
 .editor-outline__item[data-depth="6"] .editor-outline__link { padding-left: 68px; }
 .editor-outline__link:hover { background: var(--product-panel, var(--surface-1)); }
 .editor-outline__empty { color: var(--product-text-muted, var(--text-muted)); font-size: 12px; padding: 8px; }
+.editor-outline__view {
+  scrollbar-width: thin;
+  scrollbar-color: var(--product-line, var(--border)) transparent;
+}
 .editor-outline__view::-webkit-scrollbar { width: 6px; }
 .editor-outline__view::-webkit-scrollbar-thumb { background: var(--product-line, var(--border)); border-radius: 3px; }
+.editor-outline__view::-webkit-scrollbar-thumb:hover { background: var(--product-text-secondary, var(--text-muted)); }
 .editor-outline__view::-webkit-scrollbar-track { background: transparent; }
 .editor-header__outline-action { display: none; }
 .editor-outline-drawer-backdrop { display: none; }
-/* 大纲隐藏态（pinned=false）：折叠为右侧细条，hover/focus 临时展开 */
-.editor-outline[data-pinned="false"] { width: 18px; }
+/* 大纲隐藏态（pinned=false）：收为右侧 18px 触发条，hover 临时展开，不挤压正文 */
+.editor-outline[data-pinned="false"] {
+  position: absolute;
+  top: 48px;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: auto;
+  z-index: 6;
+  pointer-events: auto;
+  border-left-color: transparent;
+  background: transparent;
+  transition: width 200ms ease, background 200ms ease, border-color 200ms ease;
+}
 .editor-outline[data-pinned="false"] .editor-outline__view,
 .editor-outline[data-pinned="false"] .editor-outline__pin { opacity: 0; }
 .editor-outline[data-pinned="false"]:hover,
-.editor-outline[data-pinned="false"]:focus-within { width: 220px; }
+.editor-outline[data-pinned="false"]:focus-within {
+  width: 220px;
+  pointer-events: auto;
+  border-left-color: var(--product-line, var(--border));
+  background: var(--product-panel, var(--surface-1));
+  box-shadow: var(--shadow-md);
+}
 .editor-outline[data-pinned="false"]:hover .editor-outline__view,
 .editor-outline[data-pinned="false"]:hover .editor-outline__pin,
 .editor-outline[data-pinned="false"]:focus-within .editor-outline__view,
@@ -499,9 +648,10 @@ html[data-theme="dark"] {
 .editor-rich-editor[data-fullscreen="true"] .editor-toolbar { position: sticky; top: 0; z-index: 3; }
 .tiptap-content h1, .tiptap-content h2, .tiptap-content h3, .tiptap-content h4, .tiptap-content h5, .tiptap-content h6 { scroll-margin-top: 104px; }
 
-/* 窄屏：大纲折叠为右侧细条触点（不显示内容），hover 临时展开 */
+/* 窄屏：主区收为单列，大纲脱离文档流固定贴视口右侧，hover 临时展开 */
 @media (max-width: 1279px) {
-  .editor-outline { width: 18px; }
+  .editor-layout-main { grid-template-columns: minmax(0, 1fr); }
+  .editor-outline { position: fixed; top: 48px; right: 0; width: 18px; height: calc(100vh - 48px); z-index: 4; }
   .editor-outline .editor-outline__view,
   .editor-outline .editor-outline__pin { opacity: 0; }
   .editor-outline:hover,
@@ -570,6 +720,38 @@ html[data-theme="dark"] {
   gap: 4px;
 }
 
+.editor-collab-avatars {
+  display: inline-flex;
+  align-items: center;
+  margin-right: 6px;
+}
+
+.editor-collab-avatar {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  margin-left: -8px;
+  border: 2px solid var(--surface-1);
+  border-radius: 999px;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.18);
+}
+
+.editor-collab-avatar:first-child {
+  margin-left: 0;
+}
+
+.editor-collab-avatar--more {
+  background: var(--product-surface-muted);
+  color: var(--product-text-secondary);
+  border-color: var(--surface-1);
+}
+
 .editor-header__actions [aria-live="polite"] {
   margin-right: 8px;
   color: var(--text-muted);
@@ -615,9 +797,6 @@ html[data-theme="dark"] {
   overflow: hidden;
   gap: 12px;
   padding: 6px 22px;
-  /* 让工具栏视觉宽度延申到大纲上方：负 margin-right + 等量 padding-right */
-  margin-right: -220px;
-  padding-right: calc(22px + 220px);
   border-bottom: 1px solid var(--border);
   background: var(--surface-1);
 }
@@ -691,17 +870,15 @@ html[data-theme="dark"] {
 }
 
 .editor-toolbar-more__menu {
-  position: absolute;
+  position: fixed;
   z-index: 70;
-  top: calc(100% + 8px);
-  right: 0;
   display: grid;
   min-width: 150px;
   padding: 6px;
-  border: 1px solid var(--product-line, var(--border));
-  border-radius: var(--product-radius-md, 10px);
-  background: var(--product-panel, var(--surface-1));
-  box-shadow: var(--product-shadow-float, var(--shadow-md));
+  border: 1px solid var(--product-line);
+  border-radius: var(--product-radius-lg);
+  background: var(--product-panel);
+  box-shadow: var(--product-shadow-float);
 }
 
 .editor-toolbar-more__menu button {
@@ -861,10 +1038,26 @@ html[data-theme="dark"] {
 }
 
 .editor-paper {
-  width: min(var(--editor-canvas-width), calc(100% - 68px));
-  min-height: 520px;
-  margin: 28px auto 42px;
-  padding: 34px 52px;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  margin: 0;
+  padding: 28px 34px 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  box-sizing: border-box;
+  background: var(--editor-canvas-bg);
+}
+
+.editor-paper > div {
+  width: min(var(--editor-canvas-width), 100%);
+  min-height: 100%;
+  margin: 0 auto;
+}
+
+.editor-toolbar button[aria-pressed="true"] {
+  background: var(--product-surface-muted, var(--surface-2));
+  color: var(--product-text, var(--on-surface));
 }
 
 .editor-layout-restore-button {

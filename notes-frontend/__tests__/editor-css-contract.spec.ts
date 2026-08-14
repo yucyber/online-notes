@@ -37,16 +37,26 @@ const findMedia = (container: Container, params: string) => {
 }
 
 describe('编辑器真实 CSS 响应式契约', () => {
+  test('暗色主题沿用全站中性炭黑层级而不改变编辑器结构', () => {
+    const source = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
+
+    expect(source).toContain('html[data-theme="editor-dark"]')
+    expect(source).toContain('--bg: #181817')
+    expect(source).toContain('--bg-elev: #232322')
+    expect(source).not.toContain('--bg: #0b1220')
+    expect(source).not.toContain('--bg-elev: #0f172a')
+  })
+
   test('1023px 以下切为单列覆盖层并限制正文和工具栏横向溢出', () => {
     const css = readProductCss('src/styles/editor-tokens.css')
-    const grid = declarations(findRule(css, '.editor-layout-grid'))
-    const main = declarations(findRule(css, '.editor-layout-main'))
+    const grid = declarations(findRule(css, '.editor-layout-grid', 'grid-template-columns'))
+    const main = declarations(findRule(css, '.editor-layout-main', 'min-width'))
     const editor = declarations(findRule(css, '.editor-rich-editor'))
     const toolbar = declarations(findRule(css, '.editor-toolbar', 'min-width'))
     const tools = declarations(findRule(css, '.editor-toolbar__tools', 'min-width'))
 
     expect(grid.get('grid-template-columns')?.value).toBe(
-      'var(--editor-left-width) minmax(0, 1fr) var(--editor-right-width)',
+      'var(--editor-left-width) minmax(0, 1fr)',
     )
     expect(main.get('min-width')?.value).toBe('0')
     expect(main.get('overflow')?.value).toBe('hidden')

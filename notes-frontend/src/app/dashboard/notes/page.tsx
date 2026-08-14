@@ -3,10 +3,7 @@
 import { Suspense } from 'react'
 import Link from 'next/link'
 import dynamic from 'next/dynamic'
-import { Button } from '@/components/ui/button'
-import { Card, CardContent } from '@/components/ui/card'
 import { Pagination, PageSizeSelect } from '@/components/ui/pagination'
-import { Plus, FileText, ListChecks, Sparkles, Check } from 'lucide-react'
 import { AggregateSummaryDialog } from '@/components/ai/AggregateSummaryDialog'
 import { AddToKnowledgeBasePanel } from '@/components/knowledge-bases/AddToKnowledgeBasePanel'
 import { NotesListCard } from '@/components/notes/NotesListCard'
@@ -51,26 +48,17 @@ function NotesPageContent() {
 
   if (loading) {
     return (
-      <div className="space-y-6">
-        <div className="flex justify-between items-center">
-          <h1 className="text-3xl font-bold text-gray-900">我的笔记</h1>
-          <Link href="/dashboard/notes/new">
-            <Button>
-              <Plus className="mr-2 h-4 w-4" />
-              新建笔记
-            </Button>
-          </Link>
+      <div className="notes-prototype">
+        <div className="prototype-section-head">
+          <div><p className="product-eyebrow">Your library</p><h1 className="page-heading">我的笔记</h1></div>
         </div>
-        <div className="text-center py-8">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mx-auto"></div>
-          <p className="mt-4 text-gray-500">加载中...</p>
-        </div>
+        <div className="prototype-loading">正在整理笔记…</div>
       </div>
     )
   }
 
   return (
-    <div className="space-y-8 animate-fade-in">
+    <div className="notes-prototype">
       {fallbackMsg && (
         <div className="rounded-md border border-yellow-200 bg-yellow-50 p-3 text-sm text-yellow-800">
           {fallbackMsg}
@@ -92,56 +80,50 @@ function NotesPageContent() {
         </div>
       )}
 
-      <div className="product-page-header flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-        <div>
-          <h1 className="page-heading">我的笔记</h1>
-          <p className="page-description">管理和组织您的所有笔记</p>
-        </div>
-        <div className="flex items-center gap-3">
-          <Button
-            variant="outline"
-            onClick={toggleSelectionMode}
-            className={isSelectionMode ? 'bg-blue-50 border-blue-200 text-blue-600' : ''}
-          >
-            {isSelectionMode ? (
-              <>
-                <Check className="mr-2 h-4 w-4" />
-                完成
-              </>
-            ) : (
-              <>
-                <ListChecks className="mr-2 h-4 w-4" />
-                批量
-              </>
-            )}
-          </Button>
-
-          {isSelectionMode && selectedNoteIds.size >= 1 && (
-            <>
-              <AddToKnowledgeBasePanel
-                noteIds={Array.from(selectedNoteIds)}
-                onAdded={() => setSelectedNoteIds(new Set())}
-              />
-              <Button
-                onClick={handleGenerateSummary}
-                className="text-white"
+      <div className="prototype-notes-layout">
+        <div className="notes-main min-w-0">
+          <div className="prototype-section-head">
+            <div>
+              <p className="product-eyebrow">Your library</p>
+              <h1 className="page-heading">我的笔记</h1>
+              <p className="page-description">整理想法、项目与日常记录，共 {total} 篇</p>
+            </div>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={toggleSelectionMode}
+                className="prototype-button"
               >
-                <Sparkles className="mr-2 h-4 w-4" />
-                生成摘要 ({selectedNoteIds.size})
-              </Button>
-            </>
-          )}
+                {isSelectionMode ? '完成' : '批量管理'}
+              </button>
 
-          {!isSelectionMode && (
-            <Link href="/dashboard/notes/new">
-              <Button aria-label="新建笔记"><Plus className="h-4 w-4" />新建笔记</Button>
-            </Link>
-          )}
-        </div>
-      </div>
+              {isSelectionMode && selectedNoteIds.size >= 1 && (
+                <>
+                  <AddToKnowledgeBasePanel
+                    noteIds={Array.from(selectedNoteIds)}
+                    onAdded={() => setSelectedNoteIds(new Set())}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleGenerateSummary}
+                    className="prototype-button prototype-button--primary"
+                  >
+                    生成摘要 ({selectedNoteIds.size})
+                  </button>
+                </>
+              )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-[1fr_260px] gap-6 items-start">
-        <div className="space-y-6 min-w-0">
+              {!isSelectionMode && (
+                <Link href="/dashboard/notes/new">
+                  <span className="prototype-button prototype-button--primary" aria-label="新建笔记">
+                    <svg aria-hidden="true"><path d="M12 5v14M5 12h14" /></svg>
+                    新建笔记
+                  </span>
+                </Link>
+              )}
+            </div>
+          </div>
+
           <SearchFilterBar />
 
           {error && notes.length === 0 && (
@@ -149,38 +131,20 @@ function NotesPageContent() {
           )}
 
           {notes.length === 0 ? (
-            <Card
-              className="border-2 border-dashed"
-              style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', borderRadius: '16px' }}
-            >
-              <CardContent className="text-center py-16">
-                <div
-                  className="inline-flex p-4 mb-6"
-                  style={{ borderRadius: '50%', backgroundColor: 'var(--surface-2)' }}
-                >
-                  <FileText className="h-12 w-12" style={{ color: 'var(--text-muted)' }} />
-                </div>
-                <h3 className="text-2xl font-bold mb-3" style={{ color: 'var(--on-surface)' }}>
-                  没有找到笔记
-                </h3>
-                <p className="mb-2 text-lg" style={{ color: 'var(--text-muted)' }}>
-                  尝试调整筛选条件或创建新笔记
-                </p>
+            <div className="prototype-empty-focus">
+                <h3>没有找到笔记</h3>
+                <p>尝试调整筛选条件，或创建一篇新笔记。</p>
                 {searchParams.get('nlq') === '1' && (
-                  <p className="mb-6" style={{ color: 'var(--text-muted)' }}>
+                  <p>
                     语义检索未命中（可能受阈值或过滤条件影响），可切换到“关键词”模式或降低阈值
                   </p>
                 )}
                 <Link href="/dashboard/notes/new">
-                  <Button>
-                    <Plus className="mr-2 h-5 w-5" />
-                    创建第一篇笔记
-                  </Button>
+                  <span className="prototype-button prototype-button--primary">创建第一篇笔记</span>
                 </Link>
-              </CardContent>
-            </Card>
+            </div>
           ) : (
-            <div className="product-list-surface divide-y divide-[var(--product-line-soft)]">
+            <div className="prototype-notes-list">
               {notes.map((note, i) => (
                 <NotesListCard
                   key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${i}`}
@@ -200,14 +164,14 @@ function NotesPageContent() {
           )}
 
           {notes.length > 0 && (
-            <div className="product-list-surface flex flex-wrap items-center justify-between gap-3 mt-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}>
+            <div className="prototype-pager">
               <PageSizeSelect size={size} onSizeChange={handlePageSizeChange} />
               <Pagination page={page} size={size} total={total} onPageChange={handlePageChange} />
             </div>
           )}
         </div>
 
-        <div className="lg:sticky lg:top-6 lg:self-start">
+        <div>
           <SmartRecommendations
             context={{
               keyword: searchParams.get('keyword') || undefined,

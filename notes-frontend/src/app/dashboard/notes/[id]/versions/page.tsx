@@ -1,8 +1,8 @@
 'use client'
 import { listVersions, snapshotVersion, restoreVersion, fetchNoteById } from '@/lib/api'
 import { useRouter, useParams } from 'next/navigation'
-import { Button } from '@/components/ui/button'
 import { Suspense, useCallback, useEffect, useState } from 'react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 
 export default function VersionsPage() {
   const params = useParams()
@@ -32,24 +32,22 @@ export default function VersionsPage() {
   }
   return (
     <Suspense>
-      <div className="p-4 space-y-4">
-        <div className="flex items-center justify-between">
-          <div className="font-semibold">版本</div>
-          <Button onClick={snapshot}>创建快照</Button>
+      <div>
+        <div className="prototype-section-head">
+          <div>
+            <h1 className="page-heading">版本记录</h1>
+            <p className="page-description">查看快照并在需要时恢复历史内容。</p>
+          </div>
+          <button type="button" className="prototype-button prototype-button--primary" onClick={snapshot}><PrototypeGlyph name="plus" />创建快照</button>
         </div>
-        <div className="text-sm text-gray-600">当前：{note?.title}</div>
-        <ul className="space-y-2">
+        <ul className="product-version-line">
+          <li><time>当前版本<br/>刚刚</time><div><h3>{note?.title || '无标题笔记'}</h3><p>自动保存 · 当前编辑内容</p></div></li>
           {versions.map(v => (
-            <li key={v.versionNo} className="flex items-center justify-between border rounded px-3 py-2">
-              <span className="text-sm">
-                #{v.versionNo}
-                {v.name ? <span className="mx-2 font-medium text-blue-600">{v.name}</span> : ''}
-                <span className="text-gray-500">· {new Date(v.createdAt).toLocaleString()}</span>
-              </span>
-              <Button variant="outline" onClick={() => restore(v.versionNo)}>恢复</Button>
+            <li key={v.versionNo}>
+              <time>{new Date(v.createdAt).toLocaleString()}</time>
+              <div><h3>{v.name || `版本 ${v.versionNo}`}</h3><p>手动快照 · #{v.versionNo}</p><p className="mt-2"><button className="prototype-link-button" onClick={() => restore(v.versionNo)}>恢复此版本</button></p></div>
             </li>
           ))}
-          {versions.length === 0 && <div className="text-sm text-gray-500">暂无版本</div>}
         </ul>
       </div>
     </Suspense>

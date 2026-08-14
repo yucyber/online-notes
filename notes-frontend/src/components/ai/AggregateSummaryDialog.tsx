@@ -44,18 +44,18 @@ export const AggregateSummaryDialog: React.FC<AggregateSummaryDialogProps> = ({
                     </DialogDescription>
                 </DialogHeader>
 
-                <div className="min-h-[180px] max-h-[60vh] overflow-y-auto bg-zinc-50 dark:bg-zinc-800 rounded-lg p-4 border border-zinc-100 dark:border-zinc-800">
+                <div className="min-h-[180px] max-h-[60vh] overflow-y-auto rounded-lg p-4" style={{ background: 'var(--product-surface-muted)', borderColor: 'var(--product-line)', borderWidth: 1, borderStyle: 'solid', color: 'var(--product-text)' }}>
                     {loading ? (
-                        <div className="flex items-center gap-2 text-gray-500 dark:text-gray-400 animate-pulse">
+                        <div className="flex items-center gap-2 animate-pulse" style={{ color: 'var(--product-text-secondary)' }}>
                             <svg className="w-5 h-5 animate-spin" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" fill="none" /></svg>
                             AI 正在分析并生成聚合摘要，请稍候...
                         </div>
                     ) : error ? (
-                        <div className="text-red-500 dark:text-red-400">{error}</div>
+                        <div style={{ color: 'var(--product-danger)' }}>{error}</div>
                     ) : summary ? (
                         <MarkdownRenderer content={summary} />
                     ) : (
-                        <div className="text-gray-400 dark:text-gray-500">暂无摘要内容</div>
+                        <div style={{ color: 'var(--product-text-secondary)' }}>暂无摘要内容</div>
                     )}
                 </div>
 

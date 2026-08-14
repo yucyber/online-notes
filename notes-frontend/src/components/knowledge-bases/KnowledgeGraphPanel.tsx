@@ -1,6 +1,6 @@
 'use client'
 
-import { Loader2, Network, Save, Sparkles } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
 import type { KnowledgeGraphProposal } from '@/types'
 
@@ -37,7 +37,7 @@ export function KnowledgeGraphPanel(props: {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
         <div className="min-w-0">
           <div className="flex items-center gap-2 text-sm font-semibold" style={{ color: 'var(--on-surface)' }}>
-            <Network className="h-4 w-4" />
+            <PrototypeGlyph name="link" className="h-4 w-4" />
             {visibleGraph && (
               <span className="rounded-full border px-2 py-0.5 text-[11px]" style={{ borderColor: 'var(--border)', color: 'var(--text-muted)' }}>
                 {graphProposal ? '待保存提案' : '已保存图谱'}
@@ -58,7 +58,7 @@ export function KnowledgeGraphPanel(props: {
             onClick={onSave}
             disabled={savingGraph}
           >
-            {savingGraph ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Save className="mr-2 h-4 w-4" />}
+            <PrototypeGlyph name={savingGraph ? 'more' : 'save'} className={`mr-2 h-4 w-4 ${savingGraph ? 'animate-spin' : ''}`} />
             保存图谱
           </Button>
         )}
@@ -70,7 +70,7 @@ export function KnowledgeGraphPanel(props: {
           onClick={onBuild}
           disabled={buildingGraph || loadingLinks || loadingGraph || linksCount === 0}
         >
-          {buildingGraph ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
+          <PrototypeGlyph name={buildingGraph ? 'more' : 'sparkle'} className={`mr-2 h-4 w-4 ${buildingGraph ? 'animate-spin' : ''}`} />
           生成提案
         </Button>
       </div>

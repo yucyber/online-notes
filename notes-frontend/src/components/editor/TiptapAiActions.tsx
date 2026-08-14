@@ -1,4 +1,4 @@
-import { FileText, Loader2, PenTool, Sparkles } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
 import { streamAIWriter } from '@/lib/ai-writer'
 
@@ -32,7 +32,7 @@ export function TiptapAiActions({ editor, readOnly, aiWritingType, setAiWritingT
           })
         }}
       >
-        {aiWritingType === 'continue' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
+        <PrototypeGlyph name={aiWritingType === 'continue' ? 'more' : 'pen'} className={`w-4 h-4 ${aiWritingType === 'continue' ? 'animate-spin' : ''}`} />
         AI 续写
       </Button>
     )
@@ -63,7 +63,7 @@ export function TiptapAiActions({ editor, readOnly, aiWritingType, setAiWritingT
           disabled={readOnly || !!aiWritingType}
           onClick={runContinue}
         >
-          {aiWritingType === 'continue' ? <Loader2 className="w-4 h-4 animate-spin" /> : <PenTool className="w-4 h-4" />}
+          <PrototypeGlyph name={aiWritingType === 'continue' ? 'more' : 'pen'} className={`w-4 h-4 ${aiWritingType === 'continue' ? 'animate-spin' : ''}`} />
         </Button>
       )}
       <Button
@@ -91,7 +91,7 @@ export function TiptapAiActions({ editor, readOnly, aiWritingType, setAiWritingT
           })
         }}
       >
-        {aiWritingType === 'polish' ? <Loader2 className="w-4 h-4 animate-spin" /> : <Sparkles className="w-4 h-4 text-purple-500" />}
+        <PrototypeGlyph name={aiWritingType === 'polish' ? 'more' : 'sparkle'} className={`w-4 h-4 ${aiWritingType === 'polish' ? 'animate-spin' : ''}`} />
       </Button>
       <Button
         aria-label={"AI 摘要"}
@@ -116,7 +116,7 @@ export function TiptapAiActions({ editor, readOnly, aiWritingType, setAiWritingT
           })
         }}
       >
-        {aiWritingType === 'summary' ? <Loader2 className="w-4 h-4 animate-spin" /> : <FileText className="w-4 h-4 text-blue-500" />}
+        <PrototypeGlyph name={aiWritingType === 'summary' ? 'more' : 'file'} className={`w-4 h-4 ${aiWritingType === 'summary' ? 'animate-spin' : ''}`} />
       </Button>
     </>
   )

@@ -33,37 +33,37 @@ export default function NotificationsPage() {
 
   return (
     <div className="space-y-6">
-      <div className="product-page-header"><h1 className="page-heading">消息中心</h1><p className="page-description">集中处理协作邀请和未读通知。</p></div>
-      <div className="calm-panel space-y-3 p-5">
-        <div className="text-sm font-medium">待接受邀请</div>
-        <ul className="space-y-2">
+      <div className="product-page-header"><h1 className="page-heading">消息中心</h1><p className="page-description">在一个收件箱中处理邀请和内容通知。</p></div>
+      <div className="product-inbox-tabs"><button className="is-active">全部</button><button>邀请 {invites.length}</button><button>未读 {Number(notes?.total || 0)}</button></div>
+      <section>
+        <ul>
           {invites.map((v, i) => (
-            <li key={i} className="flex items-center justify-between rounded-xl border border-[var(--product-line-soft)] px-4 py-3">
-              <span className="text-sm">笔记 {v.noteId} · 角色 {v.role} · 截止 {new Date(v.expiresAt).toLocaleString()}</span>
+            <li key={v.hash || i} className="product-message-row">
+              <span className="prototype-message-icon">↗</span>
+              <span className="text-sm text-[var(--product-text-secondary)]">笔记 {v.noteId} · 权限 {v.role} · {new Date(v.expiresAt).toLocaleString()}</span>
               <div className="flex gap-2">
                 <Button onClick={() => accept(v.hash)}>接受</Button>
               </div>
             </li>
           ))}
-          {invites.length === 0 && <div className="text-sm text-gray-500">暂无待处理邀请</div>}
         </ul>
-      </div>
-      <div className="calm-panel space-y-3 p-5">
-        <div className="text-sm font-medium">未读通知</div>
-        <div className="flex items-center justify-between">
+      </section>
+      <section>
+        {(notes?.items || []).length > 0 && <div className="prototype-pager">
           <PageSizeSelect size={size} onSizeChange={setSize} />
           <Pagination page={page} size={size} total={Number(notes?.total || 0)} onPageChange={setPage} />
-        </div>
-        <ul className="space-y-2">
+        </div>}
+        <ul>
           {(notes?.items || []).map((n: any) => (
-            <li key={n.id || n._id} className="flex items-center justify-between rounded-xl border border-[var(--product-line-soft)] px-4 py-3">
+            <li key={n.id || n._id} className="product-message-row">
+              <span className="prototype-message-icon">✦</span>
               <span className="text-sm">{n.type} · {new Date(n.createdAt).toLocaleString()}</span>
               <Button variant="outline" onClick={() => markReadClick(n.id || n._id)}>标记已读</Button>
             </li>
           ))}
-          {(!notes || (notes.items || []).length === 0) && <div className="text-sm text-gray-500">暂无通知</div>}
+          {invites.length === 0 && (!notes || (notes.items || []).length === 0) && <li className="prototype-empty-focus"><strong>消息已处理完毕</strong><span>新的邀请和内容通知会显示在这里。</span></li>}
         </ul>
-      </div>
+      </section>
     </div>
   )
 }

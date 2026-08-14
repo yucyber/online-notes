@@ -355,6 +355,24 @@ describe('TiptapEditor 全区域输入', () => {
   })
 })
 
+describe('Tiptap format feedback', () => {
+  it('publishes the active block after an editor transaction', async () => {
+    process.env.NEXT_PUBLIC_YWS_URL = 'ws://localhost:1234'
+    mockGetRoomTicket.mockReset().mockResolvedValueOnce({ ticket: 'format-ticket', role: 'writer', expiresIn: 60 })
+    mockListCommentMarks.mockReset().mockResolvedValue([])
+    installIndexedDbMock()
+    const onFormatChange = jest.fn()
+    render(<TiptapEditor noteId="format-feedback" initialHTML="<p>正文</p>" onSave={async () => {}} user={{ id: 'u1', name: '用户' }} onFormatChange={onFormatChange} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true'))
+
+    await act(async () => {
+      document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'heading', payload: { level: 2 } } }))
+    })
+
+    await waitFor(() => expect(onFormatChange).toHaveBeenLastCalledWith(expect.objectContaining({ block: 'h2' })))
+  })
+})
+
 describe('Tiptap Markdown 快捷输入', () => {
   it.each(['heading', 'bulletList', 'orderedList', 'blockquote', 'codeBlock'])(
     '保留 %s input rules',

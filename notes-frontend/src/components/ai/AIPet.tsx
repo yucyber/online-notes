@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState } from 'react';
-import { Bot } from 'lucide-react';
 import ChatWindow from './ChatWindow';
 
 export default function AIPet() {
@@ -11,21 +10,12 @@ export default function AIPet() {
         <>
             <button
                 type="button"
-                aria-label="切换 AI 助手"
-                title="打开 AI 助手"
-                className="group fixed bottom-4 right-4 z-50 cursor-pointer sm:bottom-6 sm:right-6"
+                aria-label={isOpen ? '关闭墨点助手' : '打开墨点助手'}
+                title={isOpen ? '关闭墨点助手' : '打开墨点助手'}
+                className="fixed bottom-6 right-6 z-50 inline-flex h-[46px] w-[46px] items-center justify-center gap-[2px] whitespace-nowrap rounded-full border border-[var(--product-line-strong)] bg-[var(--product-brand)] font-serif text-xs font-bold text-[var(--product-panel)] shadow-[var(--product-shadow-float)] transition-transform duration-150 hover:-translate-y-0.5"
                 onClick={() => setIsOpen(!isOpen)}
             >
-                <div className="relative">
-                    <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-[#263244] text-white shadow-[0_8px_18px_rgba(24,34,49,0.14)] transition-colors duration-150 group-hover:bg-[#344256] sm:h-14 sm:w-14">
-                        <Bot className="h-6 w-6 sm:h-7 sm:w-7" />
-                    </div>
-                    {/* Online Status Indicator */}
-                    <span className="absolute top-0 right-0 flex h-3 w-3">
-                        <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-green-400 opacity-75"></span>
-                        <span className="relative inline-flex rounded-full h-3 w-3 bg-green-500 border-2 border-white dark:border-gray-900"></span>
-                    </span>
-                </div>
+                N <span className="text-[var(--product-accent)]">✦</span>
             </button>
             <ChatWindow isOpen={isOpen} onClose={() => setIsOpen(false)} />
         </>

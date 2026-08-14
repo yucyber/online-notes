@@ -1,10 +1,8 @@
 'use client';
 
 import React, { useState, useRef, useEffect } from 'react';
-import { X, Trash2, Send, Bot, User as UserIcon, Loader2 } from 'lucide-react';
+import { Loader2 } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
-import { Button } from '@/components/ui/button';
-import { Textarea } from '@/components/ui/textarea';
 import { appToast } from '@/lib/app-toast';
 
 interface Message {
@@ -148,46 +146,27 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     if (!isOpen) return null;
 
     return (
-        <div className="fixed bottom-20 left-3 right-3 z-50 flex h-[min(600px,calc(100dvh-6rem))] flex-col overflow-hidden rounded-2xl border border-[var(--product-line)] bg-[var(--product-panel)] shadow-[var(--product-shadow-float)] sm:bottom-24 sm:left-auto sm:right-6 sm:w-96">
-            <div className="flex items-center justify-between border-b border-[var(--product-line-soft)] bg-[var(--product-panel-soft)] p-4">
-                <div className="flex items-center gap-2">
-                    <Bot className="w-5 h-5 text-primary" />
-                    <h3 className="font-semibold text-gray-800 dark:text-gray-100">AI 助手</h3>
-                </div>
-                <div className="flex items-center gap-1">
-                    <Button variant="ghost" size="icon" onClick={handleClearHistory} title="Clear History">
-                        <Trash2 className="w-4 h-4 text-gray-500 hover:text-red-500" />
-                    </Button>
-                    <Button variant="ghost" size="icon" onClick={onClose}>
-                        <X className="w-4 h-4 text-gray-500" />
-                    </Button>
+        <aside className="ink-panel-real" aria-label="墨点助手">
+            <div className="ink-head-real">
+                <div><h3>墨点助手</h3><p>搜索全部笔记</p></div>
+                <div className="ink-head-actions">
+                    <button type="button" onClick={handleClearHistory} title="清空对话">清空</button>
+                    <button type="button" onClick={onClose} aria-label="关闭墨点助手">×</button>
                 </div>
             </div>
 
-            <div className="flex-1 space-y-4 overflow-y-auto bg-[var(--product-bg)] p-4">
+            <div className="ink-body-real">
                 {messages.length === 0 && (
-                    <div className="text-center text-gray-400 mt-20">
-                        <Bot className="w-12 h-12 mx-auto mb-2 opacity-50" />
-                        <p>有什么我可以帮你的吗？</p>
+                    <div className="text-[var(--product-text-secondary)]">
+                        <p className="leading-6">把零散想法变成清晰的下一步。你可以从这些常用操作开始：</p>
+                        <div className="mt-4 grid gap-2">
+                            {['总结当前笔记', '从笔记中提取待办', '搜索我的知识库'].map((action) => <button key={action} className="rounded-[8px] border border-[var(--product-line)] px-3 py-2.5 text-left text-sm hover:bg-[var(--product-panel-soft)]" onClick={() => setInput(action)}>{action}</button>)}
+                        </div>
                     </div>
                 )}
                 {messages.map((msg, idx) => (
-                    <div
-                        key={idx}
-                        className={`flex gap-3 ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'}`}
-                    >
-                        <div
-                            className={`w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0 ${msg.role === 'user' ? 'bg-blue-100 text-blue-600' : 'bg-[var(--product-accent-soft)] text-[var(--product-accent)]'
-                                }`}
-                        >
-                            {msg.role === 'user' ? <UserIcon size={16} /> : <Bot size={16} />}
-                        </div>
-                        <div
-                            className={`max-w-[80%] rounded-lg p-3 text-sm ${msg.role === 'user'
-                                ? 'bg-blue-600 text-white'
-                                : 'bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 text-gray-800 dark:text-gray-200'
-                                }`}
-                        >
+                    <div key={idx} className={`ink-message-real ${msg.role}`}>
+                        <div>
                             <div className="prose dark:prose-invert max-w-none text-sm">
                                 <ReactMarkdown>{msg.content}</ReactMarkdown>
                             </div>
@@ -195,11 +174,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                     </div>
                 ))}
                 {isLoading && messages[messages.length - 1]?.role !== 'assistant' && (
-                    <div className="flex gap-3">
-                        <div className="w-8 h-8 rounded-full bg-[var(--product-accent-soft)] text-[var(--product-accent)] flex items-center justify-center flex-shrink-0">
-                            <Bot size={16} />
-                        </div>
-                        <div className="bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 rounded-lg p-3">
+                    <div className="ink-message-real assistant">
+                        <div>
                             <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                         </div>
                     </div>
@@ -207,9 +183,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 <div ref={messagesEndRef} />
             </div>
 
-            <div className="border-t border-[var(--product-line-soft)] bg-[var(--product-panel)] p-4">
-                <div className="flex gap-2 items-end">
-                    <Textarea
+            <div className="ink-compose-real">
+                    <textarea
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={(e) => {
@@ -218,15 +193,10 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                                 handleSend();
                             }
                         }}
-                        placeholder="输入消息..."
-                        className="resize-none flex-1"
-                        style={{ minHeight: '40px', maxHeight: '120px' }}
+                        placeholder="问问墨点…"
                     />
-                    <Button onClick={handleSend} disabled={isLoading || !input.trim()} className="flex-shrink-0">
-                        <Send className="w-4 h-4" />
-                    </Button>
-                </div>
+                    <button type="button" onClick={handleSend} disabled={isLoading || !input.trim()} aria-label="发送">↑</button>
             </div>
-        </div>
+        </aside>
     );
 }

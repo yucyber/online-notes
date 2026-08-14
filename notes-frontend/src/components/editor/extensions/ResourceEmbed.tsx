@@ -1,7 +1,7 @@
 import { Node, mergeAttributes, InputRule } from '@tiptap/core'
 import { ReactNodeViewRenderer, NodeViewWrapper } from '@tiptap/react'
 import React, { useState } from 'react'
-import { Eye, Link as LinkIcon, ExternalLink } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Plugin } from 'prosemirror-state'
 
 const ResourceComponent = ({ node, updateAttributes }: any) => {
@@ -35,7 +35,7 @@ const ResourceComponent = ({ node, updateAttributes }: any) => {
                             className="p-1.5 hover:bg-white hover:shadow-sm rounded text-gray-600 transition-all"
                             title={displayMode === 'link' ? "切换预览" : "切换链接"}
                         >
-                            {displayMode === 'link' ? <Eye size={16} /> : <LinkIcon size={16} />}
+                            <PrototypeGlyph name={displayMode === 'link' ? 'eye' : 'link'} className="h-4 w-4" />
                         </button>
                         <a
                             href={url}
@@ -44,7 +44,7 @@ const ResourceComponent = ({ node, updateAttributes }: any) => {
                             className="p-1.5 hover:bg-white hover:shadow-sm rounded text-gray-600 transition-all"
                             title="在新标签页打开"
                         >
-                            <ExternalLink size={16} />
+                            <PrototypeGlyph name="maximize" className="h-4 w-4" />
                         </a>
                     </div>
                 </div>
@@ -57,7 +57,7 @@ const ResourceComponent = ({ node, updateAttributes }: any) => {
                             rel="noopener noreferrer"
                             className="text-blue-600 hover:underline flex items-center gap-2 text-sm"
                         >
-                            <LinkIcon size={14} />
+                            <PrototypeGlyph name="link" className="h-3.5 w-3.5" />
                             {window.location.origin}{url}
                         </a>
                     </div>

@@ -1,10 +1,10 @@
 'use client'
 
-import { useState, useEffect, useCallback, useRef, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
-import { Eye, EyeOff } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
@@ -21,6 +21,7 @@ import type { EditorSnapshot } from '@/components/editor/editor-save-types'
 import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 import { appToast } from '@/lib/app-toast'
+import { DEFAULT_EDITOR_FORMAT_STATE } from '@/components/editor/editor-format-state'
 const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), { ssr: false })
 
 export interface NoteEditorShellProps {
@@ -47,9 +48,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
+  const [formatState, setFormatState] = useState(DEFAULT_EDITOR_FORMAT_STATE)
   const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
   const [currentTitle, setCurrentTitle] = useState(initialData?.title ?? '')
   const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
+  const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
   const readOnly = !canWriteNote(note, me.id)
   const rejectReadOnlyWrite = useCallback(() => {
     if (!readOnly) return false
@@ -531,8 +534,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       <div
         className="editor-layout-grid"
         style={{
-          '--editor-left-width': `${preferences.leftCollapsed ? 0 : preferences.leftWidth}px`,
-          '--editor-right-width': '0px',
+          '--editor-left-width': preferences.leftCollapsed ? '0px' : `${preferences.leftWidth}px`,
         } as React.CSSProperties}
       >
         <EditorWorkspaceSidebar
@@ -583,6 +585,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             note={note}
             readOnly={readOnly}
             editorMode="rich"
+            collaborators={participants}
             onOpenComments={() => setShowCommentsDrawer(true)}
             onOpenCollab={() => setShowCollabDrawer(true)}
             onToggleProperties={() => setShowProperties((open) => !open)}
@@ -620,7 +623,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
           {error && <div className="editor-error-banner" role="alert">{error}</div>}
           <div className="editor-edit-row">
             <div ref={editorContainerRef} className="editor-rich-editor" data-fullscreen={isFullscreen} style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg)' } : undefined}>
-              <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} exec={(cmd, payload) => {
+              <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} formatState={formatState} exec={(cmd, payload) => {
                 if (cmd === 'collab') { setShowCollabDrawer(true); return }
                 if (cmd === 'fullscreen') { handleToggleFullscreen(); return }
                 if (rejectReadOnlyWrite()) return
@@ -649,6 +652,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 user={me}
                 readOnly={readOnly}
                 onSelectionChange={(start, end) => setSelection({ start, end })}
+                onFormatChange={setFormatState}
+                onParticipantsChange={setParticipants}
                 onContentChange={(html) => {
                   extractHeadingsFromHTML(html)
                   if (readOnly) return
@@ -657,35 +662,37 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 // 仅在恢复版本时传递 versionKey，避免常规编辑时因 updatedAt 变化导致房间切换
                 versionKey={searchParams?.get('restored') || undefined}
                 updatedAt={note.updatedAt}
-                className="min-h-[calc(100vh-200px)]"
-                />
+                    />
               </div>
+              {!isFullscreen && (
+                <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
+                  <div className="editor-outline__pin">
+                    <span className="editor-outline__pin-text">大纲</span>
+                    <button
+                      type="button"
+                      className="editor-outline__hide"
+                      aria-label={outlinePinned ? '收起大纲' : '展开大纲'}
+                      onClick={(event) => {
+                        event.currentTarget.blur()
+                        setOutlinePinned((value) => !value)
+                      }}
+                    >
+                      <PrototypeGlyph name={outlinePinned ? 'eye-off' : 'eye'} className="w-4 h-4" />
+                    </button>
+                  </div>
+                  <div className="editor-outline__view">
+                    <div className="editor-outline__list">
+                      {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
+                        <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
+                          <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </aside>
+              )}
             </div>
           </div>
-          {!isFullscreen && (
-            <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
-              <div className="editor-outline__pin">
-                <span className="editor-outline__pin-text">大纲</span>
-                <button
-                  type="button"
-                  className="editor-outline__hide"
-                  aria-label={outlinePinned ? '收起大纲' : '展开大纲'}
-                  onClick={() => setOutlinePinned((value) => !value)}
-                >
-                  {outlinePinned ? <EyeOff className="w-4 h-4" aria-hidden /> : <Eye className="w-4 h-4" aria-hidden />}
-                </button>
-              </div>
-              <div className="editor-outline__view">
-                <div className="editor-outline__list">
-                  {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
-                    <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
-                      <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            </aside>
-          )}
         </div>
       </div>
 
@@ -703,47 +710,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         <>
           {showInsertMenu && (
             <div className="editor-insert-backdrop" onMouseDown={() => setShowInsertMenu(false)}>
-            <div className="editor-insert-popover"
-              role="menu" aria-label="插入工具菜单"
-              tabIndex={-1}
-              onMouseDown={(event) => event.stopPropagation()}
-            >
-              <div className="p-2 grid" style={{ rowGap: 6 }}>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'task' } })) }}>任务列表</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'blockquote' } })) }}>引用</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'code' } })) }}>行内代码</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'hr' } })) }}>分割线</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); const el = document.getElementById('editor-image-input') as HTMLInputElement | null; el?.click() }}>图片</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'table' } })) }}>表格</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); setShowLinkDialog(true) }}>链接</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={() => { setShowInsertMenu(false); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
-                  setShowInsertMenu(false)
-                  try {
-                    const res = await boardsAPI.create({ title: '画板', noteId: id })
-                    document.dispatchEvent(new CustomEvent('tiptap:exec', {
-                      detail: {
-                        cmd: 'insertResource',
-                        payload: { type: 'board', id: res.id }
-                      }
-                    }))
-                  } catch { }
-                }}>画板</button>
-                <button role="menuitem" className="text-left px-3 py-2 hover:bg-gray-50" onClick={async () => {
-                  setShowInsertMenu(false)
-                  try {
-                    const res = await mindmapsAPI.create({ title: '思维导图', noteId: id })
-                    // 使用 insertResource 命令直接插入卡片
-                    document.dispatchEvent(new CustomEvent('tiptap:exec', {
-                      detail: {
-                        cmd: 'insertResource',
-                        payload: { type: 'mindmap', id: res.id }
-                      }
-                    }))
-                  } catch { }
-                }}>思维导图</button>
-              </div>
-            </div>
+              <InsertMenuPopover noteId={id} onClose={() => setShowInsertMenu(false)} />
             </div>
           )}
         </>
@@ -780,6 +747,67 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       {/* 旧的顶部弹窗已改为右侧抽屉，保留变量但不再渲染 */}
     </div>
   );
+}
+
+function InsertMenuPopover({ noteId, onClose }: { noteId: string; onClose: () => void }) {
+  const [style, setStyle] = useState<{ top: number; left: number }>({ top: 0, left: 0 })
+  const [positioned, setPositioned] = useState(false)
+  const menuRef = useRef<HTMLDivElement>(null)
+
+  useLayoutEffect(() => {
+    const trigger = document.getElementById('editor-insert-trigger')
+    if (!trigger || !menuRef.current) return
+    const triggerRect = trigger.getBoundingClientRect()
+    const menuRect = menuRef.current.getBoundingClientRect()
+    const padding = 8
+    let top = triggerRect.bottom + padding
+    let left = triggerRect.left + triggerRect.width / 2 - menuRect.width / 2
+    left = Math.max(padding, Math.min(left, window.innerWidth - menuRect.width - padding))
+    top = Math.min(top, window.innerHeight - menuRect.height - padding)
+    setStyle({ top, left })
+    setPositioned(true)
+  }, [])
+
+  return (
+    <div
+      ref={menuRef}
+      className="editor-insert-popover"
+      role="menu"
+      aria-label="插入工具菜单"
+      tabIndex={-1}
+      style={{ position: 'fixed', top: style.top, left: style.left, visibility: positioned ? 'visible' : 'hidden' }}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
+      <div className="p-2 grid" style={{ rowGap: 6 }}>
+        <button role="menuitem" className="text-left px-3 py-2" onClick={() => { onClose(); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'hr' } })) }}>分割线</button>
+        <button role="menuitem" className="text-left px-3 py-2" onClick={() => { onClose(); document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: 'status', payload: { text: '状态：进行中' } } })) }}>状态</button>
+        <button role="menuitem" className="text-left px-3 py-2" onClick={async () => {
+          onClose()
+          try {
+            const res = await boardsAPI.create({ title: '画板', noteId })
+            document.dispatchEvent(new CustomEvent('tiptap:exec', {
+              detail: {
+                cmd: 'insertResource',
+                payload: { type: 'board', id: res.id }
+              }
+            }))
+          } catch { }
+        }}>画板</button>
+        <button role="menuitem" className="text-left px-3 py-2" onClick={async () => {
+          onClose()
+          try {
+            const res = await mindmapsAPI.create({ title: '思维导图', noteId })
+            document.dispatchEvent(new CustomEvent('tiptap:exec', {
+              detail: {
+                cmd: 'insertResource',
+                payload: { type: 'mindmap', id: res.id }
+              }
+            }))
+          } catch { }
+        }}>思维导图</button>
+      </div>
+    </div>
+  )
 }
 
 export default function NoteEditorShell(props: NoteEditorShellProps) {

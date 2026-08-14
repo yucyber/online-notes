@@ -1,15 +1,53 @@
 'use client'
 
-import { Filter, Save, Search, X } from 'lucide-react'
 import type { ChangeEvent } from 'react'
 import { useSearchFilterBar } from './useSearchFilterBar'
 
 export default function SearchFilterBar() {
   const page = useSearchFilterBar()
-  const setValue = (setter: (value: string) => void) => (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setter(event.target.value)
-  return <div className="product-toolbar" style={{ color: 'var(--on-surface)' }}>
-    <div className="flex gap-2 mb-4"><div className="relative flex-1"><Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4" style={{ color: 'var(--text-muted)' }} /><input type="text" placeholder="搜索笔记..." className="w-full pl-10 pr-4 py-2 border rounded-md placeholder-muted" value={page.keyword} onChange={setValue(page.setKeyword)} onKeyDown={(event) => event.key === 'Enter' && page.handleSearch('enter')} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }} /></div><button onClick={() => page.setIsOpen(!page.isOpen)} className="px-4 py-2 border rounded-md flex items-center gap-2" style={page.isOpen ? { background: 'var(--primary-600)', borderColor: 'var(--primary-600)', color: '#fff', minHeight: 44 } : { borderColor: 'var(--interactive-border)', color: 'var(--on-surface)', minHeight: 44 }}><Filter className="h-4 w-4" />筛选</button><button onClick={() => page.handleSearch()} className="px-4 py-2 rounded-md" style={{ background: 'var(--primary-600)', color: '#fff', minHeight: 44 }}>搜索</button><label className="inline-flex items-center gap-2 text-sm ml-2" style={{ color: 'var(--text-muted)' }}><input type="checkbox" checked={page.nlqEnabled} onChange={(event) => page.setNlqEnabled(event.target.checked)} />语义搜索</label>{page.nlqEnabled && <select className="border rounded-md p-2 text-sm" value={page.nlqMode} onChange={(event) => page.setNlqMode(event.target.value as 'keyword' | 'vector' | 'hybrid')} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}><option value="hybrid">混合</option><option value="keyword">关键词</option><option value="vector">向量</option></select>}</div>
-    {page.isOpen && <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pt-4 border-t" style={{ borderColor: 'var(--border)' }}><div><label className="block text-sm font-medium mb-1">分类</label><select className="w-full border rounded-md p-2" value={page.categoryId} onChange={setValue(page.setCategoryId)} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}><option value="">所有分类</option>{page.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select><div className="mt-2"><div className="text-xs mb-1" style={{ color: 'var(--text-muted)' }}>多分类</div><div className="max-h-28 overflow-auto border rounded-md p-2" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)' }}>{page.categories.map((category) => <label key={category.id} className="flex items-center gap-2 py-1 text-sm"><input type="checkbox" checked={page.selectedCategoryIds.includes(category.id)} onChange={(event) => page.setSelectedCategoryIds(event.target.checked ? Array.from(new Set([...page.selectedCategoryIds, category.id])) : page.selectedCategoryIds.filter((id) => id !== category.id))} className="h-4 w-4 rounded" /><span>{category.name}</span></label>)}</div><div className="mt-2 flex items-center gap-2"><label className="text-xs">匹配模式</label><select className="border rounded-md p-1 text-xs" value={page.categoriesMode} onChange={(event) => page.setCategoriesMode(event.target.value as 'any' | 'all')}><option value="any">包含任意一个</option><option value="all">同时包含全部</option></select></div></div></div><div><label className="block text-sm font-medium mb-1">状态</label><select className="w-full border rounded-md p-2" value={page.status} onChange={setValue(page.setStatus)} style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }}><option value="">所有状态</option><option value="published">已发布</option><option value="draft">草稿</option></select></div><div><label className="block text-sm font-medium mb-1">时间范围</label><div className="flex gap-2 mb-2"><button onClick={page.setLastWeek} className="text-xs px-2 py-1 rounded" style={{ background: 'var(--surface-2)' }}>最近一周</button><button onClick={page.setLastMonth} className="text-xs px-2 py-1 rounded" style={{ background: 'var(--surface-2)' }}>最近一月</button></div><div className="flex gap-2"><input type="date" className="w-full border rounded-md p-2" value={page.startDate} onChange={setValue(page.setStartDate)} /><span className="self-center">-</span><input type="date" className="w-full border rounded-md p-2" value={page.endDate} onChange={setValue(page.setEndDate)} /></div></div><div className="md:col-span-3"><label className="block text-sm font-medium mb-1">标签</label><div className="mb-2 text-xs" style={{ color: 'var(--text-muted)' }}>{page.selectedTagIds.length <= 1 ? '当前为单标签搜索：返回所有包含该标签的笔记' : '当前为多标签组合搜索：返回同时包含所有选定标签的笔记'}</div><div className="flex flex-wrap gap-2">{page.tags.map((tag) => <button key={tag.id} onClick={() => page.toggleTag(tag.id)} className="px-3 py-1 rounded-full text-sm border transition-colors" style={{ ...(page.selectedTagIds.includes(tag.id) ? { background: 'var(--primary-50)', borderColor: 'var(--primary-100)', color: 'var(--primary-600)' } : { borderColor: 'var(--border)', color: 'var(--on-surface)', background: 'var(--surface-1)' }), minHeight: 44 }}>{tag.name}</button>)}{page.tags.length === 0 && <span className="text-sm" style={{ color: 'var(--text-muted)' }}>暂无标签</span>}</div></div><div className="md:col-span-3 flex justify-between items-center mt-2"><div className="flex gap-2"><button onClick={page.handleClear} className="text-sm flex items-center gap-1" style={{ color: 'var(--text-muted)' }}><X className="h-3 w-3" />清空条件</button><button onClick={() => page.setIsSaveModalOpen(true)} className="text-sm flex items-center gap-1" style={{ color: 'var(--primary-600)' }}><Save className="h-3 w-3" />保存筛选</button></div>{page.savedFilters.length > 0 && <div className="flex gap-2 items-center"><span className="text-sm" style={{ color: 'var(--text-muted)' }}>已保存:</span><div className="flex gap-2 flex-wrap">{page.savedFilters.map((filter, index) => <button key={filter.id || index} onClick={() => page.applySavedFilter(filter)} className="text-xs px-2 py-1 rounded-full border" style={{ background: 'var(--surface-2)', borderColor: 'var(--border)' }}>{filter.name}</button>)}</div></div>}</div></div>}
-    {page.isSaveModalOpen && <div className="fixed inset-0 flex items-center justify-center z-50" style={{ background: 'var(--overlay)' }}><div className="p-6 rounded-lg w-96 border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}><h3 className="text-lg font-medium mb-4">保存筛选条件</h3><input type="text" placeholder="筛选器名称" className="w-full border rounded-md p-2 mb-4" value={page.newFilterName} onChange={setValue(page.setNewFilterName)} /><div className="flex justify-end gap-2"><button onClick={() => page.setIsSaveModalOpen(false)} className="px-4 py-2 border rounded-md">取消</button><button onClick={page.handleSaveFilter} className="px-4 py-2 rounded-md" style={{ background: 'var(--primary-600)', color: '#fff' }}>保存</button></div></div></div>}
+  const setValue = (setter: (value: string) => void) =>
+    (event: ChangeEvent<HTMLInputElement | HTMLSelectElement>) => setter(event.target.value)
+
+  return <div className="prototype-search-shell">
+    <div className="prototype-search-toolbar" aria-label="笔记搜索与筛选">
+      <label className="prototype-search-box">
+        <svg aria-hidden="true"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+        <input id="global-search" type="text" placeholder="搜索标题、内容或标签" value={page.keyword} onChange={setValue(page.setKeyword)} onKeyDown={(event) => event.key === 'Enter' && page.handleSearch('enter')} />
+      </label>
+
+      <label className="prototype-filter-select">
+        <select aria-label="分类" value={page.categoryId} onChange={setValue(page.setCategoryId)}><option value="">全部分类</option>{page.categories.map((category) => <option key={category.id} value={category.id}>{category.name}</option>)}</select>
+        <svg aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+      </label>
+
+      <label className="prototype-filter-select">
+        <select aria-label="状态" value={page.status} onChange={setValue(page.setStatus)}><option value="">全部状态</option><option value="published">已发布</option><option value="draft">草稿</option></select>
+        <svg aria-hidden="true"><path d="m8 10 4 4 4-4"/></svg>
+      </label>
+
+      <button type="button" className="prototype-filter-action" aria-expanded={page.isOpen} onClick={() => page.handleFilterToggle()}>
+        <svg aria-hidden="true"><path d="M4 5h16l-6 7v5l-4 2v-7z"/></svg>筛选
+      </button>
+
+      <button type="button" className="prototype-semantic-button" aria-pressed={page.nlqEnabled} aria-expanded={page.isSemanticOpen} onClick={() => page.handleSemanticSearch()}>
+        <svg aria-hidden="true"><path d="M12 3v18M3 12h18"/></svg>语义搜索
+      </button>
+    </div>
+
+    {page.isOpen && <div className="prototype-filter-popover" role="dialog" aria-label="高级筛选">
+      <header><div><strong>高级筛选</strong><span>按时间和标签缩小笔记范围</span></div><button type="button" aria-label="关闭筛选" onClick={() => page.setIsOpen(false)}>×</button></header>
+      <div className="prototype-filter-popover__dates">
+        <label><span>开始日期</span><input type="date" value={page.startDate} onChange={setValue(page.setStartDate)}/></label>
+        <label><span>结束日期</span><input type="date" value={page.endDate} onChange={setValue(page.setEndDate)}/></label>
+      </div>
+      <div className="prototype-filter-popover__quick"><button type="button" onClick={page.setLastWeek}>最近一周</button><button type="button" onClick={page.setLastMonth}>最近一月</button></div>
+      <section><span>标签</span><div className="prototype-filter-popover__tags">{page.tags.length === 0 ? <small>暂无标签</small> : page.tags.map((tag) => <button type="button" key={tag.id} aria-pressed={page.selectedTagIds.includes(tag.id)} onClick={() => page.toggleTag(tag.id)}>{tag.name}</button>)}</div></section>
+      <footer><button type="button" onClick={() => page.handleClear()}>清空条件</button><button type="button" className="is-primary" onClick={() => { page.handleSearch(); page.setIsOpen(false) }}>应用筛选</button></footer>
+    </div>}
+
+    {page.isSemanticOpen && <div className="prototype-semantic-popover" role="dialog" aria-label="语义搜索模式">
+      <strong>语义搜索模式</strong><span>选择内容召回方式</span>
+      <div>{([['hybrid', '混合检索', '综合关键词与语义相关度'], ['vector', '语义优先', '按内容含义查找相似笔记'], ['keyword', '关键词优先', '保留精确词语匹配']] as const).map(([mode, label, copy]) => <button type="button" key={mode} aria-pressed={page.nlqEnabled && page.nlqMode === mode} onClick={() => page.handleSemanticMode(mode)}><b>{label}</b><small>{copy}</small></button>)}{page.nlqEnabled && <button type="button" className="is-disable" onClick={() => page.handleDisableSemanticSearch()}><b>关闭语义搜索</b><small>恢复普通筛选与关键词搜索</small></button>}</div>
+    </div>}
   </div>
 }

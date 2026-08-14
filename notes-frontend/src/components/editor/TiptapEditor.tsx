@@ -1,11 +1,11 @@
 'use client'
 import { useEffect, useMemo, useState, useRef } from 'react'
-import { EditorContent, useEditor, BubbleMenu, FloatingMenu } from '@tiptap/react'
+import { EditorContent, useEditor, BubbleMenu } from '@tiptap/react'
 import type { Editor as TiptapEditorInstance } from '@tiptap/core'
 import { DOMParser as ProseMirrorDOMParser } from '@tiptap/pm/model'
 import * as Y from 'yjs'
 import { Button } from '@/components/ui/button'
-import { Copy, MessageSquare } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { createTiptapExtensions } from './tiptap-extensions'
 import { COLLAB_STATUS_META, sanitizeHTML } from './tiptap-utils'
 import { useTiptapCollab } from './useTiptapCollab'
@@ -14,6 +14,7 @@ import { normalizeEditorContent, normalizeMarkdownPaste, useTiptapEditorBridge, 
 import { useTiptapCommentMarks } from './useTiptapCommentMarks'
 import { TiptapAiActions } from './TiptapAiActions'
 import { appToast } from '@/lib/app-toast'
+import { readEditorFormatState, type EditorFormatState } from './editor-format-state'
 
 type Props = {
   noteId: string
@@ -22,7 +23,9 @@ type Props = {
   user: { id: string; name: string; avatar?: string }
   readOnly?: boolean
   onSelectionChange?: (start: number, end: number) => void
+  onFormatChange?: (state: EditorFormatState) => void
   onContentChange?: (html: string) => void
+  onParticipantsChange?: (participants: Array<{ id: string; name?: string }>) => void
   versionKey?: string
   className?: string
   style?: React.CSSProperties
@@ -49,7 +52,7 @@ export function isLegacyRawMarkdownDocument(
   }
 }
 
-export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onContentChange, versionKey, className, style, updatedAt }: Props) {
+export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onFormatChange, onContentChange, onParticipantsChange, versionKey, className, style, updatedAt }: Props) {
   const documentKey = `${noteId}:${versionKey || ''}`
   const initialSeedRef = useRef<{
     key: string
@@ -74,6 +77,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     connStatus,
     collabEnabled,
     wsDebug,
+    participants,
   } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
   const effectiveReadOnly = readOnly || roomRole !== 'writer'
   const effectiveReadOnlyRef = useRef(effectiveReadOnly)
@@ -83,6 +87,13 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
   const injectBusyRef = useRef(false)
   const lastInjectedHTMLRef = useRef<string>('')
   const migratedOnceRef = useRef(false)
+  const onFormatChangeRef = useRef(onFormatChange)
+  onFormatChangeRef.current = onFormatChange
+  const onParticipantsChangeRef = useRef(onParticipantsChange)
+  onParticipantsChangeRef.current = onParticipantsChange
+  useEffect(() => {
+    onParticipantsChangeRef.current?.(participants)
+  }, [participants])
   const { onSelectionChangeRef, onContentChangeRef, onSaveRef } = useTiptapEditorBridge({
     onSelectionChange,
     onContentChange,
@@ -253,6 +264,25 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     editor.on('selectionUpdate', handler)
     return () => { editor.off('selectionUpdate', handler) }
   }, [editor, noteId, onSelectionChangeRef])
+
+  useEffect(() => {
+    if (!editor) return
+    let previous = ''
+    const publish = () => {
+      const state = readEditorFormatState(editor)
+      const serialized = JSON.stringify(state)
+      if (serialized === previous) return
+      previous = serialized
+      onFormatChangeRef.current?.(state)
+    }
+    publish()
+    editor.on('selectionUpdate', publish)
+    editor.on('transaction', publish)
+    return () => {
+      editor.off('selectionUpdate', publish)
+      editor.off('transaction', publish)
+    }
+  }, [editor])
 
   useEffect(() => {
     if (!editor) return
@@ -450,7 +480,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       }
       else if (cmd === 'status') {
         const text = String((payload && payload.text) || '状态：进行中')
-        chain.insertStatusPill({ label: text, variant: 'inprogress' })
+        chain.insertStatusPill({ label: text, variant: 'inprogress' }).run()
       }
       else if (cmd === 'undo') { chain.undo().run() }
       else if (cmd === 'redo') { chain.redo().run() }
@@ -476,7 +506,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
       </span>
       <div
         id="editor-card"
-        className={`min-h-[560px] ${className || ''}`}
+        className={`min-h-full ${className || ''}`}
         onMouseDown={(e) => {
           try {
             if (!editor || !editor.isEditable) return
@@ -489,23 +519,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
         }}
         style={{ position: 'relative', display: 'flex', flexDirection: 'column', ...style }}
       >
-        <FloatingMenu
-          editor={editor}
-          tippyOptions={{ duration: 100 }}
-          shouldShow={({ state }) => {
-            const { $from } = state.selection
-            return $from.parent.type.name === 'paragraph' && $from.parent.content.size === 0
-          }}
-        >
-          <TiptapAiActions
-            editor={editor}
-            readOnly={effectiveReadOnly}
-            aiWritingType={aiWritingType}
-            setAiWritingType={setAiWritingType}
-            mode="continue"
-          />
-        </FloatingMenu>
-
         <BubbleMenu
           editor={editor}
           pluginKey="bubble-menu"
@@ -517,7 +530,6 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
           tippyOptions={{
             duration: 150,
             appendTo: () => document.body,
-            theme: 'light-border',
           }}
         >
           <div
@@ -534,18 +546,18 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
             />
 
             <Button aria-label="复制选中文本" size="icon" variant="ghost" onClick={() => navigator.clipboard?.writeText(editor.state.doc.textBetween(editor.state.selection.from, editor.state.selection.to, ' '))}>
-              <Copy className="w-4 h-4" aria-hidden />
+              <PrototypeGlyph name="copy" className="w-4 h-4" />
             </Button>
             <Button aria-label="添加评论" title="添加评论" size="icon" variant="ghost" disabled={effectiveReadOnly} onClick={() => {
               try {
                 document.dispatchEvent(new CustomEvent('comments:open'))
               } catch { }
             }}>
-              <MessageSquare className="w-4 h-4" aria-hidden />
+              <PrototypeGlyph name="comment" className="w-4 h-4" />
             </Button>
           </div>
         </BubbleMenu>
-        <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', padding: 12, background: 'var(--surface-1)', color: 'var(--on-surface)' }} />
+        <EditorContent editor={editor} className="h-full tiptap-content" style={{ flex: 1, minHeight: '100%', padding: 12, background: 'transparent', color: 'var(--on-surface)' }} />
       </div>
     </div>
   )

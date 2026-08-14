@@ -125,12 +125,39 @@ describe('Calm Minimal 全局界面基础契约', () => {
   test('工作台导航使用平面分组且不持续展开技术状态', () => {
     const navigation = read('src/components/dashboard/dashboard-navigation.tsx')
 
-    expect(navigation).toContain('主导航')
+    expect(navigation).toContain("label: '工作台'")
     expect(navigation).toContain('管理')
     expect(navigation).toContain('dashboard-nav-item')
     expect(navigation).not.toContain('item.hint')
     expect(navigation).not.toContain('h-6 w-1 rounded-full')
     expect(navigation).not.toContain('<NetworkStatus')
+    expect(navigation).not.toContain('Workspace')
+    expect(navigation).not.toContain('服务在线')
+    expect(navigation).not.toContain('<Wifi')
+  })
+
+  test('Dashboard 使用中性黑灰双主题和共享平面内容原语', () => {
+    const tokens = read('src/styles/product-tokens.css')
+
+    expect(tokens).toContain('--product-bg: #181817')
+    expect(tokens).toContain('--product-panel: #232322')
+    expect(tokens).toContain('.product-stat-strip')
+    expect(tokens).toContain('.product-data-list')
+    expect(tokens).toContain('.product-split-layout')
+    expect(tokens).not.toContain('--product-bg: #0f1724')
+  })
+
+  test('AI 入口使用墨点助手而不是机器人客服悬浮块', () => {
+    const entry = read('src/components/ai/AIPet.tsx')
+    const chat = read('src/components/ai/ChatWindow.tsx')
+
+    expect(entry).toContain('打开墨点助手')
+    expect(entry).toContain('N')
+    expect(entry).not.toContain('<Bot')
+    expect(entry).not.toContain('green-')
+    expect(chat).toContain('墨点助手')
+    expect(chat).toContain('总结当前笔记')
+    expect(chat).toContain('搜索我的知识库')
   })
 
   test('笔记管理页使用紧凑平面列表', () => {
@@ -139,14 +166,14 @@ describe('Calm Minimal 全局界面基础契约', () => {
     const item = read('src/components/notes/NotesListCard.tsx')
     const search = read('src/components/SearchFilterBar.tsx')
 
-    expect(dashboard).toContain('product-page-header')
-    expect(page).toContain('product-page-header')
-    expect(page).toContain('product-list-surface')
+    expect(dashboard).toContain('prototype-section-head')
+    expect(page).toContain('prototype-section-head')
+    expect(page).toContain('prototype-notes-list')
     expect(page).not.toContain('linear-gradient')
     expect(page).not.toContain('radial-gradient')
     expect(item).toContain('notes-list-item')
     expect(item).not.toContain("translateY('-4px')")
-    expect(search).toContain('product-toolbar')
+    expect(search).toContain('prototype-search-toolbar')
     expect(search).not.toContain('shadow mb-6')
   })
 
@@ -154,7 +181,7 @@ describe('Calm Minimal 全局界面基础契约', () => {
     const pages = ['activity', 'categories', 'knowledge-bases', 'notifications', 'settings', 'tags']
 
     pages.forEach((name) => {
-      expect(read(`src/app/dashboard/${name}/page.tsx`)).toContain('product-page-header')
+      expect(read(`src/app/dashboard/${name}/page.tsx`)).toMatch(/product-page-header|prototype-section-head/)
     })
   })
 

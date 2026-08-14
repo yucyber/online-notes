@@ -40,7 +40,7 @@ describe('ChatWindow 请求失败', () => {
       .mockResolvedValueOnce({ ok: true, body: { getReader: () => reader } } as Response)
 
     render(<ChatWindow isOpen onClose={() => undefined} />)
-    const input = screen.getByPlaceholderText('输入消息...')
+    const input = screen.getByPlaceholderText('问问墨点…')
     fireEvent.change(input, { target: { value: '继续生成' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 

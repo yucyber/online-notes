@@ -1,4 +1,4 @@
-import { ArrowLeft, ChevronLeft, ChevronRight, FileText, Search } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
 import type { Note } from '@/types'
 
@@ -35,7 +35,7 @@ export function EditorWorkspaceSidebar({
           event.preventDefault()
           onToggle()
         }}>
-          <ChevronRight className="h-4 w-4" aria-hidden />
+          <PrototypeGlyph name="chevron-right" className="h-4 w-4" />
         </Button>
       </aside>
     )
@@ -50,16 +50,16 @@ export function EditorWorkspaceSidebar({
           <span className="editor-workspace-sidebar__mark" aria-hidden>N</span>
           <span><strong>在线笔记</strong><small>专注编辑</small></span>
           <Button type="button" variant="ghost" size="icon" className="editor-workspace-sidebar__mobile-close" aria-label="关闭左侧导航抽屉" onClick={onToggle}>
-            <ChevronLeft className="h-4 w-4" aria-hidden />
+            <PrototypeGlyph name="chevron-left" className="h-4 w-4" />
           </Button>
         </div>
 
         <Button type="button" variant="ghost" className="editor-workspace-sidebar__nav-item editor-workspace-sidebar__back" aria-label="返回我的笔记" onClick={onBack}>
-          <ArrowLeft className="h-4 w-4" aria-hidden /><span>返回我的笔记</span>
+          <PrototypeGlyph name="back" className="h-4 w-4" /><span>返回我的笔记</span>
         </Button>
 
         <label className="editor-workspace-sidebar__search">
-          <Search className="h-4 w-4" aria-hidden />
+          <PrototypeGlyph name="search" className="h-4 w-4" />
           <span className="sr-only">搜索笔记</span>
           <input type="search" value={searchValue} onChange={(event) => onSearchChange?.(event.target.value)} aria-label="搜索笔记" placeholder="搜索笔记" />
         </label>
@@ -75,14 +75,13 @@ export function EditorWorkspaceSidebar({
               aria-current={note.id === currentNoteId ? 'page' : undefined}
               onClick={() => onOpenNote?.(note.id)}
             >
-              <FileText className="h-4 w-4" aria-hidden />
               <span>{note.title || '未命名笔记'}</span>
             </button>
           ))}
           {visibleNotes.length === 0 && <p className="editor-note-directory__empty">暂无匹配笔记</p>}
         </nav>
 
-        <button type="button" className="editor-sidebar-collapse-handle" aria-label="收起左侧导航" onClick={onToggle}><ChevronLeft className="h-4 w-4" aria-hidden /></button>
+        <button type="button" className="editor-sidebar-collapse-handle" aria-label="收起左侧导航" onClick={onToggle}><PrototypeGlyph name="chevron-left" className="h-4 w-4" /></button>
       </div>
       {children}
     </aside>

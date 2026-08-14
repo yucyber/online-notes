@@ -1,5 +1,5 @@
 import type { Dispatch, SetStateAction } from 'react'
-import { ChevronDown, ChevronRight } from 'lucide-react'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
 import type { Category, Tag } from '@/types'
 
@@ -69,7 +69,7 @@ export function EditorNoteProperties({
               aria-label={expanded ? `折叠${category.name}` : `展开${category.name}`}
               onClick={() => setExpandedCats((current) => ({ ...current, [id]: !current[id] }))}
             >
-              {expanded ? <ChevronDown className="h-4 w-4" aria-hidden /> : <ChevronRight className="h-4 w-4" aria-hidden />}
+              <PrototypeGlyph name={expanded ? 'chevron-down' : 'chevron-right'} className="h-4 w-4" />
             </Button>
           ) : <span className="editor-properties__category-spacer" aria-hidden />}
           <label>
