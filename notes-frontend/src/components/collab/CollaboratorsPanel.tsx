@@ -5,13 +5,14 @@ import { Check, ChevronDown, LockKeyhole, Search } from 'lucide-react'
 import { aclAPI, invitationsAPI } from '@/lib/api'
 import type { AclResponse, Collaborator, InvitationSummary, NoteVisibility } from '@/lib/api/collab'
 import { appToast } from '@/lib/app-toast'
-import { getStoredUser } from '@/lib/auth'
 import { CollaboratorMemberRow } from './CollaboratorMemberRow'
 
 export type CollaborationParticipant = { id: string; name?: string }
 
 type Props = {
   noteId: string
+  owner?: Omit<Collaborator, 'role'>
+  currentUserId?: string
   readOnly?: boolean
   participants?: CollaborationParticipant[]
 }
@@ -88,18 +89,16 @@ function InviteRolePicker({ role, disabled, onChange }: { role: 'editor' | 'view
   )
 }
 
-export function CollaboratorsPanel({ noteId, readOnly = false, participants = [] }: Props) {
+export function CollaboratorsPanel({ noteId, owner, currentUserId = '', readOnly = false, participants = [] }: Props) {
   const [acl, setAcl] = useState<Collaborator[]>([])
   const [visibility, setVisibility] = useState<NoteVisibility>('private')
   const [canManage, setCanManage] = useState(false)
   const [invites, setInvites] = useState<InvitationSummary[]>([])
-  const [inviteManagementAvailable, setInviteManagementAvailable] = useState(false)
   const [loading, setLoading] = useState(true)
   const [loadError, setLoadError] = useState('')
   const [email, setEmail] = useState('')
   const [role, setRole] = useState<'editor' | 'viewer'>('viewer')
   const [busyKey, setBusyKey] = useState('')
-  const [currentUserId, setCurrentUserId] = useState('')
 
   const load = useCallback(async (showLoading = false) => {
     if (showLoading) setLoading(true)
@@ -110,9 +109,19 @@ export function CollaboratorsPanel({ noteId, readOnly = false, participants = []
 
     if (aclResult.status === 'fulfilled') {
       const result: AclResponse = aclResult.value
+      const returnedMembers = result.acl || []
+      const returnedOwner = owner
+        ? returnedMembers.find(member => member.userId === owner.userId)
+        : undefined
+      const members = owner
+        ? [
+            { ...owner, ...returnedOwner, role: 'owner' as const },
+            ...returnedMembers.filter(member => member.userId !== owner.userId),
+          ]
+        : returnedMembers
       setVisibility(result.visibility)
-      setAcl(result.acl || [])
-      setCanManage(result.canManage)
+      setAcl(members)
+      setCanManage(typeof result.canManage === 'boolean' ? result.canManage : owner?.userId === currentUserId)
       setLoadError('')
     } else {
       setLoadError('协作信息暂时无法加载')
@@ -120,16 +129,13 @@ export function CollaboratorsPanel({ noteId, readOnly = false, participants = []
 
     if (invitationResult.status === 'fulfilled') {
       setInvites(invitationResult.value.filter(invite => invite.status === 'pending'))
-      setInviteManagementAvailable(true)
     } else {
       setInvites([])
-      setInviteManagementAvailable(false)
     }
     setLoading(false)
-  }, [noteId])
+  }, [currentUserId, noteId, owner])
 
   useEffect(() => { void load(true) }, [load])
-  useEffect(() => { setCurrentUserId(getStoredUser()?.id || '') }, [])
   useEffect(() => {
     const refreshWhenVisible = () => {
       if (document.visibilityState === 'visible') void load()
@@ -186,7 +192,7 @@ export function CollaboratorsPanel({ noteId, readOnly = false, participants = []
   }
 
   const canManageMembers = canManage && !readOnly
-  const canInvite = canManageMembers && inviteManagementAvailable
+  const canInvite = canManageMembers
   const participantIds = new Set(participants.map(participant => participant.id))
   const showPresence = participants.length > 0
 
