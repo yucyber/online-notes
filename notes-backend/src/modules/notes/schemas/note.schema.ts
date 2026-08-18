@@ -42,7 +42,7 @@ export class Note {
   @Prop({ required: true, enum: ['private', 'org', 'public'], default: 'private' })
   visibility: string;
 
-  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['owner', 'editor', 'viewer', 'commenter'] }, addedBy: { type: Types.ObjectId, ref: 'User' }, addedAt: { type: Date, default: Date.now } }])
+  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['owner', 'editor', 'viewer'] }, addedBy: { type: Types.ObjectId, ref: 'User' }, addedAt: { type: Date, default: Date.now } }])
   acl?: { userId: Types.ObjectId; role: string; addedBy?: Types.ObjectId; addedAt?: Date }[];
 
   @Prop({ type: Types.ObjectId })

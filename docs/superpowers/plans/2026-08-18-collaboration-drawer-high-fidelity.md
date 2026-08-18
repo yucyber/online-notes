@@ -38,7 +38,7 @@
 - Modify: `notes-frontend/src/lib/api/collab.ts`
 
 **Interfaces:**
-- Produces: `NoteVisibility = 'private' | 'org' | 'public'` and `AclRole = 'owner' | 'editor' | 'viewer' | 'commenter'`
+- Produces: `NoteVisibility = 'private' | 'org' | 'public'` and `AclRole = 'owner' | 'editor' | 'viewer'`
 - Produces: `AclResponse = { visibility: NoteVisibility; canManage: boolean; acl: Collaborator[] }`
 - Produces: `Collaborator = { userId: string; role: AclRole; displayName?: string; email?: string; avatarUrl?: string }`
 - Produces: `InvitationSummary = { id: string; inviteeEmail?: string; role: 'editor' | 'viewer'; status: string; createdAt: string; expiresAt: string }`
@@ -50,7 +50,7 @@
 ```ts
 type PublicCollaborator = {
   userId: string
-  role: 'owner' | 'editor' | 'viewer' | 'commenter'
+  role: 'owner' | 'editor' | 'viewer'
   displayName?: string
   email?: string
   avatarUrl?: string
@@ -76,7 +76,7 @@ return items.map((invite) => ({
 
 - [ ] **Step 3: 为前端 API 增加精确类型**
 
-在 `collab.ts` 导出 `NoteVisibility`、`AclRole`、`Collaborator`、`AclResponse` 与 `InvitationSummary`，并让 `aclAPI.get`、`invitationsAPI.list`、`create` 返回对应 Promise 类型；保持现有调用签名兼容。历史 `commenter` 在展示层按“只读”呈现，用户主动切换后才写回当前支持的 `viewer` 或 `editor`，不静默改变既有 ACL。
+在 `collab.ts` 导出 `NoteVisibility`、`AclRole`、`Collaborator`、`AclResponse` 与 `InvitationSummary`，并让 `aclAPI.get`、`invitationsAPI.list`、`create` 返回对应 Promise 类型；保持现有调用签名兼容。
 
 - [ ] **Step 4: 静态核对并提交**
 

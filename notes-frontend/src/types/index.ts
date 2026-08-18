@@ -44,7 +44,7 @@ export interface Note {
   userId: string
   status?: 'published' | 'draft'
   visibility?: 'private' | 'org' | 'public'
-  acl?: Array<{ userId: string; role: 'owner' | 'editor' | 'viewer' | 'commenter' }>
+  acl?: Array<{ userId: string; role: 'owner' | 'editor' | 'viewer' }>
 }
 
 export interface CreateNoteDto {

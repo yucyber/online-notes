@@ -2,7 +2,7 @@ import api from './client'
 import { getStoredUser } from '../auth'
 
 export type NoteVisibility = 'private' | 'org' | 'public'
-export type AclRole = 'owner' | 'editor' | 'viewer' | 'commenter'
+export type AclRole = 'owner' | 'editor' | 'viewer'
 
 export type Collaborator = {
   userId: string
