@@ -227,7 +227,7 @@ export function CollaboratorsPanel({ noteId, currentUserId = '', readOnly = fals
               <CollaboratorMemberRow
                 key={member.userId}
                 kind="member"
-                name={isSelf ? '我' : displayName(member)}
+                name={displayName(member)}
                 meta={member.role === 'owner' ? '所有者' : undefined}
                 role={member.role}
                 avatarUrl={member.avatarUrl}
