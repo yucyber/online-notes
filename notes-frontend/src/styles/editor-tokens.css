@@ -1789,6 +1789,10 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
   outline-offset: 2px;
 }
 
+.collab-invite-field input:focus-visible {
+  outline: none;
+}
+
 @media (max-width: 760px) {
   .collab-drawer {
     width: 100vw;
