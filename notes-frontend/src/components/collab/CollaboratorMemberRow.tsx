@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef, useState } from 'react'
-import { Check, ChevronDown, LoaderCircle } from 'lucide-react'
+import { Check, ChevronDown, Loader2 } from 'lucide-react'
 import type { AclRole } from '@/lib/api/collab'
 
 type Props = {
@@ -85,7 +85,7 @@ export function CollaboratorMemberRow({
         {meta ? <div className="collab-member__meta">{meta}</div> : null}
       </div>
       <div className="collab-member__actions">
-        {busy ? <LoaderCircle className="collab-member__spinner" aria-label="正在处理" /> : null}
+        {busy ? <Loader2 className="collab-member__spinner" aria-label="正在处理" /> : null}
         {isOwner ? (
           <span className="collab-role-trigger collab-role-trigger--owner" title="所有者权限不可更改">可编辑</span>
         ) : canManage ? (
