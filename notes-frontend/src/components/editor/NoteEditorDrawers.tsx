@@ -4,14 +4,12 @@ import { useEffect } from 'react'
 import { Users, X } from 'lucide-react'
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import type { CollaborationParticipant } from '@/components/collab/CollaboratorsPanel'
-import type { Collaborator } from '@/lib/api/collab'
 import { CommentsPanel } from '@/components/collab/CommentsPanel'
 
 type Selection = { start: number; end: number }
 
 type Props = {
   id: string
-  owner?: Omit<Collaborator, 'role'>
   currentUserId?: string
   selection: Selection
   showCollabDrawer: boolean
@@ -25,7 +23,6 @@ type Props = {
 
 export function NoteEditorDrawers({
   id,
-  owner,
   currentUserId,
   selection,
   showCollabDrawer,
@@ -63,7 +60,7 @@ export function NoteEditorDrawers({
               </button>
             </div>
             <div className="collab-drawer__content">
-              <CollaboratorsPanel noteId={id} owner={owner} currentUserId={currentUserId} readOnly={readOnly} participants={collaborators} />
+              <CollaboratorsPanel noteId={id} currentUserId={currentUserId} readOnly={readOnly} participants={collaborators} />
             </div>
           </aside>
         </div>

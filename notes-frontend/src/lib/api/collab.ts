@@ -14,7 +14,7 @@ export type Collaborator = {
 
 export type AclResponse = {
   visibility: NoteVisibility
-  canManage?: boolean
+  canManage: boolean
   acl: Collaborator[]
 }
 

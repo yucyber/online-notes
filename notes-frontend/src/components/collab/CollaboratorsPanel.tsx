@@ -11,7 +11,6 @@ export type CollaborationParticipant = { id: string; name?: string }
 
 type Props = {
   noteId: string
-  owner?: Omit<Collaborator, 'role'>
   currentUserId?: string
   readOnly?: boolean
   participants?: CollaborationParticipant[]
@@ -89,7 +88,7 @@ function InviteRolePicker({ role, disabled, onChange }: { role: 'editor' | 'view
   )
 }
 
-export function CollaboratorsPanel({ noteId, owner, currentUserId = '', readOnly = false, participants = [] }: Props) {
+export function CollaboratorsPanel({ noteId, currentUserId = '', readOnly = false, participants = [] }: Props) {
   const [acl, setAcl] = useState<Collaborator[]>([])
   const [visibility, setVisibility] = useState<NoteVisibility>('private')
   const [canManage, setCanManage] = useState(false)
@@ -109,19 +108,9 @@ export function CollaboratorsPanel({ noteId, owner, currentUserId = '', readOnly
 
     if (aclResult.status === 'fulfilled') {
       const result: AclResponse = aclResult.value
-      const returnedMembers = result.acl || []
-      const returnedOwner = owner
-        ? returnedMembers.find(member => member.userId === owner.userId)
-        : undefined
-      const members = owner
-        ? [
-            { ...owner, ...returnedOwner, role: 'owner' as const },
-            ...returnedMembers.filter(member => member.userId !== owner.userId),
-          ]
-        : returnedMembers
       setVisibility(result.visibility)
-      setAcl(members)
-      setCanManage(typeof result.canManage === 'boolean' ? result.canManage : owner?.userId === currentUserId)
+      setAcl(result.acl || [])
+      setCanManage(result.canManage)
       setLoadError('')
     } else {
       setLoadError('协作信息暂时无法加载')
@@ -133,7 +122,7 @@ export function CollaboratorsPanel({ noteId, owner, currentUserId = '', readOnly
       setInvites([])
     }
     setLoading(false)
-  }, [currentUserId, noteId, owner])
+  }, [noteId])
 
   useEffect(() => { void load(true) }, [load])
   useEffect(() => {

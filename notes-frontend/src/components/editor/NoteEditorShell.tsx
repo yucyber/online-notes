@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect, useLayoutEffect, useCallback, useMemo, useRef, Suspense } from 'react'
+import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
@@ -51,18 +51,8 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [formatState, setFormatState] = useState(DEFAULT_EDITOR_FORMAT_STATE)
   const [currentContent, setCurrentContent] = useState(initialContent ?? initialData?.content ?? '')
   const [currentTitle, setCurrentTitle] = useState(initialData?.title ?? '')
-  const [me, setMe] = useState<{ id: string; name: string; email?: string; avatarUrl?: string }>({ id: 'me', name: '我' })
+  const [me, setMe] = useState<{ id: string; name: string }>({ id: 'me', name: '我' })
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
-  const collabOwner = useMemo(() => {
-    if (!note?.userId) return undefined
-    const userId = String(note.userId)
-    return {
-      userId,
-      displayName: userId === me.id ? me.name : undefined,
-      email: userId === me.id ? me.email : undefined,
-      avatarUrl: userId === me.id ? me.avatarUrl : undefined,
-    }
-  }, [me.avatarUrl, me.email, me.id, me.name, note?.userId])
   const readOnly = !canWriteNote(note, me.id)
   const rejectReadOnlyWrite = useCallback(() => {
     if (!readOnly) return false
@@ -175,7 +165,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   // 读取当前用户信息用于协作指示
   useEffect(() => {
     const u = getCurrentUser()
-    if (u) setMe({ id: u.id, name: u.displayName || u.email, email: u.email, avatarUrl: u.avatarUrl })
+    if (u) setMe({ id: u.id, name: u.displayName || u.email })
   }, [])
 
   // 仅保留低性能环境观测；统一编辑器后不能再降级到另一套内容格式。
@@ -724,7 +714,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
 
       <NoteEditorDrawers
         id={id}
-        owner={collabOwner}
         currentUserId={me.id}
         selection={selection}
         showCollabDrawer={showCollabDrawer}
