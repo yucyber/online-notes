@@ -50,7 +50,14 @@ export class InvitationsService {
     const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
     if (!isOwner) throw new BadRequestException('无权限')
     const items = await this.invitationModel.find({ noteId: note._id, status: { $in: ['pending','accepted'] } }).sort({ createdAt: -1 }).exec()
-    return items
+    return items.map(invite => ({
+      id: invite._id.toString(),
+      inviteeEmail: invite.inviteeEmail,
+      role: invite.role,
+      status: invite.status,
+      createdAt: (invite as any).createdAt,
+      expiresAt: invite.expiresAt,
+    }))
   }
 
   async listMine(email?: string, status: string = 'pending') {
@@ -122,8 +129,10 @@ export class InvitationsService {
   }
 
   async revoke(token: string, actorId: string) {
-    const hash = crypto.createHash('sha256').update(token).digest('hex')
-    const inv = await this.invitationModel.findOne({ tokenHash: hash }).exec()
+    // 列表管理只暴露文档 ID；旧邀请链接仍按 token hash 查找，避免把可接受邀请的凭证返回给侧栏。
+    const inv = Types.ObjectId.isValid(token)
+      ? await this.invitationModel.findById(token).exec()
+      : await this.invitationModel.findOne({ tokenHash: crypto.createHash('sha256').update(token).digest('hex') }).exec()
     if (!inv) throw new NotFoundException('邀请不存在')
     const note = await this.noteModel.findById(inv.noteId).exec()
     if (!note) throw new NotFoundException('笔记不存在')

@@ -1,8 +1,34 @@
 import api from './client'
 import { getStoredUser } from '../auth'
 
+export type NoteVisibility = 'private' | 'org' | 'public'
+export type AclRole = 'owner' | 'editor' | 'viewer' | 'commenter'
+
+export type Collaborator = {
+  userId: string
+  role: AclRole
+  displayName?: string
+  email?: string
+  avatarUrl?: string
+}
+
+export type AclResponse = {
+  visibility: NoteVisibility
+  canManage: boolean
+  acl: Collaborator[]
+}
+
+export type InvitationSummary = {
+  id: string
+  inviteeEmail?: string
+  role: 'editor' | 'viewer'
+  status: 'pending' | 'accepted' | 'revoked' | 'expired'
+  createdAt: string
+  expiresAt: string
+}
+
 export const aclAPI = {
-  get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as { visibility: string; acl: { userId: string; role: string }[] }),
+  get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as AclResponse),
   add: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.post(`/notes/${noteId}/acl`, { userId, role }).then(res => res as unknown as any),
   update: (noteId: string, userId: string, role: 'owner' | 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
   remove: (noteId: string, userId: string) => api.delete(`/notes/${noteId}/acl/${userId}`).then(res => res as unknown as any),
@@ -10,7 +36,7 @@ export const aclAPI = {
 
 export const invitationsAPI = {
   create: (noteId: string, role: 'editor' | 'viewer', inviteeEmail?: string, ttlHours?: number) => api.post(`/invitations/notes/${noteId}`, { role, inviteeEmail, ttlHours }).then(res => res as unknown as { token: string; expiresAt: string }),
-  list: (noteId: string) => api.get(`/invitations/notes/${noteId}`).then(res => res as unknown as any[]),
+  list: (noteId: string) => api.get(`/invitations/notes/${noteId}`).then(res => res as unknown as InvitationSummary[]),
   preview: (token: string) => api.get(`/invitations/${token}`).then(res => res as unknown as { noteId: string; role: string; expiresAt: string }),
   accept: (token: string) => api.post(`/invitations/${token}/accept`, {}).then(res => res as unknown as any),
   revoke: (token: string) => api.delete(`/invitations/${token}`).then(res => res as unknown as any),

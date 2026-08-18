@@ -336,12 +336,32 @@ export class NotesService {
     })
   }
 
-  async getAcl(id: string, userId: string): Promise<{ visibility: string; acl: any[] }> {
-    const note = await this.noteModel.findOne(this.noteAccess.memberScope(id, userId)).exec()
+  async getAcl(id: string, userId: string): Promise<{ visibility: string; canManage: boolean; acl: any[] }> {
+    const note: any = await this.noteModel
+      .findOne(this.noteAccess.memberScope(id, userId))
+      .populate({ path: 'userId', select: 'email displayName avatarUrl' })
+      .populate({ path: 'acl.userId', select: 'email displayName avatarUrl' })
+      .lean()
+      .exec()
     if (!note) {
       throw new NotFoundException('笔记不存在')
     }
-    return { visibility: (note as any).visibility, acl: (note as any).acl || [] }
+
+    const toMember = (profile: any, role: string) => ({
+      userId: String(profile?._id || profile || ''),
+      role,
+      displayName: profile?.displayName || undefined,
+      email: profile?.email || undefined,
+      avatarUrl: profile?.avatarUrl || undefined,
+    })
+    const owner = toMember(note.userId, 'owner')
+    const members = (note.acl || [])
+      .map((entry: any) => toMember(entry.userId, entry.role))
+      .filter((entry: any) => entry.userId && entry.userId !== owner.userId)
+    const canManage = owner.userId === userId
+      || members.some((entry: any) => entry.userId === userId && entry.role === 'owner')
+
+    return { visibility: note.visibility, canManage, acl: [owner, ...members] }
   }
 
   async addCollaborator(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer'): Promise<any> {

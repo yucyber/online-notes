@@ -41,7 +41,7 @@
 - Produces: `NoteVisibility = 'private' | 'org' | 'public'` and `AclRole = 'owner' | 'editor' | 'viewer' | 'commenter'`
 - Produces: `AclResponse = { visibility: NoteVisibility; canManage: boolean; acl: Collaborator[] }`
 - Produces: `Collaborator = { userId: string; role: AclRole; displayName?: string; email?: string; avatarUrl?: string }`
-- Produces: `InvitationSummary = { id: string; managementToken: string; inviteeEmail?: string; role: 'editor' | 'viewer'; status: string; createdAt: string; expiresAt: string }`
+- Produces: `InvitationSummary = { id: string; inviteeEmail?: string; role: 'editor' | 'viewer'; status: string; createdAt: string; expiresAt: string }`
 
 - [ ] **Step 1: 扩展 ACL 查询结果**
 
@@ -61,12 +61,11 @@ return { visibility: note.visibility, canManage, acl: members satisfies PublicCo
 
 - [ ] **Step 2: 收敛邀请列表字段**
 
-`listForNote` 不直接返回 Mongoose 文档，显式映射 `_id`、`tokenHash`、邮箱、角色、状态与时间。`managementToken` 使用已有 hash，只用于经过 owner 校验的撤销接口，不把原始邀请 token 写回数据库或列表。
+`listForNote` 不直接返回 Mongoose 文档，显式映射 `_id`、邮箱、角色、状态与时间，不返回原始 token 或 `tokenHash`。撤销接口在 owner 权限校验下支持按邀请 ID 管理，同时兼容现有 token 调用。
 
 ```ts
 return items.map((invite) => ({
   id: invite._id.toString(),
-  managementToken: invite.tokenHash,
   inviteeEmail: invite.inviteeEmail,
   role: invite.role,
   status: invite.status,
@@ -81,7 +80,7 @@ return items.map((invite) => ({
 
 - [ ] **Step 4: 静态核对并提交**
 
-核对响应中不含 password、`canManage` 与后端 owner 判定使用同一权限边界、邀请撤销仍接受 hash。运行 `git diff --check`，不运行测试。
+核对响应中不含 password、token 或 tokenHash，`canManage` 与后端 owner 判定使用同一权限边界，邀请撤销兼容邀请 ID 和旧 token。运行 `git diff --check`，不运行测试。
 
 ```powershell
 git add -- notes-backend/src/modules/notes/notes.service.ts notes-backend/src/modules/invitations/invitations.service.ts notes-frontend/src/lib/api/collab.ts
@@ -127,7 +126,7 @@ await runMemberAction(`member:${userId}`, () => aclAPI.remove(noteId, userId))
 
 - [ ] **Step 4: 接入邀请操作**
 
-发送邀请校验邮箱后调用 `invitationsAPI.create`。重发先创建同邮箱同角色的新邀请，再撤销旧 `managementToken`；撤销失败时刷新并提示部分成功。撤销直接调用 `invitationsAPI.revoke`。所有成功状态使用 toast，不插入设计稿之外的卡片。
+发送邀请校验邮箱后调用 `invitationsAPI.create`。重发先创建同邮箱同角色的新邀请，再按旧邀请 `id` 撤销；撤销失败时刷新并提示部分成功。撤销直接调用 `invitationsAPI.revoke`。所有成功状态使用 toast，不插入设计稿之外的卡片。
 
 - [ ] **Step 5: 静态核对并提交**
 
