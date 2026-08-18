@@ -717,6 +717,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         selection={selection}
         showCollabDrawer={showCollabDrawer}
         showCommentsDrawer={showCommentsDrawer}
+        collaborators={participants}
         commentsDrawerRef={commentsDrawerRef as React.RefObject<HTMLDivElement>}
         onCloseCollab={() => setShowCollabDrawer(false)}
         onCloseComments={() => setShowCommentsDrawer(false)}

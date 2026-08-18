@@ -1,4 +1,9 @@
+'use client'
+
+import { useEffect } from 'react'
+import { Users, X } from 'lucide-react'
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
+import type { CollaborationParticipant } from '@/components/collab/CollaboratorsPanel'
 import { CommentsPanel } from '@/components/collab/CommentsPanel'
 
 type Selection = { start: number; end: number }
@@ -8,6 +13,7 @@ type Props = {
   selection: Selection
   showCollabDrawer: boolean
   showCommentsDrawer: boolean
+  collaborators?: CollaborationParticipant[]
   commentsDrawerRef: React.RefObject<HTMLDivElement>
   onCloseCollab: () => void
   onCloseComments: () => void
@@ -19,38 +25,42 @@ export function NoteEditorDrawers({
   selection,
   showCollabDrawer,
   showCommentsDrawer,
+  collaborators = [],
   commentsDrawerRef,
   onCloseCollab,
   onCloseComments,
   readOnly = false,
 }: Props) {
+  useEffect(() => {
+    if (!showCollabDrawer) return
+    const closeOnEscape = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape') return
+      if (document.querySelector('.collab-member-menu, .collab-invite-role__menu')) return
+      onCloseCollab()
+    }
+    document.addEventListener('keydown', closeOnEscape)
+    return () => document.removeEventListener('keydown', closeOnEscape)
+  }, [onCloseCollab, showCollabDrawer])
+
   return (
     <>
       {showCollabDrawer && (
-        <div className="fixed inset-0 z-50" aria-modal="true" role="dialog">
-          <div
-            className="absolute inset-0 bg-black/20"
-            role="button"
-            tabIndex={0}
-            onClick={onCloseCollab}
-            onKeyDown={(event) => {
-              if (event.key === 'Enter' || event.key === ' ') onCloseCollab()
-            }}
-          />
-          <div className="absolute right-0 top-0 h-full w-full max-w-[360px] bg-white border-l shadow-xl">
-            <div className="flex items-center justify-between px-4 py-2 border-b">
-              <div className="text-sm font-medium">{"协作"}</div>
-              <button className="text-gray-500 hover:text-gray-700 text-sm" onClick={onCloseCollab}>{"关闭"}</button>
-            </div>
-            <div className="p-4 space-y-4 overflow-auto h-full">
-              <div className="rounded-lg border">
-                <div className="px-3 py-2 border-b text-xs font-medium">{"协作者"}</div>
-                <div className="p-3">
-                  <CollaboratorsPanel noteId={id} readOnly={readOnly} />
-                </div>
+        <div className="collab-drawer-layer" aria-modal="true" aria-labelledby="collab-drawer-title" role="dialog">
+          <button type="button" className="collab-drawer-backdrop" aria-label="关闭协作侧栏" onClick={onCloseCollab} />
+          <aside className="collab-drawer" aria-label="协作侧栏">
+            <div className="collab-drawer__head">
+              <div id="collab-drawer-title" className="collab-drawer__title">
+                <Users aria-hidden="true" />
+                协作
               </div>
+              <button type="button" className="collab-drawer__close" aria-label="关闭协作侧栏" onClick={onCloseCollab}>
+                <X aria-hidden="true" />
+              </button>
             </div>
-          </div>
+            <div className="collab-drawer__content">
+              <CollaboratorsPanel noteId={id} readOnly={readOnly} participants={collaborators} />
+            </div>
+          </aside>
         </div>
       )}
       {showCommentsDrawer && (

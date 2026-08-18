@@ -1175,3 +1175,633 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
     padding: 28px 24px;
   }
 }
+
+/* 协作侧栏使用独立 token，避免全局按钮和卡片样式稀释设计稿的灰白层级。 */
+:root {
+  --collab-surface: #fff;
+  --collab-surface-muted: #f5f5f3;
+  --collab-surface-hover: #efefed;
+  --collab-line: #e4e4e1;
+  --collab-line-strong: #d4d4d0;
+  --collab-text: #20201e;
+  --collab-text-secondary: #5f5f5a;
+  --collab-muted: #85857e;
+  --collab-accent: #58728f;
+  --collab-focus: #7894b2;
+  --collab-danger: #b6473e;
+  --collab-black: #20201e;
+  --collab-white: #fff;
+}
+
+[data-theme="dark"] {
+  --collab-surface: #232322;
+  --collab-surface-muted: #2a2a28;
+  --collab-surface-hover: #30302e;
+  --collab-line: #393936;
+  --collab-line-strong: #4a4a45;
+  --collab-text: #f2f2ef;
+  --collab-text-secondary: #c0c0ba;
+  --collab-muted: #92928b;
+  --collab-accent: #9eb2c7;
+  --collab-focus: #a8bdd4;
+  --collab-danger: #e28b82;
+  --collab-black: #f0f0ed;
+  --collab-white: #181817;
+}
+
+.collab-drawer-layer {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  color: var(--collab-text);
+  font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-size: 14px;
+  -webkit-font-smoothing: antialiased;
+}
+
+.collab-drawer-backdrop {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  background: rgba(24, 24, 22, 0.2);
+}
+
+.collab-drawer {
+  position: absolute;
+  top: 0;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  width: min(340px, 100vw);
+  height: 100%;
+  min-width: 0;
+  border-left: 1px solid var(--collab-line);
+  background: var(--collab-surface);
+}
+
+.collab-drawer__head {
+  display: flex;
+  flex: 0 0 56px;
+  align-items: center;
+  justify-content: space-between;
+  height: 56px;
+  padding: 0 14px 0 16px;
+  border-bottom: 1px solid var(--collab-line);
+}
+
+.collab-drawer__title {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--collab-text);
+  font-size: 14px;
+  font-weight: 700;
+}
+
+.collab-drawer__title svg {
+  width: 20px;
+  height: 20px;
+  stroke-width: 1.7;
+}
+
+.collab-drawer__close {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  place-items: center;
+  color: var(--collab-text-secondary);
+  background: transparent;
+  cursor: pointer;
+  transition: background 150ms, color 150ms;
+}
+
+.collab-drawer__close::before,
+.collab-role-trigger::before {
+  position: absolute;
+  inset: -6px;
+  content: '';
+}
+
+.collab-drawer__close:hover {
+  color: var(--collab-text);
+  background: var(--collab-surface-muted);
+}
+
+.collab-drawer__close svg {
+  width: 24px;
+  height: 24px;
+  stroke-width: 1.7;
+}
+
+.collab-drawer__content {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+  flex-direction: column;
+  gap: 16px;
+  padding: 14px;
+  overflow: auto;
+}
+
+.collab-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-width: 0;
+}
+
+.collab-group + .collab-group {
+  padding-top: 16px;
+  border-top: 1px solid var(--collab-line);
+}
+
+.collab-section-title {
+  margin: 0 0 10px;
+  color: var(--collab-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  line-height: normal;
+  text-transform: uppercase;
+}
+
+.collab-share-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--collab-surface-muted);
+}
+
+.collab-share-row > svg {
+  width: 20px;
+  height: 20px;
+  color: var(--collab-accent);
+  stroke-width: 1.7;
+  flex: none;
+}
+
+.collab-share-row__main {
+  flex: 1;
+  min-width: 0;
+}
+
+.collab-share-row__title {
+  color: var(--collab-text);
+  font-size: 13px;
+  font-weight: 640;
+}
+
+.collab-member-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.collab-member {
+  position: relative;
+  display: grid;
+  grid-template-columns: 32px 1fr auto;
+  gap: 10px;
+  align-items: center;
+  min-height: 48px;
+  padding: 6px 2px;
+  border-radius: 8px;
+  transition: background 150ms;
+}
+
+.collab-member:hover,
+.collab-member:focus-within {
+  background: var(--collab-surface-muted);
+}
+
+.collab-member[data-busy="true"] {
+  opacity: 0.72;
+}
+
+.collab-avatar {
+  position: relative;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  border: 1px solid var(--collab-line);
+  border-radius: 50%;
+  place-items: center;
+  color: var(--collab-text-secondary);
+  background: var(--collab-surface-muted);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.collab-avatar img {
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
+.collab-avatar--self {
+  border-color: var(--collab-black);
+  color: var(--collab-white);
+  background: var(--collab-black);
+}
+
+.collab-avatar__dot {
+  position: absolute;
+  right: -1px;
+  bottom: -1px;
+  width: 10px;
+  height: 10px;
+  border: 2px solid var(--collab-surface);
+  border-radius: 50%;
+  background: #36b37e;
+}
+
+.collab-avatar__dot--off {
+  background: var(--collab-line-strong);
+}
+
+.collab-member__identity {
+  min-width: 0;
+}
+
+.collab-member__name {
+  overflow: hidden;
+  color: var(--collab-text);
+  font-size: 13px;
+  font-weight: 620;
+  line-height: normal;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collab-member__meta {
+  margin-top: 2px;
+  color: var(--collab-muted);
+  font-size: 12px;
+  line-height: normal;
+}
+
+.collab-member__actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.collab-member__spinner {
+  width: 16px;
+  height: 16px;
+  color: var(--collab-muted);
+  animation: collab-spin 800ms linear infinite;
+}
+
+@keyframes collab-spin {
+  to { transform: rotate(360deg); }
+}
+
+.collab-role-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  height: 30px;
+  gap: 5px;
+  padding: 0 9px 0 10px;
+  border: 1px solid var(--collab-line);
+  border-radius: 999px;
+  color: var(--collab-text-secondary);
+  background: var(--collab-surface);
+  font-size: 12px;
+  font-weight: 650;
+  line-height: 1;
+  cursor: pointer;
+  transition: background 150ms, border-color 150ms, color 150ms;
+}
+
+.collab-role-trigger:hover:not(:disabled) {
+  border-color: var(--collab-line-strong);
+  color: var(--collab-text);
+  background: var(--collab-surface-hover);
+}
+
+.collab-role-trigger:disabled {
+  cursor: default;
+}
+
+.collab-role-trigger svg {
+  width: 12px;
+  height: 12px;
+  margin-left: 1px;
+  opacity: 0.7;
+}
+
+.collab-role-trigger--pending {
+  border-color: #ecd49c;
+  color: #8a6500;
+  background: #fff8e6;
+}
+
+[data-theme="dark"] .collab-role-trigger--pending {
+  border-color: #5e4d2c;
+  color: #f3d47f;
+  background: #3b321d;
+}
+
+.collab-role-trigger--owner {
+  color: var(--collab-muted);
+  background: transparent;
+  cursor: default;
+}
+
+.collab-role-trigger--owner:hover {
+  border-color: var(--collab-line);
+  color: var(--collab-muted);
+  background: transparent;
+}
+
+.collab-member-menu,
+.collab-invite-role__menu {
+  position: absolute;
+  z-index: 10;
+  min-width: 112px;
+  padding: 4px;
+  border: 1px solid var(--collab-line-strong);
+  border-radius: 10px;
+  background: var(--collab-surface);
+  box-shadow: 0 8px 22px rgba(24, 24, 22, 0.1);
+}
+
+.collab-member-menu {
+  top: calc(100% - 4px);
+  right: 2px;
+}
+
+[data-theme="dark"] .collab-member-menu,
+[data-theme="dark"] .collab-invite-role__menu {
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+}
+
+.collab-member-menu__item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 32px;
+  gap: 8px;
+  padding: 0 10px;
+  border: 0;
+  border-radius: 7px;
+  color: var(--collab-text-secondary);
+  background: transparent;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+}
+
+.collab-member-menu__item:hover {
+  color: var(--collab-text);
+  background: var(--collab-surface-muted);
+}
+
+.collab-member-menu__item svg {
+  width: 14px;
+  height: 14px;
+  opacity: 0.8;
+}
+
+.collab-member-menu__item--danger {
+  color: var(--collab-danger);
+}
+
+.collab-member-menu__item--danger:hover {
+  color: var(--collab-danger);
+  background: #fdf1ef;
+}
+
+[data-theme="dark"] .collab-member-menu__item--danger:hover {
+  background: #3b2928;
+}
+
+.collab-member-menu__separator {
+  height: 1px;
+  margin: 4px 2px;
+  background: var(--collab-line);
+}
+
+.collab-invite-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+}
+
+.collab-invite-field {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  min-width: 0;
+  min-height: 36px;
+  gap: 8px;
+  padding: 0 11px;
+  border: 1px solid var(--collab-line);
+  border-radius: 8px;
+  color: var(--collab-text);
+  background: var(--collab-surface);
+  font-size: 13px;
+  transition: background 150ms, border-color 150ms, box-shadow 150ms;
+}
+
+.collab-invite-field:focus-within {
+  border-color: var(--collab-accent);
+  background: var(--collab-surface);
+  box-shadow: 0 0 0 2px rgba(88, 114, 143, 0.12);
+}
+
+.collab-invite-field > svg {
+  width: 24px;
+  height: 24px;
+  color: var(--collab-muted);
+  stroke-width: 1.7;
+  flex: none;
+}
+
+.collab-invite-field input {
+  flex: 1;
+  width: 100%;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  color: var(--collab-text);
+  background: transparent;
+  font-size: 13px;
+}
+
+.collab-invite-field input::placeholder {
+  color: var(--collab-muted);
+}
+
+.collab-invite-role {
+  position: relative;
+}
+
+.collab-invite-role__trigger {
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  gap: 6px;
+  padding: 0 10px;
+  border: 1px solid var(--collab-line-strong);
+  border-radius: 8px;
+  color: var(--collab-text-secondary);
+  background: var(--collab-surface);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.collab-invite-role__trigger svg {
+  width: 18px;
+  height: 18px;
+  color: var(--collab-muted);
+}
+
+.collab-invite-role__menu {
+  top: calc(100% + 4px);
+  right: 0;
+}
+
+.collab-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 34px;
+  gap: 6px;
+  padding: 0 12px;
+  border: 1px solid var(--collab-line-strong);
+  border-radius: 8px;
+  color: var(--collab-text);
+  background: var(--collab-surface);
+  font-size: 13px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: background 150ms, border-color 150ms, opacity 150ms;
+}
+
+.collab-button:hover:not(:disabled) {
+  border-color: var(--collab-muted);
+  background: var(--collab-surface-hover);
+}
+
+.collab-button:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.collab-button--primary {
+  border-color: var(--collab-black);
+  color: var(--collab-white);
+  background: var(--collab-black);
+}
+
+.collab-button--primary:hover:not(:disabled) {
+  border-color: var(--collab-black);
+  background: var(--collab-black);
+  opacity: 0.88;
+}
+
+.collab-button:disabled,
+.collab-invite-role__trigger:disabled,
+.collab-invite-field:has(input:disabled) {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.collab-invite-hint {
+  margin: 8px 0 0;
+  color: var(--collab-muted);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.collab-member-list__empty {
+  padding: 10px 2px;
+  color: var(--collab-muted);
+  font-size: 12px;
+}
+
+.collab-panel__error {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px;
+  border-radius: 8px;
+  color: var(--collab-text-secondary);
+  background: var(--collab-surface-muted);
+  font-size: 13px;
+}
+
+.collab-panel__error button {
+  padding: 0;
+  border: 0;
+  color: var(--collab-accent);
+  background: transparent;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.collab-skeleton {
+  border-radius: 8px;
+  background: linear-gradient(90deg, var(--collab-surface-muted), var(--collab-surface-hover), var(--collab-surface-muted));
+  background-size: 200% 100%;
+  animation: collab-skeleton 1.4s ease-in-out infinite;
+}
+
+.collab-skeleton--share {
+  height: 42px;
+}
+
+.collab-skeleton--member {
+  height: 48px;
+  margin-top: 2px;
+}
+
+@keyframes collab-skeleton {
+  from { background-position: 100% 0; }
+  to { background-position: -100% 0; }
+}
+
+.collab-drawer :focus-visible {
+  outline: 2px solid var(--collab-focus);
+  outline-offset: 2px;
+}
+
+@media (max-width: 760px) {
+  .collab-drawer {
+    width: 100vw;
+    border-left: 0;
+  }
+}
+
+@media (max-width: 360px) {
+  .collab-invite-form {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .collab-button--primary {
+    grid-column: 1 / -1;
+  }
+}
