@@ -68,6 +68,10 @@ export function NoteEditorHeader({
   }
 
   const commit = async () => {
+    if (!onChangeTitle) {
+      setEditing(false)
+      return
+    }
     const next = draft.trim()
     if (next === note.title || next.length === 0) {
       setEditing(false)

@@ -1,4 +1,4 @@
-import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import { aclAPI, invitationsAPI } from '@/lib/api'
 
@@ -29,11 +29,11 @@ describe('CollaboratorsPanel 请求刷新策略', () => {
     expect(invitationsAPI.list).toHaveBeenCalledTimes(1)
   })
 
-  test('用户手动刷新时重新加载协作状态', async () => {
+  test('页面重新可见时重新加载协作状态', async () => {
     render(<CollaboratorsPanel noteId="note-1" />)
     await waitFor(() => expect(aclAPI.get).toHaveBeenCalledTimes(1))
 
-    fireEvent.click(screen.getByRole('button', { name: '刷新邀请与协作者状态' }))
+    fireEvent(document, new Event('visibilitychange'))
 
     await waitFor(() => expect(aclAPI.get).toHaveBeenCalledTimes(2))
   })

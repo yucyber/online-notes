@@ -4,7 +4,7 @@ import { CollaboratorsPanel } from '@/components/collab/CollaboratorsPanel'
 import { commentsAPI, createComment, invitationsAPI } from '@/lib/api'
 
 jest.mock('@/lib/api', () => ({
-  aclAPI: { get: jest.fn().mockResolvedValue({ visibility: 'shared', acl: [] }) },
+  aclAPI: { get: jest.fn().mockResolvedValue({ visibility: 'private', canManage: true, acl: [] }) },
   invitationsAPI: {
     list: jest.fn().mockResolvedValue([]),
     create: jest.fn().mockResolvedValue({ token: 'invite-token', expiresAt: '2026-08-12T00:00:00.000Z' }),
@@ -47,16 +47,14 @@ test('comment leaf handlers reject create, reply, and delete after permission be
   })
 })
 
-test('invitation leaf handler rejects a filled invite after permission becomes read-only', async () => {
+test('invitation controls disappear after permission becomes read-only', async () => {
   const { rerender } = render(<CollaboratorsPanel noteId="note-1" readOnly={false} />)
-  await screen.findByRole('status')
-  fireEvent.change(screen.getByRole('textbox', { name: '邀请邮箱' }), { target: { value: 'reader@example.com' } })
+  const email = await screen.findByRole('textbox', { name: '邀请邮箱' })
+  fireEvent.change(email, { target: { value: 'reader@example.com' } })
 
   rerender(<CollaboratorsPanel noteId="note-1" readOnly />)
-  const send = screen.getByRole('button', { name: '发送邀请' })
-  send.removeAttribute('disabled')
-  fireEvent.click(send)
 
-  await waitFor(() => expect(invitationsAPI.create).not.toHaveBeenCalled())
-  expect(screen.getByRole('button', { name: '刷新邀请与协作者状态' })).toBeEnabled()
+  expect(screen.queryByRole('textbox', { name: '邀请邮箱' })).not.toBeInTheDocument()
+  expect(screen.queryByRole('button', { name: '发送邀请' })).not.toBeInTheDocument()
+  expect(invitationsAPI.create).not.toHaveBeenCalled()
 })

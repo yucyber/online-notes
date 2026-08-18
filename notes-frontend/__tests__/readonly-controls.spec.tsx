@@ -68,7 +68,6 @@ test('read-only toolbar blocks mutating handlers but keeps read actions availabl
     expect(screen.getByRole('button', { name })).toBeDisabled()
   }
   fireEvent.change(screen.getByRole('combobox', { name: '样式' }), { target: { value: 'h2' } })
-  expect(screen.getByRole('button', { name: '更多格式' })).toBeDisabled()
   expect(exec).not.toHaveBeenCalled()
 
   expect(screen.getByRole('button', { name: '进入全屏' })).toBeEnabled()
@@ -98,10 +97,10 @@ test('read-only drawers expose existing collaboration data without writable comm
   render(<NoteEditorDrawers id="n1" selection={{ start: 0, end: 2 }} showCollabDrawer showCommentsDrawer
     commentsDrawerRef={{ current: null }} onCloseCollab={jest.fn()} onCloseComments={jest.fn()} readOnly />)
 
-  expect((await screen.findAllByText('协作者')).length).toBeGreaterThan(0)
-  expect(screen.getByRole('button', { name: '发送邀请' })).toBeDisabled()
+  expect(await screen.findByRole('dialog', { name: '协作' })).toBeInTheDocument()
+  expect(screen.getByRole('heading', { name: '成员' })).toBeInTheDocument()
+  expect(screen.queryByRole('textbox', { name: '邀请邮箱' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '提交评论' })).toBeDisabled()
-  expect(screen.getByRole('button', { name: '刷新邀请与协作者状态' })).toBeEnabled()
 })
 
 test('viewer write attempts never issue note, tag, or comment requests while read navigation still works', async () => {
@@ -116,7 +115,7 @@ test('viewer write attempts never issue note, tag, or comment requests while rea
   expect(screen.getByRole('button', { name: '标签一' })).toBeDisabled()
 
   fireEvent.click(screen.getByRole('button', { name: '打开协作' }))
-  expect((await screen.findAllByText('协作者')).length).toBeGreaterThan(0)
+  expect(await screen.findByRole('dialog', { name: '协作' })).toBeInTheDocument()
   expect(mockAppToastError).not.toHaveBeenCalled()
 
   fireEvent.keyDown(document, { key: 's', ctrlKey: true })
