@@ -1,0 +1,656 @@
+<!doctype html>
+<html lang="zh-CN" data-theme="light">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>协作侧栏 · 在线笔记</title>
+<style>
+  :root {
+    --bg: #f7f7f6;
+    --sidebar-bg: #f1f1ef;
+    --surface: #fff;
+    --surface-muted: #f5f5f3;
+    --surface-hover: #efefed;
+    --line: #e4e4e1;
+    --line-strong: #d4d4d0;
+    --text: #20201e;
+    --text-secondary: #5f5f5a;
+    --muted: #85857e;
+    --accent: #58728f;
+    --focus: #7894b2;
+    --danger: #b6473e;
+    --black: #20201e;
+    --white: #fff;
+  }
+  [data-theme="dark"] {
+    --bg: #181817;
+    --sidebar-bg: #20201f;
+    --surface: #232322;
+    --surface-muted: #2a2a28;
+    --surface-hover: #30302e;
+    --line: #393936;
+    --line-strong: #4a4a45;
+    --text: #f2f2ef;
+    --text-secondary: #c0c0ba;
+    --muted: #92928b;
+    --accent: #9eb2c7;
+    --focus: #a8bdd4;
+    --danger: #e28b82;
+    --black: #f0f0ed;
+    --white: #181817;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    min-height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+    font-size: 14px;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button, input { font: inherit; }
+  button { cursor: pointer; }
+
+  svg {
+    width: 24px;
+    height: 24px;
+    stroke: currentColor;
+    stroke-width: 1.7;
+    fill: none;
+    stroke-linecap: round;
+    stroke-linejoin: round;
+    flex-shrink: 0;
+  }
+
+  .page {
+    max-width: 1120px;
+    margin: 0 auto;
+    padding: 32px 28px 64px;
+  }
+
+  .intro { margin-bottom: 24px; }
+
+  h1 {
+    margin: 0 0 8px;
+    font-size: 24px;
+    line-height: 1.2;
+    font-weight: 720;
+    letter-spacing: -0.03em;
+  }
+
+  .intro p {
+    margin: 0;
+    color: var(--text-secondary);
+    font-size: 14px;
+    line-height: 1.6;
+  }
+
+  .tagline {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 14px;
+    padding: 0 12px;
+    height: 32px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
+  }
+
+  /* 演示壳 */
+  .prototype {
+    height: 560px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 340px;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .mini-main {
+    background: var(--bg);
+    padding: 28px 24px;
+    opacity: .5;
+  }
+
+  .mini-title {
+    width: 72%;
+    height: 16px;
+    background: var(--text);
+    border-radius: 6px;
+    margin-bottom: 20px;
+    opacity: .8;
+  }
+
+  .mini-line {
+    height: 10px;
+    background: var(--line-strong);
+    border-radius: 999px;
+    margin: 13px 0;
+  }
+
+  /* 侧栏 */
+  .drawer {
+    border-left: 1px solid var(--line);
+    background: var(--surface);
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+  }
+
+  .drawer-head {
+    height: 56px;
+    padding: 0 14px 0 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--line);
+  }
+
+  .head-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text);
+  }
+
+  .head-left svg { width: 20px; height: 20px; }
+
+  .xbtn {
+    width: 32px;
+    height: 32px;
+    border: 0;
+    border-radius: 8px;
+    display: grid;
+    place-items: center;
+    color: var(--text-secondary);
+    background: transparent;
+    transition: background .15s, color .15s;
+  }
+
+  .xbtn:hover { background: var(--surface-muted); color: var(--text); }
+
+  .drawer-content {
+    padding: 14px;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+    overflow: auto;
+  }
+
+  .group + .group { border-top: 1px solid var(--line); padding-top: 16px; }
+
+  .section-title {
+    margin: 0 0 10px;
+    color: var(--muted);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+  }
+
+  /* 可见性状态行 */
+  .share-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    background: var(--surface-muted);
+  }
+
+  .share-row svg { color: var(--accent); width: 20px; height: 20px; }
+
+  .share-row .main { flex: 1; min-width: 0; }
+  .share-row .title { font-size: 13px; font-weight: 640; color: var(--text); }
+  .share-row .sub { font-size: 12px; color: var(--text-secondary); margin-top: 2px; }
+
+  /* 按钮系统（对齐项目） */
+  .button {
+    min-height: 34px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 0 12px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    font-weight: 600;
+    transition: background .15s, border-color .15s;
+  }
+
+  .button:hover { background: var(--surface-hover); border-color: var(--muted); }
+  .button:active { transform: translateY(1px); }
+
+  .button.primary {
+    border-color: var(--black);
+    background: var(--black);
+    color: var(--white);
+  }
+
+  .button.primary:hover { opacity: .88; }
+
+  .button svg { width: 16px; height: 16px; }
+
+  /* 成员列表 */
+  .member {
+    position: relative;
+    display: grid;
+    grid-template-columns: 32px 1fr auto;
+    gap: 10px;
+    align-items: center;
+    min-height: 48px;
+    padding: 6px 2px;
+    border-radius: 8px;
+    transition: background .15s;
+  }
+
+  .member:hover { background: var(--surface-muted); }
+
+  .avatar {
+    position: relative;
+    width: 32px;
+    height: 32px;
+    border-radius: 50%;
+    background: var(--surface-muted);
+    color: var(--text-secondary);
+    display: grid;
+    place-items: center;
+    font-size: 12px;
+    font-weight: 700;
+    border: 1px solid var(--line);
+  }
+
+  .avatar.self { background: var(--black); color: var(--white); border-color: var(--black); }
+
+  .avatar .dot {
+    position: absolute;
+    right: -1px;
+    bottom: -1px;
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    border: 2px solid var(--surface);
+    background: #36b37e;
+  }
+
+  .avatar .dot.off { background: var(--line-strong); }
+
+  .name {
+    font-size: 13px;
+    font-weight: 620;
+    color: var(--text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .meta {
+    font-size: 12px;
+    color: var(--muted);
+    margin-top: 2px;
+  }
+
+  /* 角色下拉（行尾单一控件） */
+  .role-menu {
+    min-width: 72px;
+    height: 30px;
+    padding: 0 9px 0 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    background: var(--surface);
+    color: var(--text-secondary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    font-size: 12px;
+    font-weight: 650;
+    cursor: pointer;
+    transition: background .15s, border-color .15s, color .15s;
+  }
+
+  .role-menu:hover { border-color: var(--line-strong); background: var(--surface-hover); color: var(--text); }
+
+  .role-menu .caret { font-size: 12px; opacity: .7; margin-left: 1px; }
+
+  .role-menu.pending {
+    color: #8a6500;
+    background: #fff8e6;
+    border-color: #ecd49c;
+  }
+
+  [data-theme="dark"] .role-menu.pending {
+    color: #f3d47f;
+    background: #3b321d;
+    border-color: #5e4d2c;
+  }
+
+  .role-menu.owner {
+    cursor: default;
+    color: var(--muted);
+    background: transparent;
+  }
+
+  .role-menu.owner:hover { border-color: var(--line); color: var(--muted); }
+
+  /* 行尾操作 */
+  .member-actions {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+  }
+
+  .icon-btn {
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: 7px;
+    display: grid;
+    place-items: center;
+    color: var(--muted);
+    background: transparent;
+    transition: background .15s, color .15s, opacity .15s;
+    opacity: 0;
+  }
+
+  .member:hover .icon-btn { opacity: 1; }
+  .icon-btn:hover { background: var(--surface-hover); color: var(--text); }
+
+  .icon-btn svg { width: 16px; height: 16px; }
+
+  /* 微型菜单 */
+  .menu {
+    position: absolute;
+    right: 2px;
+    top: calc(100% - 4px);
+    z-index: 10;
+    min-width: 112px;
+    padding: 4px;
+    background: var(--surface);
+    border: 1px solid var(--line-strong);
+    border-radius: 10px;
+    box-shadow: 0 8px 22px rgba(24, 24, 22, 0.10);
+  }
+
+  [data-theme="dark"] .menu { box-shadow: 0 8px 22px rgba(0,0,0,.35); }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: 32px;
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    border-radius: 7px;
+    cursor: pointer;
+  }
+
+  .menu-item:hover { background: var(--surface-muted); color: var(--text); }
+  .menu-item .tick { opacity: .8; }
+  .menu-item.danger { color: var(--danger); }
+  .menu-item.danger:hover { background: #fdf1ef; }
+  [data-theme="dark"] .menu-item.danger:hover { background: #3b2928; }
+
+  .menu-sep {
+    height: 1px;
+    margin: 4px 2px;
+    background: var(--line);
+  }
+
+  /* 邀请表单 */
+  .invite-form {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .field {
+    width: 100%;
+    min-width: 0;
+    min-height: 36px;
+    padding: 0 11px;
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text);
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    transition: border-color .15s, background .15s, box-shadow .15s;
+  }
+
+  .field:focus-within {
+    border-color: var(--accent);
+    background: var(--surface);
+    box-shadow: 0 0 0 2px rgba(88, 114, 143, 0.12);
+  }
+
+  .field input {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    color: var(--text);
+    font-size: 13px;
+  }
+
+  .field input::placeholder { color: var(--muted); }
+
+  .field svg { color: var(--muted); }
+
+  .select {
+    height: 36px;
+    white-space: nowrap;
+    justify-content: space-between;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0 10px;
+    border: 1px solid var(--line-strong);
+    border-radius: 8px;
+    background: var(--surface);
+    color: var(--text-secondary);
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+
+  .select svg { width: 18px; height: 18px; color: var(--muted); }
+
+  .hint {
+    margin-top: 8px;
+    color: var(--muted);
+    font-size: 12px;
+    line-height: 1.5;
+  }
+
+  @media (max-width: 760px) {
+    .prototype { grid-template-columns: 1fr; }
+    .drawer { border-left: 0; border-top: 1px solid var(--line); }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+  <div class="intro">
+    <h1>协作侧栏</h1>
+    <p>与「在线笔记」现有首页/工作台风格对齐：中性灰白底、石墨黑按钮、灰蓝点缀，圆角 8px，图标用 lucide 风细描边。</p>
+    <div class="tagline">
+      <svg><path d="M12 3v18M3 12h18"/></svg>
+      对齐 notes-list-yuque-preview 设计语言
+    </div>
+  </div>
+
+  <div class="prototype">
+    <div class="mini-main">
+      <div class="mini-title"></div>
+      <div class="mini-line" style="width:88%"></div>
+      <div class="mini-line" style="width:76%"></div>
+      <div class="mini-line" style="width:64%"></div>
+      <div class="mini-line" style="width:72%"></div>
+    </div>
+
+    <aside class="drawer" aria-label="协作侧栏">
+      <div class="drawer-head">
+        <div class="head-left">
+          <svg><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          协作
+        </div>
+        <button class="xbtn" aria-label="关闭侧栏">
+          <svg><path d="m6 6 12 12M18 6 6 18"/></svg>
+        </button>
+      </div>
+
+      <div class="drawer-content">
+        <div class="group">
+          <div class="share-row">
+            <svg><rect x="4.5" y="11" width="15" height="9" rx="2"/><path d="M8 11V7.5a4 4 0 0 1 8 0V11"/></svg>
+            <div class="main">
+              <div class="title">仅受邀成员可见</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="section-title">成员</div>
+          <div class="member">
+            <div class="avatar self">我<span class="dot"></span></div>
+            <div>
+              <div class="name">我</div>
+              <div class="meta">所有者</div>
+            </div>
+            <div class="member-actions">
+              <span class="role-menu owner" title="所有者权限不可更改">可编辑</span>
+            </div>
+          </div>
+          <div class="member">
+            <div class="avatar">林<span class="dot"></span></div>
+            <div>
+              <div class="name">林婉清</div>
+            </div>
+            <div class="member-actions">
+              <button class="role-menu" onclick="toggleRoleMenu(event,this)">
+                只读 <span class="caret">⌄</span>
+              </button>
+              <div class="menu" hidden>
+                <div class="menu-item" onclick="setRole(this,'只读')">只读 <span class="tick">✓</span></div>
+                <div class="menu-item" onclick="setRole(this,'可编辑')">可编辑</div>
+                <div class="menu-sep"></div>
+                <div class="menu-item danger" onclick="removeMember(this)">移除成员</div>
+              </div>
+            </div>
+          </div>
+          <div class="member">
+            <div class="avatar">陈<span class="dot off"></span></div>
+            <div>
+              <div class="name">陈思远</div>
+            </div>
+            <div class="member-actions">
+              <button class="role-menu" onclick="toggleRoleMenu(event,this)">
+                只读 <span class="caret">⌄</span>
+              </button>
+              <div class="menu" hidden>
+                <div class="menu-item" onclick="setRole(this,'只读')">只读 <span class="tick">✓</span></div>
+                <div class="menu-item" onclick="setRole(this,'可编辑')">可编辑</div>
+                <div class="menu-sep"></div>
+                <div class="menu-item danger" onclick="removeMember(this)">移除成员</div>
+              </div>
+            </div>
+          </div>
+          <div class="member">
+            <div class="avatar">王</div>
+            <div>
+              <div class="name">王启明</div>
+              <div class="meta">待接受 · 今天</div>
+            </div>
+            <div class="member-actions">
+              <span class="role-menu pending">待接受 <span class="caret">⌄</span></span>
+              <div class="menu" hidden>
+                <div class="menu-item" onclick="resendInvite(this)">重新发送</div>
+                <div class="menu-sep"></div>
+                <div class="menu-item danger" onclick="removeMember(this)">撤销邀请</div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="group">
+          <div class="section-title">邀请成员</div>
+          <div class="invite-form">
+            <div class="field">
+              <svg><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></svg>
+              <input type="text" placeholder="请输入邮箱" />
+            </div>
+            <div class="select">只读<svg><path d="m8 10 4 4 4-4"/></svg></div>
+            <button class="button primary">发送</button>
+          </div>
+          <div class="hint">被邀请者将收到邮件通知，并可在接受后查看或编辑此笔记。</div>
+        </div>
+      </div>
+    </aside>
+  </div>
+</div>
+
+<script>
+  function toggleRoleMenu(e, btn) {
+    e.stopPropagation();
+    var menu = btn.parentElement.querySelector('.menu');
+    var open = !menu.hidden;
+    document.querySelectorAll('.menu').forEach(function (m) { m.hidden = true; });
+    menu.hidden = open;
+  }
+
+  function setRole(item, role) {
+    var menu = item.parentElement;
+    menu.hidden = true;
+    var btn = menu.parentElement.querySelector('.role-menu');
+    if (!btn) return;
+    btn.firstChild.textContent = role + ' ';
+    menu.querySelectorAll('.menu-item').forEach(function (mi) {
+      var tick = mi.querySelector('.tick');
+      if (tick) tick.remove();
+    });
+    item.insertAdjacentHTML('beforeend', ' <span class="tick">✓</span>');
+  }
+
+  function removeMember(item) {
+    var member = item.parentElement.closest('.member');
+    item.parentElement.hidden = true;
+    member.style.transition = 'opacity .18s ease';
+    member.style.opacity = '0';
+    setTimeout(function () { member.remove(); }, 180);
+  }
+
+  function resendInvite(item) {
+    var meta = item.parentElement.closest('.member').querySelector('.meta');
+    item.parentElement.hidden = true;
+    if (meta) meta.textContent = '已重新发送 · 刚刚';
+  }
+
+  document.addEventListener('click', function () {
+    document.querySelectorAll('.menu').forEach(function (m) { m.hidden = true; });
+  });
+</script>
+</body>
+</html>
