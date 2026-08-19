@@ -26,7 +26,7 @@ function createService(noteModel: any, noteAccess: any, overrides: Record<string
     overrides.aiService || { generateSummary: async () => '' },
     noteAccess,
     overrides.noteCounter || { updateCategories: async () => undefined, updateTags: async () => undefined },
-    overrides.noteCache || {} as any,
+    overrides.noteCache || { invalidateLists: async () => undefined } as any,
     overrides.noteRecommendations,
   )
 }
@@ -100,4 +100,23 @@ test('NotesService.update refreshes summary when content is cleared', async () =
   await service.update(noteId, { content: '' }, userId)
 
   assert.equal(payload.summary, '')
+})
+
+test('NotesService.update invalidates cached note lists after a successful write', async () => {
+  let invalidations = 0
+  const original = { _id: noteId, title: 'old', content: 'body', tags: [], categoryIds: [] }
+  const noteModel = {
+    findOne: () => execResult(original),
+    findOneAndUpdate: () => updateChain({ ...original, title: 'new' }),
+  }
+  const service = createService(noteModel, {
+    writeScope: () => ({ _id: noteId, permission: 'write' }),
+    ownerScope: () => ({ _id: noteId, permission: 'owner' }),
+  }, {
+    noteCache: { invalidateLists: async () => { invalidations++ } },
+  })
+
+  await service.update(noteId, { title: 'new' }, userId)
+
+  assert.equal(invalidations, 1)
 })

@@ -57,6 +57,7 @@ export class NotesService {
     });
 
     const savedNote = await createdNote.save();
+    await this.noteCache.invalidateLists()
 
     await this.noteCounter.incrementForCreate({
       categoryId: createNoteDto.categoryId,
@@ -91,7 +92,8 @@ export class NotesService {
     const sortOrder = (filterDto.sortOrder || 'desc')
 
     const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids, previewFieldsVersion: 'content-v1' }
-    const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload)
+    const listRevision = await this.noteCache.getListRevision()
+    const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload, listRevision)
     if (cached) return cached
 
     // 所有筛选都放进同一个 $and，确保 keyword 等内部 $or 不会冲掉最前面的访问范围。
@@ -210,7 +212,7 @@ export class NotesService {
       ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
       : undefined
     const resp: any = { items, page, size, total, ...(nextCursor ? { nextCursor } : {}) }
-    await this.noteCache.setList(userId, keyPayload, resp)
+    await this.noteCache.setList(userId, keyPayload, resp, listRevision)
     return resp
   }
 
@@ -272,6 +274,8 @@ export class NotesService {
     }
 
     // 派生字段异步刷新，不延长保存请求；服务内部会防止旧任务覆盖更新后的正文。
+    await this.noteCache.invalidateLists()
+
     if (updatePayload.title !== undefined || updatePayload.content !== undefined) {
       this.updateEmbedding(updatedNote);
     }
@@ -328,6 +332,8 @@ export class NotesService {
     if (result.deletedCount === 0) {
       throw new NotFoundException('笔记不存在');
     }
+
+    await this.noteCache.invalidateLists()
 
     await this.noteCounter.decrementForDelete({
       categoryId: note.categoryId?.toString(),

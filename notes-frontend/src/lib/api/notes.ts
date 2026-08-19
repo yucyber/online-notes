@@ -16,7 +16,7 @@ export const clearNotesCache = () => {
     keys.forEach(k => sessionStorage.removeItem(k))
   } catch { }
 }
-const buildNotesKey = (params?: any) => {
+export const buildNotesCacheKey = (params?: any) => {
   const sp = new URLSearchParams()
   if (params) {
     if (params.keyword) sp.set('keyword', params.keyword)
@@ -123,13 +123,22 @@ export const notesAPI = {
     getTyped<Note>(`/notes/${id}`),
 
   create: (note: CreateNoteDto) =>
-    postTyped<Note>('/notes', note),
+    postTyped<Note>('/notes', note).then((created) => {
+      clearNotesCache()
+      return created
+    }),
 
   update: (id: string, note: UpdateNoteDto) =>
-    api.put<Note>(`/notes/${id}`, note).then(res => res as unknown as Note),
+    api.put<Note>(`/notes/${id}`, note).then((res) => {
+      clearNotesCache()
+      return res as unknown as Note
+    }),
 
   delete: (id: string) =>
-    api.delete(`/notes/${id}`).then(res => res as unknown as void),
+    api.delete(`/notes/${id}`).then((res) => {
+      clearNotesCache()
+      return res as unknown as void
+    }),
 
   getRecommendations: (currentNoteId?: string, limit: number = 5, context?: NoteFilterParams) => {
     const sp = new URLSearchParams()
@@ -156,7 +165,7 @@ export const notesAPI = {
   },
   // 带缓存与后台重验证
   getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
-    const key = buildNotesKey(params)
+    const key = buildNotesCacheKey(params)
     const now = Date.now()
     const mem = notesCache.get(key)
     const sid = (() => { try { return sessionStorage.getItem('lastSearchId') || undefined } catch { return undefined } })()

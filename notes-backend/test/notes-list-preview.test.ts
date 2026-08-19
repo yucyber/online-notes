@@ -47,6 +47,7 @@ test('NotesService.findAll selects note content for list preview fallback', asyn
     new NoteAccessService(),
     {} as any,
     {
+      getListRevision: async () => '0',
       getList: async (_userId: string, payload: Record<string, unknown>) => {
         cachePayload = payload
         return null

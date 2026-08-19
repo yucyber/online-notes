@@ -17,6 +17,7 @@ import {
 import { extractId, parseNotesPagination } from './notes-page-utils'
 import { buildNotesQueryParams } from './useNotesQuery'
 import { removeNoteById, toggleIdInSet } from './useNotesBulkActions'
+import { buildNotesCacheKey } from '@/lib/api/notes'
 
 export function useNotesPage() {
   const searchParams = useSearchParams()
@@ -262,7 +263,11 @@ export function useNotesPage() {
     const onRevalidated = (e: Event) => {
       try {
         const detail = (e as CustomEvent).detail || {}
-        const currentKey = `notes:${searchParams.toString()}`
+        const currentKey = buildNotesCacheKey({
+          ...buildNotesQueryParams(searchParams),
+          page,
+          size,
+        })
         if (detail.key === currentKey && detail.payload) {
           const items = Array.isArray(detail.payload.items) ? detail.payload.items : []
           setNotes(items)
@@ -293,7 +298,7 @@ export function useNotesPage() {
       document.removeEventListener('search:revalidated', onRevalidated)
       document.removeEventListener('search:fallback', onFallback)
     }
-  }, [router, searchParams])
+  }, [page, router, searchParams, size])
 
   const toggleSelectionMode = () => {
     setIsSelectionMode((prev) => !prev)
