@@ -5,9 +5,11 @@ import { pathToFileURL } from 'node:url'
 import YAML from 'yaml'
 
 const REGISTRY = 'docs/api-contract-drift.md'
-const CLIENT_FILE = 'notes-frontend/src/lib/api.ts'
+const CLIENT_DIR = 'notes-frontend/src/lib/api'
 const OPENAPI_FILE = 'notes-backend/openapi.yaml'
 const BACKEND_MODULES_DIR = 'notes-backend/src/modules'
+const FRONTEND_SRC_DIR = 'notes-frontend/src'
+const NEXT_ROUTES_DIR = 'notes-frontend/src/app/api'
 const ALLOWED_DECISIONS = new Set([
   'implement-now',
   'hide-client-entry',
@@ -23,6 +25,20 @@ const TYPED_HELPER_METHODS = new Map([
 const NEXT_AXIOS_RE = /\baxios\.(get|post|put|patch|delete)\s*\(\s*([`'"])(\/api\/[\s\S]*?)\2/g
 const NEXT_JSON_RE = /\bpostAiJson\s*\(\s*([`'"])(\/api\/[\s\S]*?)\1/g
 const NEXT_FETCH_RE = /\bfetch\s*\(\s*([`'"])(\/api\/[\s\S]*?)\1\s*(?:,\s*(\{[\s\S]*?\}))?\s*\)/g
+
+export function listFiles(dir, predicate) {
+  const files = []
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = join(dir, entry.name)
+    if (entry.isDirectory()) files.push(...listFiles(fullPath, predicate))
+    else if (entry.isFile() && predicate(fullPath)) files.push(fullPath)
+  }
+  return files
+}
+
+export function readSources(files) {
+  return files.map(file => ({ file, text: readFileSync(file, 'utf8') }))
+}
 
 function assertContract(condition, field) {
   if (!condition) throw new Error(`OpenAPI release gate: missing or invalid ${field}`)
@@ -130,24 +146,42 @@ function assertResolvableNextPath(path, file, text, index) {
   }
 }
 
-export function extractNextClientOperations(sources) {
+function collectNextClientOperations(sources, errors) {
   const result = new Map()
+  const addResolved = (method, path, file, text, index) => {
+    try {
+      assertResolvableNextPath(path, file, text, index)
+    } catch (error) {
+      if (!errors) throw error
+      errors.push(error)
+      return
+    }
+    addOperation(result, method, path, file, text, index, { local: true })
+  }
   for (const { file, text } of sources) {
     for (const match of text.matchAll(NEXT_AXIOS_RE)) {
-      assertResolvableNextPath(match[3], file, text, match.index)
-      addOperation(result, match[1], match[3], file, text, match.index, { local: true })
+      addResolved(match[1], match[3], file, text, match.index)
     }
     for (const match of text.matchAll(NEXT_JSON_RE)) {
-      assertResolvableNextPath(match[2], file, text, match.index)
-      addOperation(result, 'POST', match[2], file, text, match.index, { local: true })
+      addResolved('POST', match[2], file, text, match.index)
     }
     for (const match of text.matchAll(NEXT_FETCH_RE)) {
-      assertResolvableNextPath(match[2], file, text, match.index)
       const method = match[3]?.match(/method:\s*['"](GET|POST|PUT|PATCH|DELETE)['"]/i)?.[1] || 'GET'
-      addOperation(result, method, match[2], file, text, match.index, { local: true })
+      addResolved(method, match[2], file, text, match.index)
     }
   }
   return result
+}
+
+export function extractNextClientOperations(sources) {
+  return collectNextClientOperations(sources)
+}
+
+export function extractNextClientInventory(sources) {
+  const errors = []
+  // 单个动态调用仍然失败，但不能遮蔽同文件或其他文件中的可定位漂移。
+  const operations = collectNextClientOperations(sources, errors)
+  return { operations, errors }
 }
 
 function routePathFromFile(file) {
@@ -249,96 +283,58 @@ export function extractOpenApiOperations(document) {
   return result
 }
 
-function extractClientPaths() {
-  const text = readFileSync(CLIENT_FILE, 'utf8')
-  // Permissive matcher: allow ${...} inside template literals.
-  // Captures the quoted path, including template-literal interpolations.
-  const re = /api\s*\.\s*(?:get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*([`'"])((?:\\\1|(?!\1).)+?)\1/g
-  const paths = new Set()
-  for (const match of text.matchAll(re)) {
-    paths.add(normalizeApiPath(match[2]))
-  }
-  // Also count `// path: '/...'` markers as client-side surface.
-  // Used by entries that were intentionally short-circuited (e.g., assets/embeds
-  // that throw FeatureUnavailableError) but whose API surface still exists for
-  // contract-tracking purposes.
-  const markerRe = /\/\/\s*path:\s*['"`]([^'"`]+)['"`]/g
-  for (const match of text.matchAll(markerRe)) {
-    paths.add(normalizeApiPath(match[1]))
-  }
-  return paths
-}
-
-function listControllerFiles(dir) {
-  const entries = readdirSync(dir, { withFileTypes: true })
-  const files = []
-  for (const entry of entries) {
-    const fullPath = join(dir, entry.name)
-    if (entry.isDirectory()) {
-      files.push(...listControllerFiles(fullPath))
-    } else if (entry.isFile() && entry.name.endsWith('.controller.ts')) {
-      files.push(fullPath)
+export function calculateDrift({ client, backend, openapi, nextClient, nextRoutes, proxyTargets }) {
+  const drift = []
+  const layerOrder = [
+    'client-backend',
+    'backend-openapi',
+    'openapi-backend',
+    'next-client-route',
+    'next-proxy-backend',
+    'next-proxy-openapi',
+  ]
+  const addMissing = (from, to, layer) => {
+    for (const [operation, sources] of from) {
+      if (!to.has(operation)) drift.push({ operation, layer, source: sources[0] })
     }
   }
-  return files
-}
-
-function extractBackendPaths() {
-  const paths = new Set()
-  const controllerFiles = listControllerFiles(BACKEND_MODULES_DIR)
-  const controllerRe = /@Controller\((['"])(.*?)\1\)/g
-  const methodRe = /@(Get|Post|Put|Patch|Delete)\((?:(['"])(.*?)\2)?\)/g
-
-  for (const file of controllerFiles) {
-    const text = readFileSync(file, 'utf8')
-    const controllers = [...text.matchAll(controllerRe)]
-    for (let i = 0; i < controllers.length; i++) {
-      const prefix = controllers[i][2]
-      const start = controllers[i].index || 0
-      const end = i + 1 < controllers.length ? controllers[i + 1].index || text.length : text.length
-      const body = text.slice(start, end)
-
-      for (const match of body.matchAll(methodRe)) {
-        const route = match[3] || ''
-        const joined = [prefix, route].filter(Boolean).join('/')
-        paths.add(normalizeApiPath(`/api/${joined}`.replace(/\/+/g, '/')))
-      }
-    }
+  addMissing(client, backend, 'client-backend')
+  addMissing(backend, openapi, 'backend-openapi')
+  addMissing(openapi, backend, 'openapi-backend')
+  addMissing(nextClient, nextRoutes, 'next-client-route')
+  for (const [localOperation, targetOperation] of proxyTargets) {
+    const source = nextRoutes.get(localOperation)?.[0]
+    if (!backend.has(targetOperation)) drift.push({ operation: targetOperation, layer: 'next-proxy-backend', source })
+    if (!openapi.has(targetOperation)) drift.push({ operation: targetOperation, layer: 'next-proxy-openapi', source })
   }
-
-  return paths
+  return drift.sort((a, b) => {
+    const layerDifference = layerOrder.indexOf(a.layer) - layerOrder.indexOf(b.layer)
+    return layerDifference || a.operation.localeCompare(b.operation)
+  })
 }
 
-function extractOpenApiPaths() {
-  const text = readFileSync(OPENAPI_FILE, 'utf8')
-  // Tolerate optional quotes and 2/4-space indentation.
-  const re = /^\s*(['"]?)(\/api\/[^:'"\s]+)\1\s*:\s*$/gm
-  const paths = new Set()
-  for (const match of text.matchAll(re)) {
-    paths.add(normalizeBraces(match[2]))
-  }
-  return paths
-}
-
-function parseRegistry() {
-  const text = readFileSync(REGISTRY, 'utf8')
-  const tableStart = text.indexOf('| 路径 |')
-  const tableText = tableStart === -1 ? text : text.slice(tableStart)
-  const rows = tableText.split('\n').filter(line => line.startsWith('| `/api/'))
+export function parseRegistry(text = readFileSync(REGISTRY, 'utf8')) {
+  const section = '## Active Drift Registry'
+  const start = text.indexOf(section)
+  if (start === -1) return new Map()
+  const next = text.indexOf('\n## ', start + section.length)
+  const body = text.slice(start, next === -1 ? text.length : next)
+  const rows = body.split('\n').filter(line => line.startsWith('| `'))
   const map = new Map()
   for (const row of rows) {
     const cells = row.split('|').map(c => c.trim())
-    // cells: ['', path, consumer, backend, openapi, decision, verification, '']
-    const path = (cells[1] || '').replace(/`/g, '')
+    // cells: ['', operation, consumer, backend, openapi, decision, verification, '']
+    const operation = (cells[1] || '').replace(/`/g, '')
+    const match = /^(GET|POST|PUT|PATCH|DELETE)\s+(\/api(?:\/.*)?)$/.exec(operation)
+    if (!match) throw new Error(`Active drift registry requires an HTTP method: ${operation}`)
     const decision = (cells[5] || '').replace(/`/g, '')
     const verification = cells[6] || ''
-    map.set(path, { decision, verification })
+    map.set(normalizeOperation(match[1], match[2]), { decision, verification })
   }
   return map
 }
 
-function parseApprovedNonContractPaths() {
-  const text = readFileSync(REGISTRY, 'utf8')
+export function parseApprovedNonContractPaths(text = readFileSync(REGISTRY, 'utf8')) {
   const sections = ['## Planned APIs', '## Discarded APIs']
   const paths = new Set()
 
@@ -346,9 +342,7 @@ function parseApprovedNonContractPaths() {
     const start = text.indexOf(section)
     if (start === -1) continue
     const next = text.indexOf('\n## ', start + section.length)
-    const table = text.indexOf('\n| 路径 |', start + section.length)
-    const candidates = [next, table].filter(index => index !== -1)
-    const end = candidates.length > 0 ? Math.min(...candidates) : text.length
+    const end = next === -1 ? text.length : next
     const body = text.slice(start, end)
     const rows = body.split('\n').filter(line => line.startsWith('| `/api/'))
     for (const row of rows) {
@@ -362,50 +356,62 @@ function parseApprovedNonContractPaths() {
 }
 
 function main() {
+  const clientFiles = listFiles(CLIENT_DIR, file => file.endsWith('.ts'))
+  const backendFiles = listFiles(BACKEND_MODULES_DIR, file => file.endsWith('.controller.ts'))
+  const frontendFiles = listFiles(FRONTEND_SRC_DIR, file => /\.tsx?$/.test(file))
+  const nextRouteFiles = listFiles(NEXT_ROUTES_DIR, file => file.replace(/\\/g, '/').endsWith('/route.ts'))
   const openApiDocument = YAML.parse(readFileSync(OPENAPI_FILE, 'utf8'))
   validateReleaseGateOperations(openApiDocument)
-  const clientPaths = extractClientPaths()
-  const backendPaths = extractBackendPaths()
-  const openApiPaths = extractOpenApiPaths()
-  const implementedPaths = new Set([...clientPaths, ...backendPaths])
+  const client = extractClientOperations(readSources(clientFiles))
+  const backend = extractBackendOperations(readSources(backendFiles))
+  const openapi = extractOpenApiOperations(openApiDocument)
+  const nextClientInventory = extractNextClientInventory(readSources(frontendFiles))
+  const nextClient = nextClientInventory.operations
+  const { local: nextRoutes, proxyTargets } = extractNextRouteOperations(readSources(nextRouteFiles))
+  const drift = calculateDrift({ client, backend, openapi, nextClient, nextRoutes, proxyTargets })
 
-  const drift = [
-    ...new Set([...implementedPaths, ...openApiPaths]),
-  ]
-    .filter(p => implementedPaths.has(p) !== openApiPaths.has(p))
-    .sort()
+  console.log(`client: ${clientFiles.length} files, ${client.size} operations`)
+  console.log(`backend: ${backendFiles.length} files, ${backend.size} operations`)
+  console.log(`openapi: 1 files, ${openapi.size} operations`)
+  console.log(`next-client: ${frontendFiles.length} files, ${nextClient.size} operations`)
+  console.log(`next-routes: ${nextRouteFiles.length} files, ${nextRoutes.size} operations`)
+  console.log(`proxy-targets: ${nextRouteFiles.length} files, ${proxyTargets.size} operations`)
 
   const registry = parseRegistry()
   const approvedNonContractPaths = parseApprovedNonContractPaths()
-  let failures = 0
+  const openApiPaths = new Set([...openapi.keys()].map(operation => operation.split(' ')[1]))
+  let failures = nextClientInventory.errors.length
 
-  for (const [path, entry] of registry.entries()) {
+  for (const error of nextClientInventory.errors) console.error(error.message)
+
+  for (const [operation, entry] of registry.entries()) {
     if (!ALLOWED_DECISIONS.has(entry.decision)) {
-      console.error(`Invalid decision for ${path}: ${entry.decision}`)
+      console.error(`Invalid decision for ${operation}: ${entry.decision}`)
       failures++
     }
     if (!entry.verification || entry.verification.length < 8) {
-      console.error(`Missing verification for ${path}`)
+      console.error(`Missing verification for ${operation}`)
       failures++
     }
   }
 
-  for (const path of drift) {
-    if (!registry.has(path) && !approvedNonContractPaths.has(path)) {
-      console.error(`Unregistered API contract drift: ${path}`)
+  for (const item of drift) {
+    if (!registry.has(item.operation)) {
+      const location = item.source ? ` (${item.source.file}:${item.source.line})` : ''
+      console.error(`${item.layer}: ${item.operation}${location}`)
       failures++
     }
   }
 
-  for (const path of registry.keys()) {
-    if (!drift.includes(path)) {
-      console.error(`Stale API contract drift registration: ${path}`)
+  for (const operation of registry.keys()) {
+    if (!drift.some(item => item.operation === operation)) {
+      console.error(`Stale API contract drift registration: ${operation}`)
       failures++
     }
   }
 
   for (const path of approvedNonContractPaths) {
-    if (registry.has(path)) {
+    if ([...registry.keys()].some(operation => operation.endsWith(` ${path}`))) {
       console.error(`Approved non-contract path is still in drift registry: ${path}`)
       failures++
     }
@@ -414,8 +420,6 @@ function main() {
       failures++
     }
   }
-
-  // Zero active drift rows is valid after planned/discarded cleanup.
 
   if (failures > 0) {
     process.exit(1)

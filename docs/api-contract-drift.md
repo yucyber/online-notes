@@ -1,6 +1,6 @@
 # API 契约漂移登记表
 
-记录前端 `notes-frontend/src/lib/api.ts` 实际调用、后端 NestJS controllers、`notes-backend/openapi.yaml` 三者之间的不一致。每条决策落在以下集合之一：
+记录前端 `notes-frontend/src/lib/api/**/*.ts` 实际调用、后端 NestJS controllers、`notes-backend/openapi.yaml` 三者之间的不一致。每条决策落在以下集合之一：
 
 - `implement-now`：本阶段必须补最小实现。
 - `hide-client-entry`：前端入口隐藏或返回明确「暂不可用」提示。
@@ -36,5 +36,5 @@
 
 当前无活跃 drift 行。新增不一致时在下表登记，并保证决策与验证方式完整。
 
-| 路径 | 消费者 | 后端状态 | OpenAPI 状态 | 决策 | 验证方式 |
+| 操作 | 消费者 | 后端状态 | OpenAPI 状态 | 决策 | 验证方式 |
 | --- | --- | --- | --- | --- | --- |

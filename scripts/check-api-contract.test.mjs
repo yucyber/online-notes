@@ -1,14 +1,118 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import {
+  calculateDrift,
   extractBackendOperations,
   extractClientOperations,
   extractNextClientOperations,
+  extractNextClientInventory,
   extractNextRouteOperations,
   extractOpenApiOperations,
+  listFiles,
   normalizeOperation,
+  parseApprovedNonContractPaths,
+  parseRegistry,
+  readSources,
   validateReleaseGateOperations,
 } from './check-api-contract.mjs'
+
+test('calculates contract drift by layer', () => {
+  const drift = calculateDrift({
+    client: new Map([['PUT /api/notes/:id', [{ file: 'notes.ts', line: 1 }]]]),
+    backend: new Map([
+      ['PATCH /api/notes/:id', [{ file: 'notes.controller.ts', line: 1 }]],
+      ['POST /api/ai/summary', [{ file: 'ai.controller.ts', line: 1 }]],
+    ]),
+    openapi: new Map([['POST /api/ai/summary', [{ file: 'openapi.yaml', line: 1 }]]]),
+    nextClient: new Map([['POST /api/auth/logout', [{ file: 'auth.ts', line: 1 }]]]),
+    nextRoutes: new Map(),
+    proxyTargets: new Map([['POST /api/ai/summary', 'POST /api/ai/summary']]),
+  })
+  assert.deepEqual(drift.map(item => [item.layer, item.operation]), [
+    ['client-backend', 'PUT /api/notes/:id'],
+    ['backend-openapi', 'PATCH /api/notes/:id'],
+    ['next-client-route', 'POST /api/auth/logout'],
+  ])
+})
+
+test('parses active drift registry by operation', () => {
+  const registry = parseRegistry(`
+## Active Drift Registry
+
+| 操作 | 消费者 | 后端状态 | OpenAPI 状态 | 决策 | 验证方式 |
+| --- | --- | --- | --- | --- | --- |
+| \`PATCH /api/users/me\` | settings | 已实现 | 缺失 | \`document-openapi\` | contract test |
+`)
+  assert.deepEqual([...registry.keys()], ['PATCH /api/users/me'])
+
+  assert.throws(() => parseRegistry(`
+## Active Drift Registry
+
+| 操作 | 消费者 | 后端状态 | OpenAPI 状态 | 决策 | 验证方式 |
+| --- | --- | --- | --- | --- | --- |
+| \`/api/users/me\` | settings | 已实现 | 缺失 | \`document-openapi\` | contract test |
+`), /Active drift registry requires an HTTP method: \/api\/users\/me/)
+})
+
+test('keeps planned and discarded registry entries as paths', () => {
+  const paths = parseApprovedNonContractPaths(`
+## Planned APIs
+
+| Path | Reason | Re-entry condition |
+| --- | --- | --- |
+| \`/api/v1/drafts/sync\` | planned | implementation |
+
+## Discarded APIs
+
+| Path | Reason | Replacement |
+| --- | --- | --- |
+| \`/api/v1/network/status\` | discarded | health |
+
+## Active Drift Registry
+`)
+  assert.deepEqual([...paths].sort(), [
+    '/api/v1/drafts/sync',
+    '/api/v1/network/status',
+  ])
+})
+
+test('reads matching source files recursively', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'api-contract-'))
+  try {
+    mkdirSync(join(directory, 'nested'))
+    writeFileSync(join(directory, 'root.ts'), 'root')
+    writeFileSync(join(directory, 'nested', 'child.ts'), 'child')
+    writeFileSync(join(directory, 'nested', 'ignored.tsx'), 'ignored')
+
+    const files = listFiles(directory, file => file.endsWith('.ts'))
+    assert.deepEqual(files.map(file => basename(file)).sort(), ['child.ts', 'root.ts'])
+    assert.deepEqual(
+      readSources(files).map(source => [basename(source.file), source.text]).sort(),
+      [['child.ts', 'child'], ['root.ts', 'root']],
+    )
+  } finally {
+    rmSync(directory, { recursive: true, force: true })
+  }
+})
+
+test('continues Next client inventory after unresolved sources', () => {
+  const inventory = extractNextClientInventory([{
+    file: 'mixed.ts',
+    text: [
+      'fetch(`/api/${kind}/${id}`)',
+      'fetch(`/api/${scope}/${slug}`)',
+      "fetch('/api/auth/logout', { method: 'POST' })",
+    ].join('\n'),
+  }])
+  assert.deepEqual([...inventory.operations.keys()], ['POST /api/auth/logout'])
+  assert.deepEqual(inventory.errors.map(error => error.message), [
+    'Unresolved first-party Next API call at mixed.ts:1',
+    'Unresolved first-party Next API call at mixed.ts:2',
+  ])
+})
 
 function createValidDocument() {
   return {
