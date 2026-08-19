@@ -14,6 +14,12 @@ const ALLOWED_DECISIONS = new Set([
   'mark-planned-or-remove',
   'document-openapi',
 ])
+const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+const TYPED_HELPER_METHODS = new Map([
+  ['getTyped', 'GET'],
+  ['postTyped', 'POST'],
+  ['patchTyped', 'PATCH'],
+])
 
 function assertContract(condition, field) {
   if (!condition) throw new Error(`OpenAPI release gate: missing or invalid ${field}`)
@@ -78,6 +84,72 @@ function normalizeApiPath(p) {
   if (path.startsWith('/api/')) return path
   if (path.startsWith('/')) return '/api' + path
   return path
+}
+
+export function normalizeOperation(method, rawPath, { local = false } = {}) {
+  const verb = String(method).toUpperCase()
+  if (!HTTP_METHODS.has(verb)) throw new Error(`Unsupported HTTP method: ${method}`)
+  let path = String(rawPath).split('?')[0]
+    .replace(/\$\{[^}]+\}|\{[^}]+\}|\[[^\]]+\]|:[^/]+/g, ':id')
+    .replace(/\/+/g, '/')
+  if (!path.startsWith('/')) path = `/${path}`
+  if (!local && !path.startsWith('/api/')) path = `/api${path}`
+  return `${verb} ${path}`
+}
+
+function addOperation(result, method, path, file, text, index, options) {
+  const key = normalizeOperation(method, path, options)
+  const source = { file, line: text.slice(0, index).split('\n').length }
+  result.set(key, [...(result.get(key) || []), source])
+}
+
+export function extractClientOperations(sources) {
+  const result = new Map()
+  const direct = /\bapi\s*\.\s*(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*([`'"])([\s\S]*?)\2/g
+  const typed = /\b(getTyped|postTyped|patchTyped)\s*(?:<[^>]+>)?\s*\(\s*([`'"])([\s\S]*?)\2/g
+  // 只剥离可确认的 API_URL 前缀；动态 url 无法安全归一化，避免制造误报。
+  const backendFetch = /fetch\(\s*`\$\{API_URL\}([^`]*)`\s*,\s*\{[\s\S]*?method:\s*['"](GET|POST|PUT|PATCH|DELETE)['"]/g
+  for (const { file, text } of sources) {
+    for (const match of text.matchAll(direct)) addOperation(result, match[1], match[3], file, text, match.index)
+    for (const match of text.matchAll(typed)) addOperation(result, TYPED_HELPER_METHODS.get(match[1]), match[3], file, text, match.index)
+    for (const match of text.matchAll(backendFetch)) addOperation(result, match[2], match[1], file, text, match.index)
+  }
+  return result
+}
+
+export function extractBackendOperations(sources) {
+  const result = new Map()
+  const controllerRe = /@Controller\((['"])(.*?)\1\)/g
+  const methodRe = /@(Get|Post|Put|Patch|Delete)\((?:(['"])(.*?)\2)?\)/g
+
+  for (const { file, text } of sources) {
+    const controllers = [...text.matchAll(controllerRe)]
+    for (let i = 0; i < controllers.length; i++) {
+      const prefix = controllers[i][2]
+      const start = controllers[i].index || 0
+      const end = i + 1 < controllers.length ? controllers[i + 1].index || text.length : text.length
+      const body = text.slice(start, end)
+
+      // 按 Controller 区间匹配，避免相邻 Controller 的 decorator 串入当前前缀。
+      for (const match of body.matchAll(methodRe)) {
+        const route = match[3] || ''
+        const joined = [prefix, route].filter(Boolean).join('/')
+        addOperation(result, match[1], `/api/${joined}`.replace(/\/+/g, '/'), file, text, start + match.index)
+      }
+    }
+  }
+
+  return result
+}
+
+export function extractOpenApiOperations(document) {
+  const result = new Map()
+  for (const [path, pathItem] of Object.entries(document.paths || {})) {
+    for (const method of HTTP_METHODS) {
+      if (pathItem?.[method.toLowerCase()]) addOperation(result, method, path, 'notes-backend/openapi.yaml', '', 0)
+    }
+  }
+  return result
 }
 
 function extractClientPaths() {

@@ -1,6 +1,12 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
-import { validateReleaseGateOperations } from './check-api-contract.mjs'
+import {
+  extractBackendOperations,
+  extractClientOperations,
+  extractOpenApiOperations,
+  normalizeOperation,
+  validateReleaseGateOperations,
+} from './check-api-contract.mjs'
 
 function createValidDocument() {
   return {
@@ -102,4 +108,33 @@ test('rejects release-gate operation drift', () => {
     mutate(document)
     assert.throws(() => validateReleaseGateOperations(document), new RegExp(message))
   }
+})
+
+test('normalizes parameters without collapsing methods', () => {
+  assert.equal(normalizeOperation('patch', '/notes/${id}?draft=1'), 'PATCH /api/notes/:id')
+  assert.equal(normalizeOperation('put', '/api/notes/{noteId}'), 'PUT /api/notes/:id')
+  assert.notEqual(normalizeOperation('patch', '/notes/:id'), normalizeOperation('put', '/notes/:id'))
+})
+
+test('extracts nested domain API operations', () => {
+  const operations = extractClientOperations([
+    { file: 'api/notes.ts', text: "api.put<Note>(`/notes/${id}`, body)" },
+    { file: 'api/users.ts', text: "patchTyped<User>('/users/me', dto)" },
+    { file: 'api/server-notes.ts', text: "fetch(`${API_URL}/notes/${id}`, { method: 'GET' })" },
+    { file: 'api/client.ts', text: "getTyped(url); fetch(RUM_ENDPOINT, { method: 'POST' })" },
+  ])
+  assert.deepEqual([...operations.keys()].sort(), [
+    'GET /api/notes/:id', 'PATCH /api/users/me', 'PUT /api/notes/:id',
+  ])
+})
+
+test('aligns controller and OpenAPI parameters while preserving methods', () => {
+  const backend = extractBackendOperations([{
+    file: 'notes.controller.ts',
+    text: "@Controller('notes')\nclass Notes {\n@Patch(':id') update() {}\n}",
+  }])
+  const openapi = extractOpenApiOperations({ paths: { '/api/notes/{id}': { patch: {}, put: {} } } })
+  assert.ok(backend.has('PATCH /api/notes/:id'))
+  assert.ok(openapi.has('PATCH /api/notes/:id'))
+  assert.ok(openapi.has('PUT /api/notes/:id'))
 })
