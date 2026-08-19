@@ -160,6 +160,45 @@ test('expands AI allowlists and proxy targets', () => {
   assert.equal(routes.proxyTargets.get('POST /api/ai/pet'), 'POST /api/ai/pet')
 })
 
+test('derives AI proxy targets from route mappings', () => {
+  const routes = extractNextRouteOperations([{
+    file: 'src/app/api/ai/[...path]/route.ts',
+    text: [
+      "const STREAM_PATHS = new Set(['writer', 'pet'])",
+      "const JSON_PATHS = new Set(['mindmap'])",
+      "return { path: name === 'writer' ? '/ai/writer/v2' : `/ai/${name}`, mode: 'stream' }",
+      "return { path: `/ai/${name}`, mode: 'json' }",
+      'export async function POST() {}',
+    ].join('\n'),
+  }])
+  assert.equal(routes.proxyTargets.get('POST /api/ai/writer'), 'POST /api/ai/writer/v2')
+  assert.equal(routes.proxyTargets.get('POST /api/ai/pet'), 'POST /api/ai/pet')
+  assert.equal(routes.proxyTargets.get('POST /api/ai/mindmap'), 'POST /api/ai/mindmap')
+})
+
+test('rejects unresolved AI proxy mappings', () => {
+  const file = 'src/app/api/ai/[...path]/route.ts'
+  const route = (streamMapping, jsonMapping = 'return { path: `/ai/${name}`, mode: \'json\' }') => [
+    "const STREAM_PATHS = new Set(['writer', 'pet'])",
+    "const JSON_PATHS = new Set(['mindmap'])",
+    streamMapping,
+    jsonMapping,
+    'export async function POST() {}',
+  ].join('\n')
+  const cases = [
+    route('', 'return { path: `/ai/${name}`, mode: \'json\' }'),
+    route("return { path: name === 'writer' ? '/ai/writer/stream' : `/ai/${target}`, mode: 'stream' }"),
+    route("return { path: name === 'writer' ? '/ai/writer/stream' : `/ai/${name}`, mode: 'stream' }", "return { path: `/ai/${target}`, mode: 'json' }"),
+  ]
+
+  for (const text of cases) {
+    assert.throws(
+      () => extractNextRouteOperations([{ file, text }]),
+      /Unresolved AI route mapping.*\[\.\.\.path\]\/route\.ts/,
+    )
+  }
+})
+
 test('rejects unresolved first-party Next calls', () => {
   assert.throws(
     () => extractNextClientOperations([{ file: 'x.ts', text: 'fetch(`/api/${kind}/${id}`)' }]),

@@ -155,9 +155,9 @@ function routePathFromFile(file) {
   return `/api/${relative}`
 }
 
-function unresolvedAiRoute(file, text, index) {
+function unresolvedAiRoute(file, text, index, subject = 'allowlist') {
   const line = text.slice(0, index).split('\n').length
-  throw new Error(`Unresolved AI route allowlist at ${file}:${line}`)
+  throw new Error(`Unresolved AI route ${subject} at ${file}:${line}`)
 }
 
 function extractAiAllowlist(text, file, name) {
@@ -171,6 +171,15 @@ function extractAiAllowlist(text, file, name) {
   return values
 }
 
+function extractAiProxyMappings(text, file) {
+  const stream = /path\s*:\s*name\s*===\s*(['"])writer\1\s*\?\s*(['"])(\/ai\/[^'"]+)\2\s*:\s*`(\/ai\/\$\{name\})`/.exec(text)
+  const json = /return\s*\{\s*path\s*:\s*`(\/ai\/\$\{name\})`\s*,\s*mode\s*:\s*(['"])json\2\s*\}/.exec(text)
+  if (!stream || !json || stream[4] !== json[1]) {
+    unresolvedAiRoute(file, text, 0, 'mapping')
+  }
+  return { writer: stream[3], generic: stream[4] }
+}
+
 export function extractNextRouteOperations(sources) {
   const local = new Map()
   const proxyTargets = new Map()
@@ -180,10 +189,19 @@ export function extractNextRouteOperations(sources) {
       if (!/export\s+(?:async\s+)?function\s+POST\s*\(/.test(text)) continue
       const streamPaths = extractAiAllowlist(text, file, 'STREAM_PATHS')
       const jsonPaths = extractAiAllowlist(text, file, 'JSON_PATHS')
-      for (const name of [...streamPaths, ...jsonPaths]) {
+      const mappings = extractAiProxyMappings(text, file)
+      for (const name of streamPaths) {
         const operation = normalizeOperation('POST', `/api/ai/${name}`, { local: true })
         addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
-        proxyTargets.set(operation, normalizeOperation('POST', name === 'writer' ? '/api/ai/writer/stream' : `/api/ai/${name}`, { local: true }))
+        const target = name === 'writer' ? mappings.writer : mappings.generic.replace('${name}', name)
+        proxyTargets.set(operation, normalizeOperation('POST', target))
+      }
+      for (const name of jsonPaths) {
+        const operation = normalizeOperation('POST', `/api/ai/${name}`, { local: true })
+        addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
+        if (!proxyTargets.has(operation)) {
+          proxyTargets.set(operation, normalizeOperation('POST', mappings.generic.replace('${name}', name)))
+        }
       }
       continue
     }
