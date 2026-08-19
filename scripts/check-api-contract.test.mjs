@@ -38,6 +38,43 @@ test('calculates contract drift by layer', () => {
   ])
 })
 
+test('calculates reverse and proxy contract drift in stable order', () => {
+  const proxySource = { file: 'route.ts', line: 9 }
+  const drift = calculateDrift({
+    client: new Map(),
+    backend: new Map(),
+    openapi: new Map([
+      ['DELETE /api/z-orphan', [{ file: 'openapi-z.yaml', line: 3 }]],
+      ['DELETE /api/a-orphan', [{ file: 'openapi-a.yaml', line: 2 }]],
+    ]),
+    nextClient: new Map(),
+    nextRoutes: new Map([['POST /api/ai/local', [proxySource]]]),
+    proxyTargets: new Map([['POST /api/ai/local', 'POST /api/ai/missing']]),
+  })
+  assert.deepEqual(drift, [
+    {
+      operation: 'DELETE /api/a-orphan',
+      layer: 'openapi-backend',
+      source: { file: 'openapi-a.yaml', line: 2 },
+    },
+    {
+      operation: 'DELETE /api/z-orphan',
+      layer: 'openapi-backend',
+      source: { file: 'openapi-z.yaml', line: 3 },
+    },
+    {
+      operation: 'POST /api/ai/missing',
+      layer: 'next-proxy-backend',
+      source: proxySource,
+    },
+    {
+      operation: 'POST /api/ai/missing',
+      layer: 'next-proxy-openapi',
+      source: proxySource,
+    },
+  ])
+})
+
 test('parses active drift registry by operation', () => {
   const registry = parseRegistry(`
 ## Active Drift Registry
