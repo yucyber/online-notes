@@ -3,6 +3,8 @@ import assert from 'node:assert/strict'
 import {
   extractBackendOperations,
   extractClientOperations,
+  extractNextClientOperations,
+  extractNextRouteOperations,
   extractOpenApiOperations,
   normalizeOperation,
   validateReleaseGateOperations,
@@ -127,6 +129,42 @@ test('extracts nested domain API operations', () => {
   assert.deepEqual([...operations.keys()].sort(), [
     'GET /api/notes/:id', 'PATCH /api/users/me', 'PUT /api/notes/:id',
   ])
+})
+
+test('extracts explicit Next calls and filesystem routes', () => {
+  const client = extractNextClientOperations([
+    { file: 'auth.ts', text: "fetch('/api/auth/logout', { method: 'POST' })" },
+    { file: 'page.tsx', text: "axios.post('/api/ai/summary', body)" },
+  ])
+  const routes = extractNextRouteOperations([{
+    file: 'src/app/api/auth/logout/route.ts', text: 'export async function POST() {}',
+  }])
+  assert.ok(client.has('POST /api/auth/logout'))
+  assert.ok(routes.local.has('POST /api/auth/logout'))
+  assert.ok(client.has('POST /api/ai/summary'))
+})
+
+test('expands AI allowlists and proxy targets', () => {
+  const routes = extractNextRouteOperations([{
+    file: 'src/app/api/ai/[...path]/route.ts',
+    text: [
+      "const STREAM_PATHS = new Set(['writer', 'pet'])",
+      "const JSON_PATHS = new Set(['mindmap', 'mermaid', 'summary'])",
+      "path: name === 'writer' ? '/ai/writer/stream' : `/ai/${name}`",
+      "return { path: `/ai/${name}`, mode: 'json' }",
+      'export async function POST() {}',
+    ].join('\n'),
+  }])
+  assert.equal(routes.local.size, 5)
+  assert.equal(routes.proxyTargets.get('POST /api/ai/writer'), 'POST /api/ai/writer/stream')
+  assert.equal(routes.proxyTargets.get('POST /api/ai/pet'), 'POST /api/ai/pet')
+})
+
+test('rejects unresolved first-party Next calls', () => {
+  assert.throws(
+    () => extractNextClientOperations([{ file: 'x.ts', text: 'fetch(`/api/${kind}/${id}`)' }]),
+    /Unresolved first-party Next API call.*x\.ts/,
+  )
 })
 
 test('aligns controller and OpenAPI parameters while preserving methods', () => {

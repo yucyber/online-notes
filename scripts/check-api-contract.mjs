@@ -20,6 +20,9 @@ const TYPED_HELPER_METHODS = new Map([
   ['postTyped', 'POST'],
   ['patchTyped', 'PATCH'],
 ])
+const NEXT_AXIOS_RE = /\baxios\.(get|post|put|patch|delete)\s*\(\s*([`'"])(\/api\/[\s\S]*?)\2/g
+const NEXT_JSON_RE = /\bpostAiJson\s*\(\s*([`'"])(\/api\/[\s\S]*?)\1/g
+const NEXT_FETCH_RE = /\bfetch\s*\(\s*([`'"])(\/api\/[\s\S]*?)\1\s*(?:,\s*(\{[\s\S]*?\}))?\s*\)/g
 
 function assertContract(condition, field) {
   if (!condition) throw new Error(`OpenAPI release gate: missing or invalid ${field}`)
@@ -115,6 +118,82 @@ export function extractClientOperations(sources) {
     for (const match of text.matchAll(backendFetch)) addOperation(result, match[2], match[1], file, text, match.index)
   }
   return result
+}
+
+function assertResolvableNextPath(path, file, text, index) {
+  const interpolations = String(path).match(/\$\{[^}]+\}/g) || []
+  const isSingleDynamicSegment = interpolations.length === 1
+    && String(path).split('?')[0].split('/').includes(interpolations[0])
+  if (interpolations.length > 0 && !isSingleDynamicSegment) {
+    const line = text.slice(0, index).split('\n').length
+    throw new Error(`Unresolved first-party Next API call at ${file}:${line}`)
+  }
+}
+
+export function extractNextClientOperations(sources) {
+  const result = new Map()
+  for (const { file, text } of sources) {
+    for (const match of text.matchAll(NEXT_AXIOS_RE)) {
+      assertResolvableNextPath(match[3], file, text, match.index)
+      addOperation(result, match[1], match[3], file, text, match.index, { local: true })
+    }
+    for (const match of text.matchAll(NEXT_JSON_RE)) {
+      assertResolvableNextPath(match[2], file, text, match.index)
+      addOperation(result, 'POST', match[2], file, text, match.index, { local: true })
+    }
+    for (const match of text.matchAll(NEXT_FETCH_RE)) {
+      assertResolvableNextPath(match[2], file, text, match.index)
+      const method = match[3]?.match(/method:\s*['"](GET|POST|PUT|PATCH|DELETE)['"]/i)?.[1] || 'GET'
+      addOperation(result, method, match[2], file, text, match.index, { local: true })
+    }
+  }
+  return result
+}
+
+function routePathFromFile(file) {
+  const relative = file.replace(/\\/g, '/').split('/app/api/')[1].replace(/\/route\.ts$/, '')
+  return `/api/${relative}`
+}
+
+function unresolvedAiRoute(file, text, index) {
+  const line = text.slice(0, index).split('\n').length
+  throw new Error(`Unresolved AI route allowlist at ${file}:${line}`)
+}
+
+function extractAiAllowlist(text, file, name) {
+  const declaration = new RegExp(`\\bconst\\s+${name}\\s*=\\s*new\\s+Set\\s*\\(\\s*\\[([\\s\\S]*?)\\]\\s*\\)`).exec(text)
+  if (!declaration) unresolvedAiRoute(file, text, 0)
+  const entries = declaration[1]
+  const values = [...entries.matchAll(/(['"])([^'"]*)\1/g)].map(match => match[2])
+  if (values.length === 0 || entries.replace(/(['"])([^'"]*)\1/g, '').replace(/[\s,]/g, '')) {
+    unresolvedAiRoute(file, text, declaration.index)
+  }
+  return values
+}
+
+export function extractNextRouteOperations(sources) {
+  const local = new Map()
+  const proxyTargets = new Map()
+  for (const { file, text } of sources) {
+    if (!file.replace(/\\/g, '/').includes('/app/api/') || !file.endsWith('route.ts')) continue
+    if (file.replace(/\\/g, '/').endsWith('/app/api/ai/[...path]/route.ts')) {
+      if (!/export\s+(?:async\s+)?function\s+POST\s*\(/.test(text)) continue
+      const streamPaths = extractAiAllowlist(text, file, 'STREAM_PATHS')
+      const jsonPaths = extractAiAllowlist(text, file, 'JSON_PATHS')
+      for (const name of [...streamPaths, ...jsonPaths]) {
+        const operation = normalizeOperation('POST', `/api/ai/${name}`, { local: true })
+        addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
+        proxyTargets.set(operation, normalizeOperation('POST', name === 'writer' ? '/api/ai/writer/stream' : `/api/ai/${name}`, { local: true }))
+      }
+      continue
+    }
+    const path = routePathFromFile(file)
+    const methods = /export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\s*\(/g
+    for (const match of text.matchAll(methods)) {
+      addOperation(local, match[1], path, file, text, match.index, { local: true })
+    }
+  }
+  return { local, proxyTargets }
 }
 
 export function extractBackendOperations(sources) {
