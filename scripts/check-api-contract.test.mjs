@@ -113,6 +113,7 @@ test('rejects release-gate operation drift', () => {
 test('normalizes parameters without collapsing methods', () => {
   assert.equal(normalizeOperation('patch', '/notes/${id}?draft=1'), 'PATCH /api/notes/:id')
   assert.equal(normalizeOperation('put', '/api/notes/{noteId}'), 'PUT /api/notes/:id')
+  assert.equal(normalizeOperation('get', '/api'), 'GET /api')
   assert.notEqual(normalizeOperation('patch', '/notes/:id'), normalizeOperation('put', '/notes/:id'))
 })
 

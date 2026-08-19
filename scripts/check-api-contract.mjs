@@ -93,7 +93,7 @@ export function normalizeOperation(method, rawPath, { local = false } = {}) {
     .replace(/\$\{[^}]+\}|\{[^}]+\}|\[[^\]]+\]|:[^/]+/g, ':id')
     .replace(/\/+/g, '/')
   if (!path.startsWith('/')) path = `/${path}`
-  if (!local && !path.startsWith('/api/')) path = `/api${path}`
+  if (!local && path !== '/api' && !path.startsWith('/api/')) path = `/api${path}`
   return `${verb} ${path}`
 }
 
