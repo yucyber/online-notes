@@ -1,5 +1,7 @@
 # 笔记单分类与接口收口设计
 
+> 全量接口复核见 [2026-08-19-api-surface-audit.md](./2026-08-19-api-surface-audit.md)。该审计覆盖 80 个 NestJS HTTP operation、Next AI 代理、WebSocket、OpenAPI、DTO、schema、前端调用方与测试缺口；实施时以其中的 67 个保留 operation 清单为准。
+
 ## 背景
 
 笔记当前同时保存 `categoryId` 和 `categoryIds`，编辑器也同时提供“分类”和“附属分类”。这使同一个分类概念拥有两套字段、保存路径、计数逻辑和展示兼容分支。项目尚未上线，不需要迁移或兼容旧数据，因此直接收口为单分类模型。
@@ -62,7 +64,7 @@ categoryId?: string | null
 
 ### 笔记接口
 
-- 更新笔记只保留 `PATCH /notes/:id`；删除实现重复且语义不符的 `PUT /notes/:id`，前端同步改用 PATCH。保留现有 ETag/If-Match 条件更新。
+- 更新笔记只保留 `PATCH /notes/:id`；删除实现重复且语义不符的 `PUT /notes/:id`，前端同步改用 PATCH。客户端从不发送 ETag 条件请求，因此一并删除 `ETag/If-Match/If-None-Match` 分支。
 - 笔记列表分页只接受 `page` 与 `size`。删除列表接口中的 `limit` 别名；推荐接口使用独立 DTO，并继续用 `limit` 表示推荐数量。
 - 删除语义搜索中没有被 Service 消费的 `categoriesMode`。
 - 删除无调用方的 `GET /categories/:id`、`GET /tags/:id` 和 `POST /notes/:id/acl`。Category/Tag Service 的内部查询方法不因 Controller 路由删除而删除。
@@ -91,6 +93,20 @@ categoryId?: string | null
 - 删除没有引用的 `RegisterData`、`ApiResponse`、`PaginationParams`、`PaginatedResponse` 和 `RoomTicketResponseDto`。
 - 登出改为通过配置了 backend baseURL 的 API client 调用 `POST /auth/logout`，成功或失败后都清理本地用户信息；不再请求不存在的 Next.js `/api/auth/logout` 路由。
 - body 中不再接受与 `X-Request-ID` 重复的 requestId；审计关联统一使用 Header requestId。响应 envelope 仍保留 requestId。
+- 现有 API contract gate 必须改为递归扫描 `src/lib/api/*.ts`，并比较 `METHOD + path`；当前脚本只扫描聚合导出文件，无法覆盖真实调用。
+
+### 全量复核新增收口项
+
+- 删除无调用场景的 `POST /ai/writer`、`GET /rum/report`、`DELETE /saved-filters/:id`、`PATCH/DELETE /knowledge-bases/:id`。
+- 删除 NestJS 未承载业务消息的 `/ws` adapter；保留独立 `y-websocket` 与 room ticket 链路。
+- 笔记列表删除未使用的 `sortBy`、`sortOrder`、`cursor` 和响应 `nextCursor`；固定使用当前 `updatedAt desc` 页码分页。
+- Comments 删除未使用的 `blockId`、`anchor`、`versionId`、`cursor` 及对应索引。
+- Invitation 改为登录态 invitation ID 流程，删除公开 preview、token/hash 双形态、`tokenHash`、`usedAt`、`ttlHours` 和持久化 requestId。
+- AI summary 只接收 `title/content/updatedAt`，AI pet 删除未消费的 `conversationId`。
+- RUM 使用严格 JSON keepalive payload，并把 `value` 传入统计服务；删除客户端额外 `ts`。
+- AuditEntry 删除 `traceId/before/after/message`；AiRun 删除未使用的 `metadata`；User 删除无写入入口的 `avatarUrl`。
+- `GET /audit/logs` 强制按当前 `actorId` 隔离，修复现有“登录后可读取全库审计记录”的权限缺口。
+- y-websocket 必须校验 room-ticket 类型、role、房间名与 noteId；当前仅验证 JWT 签名会让普通登录 token 获得写连接。
 
 ## 功能等价与风险控制
 
