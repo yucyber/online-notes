@@ -36,11 +36,11 @@ export class Note {
   @Prop({ required: true, enum: ['published', 'draft'], default: 'published' })
   status: string;
 
-  @Prop({ required: true, enum: ['private', 'org', 'public'], default: 'private' })
+  @Prop({ required: true, enum: ['private', 'public'], default: 'private' })
   visibility: string;
 
-  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['owner', 'editor', 'viewer'] }, addedBy: { type: Types.ObjectId, ref: 'User' }, addedAt: { type: Date, default: Date.now } }])
-  acl?: { userId: Types.ObjectId; role: string; addedBy?: Types.ObjectId; addedAt?: Date }[];
+  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['editor', 'viewer'] } }])
+  acl?: { userId: Types.ObjectId; role: string }[];
 
   @Prop({ type: Types.ObjectId })
   currentVersionId?: Types.ObjectId;

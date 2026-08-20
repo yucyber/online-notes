@@ -63,22 +63,22 @@ test('NoteAccessService.memberScope excludes public visibility', () => {
   assert.equal(String(query.$or[1].acl.$elemMatch.userId), String(userId))
 })
 
-test('NoteAccessService.writeScope restricts ACL to owner+editor', () => {
+test('NoteAccessService.writeScope restricts ACL to editor', () => {
   const svc = new NoteAccessService()
   const noteId = new Types.ObjectId()
   const userId = new Types.ObjectId()
   const query: any = svc.writeScope(String(noteId), String(userId))
 
-  assert.deepEqual(query.$or[1].acl.$elemMatch.role.$in, ['owner', 'editor'])
+  assert.equal(query.$or[1].acl.$elemMatch.role, 'editor')
 })
 
-test('NoteAccessService.ownerScope restricts ACL to owner only', () => {
+test('NoteAccessService.ownerScope matches creator userId only', () => {
   const svc = new NoteAccessService()
   const noteId = new Types.ObjectId()
   const userId = new Types.ObjectId()
   const query: any = svc.ownerScope(String(noteId), String(userId))
 
-  assert.equal(query.$or[1].acl.$elemMatch.role, 'owner')
+  assert.equal(String(query.userId), String(userId))
 })
 
 test('NoteCounterService.diffIds computes set differences', () => {

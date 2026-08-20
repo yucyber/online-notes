@@ -1,7 +1,7 @@
 import api from './client'
 import { getStoredUser } from '../auth'
 
-export type NoteVisibility = 'private' | 'org' | 'public'
+export type NoteVisibility = 'private' | 'public'
 export type AclRole = 'owner' | 'editor' | 'viewer'
 
 export type Collaborator = {
@@ -30,7 +30,7 @@ export type InvitationSummary = {
 export const aclAPI = {
   get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as AclResponse),
   add: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.post(`/notes/${noteId}/acl`, { userId, role }).then(res => res as unknown as any),
-  update: (noteId: string, userId: string, role: 'owner' | 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
+  update: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
   remove: (noteId: string, userId: string) => api.delete(`/notes/${noteId}/acl/${userId}`).then(res => res as unknown as any),
 }
 

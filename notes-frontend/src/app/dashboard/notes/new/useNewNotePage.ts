@@ -15,7 +15,7 @@ export function useNewNotePage() {
   const [tagInput, setTagInput] = useState('')
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
-  const [visibility, setVisibility] = useState<'private' | 'org' | 'public'>('private')
+  const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('markdown')
   const [newTitle, setNewTitle] = useState('')
   const [selection, setSelection] = useState({ start: 0, end: 0 })

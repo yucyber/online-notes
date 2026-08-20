@@ -42,7 +42,7 @@ export interface Note {
   updatedAt: string
   userId: string
   status?: 'published' | 'draft'
-  visibility?: 'private' | 'org' | 'public'
+  visibility?: 'private' | 'public'
   acl?: Array<{ userId: string; role: 'owner' | 'editor' | 'viewer' }>
 }
 
@@ -52,7 +52,7 @@ export interface CreateNoteDto {
   categoryId?: string
   tags: string[]
   status?: 'published' | 'draft'
-  visibility?: 'private' | 'org' | 'public'
+  visibility?: 'private' | 'public'
 }
 
 export type UpdateNoteDto = Partial<CreateNoteDto>

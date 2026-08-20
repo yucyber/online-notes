@@ -15,7 +15,7 @@ export function canWriteNote(note: NoteAccessShape | null, userId: string): bool
   if (!note || !userId) return false
   if (idOf(note.userId) === userId) return true
   return Boolean(note.acl?.some((entry) =>
-    idOf(entry.userId) === userId && (entry.role === 'owner' || entry.role === 'editor'),
+    idOf(entry.userId) === userId && entry.role === 'editor',
   ))
 }
 

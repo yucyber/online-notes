@@ -8,7 +8,6 @@ export enum NoteStatus {
 
 export enum NoteVisibility {
   PRIVATE = 'private',
-  ORG = 'org',
   PUBLIC = 'public',
 }
 
@@ -46,7 +45,7 @@ export class CreateNoteDto {
   status?: NoteStatus;
 
   @IsOptional()
-  @IsEnum(NoteVisibility, { message: '可见性必须是 private/org/public' })
+  @IsEnum(NoteVisibility, { message: '可见性必须是 private/public' })
   visibility?: NoteVisibility;
 }
 
@@ -75,7 +74,7 @@ export class UpdateNoteDto {
   status?: NoteStatus;
 
   @IsOptional()
-  @IsEnum(NoteVisibility, { message: '可见性必须是 private/org/public' })
+  @IsEnum(NoteVisibility, { message: '可见性必须是 private/public' })
   visibility?: NoteVisibility;
 }
 

@@ -23,8 +23,7 @@ export class InvitationsService {
     const note = await this.noteModel.findById(noteId).exec()
     if (!note) throw new NotFoundException('笔记不存在')
     const actor = new Types.ObjectId(inviterId)
-    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
-    if (!isOwner) throw new BadRequestException('无权限')
+    if (!note.userId.equals(actor)) throw new BadRequestException('无权限')
     const token = crypto.randomBytes(24).toString('hex')
     const hash = crypto.createHash('sha256').update(token).digest('hex')
     const expiresAt = new Date(Date.now() + ttl * 3600 * 1000)
@@ -47,8 +46,7 @@ export class InvitationsService {
     const note = await this.noteModel.findById(noteId).exec()
     if (!note) throw new NotFoundException('笔记不存在')
     const actor = new Types.ObjectId(actorId)
-    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
-    if (!isOwner) throw new BadRequestException('无权限')
+    if (!note.userId.equals(actor)) throw new BadRequestException('无权限')
     const items = await this.invitationModel.find({ noteId: note._id, status: { $in: ['pending','accepted'] } }).sort({ createdAt: -1 }).exec()
     return items.map(invite => ({
       id: invite._id.toString(),
@@ -114,7 +112,7 @@ export class InvitationsService {
     if (exists) {
       exists.role = inv.role
     } else {
-      acl.push({ userId: u, role: inv.role, addedBy: inv.inviterId, addedAt: new Date() })
+      acl.push({ userId: u, role: inv.role })
     }
     ;(note as any).acl = acl
     await note.save()
@@ -137,8 +135,7 @@ export class InvitationsService {
     const note = await this.noteModel.findById(inv.noteId).exec()
     if (!note) throw new NotFoundException('笔记不存在')
     const actor = new Types.ObjectId(actorId)
-    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
-    if (!isOwner) throw new BadRequestException('无权限')
+    if (!note.userId.equals(actor)) throw new BadRequestException('无权限')
     inv.status = 'revoked'
     await inv.save()
     await this.audit.record('invitation_revoked', actorId, 'note', note._id.toString(), {})
