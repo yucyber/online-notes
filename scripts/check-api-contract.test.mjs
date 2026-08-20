@@ -5,11 +5,15 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import {
   calculateDrift,
+  extractBackendInventory,
   extractBackendOperations,
+  extractClientInventory,
   extractClientOperations,
   extractNextClientOperations,
   extractNextClientInventory,
+  extractNextRouteInventory,
   extractNextRouteOperations,
+  extractOpenApiInventory,
   extractOpenApiOperations,
   listFiles,
   normalizeOperation,
@@ -148,6 +152,240 @@ test('continues Next client inventory after unresolved sources', () => {
   assert.deepEqual(inventory.errors.map(error => error.message), [
     'Unresolved first-party Next API call at mixed.ts:1',
     'Unresolved first-party Next API call at mixed.ts:2',
+  ])
+})
+
+test('parses Next paths and methods without unsafe defaults', () => {
+  const inventory = extractNextClientInventory([
+    { file: 'dynamic-path.ts', text: 'fetch(`/api/${kind}`)' },
+    { file: 'query.ts', text: 'fetch(`/api/search?q=${term}`)' },
+    { file: 'dynamic-method.ts', text: "fetch('/api/dynamic-method', { method: verb })" },
+    { file: 'head.ts', text: "fetch('/api/head', { method: 'HEAD' })" },
+    { file: 'opaque.ts', text: "fetch('/api/opaque', init)" },
+    { file: 'concat.ts', text: "axios.post('/api/ai/' + kind, body)" },
+    { file: 'generic.ts', text: "axios.post<Result>('/api/generic', body)" },
+    { file: 'commented-method.ts', text: "fetch('/api/commented', { /* note */ method: 'POST' })" },
+    { file: 'commented-fetch-arg.ts', text: "fetch(/* local */ '/api/commented-fetch')" },
+    { file: 'commented-axios-arg.ts', text: "axios.post(/* local */ '/api/commented-axios', body)" },
+    { file: 'commented-spread.ts', text: "fetch('/api/spread', { /* note */ ...init })" },
+    { file: 'computed-init.ts', text: "fetch('/api/computed', { [key]: 'POST' })" },
+    { file: 'computed-static.ts', text: "fetch('/api/computed-static', { ['met' + 'hod']: 'POST' })" },
+    { file: 'escaped-method.ts', text: "fetch('/api/escaped', { meth\\u006Fd: 'POST' })" },
+    { file: 'quoted-interpolation.ts', text: "fetch('/api/notes/${id}')" },
+    { file: 'template-id.ts', text: 'fetch(`/api/notes/${id}`)' },
+    { file: 'parenthesized-fetch.ts', text: "fetch(('/api/parenthesized'), { method: 'POST' })" },
+    { file: 'bracket-axios.ts', text: "axios['post']('/api/bracket', body)" },
+    { file: 'optional-fetch.ts', text: "fetch?.('/api/optional')" },
+    { file: 'optional-axios.ts', text: "axios.post?.('/api/optional-axios')" },
+    { file: 'dynamic-json.ts', text: 'postAiJson(path, body)' },
+    { file: 'generic-json.ts', text: "postAiJson<Result>('/api/json-generic', body)" },
+    { file: 'plain.ts', text: "fetch('/api/plain')" },
+    { file: 'headers.ts', text: "fetch('/api/headers', { headers: { Accept: 'application/json' } })" },
+  ])
+
+  assert.deepEqual([...inventory.operations.keys()].sort(), [
+    'GET /api/commented-fetch',
+    'GET /api/headers',
+    'GET /api/notes/:id',
+    'GET /api/plain',
+    'GET /api/search',
+    'POST /api/bracket',
+    'POST /api/commented',
+    'POST /api/commented-axios',
+    'POST /api/generic',
+    'POST /api/json-generic',
+    'POST /api/parenthesized',
+  ])
+  assert.deepEqual(inventory.errors.map(error => error.message), [
+    'Unresolved first-party Next API call at dynamic-path.ts:1',
+    'Unresolved first-party Next API call at dynamic-method.ts:1',
+    'Unresolved first-party Next API call at head.ts:1',
+    'Unresolved first-party Next API call at opaque.ts:1',
+    'Unresolved first-party Next API call at concat.ts:1',
+    'Unresolved first-party Next API call at commented-spread.ts:1',
+    'Unresolved first-party Next API call at computed-init.ts:1',
+    'Unresolved first-party Next API call at computed-static.ts:1',
+    'Unresolved first-party Next API call at escaped-method.ts:1',
+    'Unresolved first-party Next API call at quoted-interpolation.ts:1',
+    'Unresolved first-party Next API call at optional-fetch.ts:1',
+    'Unresolved first-party Next API call at optional-axios.ts:1',
+    'Unresolved first-party Next API call at dynamic-json.ts:1',
+  ])
+})
+
+test('fails closed on unsupported contract syntax while retaining resolved operations', () => {
+  const cases = [
+    {
+      name: 'domain call arguments',
+      inventory: extractClientInventory([
+        { file: 'api/variable.ts', text: 'api.get(path)' },
+        { file: 'api/concat.ts', text: "api.get('/notes' + suffix)" },
+        { file: 'api/typed.ts', text: 'getTyped(path)' },
+        { file: 'api/backend-fetch.ts', text: "fetch(`${API_URL}/notes`, { method: 'GET' + suffix })" },
+        { file: 'api/quoted-base.ts', text: "fetch('${API_URL}/notes', { method: 'GET' })" },
+        { file: 'api/quoted-template.ts', text: "api.get('/notes/${id}')" },
+        { file: 'api/optional-member.ts', text: "api?.get('/notes')" },
+        { file: 'api/optional-call.ts', text: "api.get?.('/notes')" },
+        { file: 'api/valid.ts', text: "api.post('/notes', body)" },
+        { file: 'api/nested-generic.ts', text: "api.get<Result<Note>>('/nested')" },
+      ]),
+      operations: ['POST /api/notes', 'GET /api/nested'],
+      errors: 8,
+      message: /Unresolved domain API call/,
+    },
+    {
+      name: 'backend decorator arguments',
+      inventory: extractBackendInventory([
+        {
+          file: 'constant-controller.ts',
+          text: "@Controller(ROUTE)\nclass Invalid {\n@Get('hidden') read() {}\n}",
+        },
+        {
+          file: 'constant-method.ts',
+          text: "@Controller('notes')\nclass Notes {\n@Get(PATH) hidden() {}\n@Post('visible') visible() {}\n}",
+        },
+        {
+          file: 'unsupported-method.ts',
+          text: "@Controller('notes')\nclass Notes {\n@Head('hidden') hidden() {}\n}",
+        },
+        {
+          file: 'dynamic-controller.ts',
+          text: '@Controller(`notes/${scope}`)\nclass Notes {\n@Get() hidden() {}\n}',
+        },
+        {
+          file: 'orphan-method.ts',
+          text: "class Notes {\n@Get('hidden') hidden() {}\n}",
+        },
+        {
+          file: 'all-method.ts',
+          text: "@Controller('notes')\nclass Notes {\n@All('hidden') hidden() {}\n}",
+        },
+        {
+          file: 'sse-method.ts',
+          text: "@Controller('notes')\nclass Notes {\n@Sse('events') events() {}\n}",
+        },
+      ]),
+      operations: ['POST /api/notes/visible'],
+      errors: 7,
+      message: /Unresolved backend (?:Controller|Get|Head|All|Sse) decorator/,
+    },
+    {
+      name: 'OpenAPI methods',
+      inventory: extractOpenApiInventory({
+        paths: {
+          '/api/notes': { get: {}, head: {}, options: {} },
+        },
+      }),
+      operations: ['GET /api/notes'],
+      errors: 2,
+      message: /Unresolved OpenAPI (?:HEAD|OPTIONS) operation/,
+    },
+    {
+      name: 'Next route exports',
+      inventory: extractNextRouteInventory([{
+        file: 'src/app/api/example/route.ts',
+        text: 'export const POST = async () => {}\nexport async function GET() {}',
+      }, {
+        file: 'src/app/api/reexport/route.ts',
+        text: 'export { handler as PATCH }',
+      }]),
+      operations: ['GET /api/example'],
+      errors: 2,
+      message: /Unresolved Next route export/,
+    },
+  ]
+
+  for (const scenario of cases) {
+    const operations = scenario.inventory.operations || scenario.inventory.local
+    assert.deepEqual([...operations.keys()], scenario.operations, scenario.name)
+    assert.equal(scenario.inventory.errors.length, scenario.errors, scenario.name)
+    for (const error of scenario.inventory.errors) assert.match(error.message, scenario.message, scenario.name)
+  }
+
+  const forwarding = extractClientInventory([{
+    file: 'api/client.ts',
+    text: "import { getTyped } from './helpers'\napi.get(url); getTyped(path); fetch(url); fetch(RUM_ENDPOINT, { method: 'POST' })",
+  }])
+  assert.equal(forwarding.operations.size, 0)
+  assert.deepEqual(forwarding.errors, [])
+})
+
+test('rejects non-AI required and optional catch-all routes', () => {
+  const inventory = extractNextRouteInventory([
+    {
+      file: 'src/app/api/files/[...path]/route.ts',
+      text: 'export async function GET() {}',
+    },
+    {
+      file: 'src/app/api/assets/[[...segments]]/route.ts',
+      text: 'export async function POST() {}',
+    },
+    {
+      file: 'src/app/api/notes/[id]/route.ts',
+      text: 'export async function PATCH() {}',
+    },
+    {
+      file: 'src/app/api/ai/[...path]/route.ts',
+      text: 'export async function GET() {}',
+    },
+  ])
+
+  assert.deepEqual([...inventory.local.keys()], ['PATCH /api/notes/:id'])
+  assert.deepEqual(inventory.errors.map(error => error.message), [
+    'Unresolved Next catch-all route at src/app/api/files/[...path]/route.ts:1',
+    'Unresolved Next catch-all route at src/app/api/assets/[[...segments]]/route.ts:1',
+    'Unresolved AI catch-all method at src/app/api/ai/[...path]/route.ts:1',
+  ])
+})
+
+test('accumulates route unresolved with other operations and diagnostics', () => {
+  const routeInventory = extractNextRouteInventory([
+    {
+      file: 'src/app/api/ai/[...path]/route.ts',
+      text: [
+        "const STREAM_PATHS = new Set(['writer'])",
+        "const JSON_PATHS = new Set(['summary'])",
+        "return { path: name === 'writer' ? '/ai/writer/stream' : `/ai/${target}`, mode: 'stream' }",
+        "return { path: `/ai/${name}`, mode: 'json' }",
+        'export async function POST() {}',
+      ].join('\n'),
+    },
+    {
+      file: 'src/app/api/auth/session/route.ts',
+      text: 'export async function POST() {}',
+    },
+  ])
+  const nextClientInventory = extractNextClientInventory([{
+    file: 'mixed-client.ts',
+    text: [
+      'fetch(`/api/${kind}`)',
+      "fetch('/api/missing', { method: 'POST' })",
+    ].join('\n'),
+  }])
+  const drift = calculateDrift({
+    client: new Map(),
+    backend: new Map([['GET /api/backend-only', [{ file: 'backend.ts', line: 1 }]]]),
+    openapi: new Map(),
+    nextClient: nextClientInventory.operations,
+    nextRoutes: routeInventory.local,
+    proxyTargets: routeInventory.proxyTargets,
+  })
+  const diagnostics = [
+    ...routeInventory.errors.map(error => error.message),
+    ...nextClientInventory.errors.map(error => error.message),
+    ...drift.map(item => `${item.layer}: ${item.operation}`),
+  ]
+
+  assert.deepEqual([...routeInventory.local.keys()], [
+    'POST /api/ai/writer',
+    'POST /api/ai/summary',
+    'POST /api/auth/session',
+  ])
+  assert.deepEqual(diagnostics, [
+    'Unresolved AI route mapping at src/app/api/ai/[...path]/route.ts:1',
+    'Unresolved first-party Next API call at mixed-client.ts:1',
+    'backend-openapi: GET /api/backend-only',
+    'next-client-route: POST /api/missing',
   ])
 })
 

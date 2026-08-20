@@ -17,14 +17,17 @@ const ALLOWED_DECISIONS = new Set([
   'document-openapi',
 ])
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
+const OPENAPI_OPERATION_METHODS = new Set([
+  ...HTTP_METHODS,
+  'HEAD',
+  'OPTIONS',
+  'TRACE',
+])
 const TYPED_HELPER_METHODS = new Map([
   ['getTyped', 'GET'],
   ['postTyped', 'POST'],
   ['patchTyped', 'PATCH'],
 ])
-const NEXT_AXIOS_RE = /\baxios\.(get|post|put|patch|delete)\s*\(\s*([`'"])(\/api\/[\s\S]*?)\2/g
-const NEXT_JSON_RE = /\bpostAiJson\s*\(\s*([`'"])(\/api\/[\s\S]*?)\1/g
-const NEXT_FETCH_RE = /\bfetch\s*\(\s*([`'"])(\/api\/[\s\S]*?)\1\s*(?:,\s*(\{[\s\S]*?\}))?\s*\)/g
 
 export function listFiles(dir, predicate) {
   const files = []
@@ -122,52 +125,368 @@ function addOperation(result, method, path, file, text, index, options) {
   result.set(key, [...(result.get(key) || []), source])
 }
 
-export function extractClientOperations(sources) {
+function sourceLine(text, index) {
+  return text.slice(0, index).split('\n').length
+}
+
+function maskComments(text) {
+  // 用等长空白屏蔽注释，避免 phantom candidate 且保留原始行号索引。
+  const chars = text.split('')
+  for (let index = 0; index < chars.length;) {
+    const quote = chars[index]
+    if (quote === "'" || quote === '"' || quote === '`') {
+      index++
+      while (index < chars.length) {
+        if (chars[index] === '\\') index += 2
+        else if (chars[index++] === quote) break
+      }
+      continue
+    }
+    if (chars[index] === '/' && chars[index + 1] === '/') {
+      chars[index++] = ' '
+      chars[index++] = ' '
+      while (index < chars.length && chars[index] !== '\n') chars[index++] = ' '
+      continue
+    }
+    if (chars[index] === '/' && chars[index + 1] === '*') {
+      chars[index++] = ' '
+      chars[index++] = ' '
+      while (index < chars.length) {
+        if (chars[index] === '*' && chars[index + 1] === '/') {
+          chars[index++] = ' '
+          chars[index++] = ' '
+          break
+        }
+        if (chars[index] !== '\n' && chars[index] !== '\r') chars[index] = ' '
+        index++
+      }
+      continue
+    }
+    index++
+  }
+  return chars.join('')
+}
+
+function readCallArguments(text, openParen) {
+  // 只拆顶层参数；不完整的括号或字符串会返回 null，由上层 fail-closed。
+  const argumentsList = []
+  const stack = []
+  let argumentStart = openParen + 1
+  for (let index = argumentStart; index < text.length; index++) {
+    const char = text[index]
+    if (char === "'" || char === '"' || char === '`') {
+      const quote = char
+      index++
+      while (index < text.length) {
+        if (text[index] === '\\') index += 2
+        else if (text[index] === quote) break
+        else index++
+      }
+      continue
+    }
+    if (char === '/' && text[index + 1] === '/') {
+      index += 2
+      while (index < text.length && text[index] !== '\n') index++
+      continue
+    }
+    if (char === '/' && text[index + 1] === '*') {
+      index += 2
+      while (index < text.length && !(text[index] === '*' && text[index + 1] === '/')) index++
+      index++
+      continue
+    }
+    if (char === '(' || char === '{' || char === '[') {
+      stack.push(char)
+      continue
+    }
+    if (char === ')' && stack.length === 0) {
+      const argument = text.slice(argumentStart, index).trim()
+      if (argument) argumentsList.push({ text: argument, index: argumentStart })
+      return { arguments: argumentsList, end: index }
+    }
+    if (char === ')' || char === '}' || char === ']') {
+      stack.pop()
+      continue
+    }
+    if (char === ',' && stack.length === 0) {
+      argumentsList.push({ text: text.slice(argumentStart, index).trim(), index: argumentStart })
+      argumentStart = index + 1
+    }
+  }
+  return null
+}
+
+function findNamedCallCandidates(text, pattern) {
+  const code = maskComments(text)
+  return [...code.matchAll(pattern)].map(match => {
+    let cursor = match.index + match[0].length
+    while (/\s/.test(code[cursor] || '')) cursor++
+    let optional = match[0].includes('?.')
+    if (code.slice(cursor, cursor + 2) === '?.') {
+      optional = true
+      cursor += 2
+      while (/\s/.test(code[cursor] || '')) cursor++
+    }
+    if (code[cursor] !== '<' && code[cursor] !== '(') return null
+    if (code[cursor] === '<') {
+      let depth = 0
+      while (cursor < code.length) {
+        if (code[cursor] === '<') depth++
+        else if (code[cursor] === '>' && --depth === 0) {
+          cursor++
+          break
+        }
+        cursor++
+      }
+      while (/\s/.test(code[cursor] || '')) cursor++
+    }
+    const openParen = code[cursor] === '(' ? cursor : -1
+    return {
+      match,
+      index: match.index,
+      openParen,
+      optional,
+      call: openParen === -1 ? null : readCallArguments(text, openParen),
+    }
+  }).filter(Boolean)
+}
+
+function isFunctionDeclaration(text, index) {
+  return /\bfunction\s*$/.test(maskComments(text.slice(0, index)))
+}
+
+function readLeadingStaticString(expression) {
+  const value = String(expression).trim()
+  const quote = value[0]
+  if (quote !== "'" && quote !== '"' && quote !== '`') return null
+  for (let index = 1; index < value.length; index++) {
+    if (value[index] === '\\') {
+      index++
+      continue
+    }
+    if (value[index] === quote) {
+      return { quote, value: value.slice(1, index), rest: value.slice(index + 1).trim() }
+    }
+  }
+  return null
+}
+
+function readStaticLiteral(expression) {
+  const literal = readLeadingStaticString(expression)
+  return literal && !literal.rest ? literal : null
+}
+
+function readStaticString(expression) {
+  return readStaticLiteral(expression)?.value ?? null
+}
+
+function unwrapParenthesizedExpression(expression) {
+  let value = maskComments(String(expression)).trim()
+  while (value.startsWith('(')) {
+    const group = readCallArguments(value, 0)
+    if (!group || group.end !== value.length - 1 || group.arguments.length !== 1) break
+    value = group.arguments[0].text.trim()
+  }
+  return value
+}
+
+function hasQuotedInterpolation(literal) {
+  return literal?.quote !== '`' && literal?.value.includes('${')
+}
+
+function recordUnresolved(errors, message) {
+  const error = new Error(message)
+  if (!errors) throw error
+  errors.push(error)
+}
+
+function isClientForwardingHelper(file, expression) {
+  const normalizedFile = file.replace(/\\/g, '/')
+  return (normalizedFile === 'api/client.ts' || normalizedFile.endsWith('/api/client.ts'))
+    && /^(?:url|path)$/.test(String(expression).trim())
+}
+
+function isEnvironmentEndpoint(expression) {
+  const value = String(expression).trim()
+  return /^[A-Z_$][A-Z0-9_$]*_ENDPOINT$/.test(value)
+    || /^process\.env(?:\.[A-Z][A-Z0-9_]*|\[['"][A-Z][A-Z0-9_]*['"]\])$/.test(value)
+}
+
+function unresolvedDomainCall(errors, file, text, index) {
+  recordUnresolved(errors, `Unresolved domain API call at ${file}:${sourceLine(text, index)}`)
+}
+
+function collectClientOperations(sources, errors) {
   const result = new Map()
-  const direct = /\bapi\s*\.\s*(get|post|put|patch|delete)\s*(?:<[^>]+>)?\s*\(\s*([`'"])([\s\S]*?)\2/g
-  const typed = /\b(getTyped|postTyped|patchTyped)\s*(?:<[^>]+>)?\s*\(\s*([`'"])([\s\S]*?)\2/g
-  // 只剥离可确认的 API_URL 前缀；动态 url 无法安全归一化，避免制造误报。
-  const backendFetch = /fetch\(\s*`\$\{API_URL\}([^`]*)`\s*,\s*\{[\s\S]*?method:\s*['"](GET|POST|PUT|PATCH|DELETE)['"]/g
   for (const { file, text } of sources) {
-    for (const match of text.matchAll(direct)) addOperation(result, match[1], match[3], file, text, match.index)
-    for (const match of text.matchAll(typed)) addOperation(result, TYPED_HELPER_METHODS.get(match[1]), match[3], file, text, match.index)
-    for (const match of text.matchAll(backendFetch)) addOperation(result, match[2], match[1], file, text, match.index)
+    const direct = findNamedCallCandidates(text, /\bapi\s*(?:\.|\?\.)\s*(get|post|put|patch|delete|head|options)\b/gi)
+    const typed = findNamedCallCandidates(text, /\b(getTyped|postTyped|patchTyped)\b/g)
+      .filter(candidate => !isFunctionDeclaration(text, candidate.index))
+    const fetches = findNamedCallCandidates(text, /\bfetch\b/g)
+      .filter(candidate => !isFunctionDeclaration(text, candidate.index))
+    const candidates = [
+      ...direct.map(candidate => ({ ...candidate, kind: 'direct' })),
+      ...typed.map(candidate => ({ ...candidate, kind: 'typed' })),
+      ...fetches.map(candidate => ({ ...candidate, kind: 'fetch' })),
+    ].sort((left, right) => left.index - right.index)
+
+    for (const candidate of candidates) {
+      const firstArgument = candidate.call?.arguments[0]?.text
+      const firstArgumentCode = unwrapParenthesizedExpression(firstArgument)
+      if (candidate.kind === 'fetch'
+        && (isEnvironmentEndpoint(firstArgumentCode) || isClientForwardingHelper(file, firstArgumentCode))) continue
+      if (!candidate.call || !firstArgument) {
+        unresolvedDomainCall(errors, file, text, candidate.index)
+        continue
+      }
+      if (candidate.optional) {
+        unresolvedDomainCall(errors, file, text, candidate.index)
+        continue
+      }
+
+      if (candidate.kind === 'fetch') {
+        const template = readStaticLiteral(firstArgumentCode)
+        const method = parseFetchMethod(candidate.call)
+        if (candidate.call.arguments.length !== 2
+          || template?.quote !== '`'
+          || !template.value.startsWith('${API_URL}')
+          || !method) {
+          unresolvedDomainCall(errors, file, text, candidate.index)
+          continue
+        }
+        addOperation(result, method, template.value.slice('${API_URL}'.length), file, text, candidate.index)
+        continue
+      }
+
+      const pathLiteral = readStaticLiteral(firstArgumentCode)
+      if (!pathLiteral || hasQuotedInterpolation(pathLiteral)) {
+        if (isClientForwardingHelper(file, firstArgumentCode)) continue
+        unresolvedDomainCall(errors, file, text, candidate.index)
+        continue
+      }
+      const method = candidate.kind === 'direct'
+        ? candidate.match[1]
+        : TYPED_HELPER_METHODS.get(candidate.match[1])
+      if (!HTTP_METHODS.has(String(method).toUpperCase())) {
+        unresolvedDomainCall(errors, file, text, candidate.index)
+        continue
+      }
+      addOperation(result, method, pathLiteral.value, file, text, candidate.index)
+    }
   }
   return result
 }
 
+export function extractClientOperations(sources) {
+  return collectClientOperations(sources)
+}
+
+export function extractClientInventory(sources) {
+  const errors = []
+  const operations = collectClientOperations(sources, errors)
+  return { operations, errors }
+}
+
 function assertResolvableNextPath(path, file, text, index) {
-  const interpolations = String(path).match(/\$\{[^}]+\}/g) || []
-  const isSingleDynamicSegment = interpolations.length === 1
-    && String(path).split('?')[0].split('/').includes(interpolations[0])
-  if (interpolations.length > 0 && !isSingleDynamicSegment) {
-    const line = text.slice(0, index).split('\n').length
-    throw new Error(`Unresolved first-party Next API call at ${file}:${line}`)
+  const pathOnly = String(path).split('?')[0]
+  const segments = pathOnly.split('/')
+  const interpolations = pathOnly.match(/\$\{[^}]+\}/g) || []
+  const resolvable = interpolations.every(interpolation => {
+    const expression = interpolation.slice(2, -1).trim()
+    return segments.includes(interpolation) && /^(?:id|[A-Za-z_$][\w$]*Id)$/.test(expression)
+  })
+  if (!resolvable) {
+    throw new Error(`Unresolved first-party Next API call at ${file}:${sourceLine(text, index)}`)
   }
+}
+
+function splitTopLevelProperties(body) {
+  return readCallArguments(`(${body})`, 0)?.arguments.map(argument => argument.text) || null
+}
+
+function parseFetchMethod(call) {
+  if (!call || call.arguments.length === 0 || call.arguments.length > 2) return null
+  if (call.arguments.length === 1) return 'GET'
+  const options = call.arguments[1].text.trim()
+  if (!options.startsWith('{') || !options.endsWith('}')) return null
+  const optionsCode = maskComments(options)
+  const properties = splitTopLevelProperties(optionsCode.slice(1, -1))
+  if (!properties || properties.some(property => property.trim().startsWith('...'))) return null
+
+  let method = null
+  for (const property of properties) {
+    const trimmed = property.trim()
+    const colon = trimmed.indexOf(':')
+    if (trimmed.startsWith('[') || (colon !== -1 && trimmed.slice(0, colon).includes('\\'))) return null
+    const match = /^(?:method|['"]method['"])\s*:\s*([\s\S]+)$/.exec(trimmed)
+    if (match) {
+      if (method !== null) return null
+      method = readStaticString(match[1])
+      if (!method) return null
+      continue
+    }
+    if (/^(?:(?:get|set)\s+)?(?:method\b|['"]method['"]|\[\s*['"]method)/.test(trimmed)) return null
+  }
+  // 只有可完整检查的 object literal 确认没有 method 时，才能安全采用 fetch 的 GET 默认值。
+  if (method === null) return 'GET'
+  const normalized = method.toUpperCase()
+  return HTTP_METHODS.has(normalized) ? normalized : null
+}
+
+function unresolvedNextClientCall(errors, file, text, index) {
+  recordUnresolved(errors, `Unresolved first-party Next API call at ${file}:${sourceLine(text, index)}`)
 }
 
 function collectNextClientOperations(sources, errors) {
   const result = new Map()
-  const addResolved = (method, path, file, text, index) => {
-    try {
-      assertResolvableNextPath(path, file, text, index)
-    } catch (error) {
-      if (!errors) throw error
-      errors.push(error)
-      return
-    }
-    addOperation(result, method, path, file, text, index, { local: true })
-  }
   for (const { file, text } of sources) {
-    for (const match of text.matchAll(NEXT_AXIOS_RE)) {
-      addResolved(match[1], match[3], file, text, match.index)
-    }
-    for (const match of text.matchAll(NEXT_JSON_RE)) {
-      addResolved('POST', match[2], file, text, match.index)
-    }
-    for (const match of text.matchAll(NEXT_FETCH_RE)) {
-      const method = match[3]?.match(/method:\s*['"](GET|POST|PUT|PATCH|DELETE)['"]/i)?.[1] || 'GET'
-      addResolved(method, match[2], file, text, match.index)
+    const candidates = [
+      ...findNamedCallCandidates(text, /\bfetch\b/g)
+        .filter(candidate => !isFunctionDeclaration(text, candidate.index))
+        .map(candidate => ({ ...candidate, kind: 'fetch' })),
+      ...findNamedCallCandidates(text, /\baxios\s*(?:\.|\?\.)\s*(get|post|put|patch|delete|head|options)\b/gi)
+        .map(candidate => ({ ...candidate, kind: 'axios' })),
+      ...findNamedCallCandidates(text, /\baxios\s*\[\s*['"](get|post|put|patch|delete|head|options)['"]\s*\]/gi)
+        .map(candidate => ({ ...candidate, kind: 'axios' })),
+      ...findNamedCallCandidates(text, /\bpostAiJson\b/g)
+        .filter(candidate => !isFunctionDeclaration(text, candidate.index))
+        .map(candidate => ({ ...candidate, kind: 'json' })),
+    ].sort((left, right) => left.index - right.index)
+
+    for (const candidate of candidates) {
+      const firstArgument = candidate.call?.arguments[0]?.text || text.slice(candidate.openParen + 1)
+      const firstArgumentCode = unwrapParenthesizedExpression(firstArgument)
+      const leadingPath = readLeadingStaticString(firstArgumentCode)?.value
+      if (leadingPath !== '/api' && !leadingPath?.startsWith('/api/')) {
+        if (candidate.kind === 'json') unresolvedNextClientCall(errors, file, text, candidate.index)
+        continue
+      }
+      if (candidate.optional) {
+        unresolvedNextClientCall(errors, file, text, candidate.index)
+        continue
+      }
+      const pathLiteral = readStaticLiteral(firstArgumentCode)
+      const path = pathLiteral && !hasQuotedInterpolation(pathLiteral) ? pathLiteral.value : null
+      let method = null
+      if (path) {
+        if (candidate.kind === 'fetch') method = parseFetchMethod(candidate.call)
+        else if (candidate.kind === 'axios') {
+          const verb = candidate.match[1].toUpperCase()
+          method = HTTP_METHODS.has(verb) ? verb : null
+        } else method = 'POST'
+      }
+      if (!path || !method) {
+        unresolvedNextClientCall(errors, file, text, candidate.index)
+        continue
+      }
+      try {
+        assertResolvableNextPath(path, file, text, candidate.index)
+      } catch (error) {
+        if (!errors) throw error
+        errors.push(error)
+        continue
+      }
+      addOperation(result, method, path, file, text, candidate.index, { local: true })
     }
   }
   return result
@@ -214,25 +533,75 @@ function extractAiProxyMappings(text, file) {
   return { writer: stream[3], generic: stream[4] }
 }
 
-export function extractNextRouteOperations(sources) {
+function extractRouteMethods(text, file, errors) {
+  const methods = []
+  const code = maskComments(text)
+  const exports = /\bexport\s+(?:(async)\s+)?(function|const|let|var)\s+(GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/g
+  for (const match of code.matchAll(exports)) {
+    const method = match[3]
+    const isSupportedFunction = match[2] === 'function'
+      && HTTP_METHODS.has(method)
+      && /^\s*\(/.test(code.slice(match.index + match[0].length))
+    if (!isSupportedFunction) {
+      recordUnresolved(errors, `Unresolved Next route export at ${file}:${sourceLine(text, match.index)}`)
+      continue
+    }
+    methods.push({ method, index: match.index })
+  }
+  const reexports = /\bexport\s*\{([\s\S]*?)\}(?:\s*from\b[^;\n]+)?/g
+  for (const match of code.matchAll(reexports)) {
+    if (/\b(?:GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)\b/.test(match[1])) {
+      recordUnresolved(errors, `Unresolved Next route export at ${file}:${sourceLine(text, match.index)}`)
+    }
+  }
+  return methods
+}
+
+function collectNextRouteOperations(sources, errors) {
   const local = new Map()
   const proxyTargets = new Map()
   for (const { file, text } of sources) {
     if (!file.replace(/\\/g, '/').includes('/app/api/') || !file.endsWith('route.ts')) continue
+    const methods = extractRouteMethods(text, file, errors)
     if (file.replace(/\\/g, '/').endsWith('/app/api/ai/[...path]/route.ts')) {
-      if (!/export\s+(?:async\s+)?function\s+POST\s*\(/.test(text)) continue
-      const streamPaths = extractAiAllowlist(text, file, 'STREAM_PATHS')
-      const jsonPaths = extractAiAllowlist(text, file, 'JSON_PATHS')
-      const mappings = extractAiProxyMappings(text, file)
+      for (const method of methods.filter(entry => entry.method !== 'POST')) {
+        recordUnresolved(errors, `Unresolved AI catch-all method at ${file}:${sourceLine(text, method.index)}`)
+      }
+      if (!methods.some(entry => entry.method === 'POST')) continue
+      let streamPaths
+      let jsonPaths
+      try {
+        streamPaths = extractAiAllowlist(text, file, 'STREAM_PATHS')
+        jsonPaths = extractAiAllowlist(text, file, 'JSON_PATHS')
+      } catch (error) {
+        // AI allowlist 只能影响当前 source，否则会遮蔽其他 route 与 drift diagnostics。
+        if (!errors) throw error
+        errors.push(error)
+        continue
+      }
+      for (const name of streamPaths) {
+        addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
+      }
+      for (const name of jsonPaths) {
+        addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
+      }
+
+      let mappings
+      try {
+        mappings = extractAiProxyMappings(text, file)
+      } catch (error) {
+        // Local route 已能从 allowlist 确认；mapping 失败只阻断 proxy target，不能抹掉 local inventory。
+        if (!errors) throw error
+        errors.push(error)
+        continue
+      }
       for (const name of streamPaths) {
         const operation = normalizeOperation('POST', `/api/ai/${name}`, { local: true })
-        addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
         const target = name === 'writer' ? mappings.writer : mappings.generic.replace('${name}', name)
         proxyTargets.set(operation, normalizeOperation('POST', target))
       }
       for (const name of jsonPaths) {
         const operation = normalizeOperation('POST', `/api/ai/${name}`, { local: true })
-        addOperation(local, 'POST', `/api/ai/${name}`, file, text, 0, { local: true })
         if (!proxyTargets.has(operation)) {
           proxyTargets.set(operation, normalizeOperation('POST', mappings.generic.replace('${name}', name)))
         }
@@ -240,47 +609,124 @@ export function extractNextRouteOperations(sources) {
       continue
     }
     const path = routePathFromFile(file)
-    const methods = /export\s+(?:async\s+)?function\s+(GET|POST|PUT|PATCH|DELETE)\s*\(/g
-    for (const match of text.matchAll(methods)) {
-      addOperation(local, match[1], path, file, text, match.index, { local: true })
+    if (/\[\[?\.\.\.[^\]]+\]\]?/.test(path)) {
+      recordUnresolved(errors, `Unresolved Next catch-all route at ${file}:1`)
+      continue
+    }
+    for (const method of methods) {
+      addOperation(local, method.method, path, file, text, method.index, { local: true })
     }
   }
   return { local, proxyTargets }
 }
 
-export function extractBackendOperations(sources) {
+export function extractNextRouteOperations(sources) {
+  return collectNextRouteOperations(sources)
+}
+
+export function extractNextRouteInventory(sources) {
+  const errors = []
+  const inventory = collectNextRouteOperations(sources, errors)
+  return { ...inventory, errors }
+}
+
+function unresolvedBackendDecorator(errors, file, text, index, name) {
+  recordUnresolved(errors, `Unresolved backend ${name} decorator at ${file}:${sourceLine(text, index)}`)
+}
+
+function extractDecoratorCandidates(text) {
+  const candidates = []
+  const code = maskComments(text)
+  const decorators = /@(Controller|Get|Post|Put|Patch|Delete|Head|Options|All|Sse)\b/g
+  for (const match of code.matchAll(decorators)) {
+    const suffix = code.slice(match.index + match[0].length)
+    const whitespace = suffix.match(/^\s*/)?.[0].length || 0
+    const openParen = match.index + match[0].length + whitespace
+    const call = code[openParen] === '(' ? readCallArguments(text, openParen) : null
+    candidates.push({ name: match[1], index: match.index, call })
+  }
+  return candidates
+}
+
+function staticDecoratorPath(candidate) {
+  if (!candidate.call || candidate.call.arguments.length > 1) return null
+  if (candidate.call.arguments.length === 0) return ''
+  const path = readStaticString(candidate.call.arguments[0].text)
+  return path?.includes('${') ? null : path
+}
+
+function collectBackendOperations(sources, errors) {
   const result = new Map()
-  const controllerRe = /@Controller\((['"])(.*?)\1\)/g
-  const methodRe = /@(Get|Post|Put|Patch|Delete)\((?:(['"])(.*?)\2)?\)/g
 
   for (const { file, text } of sources) {
-    const controllers = [...text.matchAll(controllerRe)]
-    for (let i = 0; i < controllers.length; i++) {
-      const prefix = controllers[i][2]
-      const start = controllers[i].index || 0
-      const end = i + 1 < controllers.length ? controllers[i + 1].index || text.length : text.length
-      const body = text.slice(start, end)
+    const candidates = extractDecoratorCandidates(text)
+    const controllers = candidates.filter(candidate => candidate.name === 'Controller')
+    const prefixes = new Map()
+    for (const controller of controllers) {
+      const prefix = staticDecoratorPath(controller)
+      if (prefix === null) unresolvedBackendDecorator(errors, file, text, controller.index, controller.name)
+      else prefixes.set(controller, prefix)
+    }
 
-      // 按 Controller 区间匹配，避免相邻 Controller 的 decorator 串入当前前缀。
-      for (const match of body.matchAll(methodRe)) {
-        const route = match[3] || ''
-        const joined = [prefix, route].filter(Boolean).join('/')
-        addOperation(result, match[1], `/api/${joined}`.replace(/\/+/g, '/'), file, text, start + match.index)
+    for (const method of candidates.filter(candidate => candidate.name !== 'Controller')) {
+      if (!HTTP_METHODS.has(method.name.toUpperCase())) {
+        unresolvedBackendDecorator(errors, file, text, method.index, method.name)
+        continue
       }
+      const route = staticDecoratorPath(method)
+      if (route === null) {
+        unresolvedBackendDecorator(errors, file, text, method.index, method.name)
+        continue
+      }
+      const controller = controllers.findLast(candidate => candidate.index < method.index)
+      if (!controller) {
+        unresolvedBackendDecorator(errors, file, text, method.index, method.name)
+        continue
+      }
+      const prefix = prefixes.get(controller)
+      if (prefix === undefined) continue
+      const joined = [prefix, route].filter(Boolean).join('/')
+      addOperation(result, method.name, `/api/${joined}`.replace(/\/+/g, '/'), file, text, method.index)
     }
   }
 
   return result
 }
 
-export function extractOpenApiOperations(document) {
+export function extractBackendOperations(sources) {
+  return collectBackendOperations(sources)
+}
+
+export function extractBackendInventory(sources) {
+  const errors = []
+  const operations = collectBackendOperations(sources, errors)
+  return { operations, errors }
+}
+
+function collectOpenApiOperations(document, errors) {
   const result = new Map()
   for (const [path, pathItem] of Object.entries(document.paths || {})) {
-    for (const method of HTTP_METHODS) {
-      if (pathItem?.[method.toLowerCase()]) addOperation(result, method, path, 'notes-backend/openapi.yaml', '', 0)
+    for (const [rawMethod, operation] of Object.entries(pathItem || {})) {
+      const method = rawMethod.toUpperCase()
+      if (!OPENAPI_OPERATION_METHODS.has(method) || !operation) continue
+      if (!HTTP_METHODS.has(method)) {
+        recordUnresolved(errors, `Unresolved OpenAPI ${method} operation at notes-backend/openapi.yaml:1`)
+        continue
+      }
+      addOperation(result, method, path, 'notes-backend/openapi.yaml', '', 0)
     }
   }
   return result
+}
+
+export function extractOpenApiOperations(document) {
+  return collectOpenApiOperations(document)
+}
+
+export function extractOpenApiInventory(document) {
+  const errors = []
+  const operations = collectOpenApiOperations(document, errors)
+  return { operations, errors }
 }
 
 export function calculateDrift({ client, backend, openapi, nextClient, nextRoutes, proxyTargets }) {
@@ -362,12 +808,16 @@ function main() {
   const nextRouteFiles = listFiles(NEXT_ROUTES_DIR, file => file.replace(/\\/g, '/').endsWith('/route.ts'))
   const openApiDocument = YAML.parse(readFileSync(OPENAPI_FILE, 'utf8'))
   validateReleaseGateOperations(openApiDocument)
-  const client = extractClientOperations(readSources(clientFiles))
-  const backend = extractBackendOperations(readSources(backendFiles))
-  const openapi = extractOpenApiOperations(openApiDocument)
+  const clientInventory = extractClientInventory(readSources(clientFiles))
+  const client = clientInventory.operations
+  const backendInventory = extractBackendInventory(readSources(backendFiles))
+  const backend = backendInventory.operations
+  const openApiInventory = extractOpenApiInventory(openApiDocument)
+  const openapi = openApiInventory.operations
   const nextClientInventory = extractNextClientInventory(readSources(frontendFiles))
   const nextClient = nextClientInventory.operations
-  const { local: nextRoutes, proxyTargets } = extractNextRouteOperations(readSources(nextRouteFiles))
+  const nextRouteInventory = extractNextRouteInventory(readSources(nextRouteFiles))
+  const { local: nextRoutes, proxyTargets } = nextRouteInventory
   const drift = calculateDrift({ client, backend, openapi, nextClient, nextRoutes, proxyTargets })
 
   console.log(`client: ${clientFiles.length} files, ${client.size} operations`)
@@ -380,9 +830,16 @@ function main() {
   const registry = parseRegistry()
   const approvedNonContractPaths = parseApprovedNonContractPaths()
   const openApiPaths = new Set([...openapi.keys()].map(operation => operation.split(' ')[1]))
-  let failures = nextClientInventory.errors.length
+  const unresolved = [
+    ...nextClientInventory.errors,
+    ...clientInventory.errors,
+    ...backendInventory.errors,
+    ...openApiInventory.errors,
+    ...nextRouteInventory.errors,
+  ]
+  let failures = unresolved.length
 
-  for (const error of nextClientInventory.errors) console.error(error.message)
+  for (const error of unresolved) console.error(error.message)
 
   for (const [operation, entry] of registry.entries()) {
     if (!ALLOWED_DECISIONS.has(entry.decision)) {
