@@ -11,24 +11,20 @@ export class CommentsController {
   @Get()
   async list(@Param('id') id: string, @Request() req) {
     const q = req.query || {}
-    const data = await this.service.list(
+    return this.service.list(
       id,
       req.user.id,
       q.start !== undefined ? Number(q.start) : undefined,
       q.end !== undefined ? Number(q.end) : undefined,
       String(q.intersects ?? 'true') === 'true',
-      q.blockId as string | undefined,
-      q.versionId as string | undefined,
       q.limit !== undefined ? Number(q.limit) : 50,
-      q.cursor as string | undefined,
     )
-    return data
   }
 
   @Post()
   async create(@Param('id') id: string, @Body() body: CreateCommentDto, @Request() req) {
-    const { start, end, text, anchor, blockId } = body
-    return this.service.create(id, req.user.id, start != null ? Number(start) : undefined, end != null ? Number(end) : undefined, String(text || ''), (req.headers['x-request-id'] as string) || undefined, anchor, blockId)
+    const { start, end, text } = body
+    return this.service.create(id, req.user.id, start != null ? Number(start) : undefined, end != null ? Number(end) : undefined, String(text || ''), (req.headers['x-request-id'] as string) || undefined)
   }
 }
 

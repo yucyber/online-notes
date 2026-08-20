@@ -17,34 +17,6 @@ export class Comment {
   @Prop({ required: true })
   end: number
 
-  @Prop()
-  blockId?: string
-
-  @Prop({
-    type: {
-      targetType: { type: String },
-      docPath: { type: [String], default: [] },
-      startOffset: Number,
-      endOffset: Number,
-      versionId: { type: Types.ObjectId },
-      contentHash: String,
-      contextSnippet: String,
-      resolution: { type: String },
-      resolvedAt: { type: Date },
-    },
-  })
-  anchor?: {
-    targetType?: string
-    docPath?: string[]
-    startOffset?: number
-    endOffset?: number
-    versionId?: Types.ObjectId
-    contentHash?: string
-    contextSnippet?: string
-    resolution?: string
-    resolvedAt?: Date
-  }
-
   @Prop({ required: true })
   text: string
 
@@ -60,5 +32,3 @@ CommentSchema.set('toJSON', {
   transform: (_doc: any, ret: any) => { ret.id = ret._id; delete ret._id; delete ret.__v; return ret },
 })
 CommentSchema.index({ noteId: 1, start: 1, end: 1, createdAt: -1 })
-CommentSchema.index({ noteId: 1, blockId: 1, createdAt: -1 })
-CommentSchema.index({ noteId: 1, 'anchor.versionId': 1, createdAt: -1 })

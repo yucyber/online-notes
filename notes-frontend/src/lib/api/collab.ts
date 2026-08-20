@@ -76,10 +76,10 @@ export const notificationsAPI = {
 }
 
 export const commentsAPI = {
-  list: (noteId: string, params?: { start?: number; end?: number; intersects?: boolean; blockId?: string; versionId?: string; limit?: number; cursor?: string }) =>
+  list: (noteId: string, params?: { start?: number; end?: number; intersects?: boolean; limit?: number }) =>
     api.get(`/notes/${noteId}/comments`, { params }).then(res => res as unknown as any[]),
-  create: (noteId: string, start?: number, end?: number, text?: string, options?: { anchor?: any; blockId?: string; idempotencyKey?: string }) =>
-    api.post(`/notes/${noteId}/comments`, { start, end, text, anchor: options?.anchor, blockId: options?.blockId }, { headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined }).then(res => res as unknown as any),
+  create: (noteId: string, start?: number, end?: number, text?: string, options?: { idempotencyKey?: string }) =>
+    api.post(`/notes/${noteId}/comments`, { start, end, text }, { headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined }).then(res => res as unknown as any),
   reply: (commentId: string, text: string) => api.post(`/comments/${commentId}/replies`, { text }).then(res => res as unknown as any),
   delete: (commentId: string) => api.delete(`/comments/${commentId}`).then(res => res as unknown as { ok: boolean }),
 }

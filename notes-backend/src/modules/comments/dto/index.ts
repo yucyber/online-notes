@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsNumber, MaxLength, IsObject } from 'class-validator'
+import { IsString, IsOptional, IsNumber, MaxLength } from 'class-validator'
 
 export class CreateCommentDto {
   @IsString()
@@ -12,14 +12,6 @@ export class CreateCommentDto {
   @IsOptional()
   @IsNumber()
   end?: number
-
-  @IsOptional()
-  @IsString()
-  blockId?: string
-
-  @IsOptional()
-  @IsObject()
-  anchor?: Record<string, unknown>
 }
 
 export class CreateReplyDto {
