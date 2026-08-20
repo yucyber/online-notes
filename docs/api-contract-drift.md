@@ -38,3 +38,4 @@
 
 | 操作 | 消费者 | 后端状态 | OpenAPI 状态 | 决策 | 验证方式 |
 | --- | --- | --- | --- | --- | --- |
+| `POST /api/auth/logout` | `notes-frontend/src/lib/auth.ts` `fetch('/api/auth/logout')` | 已实现 `auth.controller.ts` `@Post('logout')` | 已定义 | `proxy-to-backend` | 前端无本地 route，经 `next.config.js` rewrites 将 `/api/*` 代理到后端 3001；backend 与 openapi 均已就绪，next-client-route 层无本地路由属预期。 |

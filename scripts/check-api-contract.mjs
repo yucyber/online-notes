@@ -15,6 +15,8 @@ const ALLOWED_DECISIONS = new Set([
   'hide-client-entry',
   'mark-planned-or-remove',
   'document-openapi',
+  // next-client 无本地路由但经 next.config rewrites 代理到后端，且 backend/openapi 均已就绪的预期路径
+  'proxy-to-backend',
 ])
 const HTTP_METHODS = new Set(['GET', 'POST', 'PUT', 'PATCH', 'DELETE'])
 const OPENAPI_OPERATION_METHODS = new Set([
