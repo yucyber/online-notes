@@ -21,7 +21,6 @@ export class SemanticController {
     categoryId?: string
     tagIds?: string[]
     tagsMode?: 'any' | 'all'
-    categoriesMode?: 'any' | 'all'
     mode?: SemanticSearchOpts['mode']
   }): SemanticSearchOpts {
     return {
@@ -32,7 +31,6 @@ export class SemanticController {
       categoryId: input.categoryId,
       tagIds: input.tagIds,
       tagsMode: input.tagsMode,
-      categoriesMode: input.categoriesMode,
     }
   }
 
@@ -53,7 +51,6 @@ export class SemanticController {
     @Query('categoryId') categoryId?: string,
     @Query('tagIds') tagIds?: string | string[],
     @Query('tagsMode') tagsMode?: 'any' | 'all',
-    @Query('categoriesMode') categoriesMode?: 'any' | 'all',
   ) {
     const userId = this.resolveUserId(req)
     const tagArray = Array.isArray(tagIds)
@@ -67,7 +64,6 @@ export class SemanticController {
       categoryId,
       tagIds: tagArray,
       tagsMode,
-      categoriesMode,
       mode: mode || 'keyword',
     })
 

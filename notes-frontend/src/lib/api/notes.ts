@@ -21,8 +21,6 @@ export const buildNotesCacheKey = (params?: any) => {
   if (params) {
     if (params.keyword) sp.set('keyword', params.keyword)
     if (params.categoryId) sp.set('categoryId', params.categoryId)
-    if (Array.isArray(params.categoryIds)) params.categoryIds.filter(Boolean).forEach((id: string) => sp.append('categoryIds', id))
-    if (params.categoriesMode) sp.set('categoriesMode', params.categoriesMode)
     if (Array.isArray(params.tagIds)) params.tagIds.filter(Boolean).forEach((id: string) => sp.append('tagIds', id))
     if (params.tagsMode) sp.set('tagsMode', params.tagsMode)
     if (params.startDate) sp.set('startDate', params.startDate)
@@ -58,8 +56,6 @@ export const notesAPI = {
     if (params) {
       if (params.keyword) sp.set('keyword', params.keyword)
       if (params.categoryId) sp.set('categoryId', params.categoryId)
-      if (params.categoryIds && params.categoryIds.length > 0) params.categoryIds.filter(Boolean).forEach(id => sp.append('categoryIds', id))
-      if (params.categoriesMode) sp.set('categoriesMode', params.categoriesMode)
       if (params.tagIds && params.tagIds.length > 0) {
         params.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
       }
@@ -105,7 +101,6 @@ export const notesAPI = {
             title: String(raw.title || ''),
             content: String(raw.content || ''),
             categoryId: categoryId ? String(categoryId) : undefined,
-            categoryIds: Array.isArray(raw.categoryIds) ? raw.categoryIds.map((c: any) => String(c?.id || c?._id || c)) : undefined,
             category: category ?? null,
             tags,
             createdAt: String(raw.createdAt || new Date().toISOString()),
@@ -147,8 +142,6 @@ export const notesAPI = {
     if (context) {
       if (context.keyword) sp.set('keyword', context.keyword)
       if (context.categoryId) sp.set('categoryId', context.categoryId)
-      if (context.categoryIds && context.categoryIds.length > 0) context.categoryIds.filter(Boolean).forEach(id => sp.append('categoryIds', id))
-      if (context.categoriesMode) sp.set('categoriesMode', context.categoriesMode)
       if (context.tagIds && context.tagIds.length > 0) context.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
       if (context.tagsMode) sp.set('tagsMode', context.tagsMode)
       if (context.startDate) sp.set('startDate', context.startDate)

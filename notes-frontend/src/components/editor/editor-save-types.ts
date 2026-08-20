@@ -5,7 +5,6 @@ export type EditorSnapshot = {
   content: string
   visibility?: UpdateNoteDto['visibility']
   categoryId?: string
-  categoryIds?: string[]
   tags: string[]
   status?: UpdateNoteDto['status']
 }

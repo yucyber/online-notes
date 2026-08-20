@@ -42,9 +42,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [tags, setTags] = useState<Tag[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [auxCategoryIds, setAuxCategoryIds] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
-  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
@@ -421,9 +419,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const { handleSave: persistNote, addTagsByNames: persistTags } = useNoteSave({
     id,
     selectedCategory,
-    auxCategoryIds,
     selectedTags,
-    categories,
     tags,
     editorMode: 'rich',
     setNote: (updater) => setNote(prev => updater(prev)),
@@ -441,7 +437,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       content: currentContent,
       visibility: note?.visibility,
       categoryId: selectedCategory || undefined,
-      categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
       tags: selectedTags,
       status: 'published',
     },
@@ -618,18 +613,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 tags={tags}
                 selectedCategory={selectedCategory}
                 selectedTags={selectedTags}
-                auxCategoryIds={auxCategoryIds}
                 tagInput={tagInput}
-                expandedCats={expandedCats}
                 metaLoading={metaLoading}
                 metaError={metaError}
                 readOnly={readOnly}
                 resolveCategoryId={resolveCategoryId}
                 setSelectedCategory={setSelectedCategory}
                 setSelectedTags={setSelectedTags}
-                setAuxCategoryIds={setAuxCategoryIds}
                 setTagInput={setTagInput}
-                setExpandedCats={setExpandedCats}
                 toggleTag={toggleTag}
                 addTagsByNames={addTagsByNames}
                 rejectReadOnlyWrite={rejectReadOnlyWrite}

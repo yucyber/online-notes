@@ -36,7 +36,6 @@ export interface Note {
   content: string
   summary?: string
   categoryId?: string
-  categoryIds?: string[]
   category?: NoteCategoryRef | null
   tags: (string | NoteTagRef)[]
   createdAt: string
@@ -51,7 +50,6 @@ export interface CreateNoteDto {
   title: string
   content: string
   categoryId?: string
-  categoryIds?: string[]
   tags: string[]
   status?: 'published' | 'draft'
   visibility?: 'private' | 'org' | 'public'
@@ -62,8 +60,6 @@ export type UpdateNoteDto = Partial<CreateNoteDto>
 export interface NoteFilterParams {
   keyword?: string
   categoryId?: string
-  categoryIds?: string[]
-  categoriesMode?: 'any' | 'all'
   tagIds?: string[]
   tagsMode?: 'any' | 'all'
   startDate?: string

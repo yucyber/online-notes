@@ -21,7 +21,7 @@ export class NoteRecommendationService {
         ? { $text: { $search: keyword } }
         : { $or: [{ title: { $regex: keyword, $options: 'i' } }, { content: { $regex: keyword, $options: 'i' } }] })
     }
-    if (categoryId) andConditions.push({ $or: [{ categoryId: new Types.ObjectId(categoryId) }, { categoryId }] })
+    if (categoryId) andConditions.push({ categoryId: new Types.ObjectId(categoryId) })
     if (tagIds && tagIds.length > 0) {
       const tags = Array.isArray(tagIds) ? tagIds : [tagIds]
       const objectIds = tags.filter(Boolean).map((id) => new Types.ObjectId(id))
@@ -48,14 +48,14 @@ export class NoteRecommendationService {
               const vectorResults = await this.noteModel.aggregate([
                 { $vectorSearch: { index: 'vector_index', path: 'embedding', queryVector: currentNote.embedding, numCandidates: 50, limit, filter: { userId: { $eq: userObjectId } } } },
                 { $match: { _id: { $ne: currentNote._id }, status: 'published' } },
-                { $project: { title: 1, content: 1, categoryId: 1, categoryIds: 1, tags: 1, userId: 1, status: 1, createdAt: 1, updatedAt: 1, score: { $meta: 'vectorSearchScore' } } },
+                { $project: { title: 1, content: 1, categoryId: 1, tags: 1, userId: 1, status: 1, createdAt: 1, updatedAt: 1, score: { $meta: 'vectorSearchScore' } } },
               ]).exec()
               recommendations.push(...(vectorResults as any[]))
               vectorResults.forEach((note) => excludeIds.push(note._id))
             } catch (error) { console.warn('[Recommendations] Vector search failed, falling back to tags', error) }
           }
           if (recommendations.length < limit && currentNote.tags?.length > 0) {
-            const relatedNotes = await this.noteModel.find({ $and: andConditions, _id: { $nin: excludeIds }, tags: { $in: currentNote.tags } }).limit(limit - recommendations.length).select('title content categoryId categoryIds tags userId status createdAt updatedAt').lean().exec()
+            const relatedNotes = await this.noteModel.find({ $and: andConditions, _id: { $nin: excludeIds }, tags: { $in: currentNote.tags } }).limit(limit - recommendations.length).select('title content categoryId tags userId status createdAt updatedAt').lean().exec()
             recommendations.push(...relatedNotes)
             relatedNotes.forEach((note) => excludeIds.push(note._id as Types.ObjectId))
           }
@@ -64,14 +64,14 @@ export class NoteRecommendationService {
     }
 
     if (recommendations.length < limit) {
-      const recentNotes = await this.noteModel.find({ $and: andConditions, _id: { $nin: excludeIds } }).sort({ createdAt: -1 }).limit(limit - recommendations.length).select('title content categoryId categoryIds tags userId status createdAt updatedAt').lean().exec()
+      const recentNotes = await this.noteModel.find({ $and: andConditions, _id: { $nin: excludeIds } }).sort({ createdAt: -1 }).limit(limit - recommendations.length).select('title content categoryId tags userId status createdAt updatedAt').lean().exec()
       recommendations.push(...recentNotes)
       recentNotes.forEach((note) => excludeIds.push(note._id as Types.ObjectId))
     }
 
     const remaining = Math.max(0, limit - recommendations.length)
     const drafts = remaining > 0
-      ? await this.noteModel.find({ userId: userObjectId, status: 'draft', _id: { $nin: excludeIds } }).sort({ createdAt: -1 }).limit(Math.min(2, remaining)).select('title content categoryId categoryIds tags userId status createdAt updatedAt').lean().exec()
+      ? await this.noteModel.find({ userId: userObjectId, status: 'draft', _id: { $nin: excludeIds } }).sort({ createdAt: -1 }).limit(Math.min(2, remaining)).select('title content categoryId tags userId status createdAt updatedAt').lean().exec()
       : []
     return [...recommendations, ...drafts].slice(0, Math.max(0, limit))
   }

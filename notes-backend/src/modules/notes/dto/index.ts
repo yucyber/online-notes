@@ -17,11 +17,6 @@ export enum TagsMode {
   ALL = 'all',
 }
 
-export enum CategoriesMode {
-  ANY = 'any',
-  ALL = 'all',
-}
-
 // 搜索模式：支持文本索引与正则
 export enum SearchMode {
   TEXT = 'text',
@@ -40,11 +35,6 @@ export class CreateNoteDto {
   @IsOptional()
   @IsMongoId({ message: '分类ID格式不正确' })
   categoryId?: string;
-
-  @IsOptional()
-  @IsArray({ message: '分类必须是数组' })
-  @IsMongoId({ each: true })
-  categoryIds?: string[];
 
   @IsOptional()
   @IsArray({ message: '标签必须是数组' })
@@ -74,14 +64,6 @@ export class UpdateNoteDto {
   @IsOptional()
   @IsMongoId({ message: '分类ID格式不正确' })
   categoryId?: string;
-
-  @IsOptional()
-  @Transform(({ value }) => {
-    if (value === undefined || value === null) return undefined
-    return Array.isArray(value) ? value : [value]
-  })
-  @IsMongoId({ each: true })
-  categoryIds?: string[];
 
   @IsOptional()
   @IsArray({ message: '标签必须是数组' })
@@ -127,23 +109,11 @@ export class NoteFilterDto {
     return Array.isArray(value) ? value : [value]
   })
   @IsMongoId({ each: true })
-  categoryIds?: string[];
-
-  @IsOptional()
-  @Transform(({ value }) => {
-    if (value === undefined || value === null) return undefined
-    return Array.isArray(value) ? value : [value]
-  })
-  @IsMongoId({ each: true })
   tagIds?: string[];
 
   @IsOptional()
   @IsEnum(TagsMode)
   tagsMode?: TagsMode;
-
-  @IsOptional()
-  @IsEnum(CategoriesMode)
-  categoriesMode?: CategoriesMode;
 
   @IsOptional()
   @IsDateString()

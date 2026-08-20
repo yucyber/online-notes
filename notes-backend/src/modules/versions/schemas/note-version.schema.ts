@@ -26,9 +26,6 @@ export class NoteVersion {
   @Prop({ type: Types.ObjectId, ref: 'Category' })
   categoryId?: Types.ObjectId
 
-  @Prop([{ type: Types.ObjectId, ref: 'Category' }])
-  categoryIds?: Types.ObjectId[]
-
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   createdBy: Types.ObjectId
 }

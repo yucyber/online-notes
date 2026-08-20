@@ -31,7 +31,7 @@ export class VersionsService {
     if (!note) throw new NotFoundException('无权限')
     const last = await this.versionModel.findOne({ noteId: note._id }).sort({ versionNo: -1 }).exec()
     const nextNo = (last?.versionNo || 0) + 1
-    const v = new this.versionModel({ noteId: note._id, versionNo: nextNo, name, title: note.title, content: note.content, tags: note.tags, categoryId: (note as any).categoryId, categoryIds: (note as any).categoryIds, createdBy: u })
+    const v = new this.versionModel({ noteId: note._id, versionNo: nextNo, name, title: note.title, content: note.content, tags: note.tags, categoryId: (note as any).categoryId, createdBy: u })
     await v.save()
     await this.audit.record('version_created', userId, 'note', note._id.toString(), { requestId, name })
     return { versionNo: nextNo }
@@ -47,7 +47,6 @@ export class VersionsService {
     note.content = v.content
       ; (note as any).tags = v.tags
       ; (note as any).categoryId = v.categoryId
-      ; (note as any).categoryIds = v.categoryIds
     await note.save()
     // 先持久化版本内容，再基于最终正文重建摘要和 embedding，避免派生字段指向旧版本。
     await this.notesService.refreshDerivedFields(note)

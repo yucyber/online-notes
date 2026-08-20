@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { createNote, createTag, fetchCategories, fetchTags } from '@/lib/api'
 import type { Category, Tag } from '@/types'
@@ -12,9 +12,7 @@ export function useNewNotePage() {
   const [tags, setTags] = useState<Tag[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [auxCategoryIds, setAuxCategoryIds] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
-  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [visibility, setVisibility] = useState<'private' | 'org' | 'public'>('private')
@@ -106,19 +104,10 @@ export function useNewNotePage() {
     return resultIds
   }
 
-  const childrenByParent = useMemo(() => categories.reduce<Record<string, Category[]>>((map, category) => {
-    const key = category.parentId || '__root__'
-    if (!map[key]) map[key] = []
-    map[key].push(category)
-    return map
-  }, {}), [categories])
-
   const saveNote = async (title: string, content: string, status?: 'draft') => {
     if (!title.trim()) throw new Error('请输入笔记标题')
     try {
-      const auxNames = auxCategoryIds.map((id) => categories.find((category) => resolveCategoryId(category) === id)?.name).filter((name): name is string => Boolean(name))
-      const generatedTagIds = auxNames.length > 0 ? await addTagsByNames(auxNames) : []
-      const note = await createNote({ title: title.trim(), content: content.trim(), categoryId: selectedCategory || undefined, categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined, tags: mergeTagIds(selectedTags, generatedTagIds), ...(status ? { status } : {}), visibility: visibility as any })
+      const note = await createNote({ title: title.trim(), content: content.trim(), categoryId: selectedCategory || undefined, tags: mergeTagIds(selectedTags, []), ...(status ? { status } : {}), visibility: visibility as any })
       router.push(`/dashboard/notes/${note.id}`)
     } catch (error) {
       console.error(status ? 'Failed to create draft note:' : 'Failed to create note:', error)
@@ -126,5 +115,5 @@ export function useNewNotePage() {
     }
   }
 
-  return { categories, tags, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, auxCategoryIds, setAuxCategoryIds, expandedCats, setExpandedCats, tagInput, setTagInput, metaLoading, metaError, visibility, setVisibility, editorMode, setEditorMode, newTitle, setNewTitle, selection, setSelection, isFullscreen, editorContainerRef, childrenByParent, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleCancel: () => { if (window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')) router.back() } }
+  return { categories, tags, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, visibility, setVisibility, editorMode, setEditorMode, newTitle, setNewTitle, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleCancel: () => { if (window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')) router.back() } }
 }

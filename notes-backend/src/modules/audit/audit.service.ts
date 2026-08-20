@@ -18,7 +18,7 @@ export class AuditService {
   constructor(@InjectModel(AuditEntry.name) private model: Model<AuditEntryDocument>) {}
   private sanitize(resourceType: string, payload: { before?: any; after?: any; message?: string }) {
     const allow: Record<string, string[]> = {
-      note: ['title', 'tags', 'categoryId', 'categoryIds'],
+      note: ['title', 'tags', 'categoryId'],
       acl: ['userId', 'role'],
       invitation: ['role', 'expiresAt', 'inviterId'],
       version: ['versionNo'],

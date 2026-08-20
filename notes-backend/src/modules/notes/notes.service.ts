@@ -35,13 +35,11 @@ export class NotesService {
   private readonly noteDerived: NoteDerivedService
 
   async create(createNoteDto: CreateNoteDto, userId: string): Promise<Note> {
-    const categoryIds = Array.from(new Set([
-      ...(createNoteDto.categoryId ? [createNoteDto.categoryId] : []),
-      ...(createNoteDto.categoryIds || []),
-    ]))
     const tagIds = createNoteDto.tags || []
     // 先验证分类和标签归属，再创建引用，避免跨用户挂接领域数据。
-    await this.categoriesService.assertOwnedIds(categoryIds, userId)
+    if (createNoteDto.categoryId) {
+      await this.categoriesService.assertOwnedIds([createNoteDto.categoryId], userId)
+    }
     await this.tagsService.assertOwnedIds(tagIds, userId)
 
     // 同步写入可立即展示的兜底摘要；AI 摘要稍后成功时再覆盖它。
@@ -53,7 +51,6 @@ export class NotesService {
       userId: new Types.ObjectId(userId),
       tags: createNoteDto.tags ? createNoteDto.tags.map(tag => new Types.ObjectId(tag)) : [],
       categoryId: createNoteDto.categoryId ? new Types.ObjectId(createNoteDto.categoryId) : undefined,
-      categoryIds: createNoteDto.categoryIds ? createNoteDto.categoryIds.map(id => new Types.ObjectId(id)) : undefined,
     });
 
     const savedNote = await createdNote.save();
@@ -61,7 +58,6 @@ export class NotesService {
 
     await this.noteCounter.incrementForCreate({
       categoryId: createNoteDto.categoryId,
-      categoryIds: createNoteDto.categoryIds,
       tags: createNoteDto.tags,
     })
 
@@ -85,13 +81,13 @@ export class NotesService {
   }
 
   async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
-    const { keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, ids } = filterDto;
+    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, ids } = filterDto;
     const page = Math.max(1, Number(filterDto.page || 1))
     const size = Math.max(1, Math.min(100, Number(filterDto.limit ?? filterDto.size ?? 20)))
     const sortBy = (filterDto.sortBy || 'createdAt')
     const sortOrder = (filterDto.sortOrder || 'desc')
 
-    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids, previewFieldsVersion: 'content-v1' }
+    const keyPayload = { userId, keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids, previewFieldsVersion: 'content-v1' }
     const listRevision = await this.noteCache.getListRevision()
     const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload, listRevision)
     if (cached) return cached
@@ -121,28 +117,8 @@ export class NotesService {
       }
     }
 
-    // 同时匹配 ObjectId 和 String，兼容早期数据中的分类 ID 存储格式。
     if (categoryId) {
-      andConditions.push({
-        $or: [
-          { categoryId: new Types.ObjectId(categoryId) },
-          { categoryId: categoryId }
-        ]
-      });
-    }
-
-    if (categoryIds && categoryIds.length > 0) {
-      const ids = Array.isArray(categoryIds) ? categoryIds : [categoryIds]
-      const objectIds = ids.filter(Boolean).map(id => new Types.ObjectId(id))
-      const stringIds = ids.filter(Boolean)
-      const isAll = categoriesMode === 'all' || (ids.length > 1 && !categoriesMode)
-      const op = isAll ? '$all' : '$in'
-      andConditions.push({
-        $or: [
-          { categoryIds: { [op]: objectIds } },
-          { categoryIds: { [op]: stringIds } },
-        ],
-      })
+      andConditions.push({ categoryId: new Types.ObjectId(categoryId) });
     }
 
     // 多标签默认要求全部命中；显式 tagsMode=any 时才放宽为任一命中。
@@ -202,7 +178,7 @@ export class NotesService {
         .skip((page - 1) * size)
         .limit(size)
         .maxTimeMS(300)
-        .select('title summary content categoryId categoryIds tags userId status createdAt updatedAt')
+        .select('title summary content categoryId tags userId status createdAt updatedAt')
         .lean()
         .exec(),
       this.noteModel.countDocuments(query),
@@ -241,12 +217,8 @@ export class NotesService {
       throw new NotFoundException('笔记不存在');
     }
 
-    const categoryIds = Array.from(new Set([
-      ...(updateNoteDto.categoryId ? [updateNoteDto.categoryId] : []),
-      ...(updateNoteDto.categoryIds || []),
-    ]))
-    if (updateNoteDto.categoryId !== undefined || updateNoteDto.categoryIds !== undefined) {
-      await this.categoriesService.assertOwnedIds(categoryIds, userId)
+    if (updateNoteDto.categoryId) {
+      await this.categoriesService.assertOwnedIds([updateNoteDto.categoryId], userId)
     }
     if (updateNoteDto.tags !== undefined) {
       await this.tagsService.assertOwnedIds(updateNoteDto.tags, userId)
@@ -284,28 +256,11 @@ export class NotesService {
       this.generateAndSaveSummary(updatedNote);
     }
 
-    // 单分类和多分类字段先合并成集合再算差异，避免同一分类在两个字段中重复计数。
-    const touchingCategoryField =
-      updatePayload.categoryId !== undefined || Array.isArray(updatePayload.categoryIds)
-    if (touchingCategoryField) {
-      const prev = new Set<string>()
-      if (originalNote.categoryId) prev.add(originalNote.categoryId.toString())
-      for (const cid of (originalNote.categoryIds || [])) prev.add(cid.toString())
-
-      const next = new Set<string>()
-      if (updatePayload.categoryId) next.add(updatePayload.categoryId)
-      else if (updatePayload.categoryId === undefined && originalNote.categoryId) {
-        // 未提交该字段时保留旧值；undefined 表示“未修改”，不是“清空”。
-        next.add(originalNote.categoryId.toString())
-      }
-      if (Array.isArray(updatePayload.categoryIds)) {
-        for (const cid of updatePayload.categoryIds) if (cid) next.add(cid)
-      } else if (originalNote.categoryIds) {
-        // 多分类字段同样区分未提交和显式空数组。
-        for (const cid of originalNote.categoryIds) next.add(cid.toString())
-      }
-
-      await this.noteCounter.updateCategories([...prev], [...next])
+    // 分类计数只在明确提交 categoryId（含清空 null）时更新；undefined 表示未修改，不触发。
+    if (updatePayload.categoryId !== undefined) {
+      const prev = originalNote.categoryId ? [originalNote.categoryId.toString()] : []
+      const next = updatePayload.categoryId ? [updatePayload.categoryId] : []
+      await this.noteCounter.updateCategories(prev, next)
     }
 
     // 只在请求明确提交 tags 时同步计数，避免局部更新误清现有标签。
@@ -337,7 +292,6 @@ export class NotesService {
 
     await this.noteCounter.decrementForDelete({
       categoryId: note.categoryId?.toString(),
-      categoryIds: (note.categoryIds || []).map(cid => cid.toString()),
       tags: (note.tags || []).map(t => t.toString()),
     })
   }

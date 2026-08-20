@@ -36,7 +36,6 @@ type UseEditorAutoSaveOptions = {
 function copySnapshot(snapshot: EditorSnapshot): EditorSnapshot {
   return {
     ...snapshot,
-    categoryIds: snapshot.categoryIds ? [...snapshot.categoryIds] : undefined,
     tags: [...snapshot.tags],
   }
 }

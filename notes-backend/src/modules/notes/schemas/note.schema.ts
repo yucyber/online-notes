@@ -27,9 +27,6 @@ export class Note {
   @Prop({ type: Types.ObjectId, ref: 'Category' })
   categoryId?: Types.ObjectId;
 
-  @Prop([{ type: Types.ObjectId, ref: 'Category' }])
-  categoryIds?: Types.ObjectId[];
-
   @Prop([{ type: Types.ObjectId, ref: 'Tag' }])
   tags: Types.ObjectId[];
 
@@ -69,7 +66,6 @@ NoteSchema.index({ userId: 1, status: 1, createdAt: -1 }, { name: 'idx_user_stat
 NoteSchema.index({ visibility: 1 }, { name: 'idx_visibility' })
 NoteSchema.index({ 'acl.userId': 1 }, { name: 'idx_acl_user' })
 NoteSchema.index({ categoryId: 1 }, { name: 'idx_categoryId' })
-NoteSchema.index({ categoryIds: 1 }, { name: 'idx_categoryIds' })
 NoteSchema.index({ tags: 1 }, { name: 'idx_tags' })
 NoteSchema.index({ createdAt: -1 }, { name: 'idx_createdAt' })
 // 补充按更新时间排序与过滤的索引，保障 sortBy=updatedAt 的场景

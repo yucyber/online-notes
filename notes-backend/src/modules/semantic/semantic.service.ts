@@ -23,7 +23,6 @@ export type SemanticSearchOpts = {
   tagIds?: string[]
   threshold?: number
   tagsMode?: 'any' | 'all'
-  categoriesMode?: 'any' | 'all'
 }
 
 @Injectable()
