@@ -82,20 +82,13 @@ export const notesAPI = {
       .then((res) => {
         const payload = res as unknown as { items: any[]; page: number; size: number; total: number }
         const items = (payload.items || []).map((raw: any) => {
-          // 统一前端 Note 的稳定 id：优先使用后端提供的 id，其次 _id；两者都缺失时构造可读但稳定的占位符
-          const id = raw.id || raw._id || `${String(raw.title || 'note')}-${String(raw.updatedAt || raw.createdAt || '')}`
-          // 归一化分类与标签引用形态，减少 UI 分支判断
-          const categoryId = raw.categoryId?.id || raw.categoryId?._id || raw.categoryId || undefined
-          const category = raw.categoryId && typeof raw.categoryId === 'object' && (raw.categoryId.name || raw.categoryId.id || raw.categoryId._id)
-            ? { id: String(raw.categoryId.id || raw.categoryId._id || categoryId), name: String(raw.categoryId.name || '') }
+          // 后端已统一输出 id 与 string 引用（categoryId/tags），无需双形态兜底
+          const id = raw.id
+          const categoryId = raw.categoryId
+          const category = raw.categoryId && typeof raw.categoryId === 'object' && raw.categoryId.name
+            ? { id: String(raw.categoryId.id || ''), name: String(raw.categoryId.name) }
             : undefined
-          const tags = Array.isArray(raw.tags)
-            ? raw.tags.map((t: any) => {
-              if (typeof t === 'string') return String(t)
-              const tid = t?.id || t?._id
-              return String(tid ?? '')
-            })
-            : []
+          const tags = Array.isArray(raw.tags) ? raw.tags.map((t: any) => String(t)) : []
           return {
             id: String(id),
             title: String(raw.title || ''),
@@ -151,7 +144,7 @@ export const notesAPI = {
     return api.get<Note[]>('/notes/recommendations', { params: sp }).then(res => {
       const items = (res as unknown as any[]).map((raw: any) => ({
         ...raw,
-        id: raw.id || raw._id || ''
+        id: raw.id || ''
       }))
       return items as Note[]
     })

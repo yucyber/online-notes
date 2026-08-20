@@ -53,6 +53,12 @@ export class Comment {
 }
 
 export const CommentSchema = SchemaFactory.createForClass(Comment)
+// 统一对外输出 id，不暴露 _id
+CommentSchema.set('toJSON', {
+  versionKey: false,
+  virtuals: true,
+  transform: (_doc: any, ret: any) => { ret.id = ret._id; delete ret._id; delete ret.__v; return ret },
+})
 CommentSchema.index({ noteId: 1, start: 1, end: 1, createdAt: -1 })
 CommentSchema.index({ noteId: 1, blockId: 1, createdAt: -1 })
 CommentSchema.index({ noteId: 1, 'anchor.versionId': 1, createdAt: -1 })

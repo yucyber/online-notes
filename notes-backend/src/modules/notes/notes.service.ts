@@ -167,7 +167,17 @@ export class NotesService {
         .exec(),
       this.noteModel.countDocuments(query),
     ])
-    const resp: any = { items, page, size, total }
+    // 统一对外输出 id 与 string 引用：id 由 _id 派生，categoryId/tags 均输出字符串
+    const normalized = items.map((it: any) => {
+      const { _id, ...rest } = it
+      return {
+        ...rest,
+        id: String(_id),
+        categoryId: it.categoryId ? String(it.categoryId) : undefined,
+        tags: (it.tags || []).map((t: any) => String(t)),
+      }
+    })
+    const resp: any = { items: normalized, page, size, total }
     await this.noteCache.setList(userId, keyPayload, resp, listRevision)
     return resp
   }

@@ -31,6 +31,12 @@ export class NoteVersion {
 }
 
 export const NoteVersionSchema = SchemaFactory.createForClass(NoteVersion)
+// 统一对外输出 id，不暴露 _id
+NoteVersionSchema.set('toJSON', {
+  versionKey: false,
+  virtuals: true,
+  transform: (_doc: any, ret: any) => { ret.id = ret._id; delete ret._id; delete ret.__v; return ret },
+})
 // 版本索引：加速按版本倒序列出与唯一性约束
 NoteVersionSchema.index({ noteId: 1, versionNo: -1, createdAt: -1 }, { name: 'idx_note_version_desc' })
 NoteVersionSchema.index({ noteId: 1, versionNo: 1 }, { name: 'uniq_note_version', unique: true })

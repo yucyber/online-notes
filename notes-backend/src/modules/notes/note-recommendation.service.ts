@@ -73,6 +73,10 @@ export class NoteRecommendationService {
     const drafts = remaining > 0
       ? await this.noteModel.find({ userId: userObjectId, status: 'draft', _id: { $nin: excludeIds } }).sort({ createdAt: -1 }).limit(Math.min(2, remaining)).select('title content categoryId tags userId status createdAt updatedAt').lean().exec()
       : []
-    return [...recommendations, ...drafts].slice(0, Math.max(0, limit))
+    // 统一对外输出 id，不暴露 _id（lean 结果不走 toJSON）
+    return [...recommendations, ...drafts].slice(0, Math.max(0, limit)).map((it: any) => {
+      const { _id, ...rest } = it
+      return { ...rest, id: String(_id) }
+    })
   }
 }
