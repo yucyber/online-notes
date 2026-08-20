@@ -8,12 +8,6 @@ export const knowledgeBasesAPI = {
   create: (payload: { name: string; description?: string }) =>
     api.post<KnowledgeBase>('/knowledge-bases', payload).then(res => res as unknown as KnowledgeBase),
 
-  update: (id: string, payload: Partial<{ name: string; description: string }>) =>
-    api.patch<KnowledgeBase>(`/knowledge-bases/${id}`, payload).then(res => res as unknown as KnowledgeBase),
-
-  delete: (id: string) =>
-    api.delete(`/knowledge-bases/${id}`).then(res => res as unknown as { ok: boolean }),
-
   getNotes: (id: string) =>
     api.get<KnowledgeBaseNoteLink[]>(`/knowledge-bases/${id}/notes`).then(res => res as unknown as KnowledgeBaseNoteLink[]),
 

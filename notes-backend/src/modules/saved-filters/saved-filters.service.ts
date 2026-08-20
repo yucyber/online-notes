@@ -21,8 +21,4 @@ export class SavedFiltersService {
   async findAll(userId: string): Promise<SavedFilter[]> {
     return this.savedFilterModel.find({ userId: new Types.ObjectId(userId) }).sort({ createdAt: -1 }).exec();
   }
-
-  async remove(id: string, userId: string): Promise<void> {
-    await this.savedFilterModel.deleteOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) }).exec();
-  }
 }

@@ -18,16 +18,9 @@ export class NoteCounterService {
     }
   }
 
-  private collectCategoryIds(input: { categoryId?: string; categoryIds?: string[] }) {
-    const ids = new Set<string>()
-    if (input.categoryId) ids.add(input.categoryId)
-    for (const id of input.categoryIds || []) if (id) ids.add(id)
-    return [...ids]
-  }
-
-  async incrementForCreate(input: { categoryId?: string; categoryIds?: string[]; tags?: string[] }) {
-    for (const id of this.collectCategoryIds(input)) {
-      await this.categoriesService.incrementNoteCount(id)
+  async incrementForCreate(input: { categoryId?: string; tags?: string[] }) {
+    if (input.categoryId) {
+      await this.categoriesService.incrementNoteCount(input.categoryId)
     }
     for (const id of input.tags || []) {
       if (id) await this.tagsService.incrementNoteCount(id)
@@ -46,9 +39,9 @@ export class NoteCounterService {
     for (const id of delta.remove) await this.tagsService.decrementNoteCount(id)
   }
 
-  async decrementForDelete(input: { categoryId?: string; categoryIds?: string[]; tags?: string[] }) {
-    for (const id of this.collectCategoryIds(input)) {
-      await this.categoriesService.decrementNoteCount(id)
+  async decrementForDelete(input: { categoryId?: string; tags?: string[] }) {
+    if (input.categoryId) {
+      await this.categoriesService.decrementNoteCount(input.categoryId)
     }
     for (const id of input.tags || []) {
       if (id) await this.tagsService.decrementNoteCount(id)

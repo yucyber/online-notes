@@ -9,25 +9,18 @@ export class VersionsController {
 
   @Get()
   async list(@Param('id') id: string, @Request() req) {
-    const data = await this.service.list(id, req.user.id)
-    const rid = (req.headers['x-request-id'] as string) || undefined
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+    return this.service.list(id, req.user.id)
   }
 
   @Post()
   async snapshot(@Param('id') id: string, @Body() body: any, @Request() req) {
-    const headerRid = (req.headers['x-request-id'] as string) || undefined
-    const rid = body?.requestId || headerRid
-    const name = body?.name
-    const data = await this.service.snapshot(id, req.user.id, name, rid)
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+    const rid = body?.requestId || (req.headers['x-request-id'] as string) || undefined
+    return this.service.snapshot(id, req.user.id, body?.name, rid)
   }
 
   @Post(':versionNo/restore')
   async restore(@Param('id') id: string, @Param('versionNo') versionNo: string, @Body() body: any, @Request() req) {
-    const headerRid = (req.headers['x-request-id'] as string) || undefined
-    const rid = body?.requestId || headerRid
-    const data = await this.service.restore(id, Number(versionNo), req.user.id, rid)
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+    const rid = body?.requestId || (req.headers['x-request-id'] as string) || undefined
+    return this.service.restore(id, Number(versionNo), req.user.id, rid)
   }
 }

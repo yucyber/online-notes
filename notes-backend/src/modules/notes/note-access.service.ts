@@ -51,7 +51,7 @@ export class NoteAccessService {
     }
   }
 
-  /** 会改变正文的操作仅允许创建者、ACL owner 和 editor。 */
+  /** 会改变正文的操作仅允许创建者或 ACL editor。 */
   writeScope(noteId: string, userId: string) {
     const noteObjectId = this.objectId(noteId, 'note id')
     const userObjectId = this.objectId(userId, 'user id')
@@ -59,21 +59,18 @@ export class NoteAccessService {
       _id: noteObjectId,
       $or: [
         { userId: userObjectId },
-        { acl: { $elemMatch: { userId: userObjectId, role: { $in: ['owner', 'editor'] } } } },
+        { acl: { $elemMatch: { userId: userObjectId, role: 'editor' } } },
       ],
     }
   }
 
-  /** 可见性、删除和版本恢复会影响整篇笔记，只允许创建者或 ACL owner。 */
+  /** 可见性、删除和版本恢复会影响整篇笔记，只允许创建者（owner 由 userId 派生）。 */
   ownerScope(noteId: string, userId: string) {
     const noteObjectId = this.objectId(noteId, 'note id')
     const userObjectId = this.objectId(userId, 'user id')
     return {
       _id: noteObjectId,
-      $or: [
-        { userId: userObjectId },
-        { acl: { $elemMatch: { userId: userObjectId, role: 'owner' } } },
-      ],
+      userId: userObjectId,
     }
   }
 }

@@ -24,7 +24,7 @@ export class BoardsController {
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Req() req: any, @Body() payload: { title?: string; content?: any }) {
+  async update(@Param('id') id: string, @Req() req: any, @Body() payload: { content?: any }) {
     return await this.svc.update(id, req.user.id, payload)
   }
 }

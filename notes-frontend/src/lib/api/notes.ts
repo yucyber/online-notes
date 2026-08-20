@@ -21,8 +21,6 @@ export const buildNotesCacheKey = (params?: any) => {
   if (params) {
     if (params.keyword) sp.set('keyword', params.keyword)
     if (params.categoryId) sp.set('categoryId', params.categoryId)
-    if (Array.isArray(params.categoryIds)) params.categoryIds.filter(Boolean).forEach((id: string) => sp.append('categoryIds', id))
-    if (params.categoriesMode) sp.set('categoriesMode', params.categoriesMode)
     if (Array.isArray(params.tagIds)) params.tagIds.filter(Boolean).forEach((id: string) => sp.append('tagIds', id))
     if (params.tagsMode) sp.set('tagsMode', params.tagsMode)
     if (params.startDate) sp.set('startDate', params.startDate)
@@ -30,7 +28,7 @@ export const buildNotesCacheKey = (params?: any) => {
     if (params.status) sp.set('status', params.status)
     if (Array.isArray(params.ids)) params.ids.filter(Boolean).forEach((id: string) => sp.append('ids', id))
     const page = (params as any).page
-    const size = (params as any).size ?? (params as any).limit
+    const size = (params as any).size
     if (page) sp.set('page', String(page))
     if (size) sp.set('size', String(size))
   }
@@ -53,13 +51,11 @@ const writeSessionCache = (key: string, payload: NotesListPayload) => {
 
 // 笔记相关API
 export const notesAPI = {
-  getAll: (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
+  getAll: (params?: NoteFilterParams & { page?: number; size?: number }, signal?: AbortSignal) => {
     const sp = new URLSearchParams()
     if (params) {
       if (params.keyword) sp.set('keyword', params.keyword)
       if (params.categoryId) sp.set('categoryId', params.categoryId)
-      if (params.categoryIds && params.categoryIds.length > 0) params.categoryIds.filter(Boolean).forEach(id => sp.append('categoryIds', id))
-      if (params.categoriesMode) sp.set('categoriesMode', params.categoriesMode)
       if (params.tagIds && params.tagIds.length > 0) {
         params.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
       }
@@ -73,7 +69,7 @@ export const notesAPI = {
         sp.set('ids', params.ids.join(','))
       }
       const page = (params as any).page
-      const size = (params as any).size ?? (params as any).limit
+      const size = (params as any).size
       if (page) sp.set('page', String(page))
       if (size) sp.set('size', String(size))
     }
@@ -86,26 +82,18 @@ export const notesAPI = {
       .then((res) => {
         const payload = res as unknown as { items: any[]; page: number; size: number; total: number }
         const items = (payload.items || []).map((raw: any) => {
-          // 统一前端 Note 的稳定 id：优先使用后端提供的 id，其次 _id；两者都缺失时构造可读但稳定的占位符
-          const id = raw.id || raw._id || `${String(raw.title || 'note')}-${String(raw.updatedAt || raw.createdAt || '')}`
-          // 归一化分类与标签引用形态，减少 UI 分支判断
-          const categoryId = raw.categoryId?.id || raw.categoryId?._id || raw.categoryId || undefined
-          const category = raw.categoryId && typeof raw.categoryId === 'object' && (raw.categoryId.name || raw.categoryId.id || raw.categoryId._id)
-            ? { id: String(raw.categoryId.id || raw.categoryId._id || categoryId), name: String(raw.categoryId.name || '') }
+          // 后端已统一输出 id 与 string 引用（categoryId/tags），无需双形态兜底
+          const id = raw.id
+          const categoryId = raw.categoryId
+          const category = raw.categoryId && typeof raw.categoryId === 'object' && raw.categoryId.name
+            ? { id: String(raw.categoryId.id || ''), name: String(raw.categoryId.name) }
             : undefined
-          const tags = Array.isArray(raw.tags)
-            ? raw.tags.map((t: any) => {
-              if (typeof t === 'string') return String(t)
-              const tid = t?.id || t?._id
-              return String(tid ?? '')
-            })
-            : []
+          const tags = Array.isArray(raw.tags) ? raw.tags.map((t: any) => String(t)) : []
           return {
             id: String(id),
             title: String(raw.title || ''),
             content: String(raw.content || ''),
             categoryId: categoryId ? String(categoryId) : undefined,
-            categoryIds: Array.isArray(raw.categoryIds) ? raw.categoryIds.map((c: any) => String(c?.id || c?._id || c)) : undefined,
             category: category ?? null,
             tags,
             createdAt: String(raw.createdAt || new Date().toISOString()),
@@ -129,7 +117,7 @@ export const notesAPI = {
     }),
 
   update: (id: string, note: UpdateNoteDto) =>
-    api.put<Note>(`/notes/${id}`, note).then((res) => {
+    api.patch<Note>(`/notes/${id}`, note).then((res) => {
       clearNotesCache()
       return res as unknown as Note
     }),
@@ -147,8 +135,6 @@ export const notesAPI = {
     if (context) {
       if (context.keyword) sp.set('keyword', context.keyword)
       if (context.categoryId) sp.set('categoryId', context.categoryId)
-      if (context.categoryIds && context.categoryIds.length > 0) context.categoryIds.filter(Boolean).forEach(id => sp.append('categoryIds', id))
-      if (context.categoriesMode) sp.set('categoriesMode', context.categoriesMode)
       if (context.tagIds && context.tagIds.length > 0) context.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
       if (context.tagsMode) sp.set('tagsMode', context.tagsMode)
       if (context.startDate) sp.set('startDate', context.startDate)
@@ -158,13 +144,13 @@ export const notesAPI = {
     return api.get<Note[]>('/notes/recommendations', { params: sp }).then(res => {
       const items = (res as unknown as any[]).map((raw: any) => ({
         ...raw,
-        id: raw.id || raw._id || ''
+        id: raw.id || ''
       }))
       return items as Note[]
     })
   },
   // 带缓存与后台重验证
-  getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
+  getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number }, signal?: AbortSignal) => {
     const key = buildNotesCacheKey(params)
     const now = Date.now()
     const mem = notesCache.get(key)

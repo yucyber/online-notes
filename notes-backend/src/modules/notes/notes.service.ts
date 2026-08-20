@@ -35,13 +35,11 @@ export class NotesService {
   private readonly noteDerived: NoteDerivedService
 
   async create(createNoteDto: CreateNoteDto, userId: string): Promise<Note> {
-    const categoryIds = Array.from(new Set([
-      ...(createNoteDto.categoryId ? [createNoteDto.categoryId] : []),
-      ...(createNoteDto.categoryIds || []),
-    ]))
     const tagIds = createNoteDto.tags || []
     // 先验证分类和标签归属，再创建引用，避免跨用户挂接领域数据。
-    await this.categoriesService.assertOwnedIds(categoryIds, userId)
+    if (createNoteDto.categoryId) {
+      await this.categoriesService.assertOwnedIds([createNoteDto.categoryId], userId)
+    }
     await this.tagsService.assertOwnedIds(tagIds, userId)
 
     // 同步写入可立即展示的兜底摘要；AI 摘要稍后成功时再覆盖它。
@@ -53,7 +51,6 @@ export class NotesService {
       userId: new Types.ObjectId(userId),
       tags: createNoteDto.tags ? createNoteDto.tags.map(tag => new Types.ObjectId(tag)) : [],
       categoryId: createNoteDto.categoryId ? new Types.ObjectId(createNoteDto.categoryId) : undefined,
-      categoryIds: createNoteDto.categoryIds ? createNoteDto.categoryIds.map(id => new Types.ObjectId(id)) : undefined,
     });
 
     const savedNote = await createdNote.save();
@@ -61,7 +58,6 @@ export class NotesService {
 
     await this.noteCounter.incrementForCreate({
       categoryId: createNoteDto.categoryId,
-      categoryIds: createNoteDto.categoryIds,
       tags: createNoteDto.tags,
     })
 
@@ -69,7 +65,7 @@ export class NotesService {
     this.updateEmbedding(savedNote);
     this.generateAndSaveSummary(savedNote);
 
-    return savedNote;
+    return this.serializeNote(savedNote);
   }
 
   async refreshDerivedFields(note: NoteDocument): Promise<void> {
@@ -85,13 +81,12 @@ export class NotesService {
   }
 
   async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
-    const { keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, ids } = filterDto;
+    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, ids } = filterDto;
     const page = Math.max(1, Number(filterDto.page || 1))
-    const size = Math.max(1, Math.min(100, Number(filterDto.limit ?? filterDto.size ?? 20)))
-    const sortBy = (filterDto.sortBy || 'createdAt')
-    const sortOrder = (filterDto.sortOrder || 'desc')
+    const size = Math.max(1, Math.min(100, Number(filterDto.size || 20)))
 
-    const keyPayload = { userId, keyword, categoryId, categoryIds, categoriesMode, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids, previewFieldsVersion: 'content-v1' }
+    // 列表固定按 updatedAt 降序页码分页；排序字段与游标已废弃。
+    const keyPayload = { userId, keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, page, size, ids, previewFieldsVersion: 'content-v1' }
     const listRevision = await this.noteCache.getListRevision()
     const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload, listRevision)
     if (cached) return cached
@@ -121,28 +116,8 @@ export class NotesService {
       }
     }
 
-    // 同时匹配 ObjectId 和 String，兼容早期数据中的分类 ID 存储格式。
     if (categoryId) {
-      andConditions.push({
-        $or: [
-          { categoryId: new Types.ObjectId(categoryId) },
-          { categoryId: categoryId }
-        ]
-      });
-    }
-
-    if (categoryIds && categoryIds.length > 0) {
-      const ids = Array.isArray(categoryIds) ? categoryIds : [categoryIds]
-      const objectIds = ids.filter(Boolean).map(id => new Types.ObjectId(id))
-      const stringIds = ids.filter(Boolean)
-      const isAll = categoriesMode === 'all' || (ids.length > 1 && !categoriesMode)
-      const op = isAll ? '$all' : '$in'
-      andConditions.push({
-        $or: [
-          { categoryIds: { [op]: objectIds } },
-          { categoryIds: { [op]: stringIds } },
-        ],
-      })
+      andConditions.push({ categoryId: new Types.ObjectId(categoryId) });
     }
 
     // 多标签默认要求全部命中；显式 tagsMode=any 时才放宽为任一命中。
@@ -170,27 +145,12 @@ export class NotesService {
       if (endDate) {
         dateQuery.$lte = new Date(endDate);
       }
-      // 日期范围跟随排序字段，避免列表按更新时间排序却按创建时间过滤。
-      andConditions.push({ [sortBy === 'createdAt' ? 'createdAt' : 'updatedAt']: dateQuery });
+      // 列表固定按 updatedAt 排序，日期范围跟随 updatedAt 过滤。
+      andConditions.push({ updatedAt: dateQuery });
     }
 
     if (status) {
       andConditions.push({ status });
-    }
-
-    // 当前游标只表达 createdAt；拒绝其他排序字段，避免返回看似成功但顺序错误的分页结果。
-    if (cursor) {
-      const c = new Date(cursor)
-      if (isNaN(c.getTime())) {
-        const { HttpException, HttpStatus } = require('@nestjs/common')
-        throw new HttpException('invalid cursor', HttpStatus.BAD_REQUEST)
-      }
-      if (sortBy === 'createdAt') {
-        andConditions.push({ createdAt: sortOrder === 'desc' ? { $lt: c } : { $gt: c } })
-      } else {
-        const { HttpException, HttpStatus } = require('@nestjs/common')
-        throw new HttpException('cursor only supports sortBy=createdAt', HttpStatus.BAD_REQUEST)
-      }
     }
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
@@ -198,20 +158,26 @@ export class NotesService {
     const [items, total] = await Promise.all([
       this.noteModel
         .find(query)
-        .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+        .sort({ updatedAt: -1 })
         .skip((page - 1) * size)
         .limit(size)
         .maxTimeMS(300)
-        .select('title summary content categoryId categoryIds tags userId status createdAt updatedAt')
+        .select('title summary content categoryId tags userId status createdAt updatedAt')
         .lean()
         .exec(),
       this.noteModel.countDocuments(query),
     ])
-    // 返回时间游标供深分页切换为 seek 模式，避免页码越深时 skip 成本持续增加。
-    const nextCursor = (sortBy === 'createdAt' && items.length > 0)
-      ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
-      : undefined
-    const resp: any = { items, page, size, total, ...(nextCursor ? { nextCursor } : {}) }
+    // 统一对外输出 id 与 string 引用：id 由 _id 派生，categoryId/tags 均输出字符串
+    const normalized = items.map((it: any) => {
+      const { _id, ...rest } = it
+      return {
+        ...rest,
+        id: String(_id),
+        categoryId: it.categoryId ? String(it.categoryId) : undefined,
+        tags: (it.tags || []).map((t: any) => String(t)),
+      }
+    })
+    const resp: any = { items: normalized, page, size, total }
     await this.noteCache.setList(userId, keyPayload, resp, listRevision)
     return resp
   }
@@ -219,15 +185,14 @@ export class NotesService {
   async findOne(id: string, userId: string): Promise<Note> {
     const note = await this.noteModel
       .findOne(this.noteAccess.readScope(id, userId))
-      .populate('categoryId', 'name')
-      .populate('tags', 'name')
       .exec();
 
     if (!note) {
       throw new NotFoundException('笔记不存在');
     }
 
-    return note;
+    // 统一输出 string 引用：categoryId/tags 由 ObjectId 派生为字符串 id
+    return this.serializeNote(note);
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
@@ -241,12 +206,8 @@ export class NotesService {
       throw new NotFoundException('笔记不存在');
     }
 
-    const categoryIds = Array.from(new Set([
-      ...(updateNoteDto.categoryId ? [updateNoteDto.categoryId] : []),
-      ...(updateNoteDto.categoryIds || []),
-    ]))
-    if (updateNoteDto.categoryId !== undefined || updateNoteDto.categoryIds !== undefined) {
-      await this.categoriesService.assertOwnedIds(categoryIds, userId)
+    if (updateNoteDto.categoryId) {
+      await this.categoriesService.assertOwnedIds([updateNoteDto.categoryId], userId)
     }
     if (updateNoteDto.tags !== undefined) {
       await this.tagsService.assertOwnedIds(updateNoteDto.tags, userId)
@@ -265,8 +226,6 @@ export class NotesService {
         updatePayload,
         { new: true, runValidators: true },
       )
-      .populate('categoryId', 'name')
-      .populate('tags', 'name')
       .exec();
 
     if (!updatedNote) {
@@ -284,28 +243,11 @@ export class NotesService {
       this.generateAndSaveSummary(updatedNote);
     }
 
-    // 单分类和多分类字段先合并成集合再算差异，避免同一分类在两个字段中重复计数。
-    const touchingCategoryField =
-      updatePayload.categoryId !== undefined || Array.isArray(updatePayload.categoryIds)
-    if (touchingCategoryField) {
-      const prev = new Set<string>()
-      if (originalNote.categoryId) prev.add(originalNote.categoryId.toString())
-      for (const cid of (originalNote.categoryIds || [])) prev.add(cid.toString())
-
-      const next = new Set<string>()
-      if (updatePayload.categoryId) next.add(updatePayload.categoryId)
-      else if (updatePayload.categoryId === undefined && originalNote.categoryId) {
-        // 未提交该字段时保留旧值；undefined 表示“未修改”，不是“清空”。
-        next.add(originalNote.categoryId.toString())
-      }
-      if (Array.isArray(updatePayload.categoryIds)) {
-        for (const cid of updatePayload.categoryIds) if (cid) next.add(cid)
-      } else if (originalNote.categoryIds) {
-        // 多分类字段同样区分未提交和显式空数组。
-        for (const cid of originalNote.categoryIds) next.add(cid.toString())
-      }
-
-      await this.noteCounter.updateCategories([...prev], [...next])
+    // 分类计数只在明确提交 categoryId（含清空 null）时更新；undefined 表示未修改，不触发。
+    if (updatePayload.categoryId !== undefined) {
+      const prev = originalNote.categoryId ? [originalNote.categoryId.toString()] : []
+      const next = updatePayload.categoryId ? [updatePayload.categoryId] : []
+      await this.noteCounter.updateCategories(prev, next)
     }
 
     // 只在请求明确提交 tags 时同步计数，避免局部更新误清现有标签。
@@ -316,7 +258,7 @@ export class NotesService {
       )
     }
 
-    return updatedNote;
+    return this.serializeNote(updatedNote);
   }
 
   async remove(id: string, userId: string): Promise<void> {
@@ -337,7 +279,6 @@ export class NotesService {
 
     await this.noteCounter.decrementForDelete({
       categoryId: note.categoryId?.toString(),
-      categoryIds: (note.categoryIds || []).map(cid => cid.toString()),
       tags: (note.tags || []).map(t => t.toString()),
     })
   }
@@ -364,38 +305,18 @@ export class NotesService {
     const members = (note.acl || [])
       .map((entry: any) => toMember(entry.userId, entry.role))
       .filter((entry: any) => entry.userId && entry.userId !== owner.userId)
+    // owner 仅由 note.userId 派生，ACL 只存 editor/viewer；管理权只归创建者。
     const canManage = owner.userId === userId
-      || members.some((entry: any) => entry.userId === userId && entry.role === 'owner')
 
     return { visibility: note.visibility, canManage, acl: [owner, ...members] }
   }
 
-  async addCollaborator(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer'): Promise<any> {
+  async updateCollaboratorRole(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer') {
     const actor = new Types.ObjectId(actorId)
     const target = new Types.ObjectId(targetUserId)
     const note = await this.noteModel.findById(id).exec()
     if (!note) throw new NotFoundException('笔记不存在')
-    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
-    if (!isOwner) throw new NotFoundException('无权限')
-    const acl = ((note as any).acl || []) as any[]
-    const exists = acl.find((a: any) => a.userId?.equals(target))
-    if (exists) {
-      exists.role = role
-    } else {
-      acl.push({ userId: target, role, addedBy: actor, addedAt: new Date() })
-    }
-    ; (note as any).acl = acl
-    await note.save()
-    return { ok: true }
-  }
-
-  async updateCollaboratorRole(id: string, actorId: string, targetUserId: string, role: 'owner' | 'editor' | 'viewer') {
-    const actor = new Types.ObjectId(actorId)
-    const target = new Types.ObjectId(targetUserId)
-    const note = await this.noteModel.findById(id).exec()
-    if (!note) throw new NotFoundException('笔记不存在')
-    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
-    if (!isOwner) throw new NotFoundException('无权限')
+    if (!note.userId.equals(actor)) throw new NotFoundException('无权限')
     const acl = ((note as any).acl || []) as any[]
     const entry = acl.find((a: any) => a.userId?.equals(target))
     if (!entry) throw new NotFoundException('协作者不存在')
@@ -410,8 +331,7 @@ export class NotesService {
     const target = new Types.ObjectId(targetUserId)
     const note = await this.noteModel.findById(id).exec()
     if (!note) throw new NotFoundException('笔记不存在')
-    const isOwner = note.userId.equals(actor) || ((note as any).acl || []).some((a: any) => a.userId?.equals(actor) && a.role === 'owner')
-    if (!isOwner) throw new NotFoundException('无权限')
+    if (!note.userId.equals(actor)) throw new NotFoundException('无权限')
     const acl = ((note as any).acl || []) as any[]
     const next = acl.filter((a: any) => !a.userId?.equals(target))
       ; (note as any).acl = next
@@ -419,57 +339,22 @@ export class NotesService {
     return { ok: true }
   }
 
-  async lockNote(id: string, userId: string) {
-    try {
-      const u = new Types.ObjectId(userId)
-      const note = await this.noteModel.findOne(this.noteAccess.writeScope(id, userId)).exec()
-      if (!note) throw new NotFoundException('无权限')
-        ; (note as any).editingBy = u
-        ; (note as any).lockedAt = new Date()
-      await note.save()
-      return { ok: true }
-    } catch (e) {
-      // React StrictMode 在开发环境可能重复触发锁请求；并行保存冲突可视为锁已写入。
-      if (e.name === 'ParallelSaveError') {
-        return { ok: true }
-      }
-      console.error('lockNote error', e)
-      throw e
-    }
-  }
-
-  async unlockNote(id: string, userId: string) {
-    try {
-      const u = new Types.ObjectId(userId)
-      const note = await this.noteModel.findById(id).exec()
-      if (!note) throw new NotFoundException('笔记不存在')
-      // 只有创建者或当前加锁者能解锁；ACL editor 不能解除他人的编辑占用。
-      const isLocker = (note as any).editingBy && (note as any).editingBy.toString() === u.toString();
-      const isOwner = note.userId.toString() === u.toString();
-
-      if (isOwner || isLocker) {
-        ; (note as any).editingBy = undefined
-          ; (note as any).lockedAt = undefined
-        await note.save()
-        return { ok: true }
-      }
-      // 未加锁时解锁保持幂等，调用方无需额外查询锁状态。
-      if (!(note as any).editingBy) return { ok: true }
-
-      throw new NotFoundException('无权限')
-    } catch (e) {
-      // 与加锁一致，把 StrictMode 导致的并行保存视为幂等成功。
-      if (e.name === 'ParallelSaveError') {
-        return { ok: true }
-      }
-      console.error('unlockNote error', e)
-      throw e
-    }
-  }
 
   async getRecommendations(userId: string, currentNoteId?: string, limit: number = 5, context?: NoteFilterDto): Promise<Note[]> {
     if (!this.noteRecommendations) throw new Error('Note recommendation service is not available.')
     return this.noteRecommendations.getRecommendations(userId, currentNoteId, limit, context)
+  }
+
+  /** 统一单笔记输出的 id 与 string 引用：id 由 _id 派生，categoryId/tags 输出为字符串 id */
+  private serializeNote(note: any): Note {
+    const obj = note.toObject ? note.toObject() : note
+    const { _id, ...rest } = obj
+    return {
+      ...rest,
+      id: String(_id),
+      categoryId: obj.categoryId ? String(obj.categoryId) : undefined,
+      tags: (obj.tags || []).map((t: any) => String(t)),
+    }
   }
 
   async generateRoomTicket(noteId: string, userId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> {
@@ -488,7 +373,7 @@ export class NotesService {
       role = 'writer'
     } else if (Array.isArray(note.acl)) {
       const aclEntry = note.acl.find((a: any) => String(a.userId) === String(userObjectId))
-      if (aclEntry && (aclEntry.role === 'owner' || aclEntry.role === 'editor')) {
+      if (aclEntry && aclEntry.role === 'editor') {
         role = 'writer'
       }
     }

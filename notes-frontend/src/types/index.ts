@@ -13,10 +13,6 @@ export interface LoginCredentials {
   password: string
 }
 
-export interface RegisterData extends LoginCredentials {
-  confirmPassword: string
-}
-
 // 笔记相关类型
 export interface NoteCategoryRef {
   id: string
@@ -36,14 +32,13 @@ export interface Note {
   content: string
   summary?: string
   categoryId?: string
-  categoryIds?: string[]
   category?: NoteCategoryRef | null
   tags: (string | NoteTagRef)[]
   createdAt: string
   updatedAt: string
   userId: string
   status?: 'published' | 'draft'
-  visibility?: 'private' | 'org' | 'public'
+  visibility?: 'private' | 'public'
   acl?: Array<{ userId: string; role: 'owner' | 'editor' | 'viewer' }>
 }
 
@@ -51,10 +46,9 @@ export interface CreateNoteDto {
   title: string
   content: string
   categoryId?: string
-  categoryIds?: string[]
   tags: string[]
   status?: 'published' | 'draft'
-  visibility?: 'private' | 'org' | 'public'
+  visibility?: 'private' | 'public'
 }
 
 export type UpdateNoteDto = Partial<CreateNoteDto>
@@ -62,8 +56,6 @@ export type UpdateNoteDto = Partial<CreateNoteDto>
 export interface NoteFilterParams {
   keyword?: string
   categoryId?: string
-  categoryIds?: string[]
-  categoriesMode?: 'any' | 'all'
   tagIds?: string[]
   tagsMode?: 'any' | 'all'
   startDate?: string
@@ -156,31 +148,6 @@ export interface Tag {
   noteCount?: number
   userId: string
   createdAt: string
-}
-
-// API响应类型
-export interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  message?: string
-  error?: string
-}
-
-// 分页相关类型
-export interface PaginationParams {
-  page?: number
-  limit?: number
-  search?: string
-  sortBy?: string
-  sortOrder?: 'asc' | 'desc'
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  limit: number
-  totalPages: number
 }
 
 export interface DashboardStats {

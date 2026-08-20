@@ -19,12 +19,10 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     const [messages, setMessages] = useState<Message[]>([]);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
-    const [conversationId, setConversationId] = useState<string>('');
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
         const saved = localStorage.getItem('ai_pet_history');
-        const savedId = localStorage.getItem('ai_pet_conversation_id');
         if (saved) {
             try {
                 const parsed = JSON.parse(saved) as Message[];
@@ -37,17 +35,11 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 console.error('Failed to parse chat history', e);
             }
         }
-        if (savedId) {
-            setConversationId(savedId);
-        }
     }, []);
 
     useEffect(() => {
         localStorage.setItem('ai_pet_history', JSON.stringify(messages));
-        if (conversationId) {
-            localStorage.setItem('ai_pet_conversation_id', conversationId);
-        }
-    }, [messages, conversationId]);
+    }, [messages]);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -55,9 +47,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
 
     const handleClearHistory = () => {
         setMessages([]);
-        setConversationId('');
         localStorage.removeItem('ai_pet_history');
-        localStorage.removeItem('ai_pet_conversation_id');
     };
 
     const generateReply = async (userMsg: Message, appendUserMessage: boolean) => {
@@ -70,7 +60,6 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     message: userMsg.content,
-                    conversationId: conversationId || undefined,
                 }),
             });
 

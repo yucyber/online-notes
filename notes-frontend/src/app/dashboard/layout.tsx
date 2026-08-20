@@ -57,7 +57,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
 
     const loadUnread = async () => {
       try {
-        const response = await listNotifications(1, 1, undefined, 'unread')
+        const response = await listNotifications(1, 1, 'unread')
         setUnreadCount(Math.max(0, Number(response?.total || 0)))
       } catch { setUnreadCount(0) }
     }

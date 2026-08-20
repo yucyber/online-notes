@@ -56,19 +56,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
-  /api/ai/writer:
-    post:
-      tags: [AI]
-      summary: Generate AI writing text
-      security:
-        - BearerAuth: []
-      requestBody:
-        $ref: '#/components/requestBodies/AiWriterInput'
-      responses:
-        '201':
-          $ref: '#/components/responses/AiWriterEnvelope'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
   /api/ai/writer/stream:
     post:
       tags: [AI]
@@ -194,12 +181,21 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/LogoutEnvelope'
-  /api/auth/me:
-    get:
-      tags: [Auth]
-      summary: 当前用户
+  /api/users/me:
+    patch:
+      tags: [Users]
+      summary: 更新当前用户资料
       security:
         - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                displayName:
+                  type: string
       responses:
         '200':
           $ref: '#/components/responses/UserEnvelope'
@@ -214,10 +210,8 @@ paths:
       parameters:
         - $ref: '#/components/parameters/Page'
         - $ref: '#/components/parameters/Size'
-        - $ref: '#/components/parameters/Limit'
         - $ref: '#/components/parameters/Keyword'
         - $ref: '#/components/parameters/CategoryId'
-        - $ref: '#/components/parameters/CategoryIds'
         - $ref: '#/components/parameters/TagIds'
         - $ref: '#/components/parameters/Status'
       responses:
@@ -294,16 +288,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/NoteEnvelope'
-    put:
-      tags: [Notes]
-      summary: 更新笔记
-      security:
-        - BearerAuth: []
-      requestBody:
-        $ref: '#/components/requestBodies/NoteInput'
-      responses:
-        '200':
-          $ref: '#/components/responses/NoteEnvelope'
     delete:
       tags: [Notes]
       summary: 删除笔记
@@ -323,16 +307,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/AclEnvelope'
-    post:
-      tags: [Notes]
-      summary: 添加协作者
-      security:
-        - BearerAuth: []
-      requestBody:
-        $ref: '#/components/requestBodies/AclInput'
-      responses:
-        '200':
-          $ref: '#/components/responses/Ok'
   /api/notes/{id}/acl/{userId}:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -371,25 +345,6 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
-  /api/notes/{id}/lock:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    post:
-      tags: [Notes]
-      summary: 锁定笔记
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Ok'
-    delete:
-      tags: [Notes]
-      summary: 解锁笔记
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Ok'
   /api/notes/{id}/comments:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -520,14 +475,6 @@ paths:
   /api/categories/{id}:
     parameters:
       - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Categories]
-      summary: 分类详情
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/CategoryEnvelope'
     patch:
       tags: [Categories]
       summary: 更新分类
@@ -579,14 +526,6 @@ paths:
   /api/tags/{id}:
     parameters:
       - $ref: '#/components/parameters/Id'
-    get:
-      tags: [Tags]
-      summary: 标签详情
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/TagEnvelope'
     patch:
       tags: [Tags]
       summary: 更新标签
@@ -825,15 +764,17 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
-  /api/invitations/{token}:
+  /api/invitations/{id}:
     parameters:
       - in: path
-        name: token
+        name: id
         required: true
         schema: { type: string }
     get:
       tags: [Invitations]
       summary: 邀请预览
+      security:
+        - BearerAuth: []
       responses:
         '200':
           $ref: '#/components/responses/Ok'
@@ -845,10 +786,10 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
-  /api/invitations/{token}/accept:
+  /api/invitations/{id}/accept:
     parameters:
       - in: path
-        name: token
+        name: id
         required: true
         schema: { type: string }
     post:
@@ -882,17 +823,6 @@ paths:
       responses:
         '201':
           $ref: '#/components/responses/Ok'
-  /api/saved-filters/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    delete:
-      tags: [SavedFilters]
-      summary: 删除保存筛选器
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Ok'
   /api/knowledge-bases:
     get:
       tags: [KnowledgeBases]
@@ -918,37 +848,6 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
-  /api/knowledge-bases/{id}:
-    parameters:
-      - $ref: '#/components/parameters/Id'
-    patch:
-      tags: [KnowledgeBases]
-      summary: 更新知识库
-      security:
-        - BearerAuth: []
-      requestBody:
-        $ref: '#/components/requestBodies/KnowledgeBaseUpdateInput'
-      responses:
-        '200':
-          $ref: '#/components/responses/KnowledgeBaseEnvelope'
-        '400':
-          $ref: '#/components/responses/BadRequest'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
-    delete:
-      tags: [KnowledgeBases]
-      summary: 删除知识库
-      security:
-        - BearerAuth: []
-      responses:
-        '200':
-          $ref: '#/components/responses/Ok'
-        '401':
-          $ref: '#/components/responses/Unauthorized'
-        '404':
-          $ref: '#/components/responses/NotFound'
   /api/knowledge-bases/{id}/notes:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1104,17 +1003,6 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
-  /api/rum/report:
-    get:
-      tags: [RUM]
-      summary: RUM 报告
-      parameters:
-        - in: query
-          name: date
-          schema: { type: string }
-      responses:
-        '200':
-          $ref: '#/components/responses/Ok'
 components:
   securitySchemes:
     BearerAuth:
@@ -1156,14 +1044,6 @@ components:
       in: query
       name: categoryId
       schema: { type: string }
-    CategoryIds:
-      in: query
-      name: categoryIds
-      schema:
-        type: array
-        items: { type: string }
-      style: form
-      explode: true
     TagIds:
       in: query
       name: tagIds
@@ -1595,9 +1475,6 @@ components:
         title: { type: string }
         content: { type: string }
         categoryId: { type: string }
-        categoryIds:
-          type: array
-          items: { type: string }
         tags:
           type: array
           items: { type: string }

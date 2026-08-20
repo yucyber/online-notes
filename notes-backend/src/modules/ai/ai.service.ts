@@ -47,10 +47,6 @@ export class AiService {
     return this.withAiRun({ graphName: 'KnowledgeGraphBuildGraph', route: 'reasoning', context }, () => graph.run({ knowledgeBaseId: id, notes }))
   }
 
-  async generateWriterText(input: AiWriterInput, context?: AiWorkflowContext): Promise<string> {
-    return this.withAiRun({ graphName: 'WriterGraph', route: 'text', context }, () => this.gateway.chat({ route: 'text', system: 'You are a focused writing assistant. Return only the requested content.', prompt: buildWriterPrompt(input), maxTokens: 1200, temperature: 0.5 }))
-  }
-
   async streamWriter(input: AiWriterInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
     return this.withAiRun({ graphName: 'WriterGraph', route: 'text', context }, () => this.gateway.streamChat({ route: 'text', system: 'You are a focused writing assistant. Return only the requested content.', prompt: buildWriterPrompt(input), maxTokens: 1200, temperature: 0.5 }))
   }

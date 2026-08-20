@@ -56,19 +56,6 @@ export class TagsService {
       .exec();
   }
 
-  async findOne(id: string, userId: string): Promise<Tag> {
-    const tag = await this.tagModel.findOne({
-      _id: new Types.ObjectId(id),
-      userId: new Types.ObjectId(userId),
-    }).exec();
-
-    if (!tag) {
-      throw new NotFoundException('标签不存在');
-    }
-
-    return tag;
-  }
-
   async assertOwnedIds(ids: string[], userId: string): Promise<void> {
     await assertOwnedByUser(ids, userId, this.tagModel, '标签')
   }

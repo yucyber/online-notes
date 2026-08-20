@@ -10,8 +10,8 @@ export class InvitationsController {
   @UseGuards(AuthGuard('jwt'))
   @Post('notes/:id')
   async create(@Param('id') id: string, @Body() body: any, @Request() req) {
-    const { role, inviteeEmail, ttlHours, requestId } = body
-    return this.service.create(id, req.user.id, role, inviteeEmail, ttlHours, requestId)
+    const { role, inviteeEmail, ttlHours } = body
+    return this.service.create(id, req.user.id, role, inviteeEmail, ttlHours)
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -28,21 +28,21 @@ export class InvitationsController {
     return this.service.listMine(email, status)
   }
 
-  @Get(':token')
-  async preview(@Param('token') token: string) {
-    return this.service.preview(token)
+  @UseGuards(AuthGuard('jwt'))
+  @Get(':id')
+  async preview(@Param('id') id: string, @Request() req) {
+    return this.service.preview(id)
   }
 
   @UseGuards(AuthGuard('jwt'))
-  @Post(':token/accept')
-  async accept(@Param('token') token: string, @Body() body: any, @Request() req) {
-    const { requestId } = body
-    return this.service.accept(token, req.user.id, requestId)
+  @Post(':id/accept')
+  async accept(@Param('id') id: string, @Request() req) {
+    return this.service.accept(id, req.user.id)
   }
 
   @UseGuards(AuthGuard('jwt'))
-  @Delete(':token')
-  async revoke(@Param('token') token: string, @Request() req) {
-    return this.service.revoke(token, req.user.id)
+  @Delete(':id')
+  async revoke(@Param('id') id: string, @Request() req) {
+    return this.service.revoke(id, req.user.id)
   }
 }

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,7 @@ import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
 import type { EditorSnapshot } from '@/components/editor/editor-save-types'
-import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
+import { canWriteNote } from '@/components/editor/note-permissions'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 import { appToast } from '@/lib/app-toast'
 import { DEFAULT_EDITOR_FORMAT_STATE } from '@/components/editor/editor-format-state'
@@ -42,9 +42,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [tags, setTags] = useState<Tag[]>([])
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
-  const [auxCategoryIds, setAuxCategoryIds] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
-  const [expandedCats, setExpandedCats] = useState<Record<string, boolean>>({})
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
   const [selection, setSelection] = useState<{ start: number; end: number }>({ start: 0, end: 0 })
@@ -339,12 +337,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [loadNote, initialData, searchParams])
 
   useEffect(() => {
-    if (!id || !shouldManageNoteLock(note, me.id)) return
-    lockNote(id).catch(() => { })
-    return () => { unlockNote(id).catch(() => { }) }
-  }, [id, note, me.id])
-
-  useEffect(() => {
     const loadMeta = async () => {
       try {
         setMetaLoading(true)
@@ -421,9 +413,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const { handleSave: persistNote, addTagsByNames: persistTags } = useNoteSave({
     id,
     selectedCategory,
-    auxCategoryIds,
     selectedTags,
-    categories,
     tags,
     editorMode: 'rich',
     setNote: (updater) => setNote(prev => updater(prev)),
@@ -441,7 +431,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       content: currentContent,
       visibility: note?.visibility,
       categoryId: selectedCategory || undefined,
-      categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
       tags: selectedTags,
       status: 'published',
     },
@@ -618,18 +607,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 tags={tags}
                 selectedCategory={selectedCategory}
                 selectedTags={selectedTags}
-                auxCategoryIds={auxCategoryIds}
                 tagInput={tagInput}
-                expandedCats={expandedCats}
                 metaLoading={metaLoading}
                 metaError={metaError}
                 readOnly={readOnly}
                 resolveCategoryId={resolveCategoryId}
                 setSelectedCategory={setSelectedCategory}
                 setSelectedTags={setSelectedTags}
-                setAuxCategoryIds={setAuxCategoryIds}
                 setTagInput={setTagInput}
-                setExpandedCats={setExpandedCats}
                 toggleTag={toggleTag}
                 addTagsByNames={addTagsByNames}
                 rejectReadOnlyWrite={rejectReadOnlyWrite}

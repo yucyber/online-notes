@@ -18,7 +18,6 @@ type Props = {
 
 const VISIBILITY_COPY: Record<NoteVisibility, string> = {
   private: '仅受邀成员可见',
-  org: '组织成员可见',
   public: '任何人可见',
 }
 

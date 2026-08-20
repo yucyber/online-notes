@@ -10,7 +10,6 @@ export type InvitationDocument = Invitation & Document
       ret.id = ret._id
       delete ret._id
       delete ret.__v
-      delete ret.tokenHash
       return ret
     },
   },
@@ -29,9 +28,6 @@ export class Invitation {
   role: string
 
   @Prop({ required: true })
-  tokenHash: string
-
-  @Prop({ required: true })
   expiresAt: Date
 
   @Prop({ required: true, enum: ['pending', 'accepted', 'revoked', 'expired'], default: 'pending' })
@@ -39,9 +35,6 @@ export class Invitation {
 
   @Prop()
   usedAt?: Date
-
-  @Prop()
-  requestId?: string
 }
 
 export const InvitationSchema = SchemaFactory.createForClass(Invitation)

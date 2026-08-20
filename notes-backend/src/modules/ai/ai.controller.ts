@@ -20,11 +20,6 @@ type AuthenticatedRequest = Request & {
 export class AiController {
   constructor(private readonly aiService: AiService) {}
 
-  @Post('writer')
-  async generateWriter(@Body() body: AiWriterDto, @Req() req?: AuthenticatedRequest) {
-    return { text: await this.aiService.generateWriterText(body, this.aiContext(req)) }
-  }
-
   @Post('writer/stream')
   async streamWriter(@Body() body: AiWriterDto, @Res() res: Response, @Req() req?: AuthenticatedRequest) {
     const stream = await this.aiService.streamWriter(body, this.aiContext(req))

@@ -1,5 +1,4 @@
-import { Body, Controller, Get, Post, Query, UseGuards } from '@nestjs/common'
-import { AuthGuard } from '@nestjs/passport'
+import { Body, Controller, Post } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
 import { RumService } from './rum.service'
 import { RumCollectDto } from './dto'
@@ -13,13 +12,6 @@ export class RumController {
     collect(@Body() body: RumCollectDto) {
         const ev = { type: body.type, name: body.name || '', meta: body.meta, ts: Date.now() }
         this.rum.collect(ev)
-        return { code: 0, message: 'OK', data: { accepted: true } }
-    }
-
-    @UseGuards(AuthGuard('jwt'))
-    @Get('report')
-    report(@Query('date') date?: string) {
-        const r = this.rum.report(date)
-        return { code: 0, message: 'OK', data: r }
+        return { accepted: true }
     }
 }

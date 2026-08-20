@@ -136,7 +136,7 @@ test('boards service denies update from non-owner even if note acl reader', asyn
   )
 
   await assert.rejects(
-    () => service.update(String(boardId), String(collaboratorId), { title: 'Changed' }),
+    () => service.update(String(boardId), String(collaboratorId), { content: { nodes: [] } }),
     /Board not found/,
   )
 })
@@ -177,7 +177,7 @@ test('mindmaps service denies cross-user update', async () => {
   )
 
   await assert.rejects(
-    () => service.update(String(mapId), String(otherId), { title: 'Changed' }),
+    () => service.update(String(mapId), String(otherId), { content: { nodes: [] } }),
     /Mindmap not found/,
   )
 })
@@ -191,6 +191,6 @@ test('mindmaps service allows owner update', async () => {
     noteAccess,
   )
 
-  const result = await service.update(String(mapId), String(ownerId), { title: 'New' })
-  assert.equal(result.title, 'New')
+  const result = await service.update(String(mapId), String(ownerId), { content: { nodes: [{ id: 'a' }] } })
+  assert.deepEqual(result.content, { nodes: [{ id: 'a' }] })
 })

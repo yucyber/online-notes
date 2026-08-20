@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { SavedFiltersService } from './saved-filters.service';
 import { CreateSavedFilterDto } from './dto';
@@ -16,10 +16,5 @@ export class SavedFiltersController {
   @Get()
   findAll(@Request() req) {
     return this.savedFiltersService.findAll(req.user.id);
-  }
-
-  @Delete(':id')
-  remove(@Param('id') id: string, @Request() req) {
-    return this.savedFiltersService.remove(id, req.user.id);
   }
 }

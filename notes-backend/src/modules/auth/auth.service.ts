@@ -36,7 +36,4 @@ export class AuthService {
     return this.toAuthResponse(user);
   }
 
-  async getProfile(userId: string) {
-    return this.usersService.findById(userId);
-  }
 }

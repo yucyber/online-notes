@@ -1,7 +1,7 @@
 import api from './client'
 import { getStoredUser } from '../auth'
 
-export type NoteVisibility = 'private' | 'org' | 'public'
+export type NoteVisibility = 'private' | 'public'
 export type AclRole = 'owner' | 'editor' | 'viewer'
 
 export type Collaborator = {
@@ -29,17 +29,16 @@ export type InvitationSummary = {
 
 export const aclAPI = {
   get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as AclResponse),
-  add: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.post(`/notes/${noteId}/acl`, { userId, role }).then(res => res as unknown as any),
-  update: (noteId: string, userId: string, role: 'owner' | 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
+  update: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
   remove: (noteId: string, userId: string) => api.delete(`/notes/${noteId}/acl/${userId}`).then(res => res as unknown as any),
 }
 
 export const invitationsAPI = {
-  create: (noteId: string, role: 'editor' | 'viewer', inviteeEmail?: string, ttlHours?: number) => api.post(`/invitations/notes/${noteId}`, { role, inviteeEmail, ttlHours }).then(res => res as unknown as { token: string; expiresAt: string }),
+  create: (noteId: string, role: 'editor' | 'viewer', inviteeEmail?: string, ttlHours?: number) => api.post(`/invitations/notes/${noteId}`, { role, inviteeEmail, ttlHours }).then(res => res as unknown as { id: string; expiresAt: string }),
   list: (noteId: string) => api.get(`/invitations/notes/${noteId}`).then(res => res as unknown as InvitationSummary[]),
-  preview: (token: string) => api.get(`/invitations/${token}`).then(res => res as unknown as { noteId: string; role: string; expiresAt: string }),
-  accept: (token: string) => api.post(`/invitations/${token}/accept`, {}).then(res => res as unknown as any),
-  revoke: (token: string) => api.delete(`/invitations/${token}`).then(res => res as unknown as any),
+  preview: (id: string) => api.get(`/invitations/${id}`).then(res => res as unknown as { noteId: string; role: string; expiresAt: string }),
+  accept: (id: string) => api.post(`/invitations/${id}/accept`, {}).then(res => res as unknown as any),
+  revoke: (id: string) => api.delete(`/invitations/${id}`).then(res => res as unknown as any),
   mine: (status: 'pending' | 'accepted' | 'revoked' | 'expired' = 'pending') => api.get(`/invitations/mine`, { params: { status } }).then(res => res as unknown as any[]),
 }
 
@@ -54,13 +53,13 @@ export const auditAPI = {
 }
 
 export const notificationsAPI = {
-  list: (page: number = 1, size: number = 20, type?: string, status?: string) => {
+  list: (page: number = 1, size: number = 20, status?: string) => {
     const user = getStoredUser()
     if (!user) {
       return Promise.resolve({ items: [], page, size, total: 0 }) as Promise<{ items: any[]; page: number; size: number; total: number }>
     }
     return api
-      .get('/notifications', { params: { page, size, type, status }, headers: { 'X-Skip-Auth-Redirect': '1' } })
+      .get('/notifications', { params: { page, size, status }, headers: { 'X-Skip-Auth-Redirect': '1' } })
       .then(res => res as unknown as { items: any[]; page: number; size: number; total: number })
   },
   markRead: (id: string) =>
@@ -77,15 +76,11 @@ export const notificationsAPI = {
 }
 
 export const commentsAPI = {
-  list: (noteId: string, params?: { start?: number; end?: number; intersects?: boolean; blockId?: string; versionId?: string; limit?: number; cursor?: string }) =>
+  list: (noteId: string, params?: { start?: number; end?: number; intersects?: boolean; limit?: number }) =>
     api.get(`/notes/${noteId}/comments`, { params }).then(res => res as unknown as any[]),
-  create: (noteId: string, start?: number, end?: number, text?: string, options?: { anchor?: any; blockId?: string; idempotencyKey?: string }) =>
-    api.post(`/notes/${noteId}/comments`, { start, end, text, anchor: options?.anchor, blockId: options?.blockId }, { headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined }).then(res => res as unknown as any),
+  create: (noteId: string, start?: number, end?: number, text?: string, options?: { idempotencyKey?: string }) =>
+    api.post(`/notes/${noteId}/comments`, { start, end, text }, { headers: options?.idempotencyKey ? { 'Idempotency-Key': options.idempotencyKey } : undefined }).then(res => res as unknown as any),
   reply: (commentId: string, text: string) => api.post(`/comments/${commentId}/replies`, { text }).then(res => res as unknown as any),
   delete: (commentId: string) => api.delete(`/comments/${commentId}`).then(res => res as unknown as { ok: boolean }),
 }
 
-export const noteLockAPI = {
-  lock: (noteId: string) => api.post(`/notes/${noteId}/lock`, {}).then(res => res as unknown as any),
-  unlock: (noteId: string) => api.delete(`/notes/${noteId}/lock`).then(res => res as unknown as any),
-}

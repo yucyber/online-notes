@@ -10,7 +10,6 @@ export interface AiRunStartInput {
   userId?: string
   provider?: string
   model?: string
-  metadata?: Record<string, unknown>
 }
 
 export interface AiRunRecord {
@@ -38,32 +37,29 @@ export class AiRunService {
       provider: input.provider,
       model: input.model,
       status: 'running',
-      metadata: input.metadata,
     })
 
     return this.toRecord(doc)
   }
 
-  async succeed(runId: string, metadata?: Record<string, unknown>): Promise<AiRunRecord> {
-    return this.finish(runId, 'succeeded', undefined, metadata)
+  async succeed(runId: string): Promise<AiRunRecord> {
+    return this.finish(runId, 'succeeded')
   }
 
-  async fail(runId: string, error: unknown, metadata?: Record<string, unknown>): Promise<AiRunRecord> {
-    return this.finish(runId, 'failed', this.errorMessage(error), metadata)
+  async fail(runId: string, error: unknown): Promise<AiRunRecord> {
+    return this.finish(runId, 'failed', this.errorMessage(error))
   }
 
   private async finish(
     runId: string,
     status: AiRunStatus,
     error?: string,
-    metadata?: Record<string, unknown>,
   ): Promise<AiRunRecord> {
     const $set: Record<string, unknown> = {
       status,
       finishedAt: new Date(),
     }
     if (error) $set.error = error
-    if (metadata) $set.metadata = metadata
 
     const doc = await this.model.findOneAndUpdate(
       { runId },

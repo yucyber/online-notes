@@ -1,14 +1,12 @@
 import { useCallback } from 'react'
 import { updateNote, createTag } from '@/lib/api'
 import { mergeTagIds } from '@/app/dashboard/notes/new/new-note-utils'
-import type { Note, Category, Tag } from '@/types'
+import type { Note, Tag } from '@/types'
 
 interface UseNoteSaveOptions {
   id: string
   selectedCategory: string
-  auxCategoryIds: string[]
   selectedTags: string[]
-  categories: Category[]
   tags: Tag[]
   editorMode: 'rich' | 'markdown'
   setNote: (updater: (prev: Note | null) => Note | null) => void
@@ -19,9 +17,7 @@ interface UseNoteSaveOptions {
 export function useNoteSave({
   id,
   selectedCategory,
-  auxCategoryIds,
   selectedTags,
-  categories,
   tags,
   editorMode,
   setNote,
@@ -52,17 +48,12 @@ export function useNoteSave({
   }, [tags, setTags])
 
   const save = useCallback(async (title: string, content: string, status: 'published' | 'draft') => {
-    const auxNames = auxCategoryIds
-      .map(cid => categories.find(c => (c.id || (c as unknown as { _id?: string })?._id) === cid)?.name)
-      .filter((n): n is string => Boolean(n))
-    const generatedTagIds = auxNames.length > 0 ? await addTagsByNames(auxNames) : []
     try {
       const updatedNote = await updateNote(id, {
         title: title.trim(),
         content: content.trim(),
         categoryId: selectedCategory || undefined,
-        categoryIds: auxCategoryIds.length > 0 ? auxCategoryIds : undefined,
-        tags: mergeTagIds(selectedTags, generatedTagIds),
+        tags: mergeTagIds(selectedTags, []),
         status,
       })
       setNote(() => updatedNote)
@@ -82,7 +73,7 @@ export function useNoteSave({
       } catch { }
       throw error
     }
-  }, [id, selectedCategory, auxCategoryIds, selectedTags, categories, editorMode, addTagsByNames, setNote])
+  }, [id, selectedCategory, selectedTags, editorMode, setNote])
 
   const handleSave = useCallback((title: string, content: string) => save(title, content, 'published'), [save])
   const handleSaveDraft = useCallback((title: string, content: string) => save(title, content, 'draft'), [save])

@@ -1,4 +1,4 @@
-import { getTyped, postTyped } from './client'
+import { postTyped } from './client'
 import type { User, LoginCredentials } from '@/types'
 
 export const authAPI = {
@@ -7,7 +7,4 @@ export const authAPI = {
 
   register: (data: LoginCredentials) =>
     postTyped<{ user: User }>('/auth/register', data),
-
-  getCurrentUser: () =>
-    getTyped<User>('/auth/me'),
 }

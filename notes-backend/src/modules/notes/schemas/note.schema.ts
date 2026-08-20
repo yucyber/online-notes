@@ -27,9 +27,6 @@ export class Note {
   @Prop({ type: Types.ObjectId, ref: 'Category' })
   categoryId?: Types.ObjectId;
 
-  @Prop([{ type: Types.ObjectId, ref: 'Category' }])
-  categoryIds?: Types.ObjectId[];
-
   @Prop([{ type: Types.ObjectId, ref: 'Tag' }])
   tags: Types.ObjectId[];
 
@@ -39,23 +36,11 @@ export class Note {
   @Prop({ required: true, enum: ['published', 'draft'], default: 'published' })
   status: string;
 
-  @Prop({ required: true, enum: ['private', 'org', 'public'], default: 'private' })
+  @Prop({ required: true, enum: ['private', 'public'], default: 'private' })
   visibility: string;
 
-  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['owner', 'editor', 'viewer'] }, addedBy: { type: Types.ObjectId, ref: 'User' }, addedAt: { type: Date, default: Date.now } }])
-  acl?: { userId: Types.ObjectId; role: string; addedBy?: Types.ObjectId; addedAt?: Date }[];
-
-  @Prop({ type: Types.ObjectId })
-  currentVersionId?: Types.ObjectId;
-
-  @Prop({ type: Number, default: 0 })
-  versionCount?: number;
-
-  @Prop({ type: Types.ObjectId, ref: 'User' })
-  editingBy?: Types.ObjectId;
-
-  @Prop({ type: Date })
-  lockedAt?: Date;
+  @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['editor', 'viewer'] } }])
+  acl?: { userId: Types.ObjectId; role: string }[];
 
   @Prop({ type: [Number], index: true })
   embedding?: number[];
@@ -69,10 +54,9 @@ NoteSchema.index({ userId: 1, status: 1, createdAt: -1 }, { name: 'idx_user_stat
 NoteSchema.index({ visibility: 1 }, { name: 'idx_visibility' })
 NoteSchema.index({ 'acl.userId': 1 }, { name: 'idx_acl_user' })
 NoteSchema.index({ categoryId: 1 }, { name: 'idx_categoryId' })
-NoteSchema.index({ categoryIds: 1 }, { name: 'idx_categoryIds' })
 NoteSchema.index({ tags: 1 }, { name: 'idx_tags' })
 NoteSchema.index({ createdAt: -1 }, { name: 'idx_createdAt' })
-// 补充按更新时间排序与过滤的索引，保障 sortBy=updatedAt 的场景
+// 补充按更新时间排序与过滤的索引，保障列表按 updatedAt 降序分页
 NoteSchema.index({ updatedAt: -1 }, { name: 'idx_updatedAt' })
 NoteSchema.index({ userId: 1, status: 1, updatedAt: -1 }, { name: 'idx_user_status_updated' })
 // 文本索引（可选）：用于 keyword 搜索提升性能；如需严格相关度排序，可在服务层切换为 $text 查询

@@ -15,8 +15,6 @@ describe('notes URL pagination', () => {
     expect(buildNotesQueryParams(new URLSearchParams('keyword=graph&tagIds=t1&tagIds=t2&ids=n1,n2&status=draft'))).toEqual({
       keyword: 'graph',
       categoryId: undefined,
-      categoryIds: undefined,
-      categoriesMode: undefined,
       tagIds: ['t1', 't2'],
       tagsMode: undefined,
       startDate: undefined,

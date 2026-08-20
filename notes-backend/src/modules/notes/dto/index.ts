@@ -8,16 +8,10 @@ export enum NoteStatus {
 
 export enum NoteVisibility {
   PRIVATE = 'private',
-  ORG = 'org',
   PUBLIC = 'public',
 }
 
 export enum TagsMode {
-  ANY = 'any',
-  ALL = 'all',
-}
-
-export enum CategoriesMode {
   ANY = 'any',
   ALL = 'all',
 }
@@ -42,11 +36,6 @@ export class CreateNoteDto {
   categoryId?: string;
 
   @IsOptional()
-  @IsArray({ message: '分类必须是数组' })
-  @IsMongoId({ each: true })
-  categoryIds?: string[];
-
-  @IsOptional()
   @IsArray({ message: '标签必须是数组' })
   @IsMongoId({ each: true })
   tags: string[] = [];
@@ -56,7 +45,7 @@ export class CreateNoteDto {
   status?: NoteStatus;
 
   @IsOptional()
-  @IsEnum(NoteVisibility, { message: '可见性必须是 private/org/public' })
+  @IsEnum(NoteVisibility, { message: '可见性必须是 private/public' })
   visibility?: NoteVisibility;
 }
 
@@ -76,14 +65,6 @@ export class UpdateNoteDto {
   categoryId?: string;
 
   @IsOptional()
-  @Transform(({ value }) => {
-    if (value === undefined || value === null) return undefined
-    return Array.isArray(value) ? value : [value]
-  })
-  @IsMongoId({ each: true })
-  categoryIds?: string[];
-
-  @IsOptional()
   @IsArray({ message: '标签必须是数组' })
   @IsMongoId({ each: true })
   tags?: string[];
@@ -93,7 +74,7 @@ export class UpdateNoteDto {
   status?: NoteStatus;
 
   @IsOptional()
-  @IsEnum(NoteVisibility, { message: '可见性必须是 private/org/public' })
+  @IsEnum(NoteVisibility, { message: '可见性必须是 private/public' })
   visibility?: NoteVisibility;
 }
 
@@ -127,23 +108,11 @@ export class NoteFilterDto {
     return Array.isArray(value) ? value : [value]
   })
   @IsMongoId({ each: true })
-  categoryIds?: string[];
-
-  @IsOptional()
-  @Transform(({ value }) => {
-    if (value === undefined || value === null) return undefined
-    return Array.isArray(value) ? value : [value]
-  })
-  @IsMongoId({ each: true })
   tagIds?: string[];
 
   @IsOptional()
   @IsEnum(TagsMode)
   tagsMode?: TagsMode;
-
-  @IsOptional()
-  @IsEnum(CategoriesMode)
-  categoriesMode?: CategoriesMode;
 
   @IsOptional()
   @IsDateString()
@@ -157,7 +126,7 @@ export class NoteFilterDto {
   @IsEnum(NoteStatus)
   status?: NoteStatus;
 
-  // Pagination & Sorting
+  // 分页：列表固定按 updatedAt 降序，只接受 page/size
   @IsOptional()
   @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
   @IsInt()
@@ -169,32 +138,18 @@ export class NoteFilterDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number;
-
-  // 兼容 size 别名
-  @IsOptional()
-  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
-  @IsInt()
-  @Min(1)
-  @Max(100)
   size?: number;
-
-  @IsOptional()
-  @IsString()
-  sortBy?: string;
-
-  @IsOptional()
-  @IsIn(['asc', 'desc'])
-  sortOrder?: 'asc' | 'desc';
-
-  // Cursor-based pagination：基于 `createdAt` 的时间游标
-  @IsOptional()
-  @IsDateString()
-  cursor?: string;
 }
 
 export class RecommendationQueryDto extends NoteFilterDto {
   @IsOptional()
   @IsMongoId()
   currentNoteId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

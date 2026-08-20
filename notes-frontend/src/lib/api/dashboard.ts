@@ -8,7 +8,7 @@ export const dashboardAPI = {
   getTopics: () =>
     api.get<{ topics: any[] }>('/v1/semantic/topics', { timeout: 60000 }).then(res => {
       const data = res as unknown as any;
-      return data.data?.topics || [];
+      return data.topics || [];
     }),
   convertTopicToTag: (topicName: string, noteIds: string[]) =>
     api.post('/v1/semantic/topics/convert', { topicName, noteIds }).then(res => res as unknown as { tag: Tag; updated: number }),

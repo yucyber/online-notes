@@ -1,11 +1,11 @@
 const mockGet = jest.fn()
-const mockPut = jest.fn()
+const mockPatch = jest.fn()
 
 jest.mock('@/lib/api/client', () => ({
   __esModule: true,
   default: {
     get: (...args: unknown[]) => mockGet(...args),
-    put: (...args: unknown[]) => mockPut(...args),
+    patch: (...args: unknown[]) => mockPatch(...args),
     post: jest.fn(),
     delete: jest.fn(),
   },
@@ -17,7 +17,7 @@ describe('notesAPI list cache', () => {
   beforeEach(() => {
     jest.resetModules()
     mockGet.mockReset()
-    mockPut.mockReset()
+    mockPatch.mockReset()
     sessionStorage.clear()
   })
 
@@ -35,7 +35,7 @@ describe('notesAPI list cache', () => {
       total: 1,
     }
     mockGet.mockResolvedValueOnce(staleList).mockResolvedValueOnce(freshList)
-    mockPut.mockResolvedValue({ id: 'note-1', title: 'Note', categoryId: 'category-1' })
+    mockPatch.mockResolvedValue({ id: 'note-1', title: 'Note', categoryId: 'category-1' })
 
     const { notesAPI } = await import('@/lib/api/notes')
     await notesAPI.getAllCached({ page: 1, size: 10 })

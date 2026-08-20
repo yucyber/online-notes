@@ -63,22 +63,22 @@ test('NoteAccessService.memberScope excludes public visibility', () => {
   assert.equal(String(query.$or[1].acl.$elemMatch.userId), String(userId))
 })
 
-test('NoteAccessService.writeScope restricts ACL to owner+editor', () => {
+test('NoteAccessService.writeScope restricts ACL to editor', () => {
   const svc = new NoteAccessService()
   const noteId = new Types.ObjectId()
   const userId = new Types.ObjectId()
   const query: any = svc.writeScope(String(noteId), String(userId))
 
-  assert.deepEqual(query.$or[1].acl.$elemMatch.role.$in, ['owner', 'editor'])
+  assert.equal(query.$or[1].acl.$elemMatch.role, 'editor')
 })
 
-test('NoteAccessService.ownerScope restricts ACL to owner only', () => {
+test('NoteAccessService.ownerScope matches creator userId only', () => {
   const svc = new NoteAccessService()
   const noteId = new Types.ObjectId()
   const userId = new Types.ObjectId()
   const query: any = svc.ownerScope(String(noteId), String(userId))
 
-  assert.equal(query.$or[1].acl.$elemMatch.role, 'owner')
+  assert.equal(String(query.userId), String(userId))
 })
 
 test('NoteCounterService.diffIds computes set differences', () => {
@@ -93,7 +93,7 @@ test('NoteCounterService.diffIds drops falsy ids and de-duplicates', () => {
   assert.deepEqual(result.remove.sort(), ['b'])
 })
 
-test('NoteCounterService.incrementForCreate merges single + array categories', async () => {
+test('NoteCounterService.incrementForCreate counts the single category and tags', async () => {
   const calls: string[] = []
   const categoriesService = {
     incrementNoteCount: async (id: string) => { calls.push(`cat+${id}`) },
@@ -105,11 +105,9 @@ test('NoteCounterService.incrementForCreate merges single + array categories', a
   }
   const svc = new NoteCounterService(categoriesService as any, tagsService as any)
 
-  // Same id in both single and array — must NOT double-count.
-  await svc.incrementForCreate({ categoryId: 'A', categoryIds: ['A', 'B'], tags: ['t1', 't2'] })
+  await svc.incrementForCreate({ categoryId: 'A', tags: ['t1', 't2'] })
 
-  // Categories should be A and B (deduped), tags t1 and t2.
-  assert.deepEqual(calls.sort(), ['cat+A', 'cat+B', 'tag+t1', 'tag+t2'])
+  assert.deepEqual(calls.sort(), ['cat+A', 'tag+t1', 'tag+t2'])
 })
 
 test('NoteCounterService.updateCategories diffs prev vs next', async () => {
@@ -136,7 +134,7 @@ test('NoteCounterService.updateTags diffs prev vs next', async () => {
   assert.deepEqual(calls.sort(), ['+z', '-x'])
 })
 
-test('NoteCounterService.decrementForDelete merges single + array categories', async () => {
+test('NoteCounterService.decrementForDelete counts the single category and tags', async () => {
   const calls: string[] = []
   const categoriesService = {
     incrementNoteCount: async (id: string) => { calls.push(`cat+${id}`) },
@@ -148,6 +146,6 @@ test('NoteCounterService.decrementForDelete merges single + array categories', a
   }
   const svc = new NoteCounterService(categoriesService as any, tagsService as any)
 
-  await svc.decrementForDelete({ categoryId: 'A', categoryIds: ['A', 'B'], tags: ['t1'] })
-  assert.deepEqual(calls.sort(), ['cat-A', 'cat-B', 'tag-t1'])
+  await svc.decrementForDelete({ categoryId: 'A', tags: ['t1'] })
+  assert.deepEqual(calls.sort(), ['cat-A', 'tag-t1'])
 })

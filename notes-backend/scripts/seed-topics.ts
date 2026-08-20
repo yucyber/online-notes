@@ -17,7 +17,6 @@ const NoteSchema = new mongoose.Schema({
     visibility: { type: String, default: 'private' },
     embedding: [Number],
     tags: [mongoose.Types.ObjectId],
-    categoryIds: [mongoose.Types.ObjectId],
 }, { timestamps: true });
 
 const Note = mongoose.model('Note', NoteSchema);

@@ -17,22 +17,16 @@ export class SemanticController {
   private keywordOpts(input: {
     page?: number
     limit?: number
-    threshold?: number
     categoryId?: string
     tagIds?: string[]
-    tagsMode?: 'any' | 'all'
-    categoriesMode?: 'any' | 'all'
     mode?: SemanticSearchOpts['mode']
   }): SemanticSearchOpts {
     return {
       mode: input.mode || 'keyword',
       page: Number(input.page || 1),
       limit: Number(input.limit || 10),
-      threshold: Number(input.threshold || 0),
       categoryId: input.categoryId,
       tagIds: input.tagIds,
-      tagsMode: input.tagsMode,
-      categoriesMode: input.categoriesMode,
     }
   }
 
@@ -49,11 +43,8 @@ export class SemanticController {
     @Query('mode') mode?: 'keyword' | 'vector' | 'hybrid',
     @Query('page') page?: number,
     @Query('limit') limit?: number,
-    @Query('threshold') threshold?: number,
     @Query('categoryId') categoryId?: string,
     @Query('tagIds') tagIds?: string | string[],
-    @Query('tagsMode') tagsMode?: 'any' | 'all',
-    @Query('categoriesMode') categoriesMode?: 'any' | 'all',
   ) {
     const userId = this.resolveUserId(req)
     const tagArray = Array.isArray(tagIds)
@@ -63,11 +54,8 @@ export class SemanticController {
     const baseOpts = this.keywordOpts({
       page,
       limit,
-      threshold,
       categoryId,
       tagIds: tagArray,
-      tagsMode,
-      categoriesMode,
       mode: mode || 'keyword',
     })
 
@@ -105,6 +93,6 @@ export class SemanticController {
   async getTopics(@Request() req) {
     const userId = this.resolveUserId(req);
     const topics = await this.semantic.discoverTopics(userId);
-    return { code: 200, message: 'success', data: { topics } };
+    return { topics };
   }
 }

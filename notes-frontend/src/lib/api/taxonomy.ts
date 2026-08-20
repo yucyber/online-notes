@@ -8,9 +8,6 @@ export const savedFiltersAPI = {
 
   create: (data: CreateSavedFilterDto) =>
     api.post<SavedFilter>('/saved-filters', data).then(res => res as unknown as SavedFilter),
-
-  delete: (id: string) =>
-    api.delete(`/saved-filters/${id}`).then(res => res as unknown as void),
 }
 
 // 分类相关API
@@ -18,7 +15,7 @@ export const categoriesAPI = {
   getAll: (signal?: AbortSignal) =>
     api.get<Category[]>('/categories', { signal }).then(res => {
       const data = res as unknown as any[]
-      const mapped = data.map(item => ({ ...item, id: item.id || item._id })) as Category[]
+      const mapped = data.map(item => ({ ...item, id: item.id })) as Category[]
       console.log('Fetched categories:', mapped)
       return mapped
     }),
@@ -31,7 +28,7 @@ export const categoriesAPI = {
   }) =>
     api.post<Category>('/categories', payload).then(res => {
       const item = res as unknown as any
-      return { ...item, id: item.id || item._id } as Category
+      return { ...item, id: item.id } as Category
     }),
 
   update: (id: string, payload: Partial<{
@@ -42,7 +39,7 @@ export const categoriesAPI = {
   }>) =>
     api.patch<Category>(`/categories/${id}`, payload).then(res => {
       const item = res as unknown as any
-      return { ...item, id: item.id || item._id } as Category
+      return { ...item, id: item.id } as Category
     }),
 
   delete: (id: string) =>
@@ -54,19 +51,19 @@ export const tagsAPI = {
   getAll: (signal?: AbortSignal) =>
     api.get<Tag[]>('/tags', { signal }).then(res => {
       const data = res as unknown as any[]
-      return data.map(item => ({ ...item, id: item.id || item._id })) as Tag[]
+      return data.map(item => ({ ...item, id: item.id })) as Tag[]
     }),
 
   update: (id: string, payload: Partial<{ name: string; color: string }>) =>
     api.patch<Tag>(`/tags/${id}`, payload).then(res => {
       const item = res as unknown as any
-      return { ...item, id: item.id || item._id } as Tag
+      return { ...item, id: item.id } as Tag
     }),
 
   create: (name: string) =>
     api.post<Tag>('/tags', { name }).then(res => {
       const item = res as unknown as any
-      return { ...item, id: item.id || item._id } as Tag
+      return { ...item, id: item.id } as Tag
     }),
 
   bulkCreate: (names: string[]) =>
@@ -79,5 +76,5 @@ export const tagsAPI = {
     api.post<{ total: number; updated: number }>('/tags/sync').then(res => res as unknown as { total: number; updated: number }),
 
   delete: (id: string) =>
-    api.delete(`/tags/${id}`, { params: { mode: 'remove' } }).then(res => res as unknown as void),
+    api.delete(`/tags/${id}`).then(res => res as unknown as void),
 }

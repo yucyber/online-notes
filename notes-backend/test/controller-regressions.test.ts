@@ -82,7 +82,6 @@ test('SemanticController forwards vector search options and returns a SemanticPa
     'vector',
     2,
     3,
-    undefined,
     'cat-1',
     'tag-1',
   )

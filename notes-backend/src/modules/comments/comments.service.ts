@@ -21,17 +21,12 @@ export class CommentsService {
     start?: number,
     end?: number,
     intersects: boolean = true,
-    blockId?: string,
-    versionId?: string,
     limit: number = 50,
-    cursor?: string,
   ) {
     // 公开笔记允许阅读评论，但参与评论仍要求是笔记创建者或 ACL 成员。
     const note = await this.noteModel.findOne(this.noteAccess.readScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     const filter: any = { noteId: note._id }
-    if (blockId) filter.blockId = blockId
-    if (versionId) filter['anchor.versionId'] = new Types.ObjectId(versionId)
     if (start !== undefined && end !== undefined) {
       const s = Number(start)
       const e = Number(end)
@@ -39,22 +34,18 @@ export class CommentsService {
         ? [{ start: { $lt: e } }, { end: { $gt: s } }]
         : [{ start: { $gte: s } }, { end: { $lte: e } }]
     }
-    if (cursor) filter._id = { $lt: new Types.ObjectId(cursor) }
     const lim = Math.min(Math.max(Number(limit) || 50, 1), 100)
     return this.commentModel.find(filter).sort({ createdAt: -1, _id: -1 }).limit(lim).exec()
   }
 
-  async create(noteId: string, userId: string, start: number | undefined, end: number | undefined, text: string, requestId?: string, anchor?: any, blockId?: string) {
+  async create(noteId: string, userId: string, start: number | undefined, end: number | undefined, text: string, requestId?: string) {
     const u = new Types.ObjectId(userId)
     // 公开可见不等于可参与协作，创建评论必须通过成员范围检查。
     const note = await this.noteModel.findOne(this.noteAccess.memberScope(noteId, userId)).exec()
     if (!note) throw new NotFoundException('无权限')
     if (!text?.trim()) throw new BadRequestException('文本为空')
-    if ((start === undefined || end === undefined) && !anchor) throw new BadRequestException('缺少范围或锚点')
-    const body: any = { noteId: note._id, authorId: u, text }
-    if (start !== undefined && end !== undefined) Object.assign(body, { start, end })
-    if (blockId) body.blockId = blockId
-    if (anchor) body.anchor = anchor
+    if (start === undefined || end === undefined) throw new BadRequestException('缺少选区范围')
+    const body: any = { noteId: note._id, authorId: u, text, start, end }
     const c = new this.commentModel(body)
     await c.save()
     await this.audit.record('comment_added', userId, 'note', note._id.toString(), { requestId, message: 'comment_added' })

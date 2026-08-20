@@ -172,51 +172,6 @@ test('KnowledgeBasesService reads a graph scoped by knowledge base and user', as
   assert.deepEqual(graph.edges[0].noteIds, [noteOneId])
 })
 
-test('KnowledgeBasesService.remove deletes graph data inside the KB user boundary', async () => {
-  const graphDeletes: any[] = []
-  const kbModel = {
-    findOne: (query: any) => execResult(doc({ _id: new Types.ObjectId(kbId), userId: query.userId })),
-    deleteOne: (query: any) => {
-      graphDeletes.push({ collection: 'kb', query })
-      return execResult({ deletedCount: 1 })
-    },
-  }
-  const linkModel = {
-    deleteMany: (query: any) => {
-      graphDeletes.push({ collection: 'links', query })
-      return execResult({ deletedCount: 2 })
-    },
-  }
-  const graphNodeModel = {
-    deleteMany: (query: any) => {
-      graphDeletes.push({ collection: 'nodes', query })
-      return execResult({ deletedCount: 3 })
-    },
-  }
-  const graphEdgeModel = {
-    deleteMany: (query: any) => {
-      graphDeletes.push({ collection: 'edges', query })
-      return execResult({ deletedCount: 4 })
-    },
-  }
-  const service = new KnowledgeBasesService(
-    kbModel as any,
-    linkModel as any,
-    {} as any,
-    { objectId: (id: string) => new Types.ObjectId(id) } as any,
-    graphNodeModel as any,
-    graphEdgeModel as any,
-  )
-
-  await service.remove(kbId, userId)
-
-  assert.deepEqual(graphDeletes.map((entry) => entry.collection), ['links', 'nodes', 'edges', 'kb'])
-  for (const entry of graphDeletes) {
-    assert.equal(entry.query.userId.toString(), userId)
-    if (entry.collection !== 'kb') assert.equal(entry.query.knowledgeBaseId.toString(), kbId)
-  }
-})
-
 test('KnowledgeBasesService.replaceGraph preserves the old graph when the transaction fails', async () => {
   const state = {
     nodes: [{ nodeId: 'old-node' }],

@@ -176,8 +176,6 @@ function NotesPageContent() {
             context={{
               keyword: searchParams.get('keyword') || undefined,
               categoryId: searchParams.get('categoryId') || undefined,
-              categoryIds: searchParams.getAll('categoryIds').length > 0 ? searchParams.getAll('categoryIds') : undefined,
-              categoriesMode: (searchParams.get('categoriesMode') as 'any' | 'all') || undefined,
               tagIds: searchParams.getAll('tagIds').length > 0 ? searchParams.getAll('tagIds') : undefined,
               tagsMode: (searchParams.get('tagsMode') as 'any' | 'all') || undefined,
               startDate: searchParams.get('startDate') || undefined,

@@ -15,17 +15,15 @@ export default function NotificationsPage() {
     try {
       const iv = await listMyInvitations('pending')
       setInvites(iv || [])
-      const ns = await listNotifications(page, size, undefined, 'unread')
+      const ns = await listNotifications(page, size, 'unread')
       setNotes(ns)
     } catch {}
   }, [page, size])
   useEffect(() => { void load() }, [load])
 
-  const accept = async (tokenHashOrToken: string) => {
+  const accept = async (inviteId: string) => {
     try {
-      // 直接跳转到接受页或调用接受接口
-      // 此处尝试预览以获得明文token路径
-      router.push(`/invitations/${tokenHashOrToken}/accept`)
+      router.push(`/invitations/${inviteId}/accept`)
     } catch {}
   }
 
@@ -38,11 +36,11 @@ export default function NotificationsPage() {
       <section>
         <ul>
           {invites.map((v, i) => (
-            <li key={v.hash || i} className="product-message-row">
+            <li key={v.id || i} className="product-message-row">
               <span className="prototype-message-icon">↗</span>
               <span className="text-sm text-[var(--product-text-secondary)]">笔记 {v.noteId} · 权限 {v.role} · {new Date(v.expiresAt).toLocaleString()}</span>
               <div className="flex gap-2">
-                <Button onClick={() => accept(v.hash)}>接受</Button>
+                <Button onClick={() => accept(v.id)}>接受</Button>
               </div>
             </li>
           ))}

@@ -16,8 +16,6 @@ export function useSearchFilterBar() {
   const [keyword, setKeyword] = useState(searchParams.get('keyword') || '')
   const [categoryId, setCategoryId] = useState(searchParams.get('categoryId') || '')
   const [selectedTagIds, setSelectedTagIds] = useState<string[]>([])
-  const [selectedCategoryIds, setSelectedCategoryIds] = useState<string[]>([])
-  const [categoriesMode, setCategoriesMode] = useState<'any' | 'all'>((searchParams.get('categoriesMode') as 'any' | 'all') || 'any')
   const [tagsMode, setTagsMode] = useState<'any' | 'all'>((searchParams.get('tagsMode') as 'any' | 'all') || 'any')
   const [startDate, setStartDate] = useState(searchParams.get('startDate') || '')
   const [endDate, setEndDate] = useState(searchParams.get('endDate') || '')
@@ -38,12 +36,10 @@ export function useSearchFilterBar() {
     setSelectedTagIds(tagIds.length > 0 ? tagIds : (searchParams.get('tagIds') || '').split(',').filter(Boolean))
     setKeyword(searchParams.get('keyword') || '')
     setCategoryId(searchParams.get('categoryId') || '')
-    setSelectedCategoryIds(searchParams.getAll('categoryIds'))
     setStartDate(searchParams.get('startDate') || '')
     setEndDate(searchParams.get('endDate') || '')
     setStatus(searchParams.get('status') || '')
     setTagsMode((searchParams.get('tagsMode') as 'any' | 'all') || 'any')
-    setCategoriesMode((searchParams.get('categoriesMode') as 'any' | 'all') || 'any')
     setNlqEnabled(searchParams.get('nlq') === '1')
     setNlqMode((searchParams.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid')
   }, [searchParams])
@@ -54,8 +50,6 @@ export function useSearchFilterBar() {
     const params = new URLSearchParams()
     if (keyword) params.set('keyword', keyword)
     if (categoryId) params.set('categoryId', categoryId)
-    Array.from(new Set(selectedCategoryIds.filter(Boolean))).forEach((id) => params.append('categoryIds', id))
-    if (selectedCategoryIds.length > 0) params.set('categoriesMode', categoriesMode)
     Array.from(new Set(selectedTagIds.filter(Boolean))).forEach((id) => params.append('tagIds', id))
     if (selectedTagIds.length > 0) params.set('tagsMode', tagsMode)
     if (startDate) params.set('startDate', startDate)
@@ -70,7 +64,7 @@ export function useSearchFilterBar() {
     const currentQuery = typeof window !== 'undefined' ? window.location.search.replace(/^\?/, '') : ''
     const searchId = `s_${Date.now()}_${Math.floor(Math.random() * 1e6)}`
     try { sessionStorage.setItem('lastSearchId', searchId) } catch {}
-    document.dispatchEvent(new CustomEvent('search:trigger', { detail: { searchId, source, keyword, categoryId, categoryIds: selectedCategoryIds, tagIds: Array.from(new Set(selectedTagIds.filter(Boolean))), categoriesMode, tagsMode, startDate, endDate, status, nlqEnabled, nlqMode, nextQuery, time: new Date().toISOString() } }))
+    document.dispatchEvent(new CustomEvent('search:trigger', { detail: { searchId, source, keyword, categoryId, tagIds: Array.from(new Set(selectedTagIds.filter(Boolean))), tagsMode, startDate, endDate, status, nlqEnabled, nlqMode, nextQuery, time: new Date().toISOString() } }))
     document.dispatchEvent(new CustomEvent('rum', { detail: { type: 'ui:search_trigger', name: 'Search', value: 1, meta: { searchId, source } } }))
     if (nextQuery !== currentQuery) router.push(`/dashboard/notes?${nextQuery}`)
   }
@@ -93,18 +87,17 @@ export function useSearchFilterBar() {
     router.push(nextQuery ? `/dashboard/notes?${nextQuery}` : '/dashboard/notes')
   }
 
-  const handleClear = () => { setKeyword(''); setCategoryId(''); setSelectedCategoryIds([]); setCategoriesMode('any'); setSelectedTagIds([]); setStartDate(''); setEndDate(''); setStatus(''); setTagsMode('any'); setNlqEnabled(false); setNlqMode('hybrid'); router.push('/dashboard/notes') }
+  const handleClear = () => { setKeyword(''); setCategoryId(''); setSelectedTagIds([]); setStartDate(''); setEndDate(''); setStatus(''); setTagsMode('any'); setNlqEnabled(false); setNlqMode('hybrid'); router.push('/dashboard/notes') }
   const handleSaveFilter = async () => {
     if (!newFilterName) return
     try { await savedFiltersAPI.create({ name: newFilterName, criteria: { keyword, categoryId, tagIds: selectedTagIds, startDate, endDate, status: status as 'published' | 'draft' | undefined } }); setNewFilterName(''); setIsSaveModalOpen(false); await loadSavedFilters() } catch (error) { console.error('Failed to save filter', error) }
   }
   const applySavedFilter = (filter: SavedFilter) => {
     const criteria = filter.criteria
-    setKeyword(criteria.keyword || ''); setCategoryId(criteria.categoryId || ''); setSelectedCategoryIds(criteria.categoryIds || []); setSelectedTagIds(criteria.tagIds || []); setStartDate(criteria.startDate || ''); setEndDate(criteria.endDate || ''); setStatus(criteria.status || ''); setTagsMode((criteria.tagsMode as 'any' | 'all') || 'any')
+    setKeyword(criteria.keyword || ''); setCategoryId(criteria.categoryId || ''); setSelectedTagIds(criteria.tagIds || []); setStartDate(criteria.startDate || ''); setEndDate(criteria.endDate || ''); setStatus(criteria.status || ''); setTagsMode((criteria.tagsMode as 'any' | 'all') || 'any')
     const params = new URLSearchParams()
     if (criteria.keyword) params.set('keyword', criteria.keyword)
     if (criteria.categoryId) params.set('categoryId', criteria.categoryId)
-    criteria.categoryIds?.forEach((id) => params.append('categoryIds', id))
     criteria.tagIds?.forEach((id) => params.append('tagIds', id))
     if (criteria.tagsMode) params.set('tagsMode', criteria.tagsMode)
     if (criteria.startDate) params.set('startDate', criteria.startDate)
@@ -116,5 +109,5 @@ export function useSearchFilterBar() {
   const setLastWeek = () => { const end = new Date(); const start = new Date(); start.setDate(start.getDate() - 7); setStartDate(start.toISOString().split('T')[0]); setEndDate(end.toISOString().split('T')[0]) }
   const setLastMonth = () => { const end = new Date(); const start = new Date(); start.setMonth(start.getMonth() - 1); setStartDate(start.toISOString().split('T')[0]); setEndDate(end.toISOString().split('T')[0]) }
 
-  return { isOpen, setIsOpen, isSemanticOpen, categories, tags, savedFilters, keyword, setKeyword, categoryId, setCategoryId, selectedTagIds, setSelectedTagIds, selectedCategoryIds, setSelectedCategoryIds, categoriesMode, setCategoriesMode, tagsMode, setTagsMode, startDate, setStartDate, endDate, setEndDate, status, setStatus, nlqEnabled, setNlqEnabled, nlqMode, setNlqMode, isSaveModalOpen, setIsSaveModalOpen, newFilterName, setNewFilterName, handleSearch, handleFilterToggle, handleSemanticSearch, handleSemanticMode, handleDisableSemanticSearch, handleClear, handleSaveFilter, applySavedFilter, toggleTag, setLastWeek, setLastMonth }
+  return { isOpen, setIsOpen, isSemanticOpen, categories, tags, savedFilters, keyword, setKeyword, categoryId, setCategoryId, selectedTagIds, setSelectedTagIds, tagsMode, setTagsMode, startDate, setStartDate, endDate, setEndDate, status, setStatus, nlqEnabled, setNlqEnabled, nlqMode, setNlqMode, isSaveModalOpen, setIsSaveModalOpen, newFilterName, setNewFilterName, handleSearch, handleFilterToggle, handleSemanticSearch, handleSemanticMode, handleDisableSemanticSearch, handleClear, handleSaveFilter, applySavedFilter, toggleTag, setLastWeek, setLastMonth }
 }

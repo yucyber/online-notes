@@ -11,27 +11,20 @@ export class CommentsController {
   @Get()
   async list(@Param('id') id: string, @Request() req) {
     const q = req.query || {}
-    const data = await this.service.list(
+    return this.service.list(
       id,
       req.user.id,
       q.start !== undefined ? Number(q.start) : undefined,
       q.end !== undefined ? Number(q.end) : undefined,
       String(q.intersects ?? 'true') === 'true',
-      q.blockId as string | undefined,
-      q.versionId as string | undefined,
       q.limit !== undefined ? Number(q.limit) : 50,
-      q.cursor as string | undefined,
     )
-    const rid = (req.headers['x-request-id'] as string) || undefined
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
   }
 
   @Post()
   async create(@Param('id') id: string, @Body() body: CreateCommentDto, @Request() req) {
-    const { start, end, text, anchor, blockId } = body
-    const rid = (req.headers['x-request-id'] as string) || undefined
-    const data = await this.service.create(id, req.user.id, start != null ? Number(start) : undefined, end != null ? Number(end) : undefined, String(text || ''), rid, anchor, blockId)
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+    const { start, end, text } = body
+    return this.service.create(id, req.user.id, start != null ? Number(start) : undefined, end != null ? Number(end) : undefined, String(text || ''), (req.headers['x-request-id'] as string) || undefined)
   }
 }
 
@@ -42,15 +35,11 @@ export class CommentRepliesController {
   @Post(':id/replies')
   async reply(@Param('id') id: string, @Body() body: CreateReplyDto, @Request() req) {
     const { text } = body
-    const rid = (req.headers['x-request-id'] as string) || undefined
-    const data = await this.service.reply(id, req.user.id, String(text || ''), rid)
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+    return this.service.reply(id, req.user.id, String(text || ''), (req.headers['x-request-id'] as string) || undefined)
   }
 
   @Delete(':id')
   async remove(@Param('id') id: string, @Request() req) {
-    const rid = (req.headers['x-request-id'] as string) || undefined
-    const data = await this.service.remove(id, req.user.id, rid)
-    return { code: 0, message: 'OK', data, requestId: rid, timestamp: Date.now() }
+    return this.service.remove(id, req.user.id, (req.headers['x-request-id'] as string) || undefined)
   }
 }

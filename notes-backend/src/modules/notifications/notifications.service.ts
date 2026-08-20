@@ -7,9 +7,8 @@ import { Notification, NotificationDocument } from './schemas/notification.schem
 export class NotificationsService {
   constructor(@InjectModel(Notification.name) private model: Model<NotificationDocument>) {}
 
-  async list(userId: string, page: number = 1, size: number = 20, type?: string, status?: string) {
+  async list(userId: string, page: number = 1, size: number = 20, status?: string) {
     const query: any = { userId: new Types.ObjectId(userId) }
-    if (type) query.type = type
     if (status) query.status = status
     const items = await this.model.find(query).sort({ createdAt: -1 }).skip((page - 1) * size).limit(size).exec()
     const total = await this.model.countDocuments(query)

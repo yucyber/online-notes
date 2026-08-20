@@ -13,7 +13,7 @@ export const networkAPI = {
       // 回退：请求最小数据以检测连通性
       try {
         const start2 = Date.now()
-        await api.get('/notes', { params: new URLSearchParams({ limit: '1' }) })
+        await api.get('/notes', { params: new URLSearchParams({ size: '1' }) })
         const latency = Date.now() - start2
         return { ok: true, latency, status: 200 }
       } catch (err: any) {

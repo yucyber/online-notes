@@ -5,9 +5,9 @@ import { NotesService } from '../src/modules/notes/notes.service'
 
 const userId = '507f1f77bcf86cd799439012'
 const ownCategoryId = '507f1f77bcf86cd799439013'
-const ownAuxCategoryId = '507f1f77bcf86cd799439014'
 const ownTagId = '507f1f77bcf86cd799439015'
 const foreignTagId = '507f1f77bcf86cd799439016'
+const foreignCategoryId = '507f1f77bcf86cd799439017'
 
 class FakeNoteModel {
   static savedPayloads: any[] = []
@@ -61,11 +61,10 @@ test('NotesService.create validates category and tag ownership before saving', a
     title: 'note',
     content: 'body',
     categoryId: ownCategoryId,
-    categoryIds: [ownAuxCategoryId],
     tags: [ownTagId],
   }, userId)
 
-  assert.deepEqual(categoryCalls, [{ ids: [ownCategoryId, ownAuxCategoryId], ownerId: userId }])
+  assert.deepEqual(categoryCalls, [{ ids: [ownCategoryId], ownerId: userId }])
   assert.deepEqual(tagCalls, [{ ids: [ownTagId], ownerId: userId }])
   assert.equal(FakeNoteModel.savedPayloads.length, 1)
 })
@@ -78,13 +77,13 @@ test('NotesService.create rejects a foreign taxonomy reference before side effec
     { assertOwnedIds: async () => undefined },
   )
 
-  await assert.rejects(() => service.create({ title: 'note', content: 'body', tags: [foreignTagId] }, userId), /does not belong/)
+  await assert.rejects(() => service.create({ title: 'note', content: 'body', categoryId: foreignCategoryId, tags: [ownTagId] }, userId), /does not belong/)
   assert.equal(FakeNoteModel.savedPayloads.length, 0)
 })
 
 test('NotesService.update validates only taxonomy fields supplied by the caller', async () => {
   const calls: any[] = []
-  const original = { _id: new Types.ObjectId(), title: 'old', content: 'body', tags: [], categoryIds: [] }
+  const original = { _id: new Types.ObjectId(), title: 'old', content: 'body', tags: [] }
   const noteModel = {
     findOne: () => execResult(original),
     findOneAndUpdate: () => updateChain({ ...original, tags: [new Types.ObjectId(ownTagId)] }),

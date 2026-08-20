@@ -44,19 +44,14 @@ const payload = {
   userId: 'user-1',
   keyword: 'alpha',
   categoryId: undefined,
-  categoryIds: ['cat-1'],
-  categoriesMode: 'any',
   tagIds: ['tag-1'],
   startDate: undefined,
   endDate: undefined,
   status: 'published',
   tagsMode: 'all',
   searchMode: 'text',
-  cursor: undefined,
   page: 1,
   size: 20,
-  sortBy: 'createdAt',
-  sortOrder: 'desc',
   ids: undefined,
 }
 
@@ -64,7 +59,7 @@ test('NoteCacheService builds stable list keys scoped by user', () => {
   const svc = new TestNoteCacheService(new FakeRedis())
   const key = svc.buildListKey('user-1', payload)
 
-  assert.equal(key, 'notes:list:0:user-1:13b5defa53442030ee89d1ceb3add94d2602e6d1')
+  assert.equal(key, 'notes:list:0:user-1:e7b8d6f83a2d76894e77f23a59285cf8c7bff878')
   assert.equal(key, svc.buildListKey('user-1', { ...payload }))
   assert.notEqual(key, svc.buildListKey('user-2', { ...payload, userId: 'user-2' }))
 })

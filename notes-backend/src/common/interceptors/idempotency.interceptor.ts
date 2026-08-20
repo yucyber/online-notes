@@ -26,11 +26,10 @@ export class IdempotencyInterceptor implements NestInterceptor {
       throw new HttpException('Invalid Idempotency-Key', HttpStatus.BAD_REQUEST)
     }
     const endpoint = String(req?.route?.path || req?.originalUrl || req?.url || '')
-    const relevantHeaders = { ifMatch: req?.headers?.['if-match'], ifNoneMatch: req?.headers?.['if-none-match'] }
-    const payloadHash = createHash('sha1').update(JSON.stringify({ body: req.body, params: req.params, query: req.query, headers: relevantHeaders })).digest('hex')
+    // 幂等键绑定用户维度的完整请求；ETag 条件头已废弃，不再纳入 hash
+    const payloadHash = createHash('sha1').update(JSON.stringify({ body: req.body, params: req.params, query: req.query })).digest('hex')
     const userId = String((req?.user?.id || 'anon'))
-    const tenantId = String((req?.user?.tenantId || 'default'))
-    const baseKey = `idempotency:${tenantId}:${userId}:${method}:${endpoint}:${keyHeader}`
+    const baseKey = `idempotency:${userId}:${method}:${endpoint}:${keyHeader}`
     const cacheKey = `${baseKey}:result`
     const lockKey = `${baseKey}:lock`
     const existing = await this.redis.get(cacheKey)
