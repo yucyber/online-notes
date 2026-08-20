@@ -46,10 +46,10 @@
 
 | Operation | 当前调用 | 决策 | 说明 |
 | --- | --- | --- | --- |
-| `GET /audit/logs` | 活动日志页 | 修复并收窄 | 当前查询没有用户作用域，会向任意登录用户暴露全库日志；改为强制 `actorId=当前用户`，页面只保留 `page/size`。 |
+| `GET /audit/logs` | 活动日志页 | 修复并收窄 | ✅ 已实施：`audit.list` 强制 `actorId=当前用户`；返回项附带 `noteTitle`，邀请事件补充 `role/invitedUserId/inviteeEmail`；新增两个用户的数据隔离测试（`test/audit-isolation.test.ts`）。 |
 | `POST /auth/register` | 注册页 | 保留 | 统一只返回规范 User。 |
 | `POST /auth/login` | 登录页 | 保留 | 统一只返回规范 User。 |
-| `POST /auth/logout` | 登出流程 | 修复 | 前端当前错误请求不存在的 Next `/api/auth/logout`，改走 backend API client。 |
+| `POST /auth/logout` | 登出流程 | 保留 | ✅ 已核实走通：前端 `fetch('/api/auth/logout')` 经 `next.config.js` 的 `/api/:path*` rewrite 命中后端，无需修改。 |
 | `GET /auth/me` | 无 | 直接删除 | 当前登录态展示来自登录结果和 localStorage。 |
 | `PATCH /users/me` | 设置页 | 保留 | 补入 OpenAPI；移除没有写入入口的 `avatarUrl` 后，User 只暴露真实字段。 |
 
