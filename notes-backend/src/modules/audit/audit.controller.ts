@@ -1,4 +1,4 @@
-import { Controller, Get, Query, UseGuards } from '@nestjs/common'
+import { Controller, Get, Query, Request, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { AuditService } from './audit.service'
 
@@ -7,7 +7,7 @@ import { AuditService } from './audit.service'
 export class AuditController {
   constructor(private readonly service: AuditService) {}
   @Get('logs')
-  async list(@Query() q: any) {
-    return this.service.list({ resourceType: q.resourceType, resourceId: q.resourceId, eventType: q.eventType, page: Number(q.page) || 1, size: Number(q.size) || 20 })
+  async list(@Query() q: any, @Request() req) {
+    return this.service.list({ actorId: req.user.id, resourceType: q.resourceType, resourceId: q.resourceId, eventType: q.eventType, page: Number(q.page) || 1, size: Number(q.size) || 20 })
   }
 }

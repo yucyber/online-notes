@@ -30,15 +30,18 @@ export class InvitationsService {
     const doc = new this.invitationModel({ noteId: note._id, inviterId: actor, role, inviteeEmail, tokenHash: hash, expiresAt, status: 'pending', requestId })
     await doc.save()
     // 给受邀用户写通知（若存在账号）
+    let invitedUserId: string | undefined
     if (inviteeEmail) {
       try {
         const u = await this.users.findByEmail(inviteeEmail)
         if (u) {
+          invitedUserId = String(u._id)
           await this.notifications.create(u._id as any, 'invitation', { noteId: note._id.toString(), role, expiresAt })
         }
       } catch {}
     }
-    await this.audit.record('invitation_created', inviterId, 'note', note._id.toString(), { requestId })
+    // 记录邀请对象与权限，供活动日志展示"邀请了谁、开了什么权限"
+    await this.audit.record('invitation_created', inviterId, 'note', note._id.toString(), { requestId, after: { role, ...(invitedUserId ? { invitedUserId } : {}), ...(inviteeEmail ? { inviteeEmail } : {}) } })
     return { token, expiresAt }
   }
 
@@ -120,7 +123,7 @@ export class InvitationsService {
     inv.usedAt = new Date()
     inv.requestId = requestId
     await inv.save()
-    await this.audit.record('invitation_accepted', userId, 'note', note._id.toString(), { requestId })
+    await this.audit.record('invitation_accepted', userId, 'note', note._id.toString(), { requestId, after: { role: inv.role } })
     // 通知邀请人
     try { await this.notifications.create(inv.inviterId as any, 'invitation', { noteId: note._id.toString(), acceptedBy: userId }) } catch {}
     return { ok: true }
