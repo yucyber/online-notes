@@ -101,6 +101,6 @@ export class SemanticController {
   async getTopics(@Request() req) {
     const userId = this.resolveUserId(req);
     const topics = await this.semantic.discoverTopics(userId);
-    return { code: 200, message: 'success', data: { topics } };
+    return { topics };
   }
 }

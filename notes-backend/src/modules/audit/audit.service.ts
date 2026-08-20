@@ -37,8 +37,7 @@ export class AuditService {
     const { before, after, message } = this.sanitize(resourceType, payload)
     const entry = new this.model({ eventType, actorId: actorId ? actorId : undefined, resourceType, resourceId, requestId: payload.requestId, before, after, message })
     await entry.save()
-    // 规范响应包：{code,message,data,requestId,timestamp}
-    return { code: 0, message: 'OK', data: { id: String(entry._id) }, requestId: payload.requestId, timestamp: Date.now() }
+    return { id: String(entry._id) }
   }
   async list(params: { resourceType?: string; resourceId?: string; eventType?: string; page?: number; size?: number }) {
     const page = params.page || 1

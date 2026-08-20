@@ -12,6 +12,6 @@ export class RumController {
     collect(@Body() body: RumCollectDto) {
         const ev = { type: body.type, name: body.name || '', meta: body.meta, ts: Date.now() }
         this.rum.collect(ev)
-        return { code: 0, message: 'OK', data: { accepted: true } }
+        return { accepted: true }
     }
 }
