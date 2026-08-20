@@ -34,11 +34,11 @@ export const aclAPI = {
 }
 
 export const invitationsAPI = {
-  create: (noteId: string, role: 'editor' | 'viewer', inviteeEmail?: string, ttlHours?: number) => api.post(`/invitations/notes/${noteId}`, { role, inviteeEmail, ttlHours }).then(res => res as unknown as { token: string; expiresAt: string }),
+  create: (noteId: string, role: 'editor' | 'viewer', inviteeEmail?: string, ttlHours?: number) => api.post(`/invitations/notes/${noteId}`, { role, inviteeEmail, ttlHours }).then(res => res as unknown as { id: string; expiresAt: string }),
   list: (noteId: string) => api.get(`/invitations/notes/${noteId}`).then(res => res as unknown as InvitationSummary[]),
-  preview: (token: string) => api.get(`/invitations/${token}`).then(res => res as unknown as { noteId: string; role: string; expiresAt: string }),
-  accept: (token: string) => api.post(`/invitations/${token}/accept`, {}).then(res => res as unknown as any),
-  revoke: (token: string) => api.delete(`/invitations/${token}`).then(res => res as unknown as any),
+  preview: (id: string) => api.get(`/invitations/${id}`).then(res => res as unknown as { noteId: string; role: string; expiresAt: string }),
+  accept: (id: string) => api.post(`/invitations/${id}/accept`, {}).then(res => res as unknown as any),
+  revoke: (id: string) => api.delete(`/invitations/${id}`).then(res => res as unknown as any),
   mine: (status: 'pending' | 'accepted' | 'revoked' | 'expired' = 'pending') => api.get(`/invitations/mine`, { params: { status } }).then(res => res as unknown as any[]),
 }
 

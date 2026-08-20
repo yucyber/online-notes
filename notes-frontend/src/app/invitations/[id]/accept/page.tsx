@@ -7,7 +7,7 @@ import { Button } from '@/components/ui/button'
 export default function AcceptInvitationPage() {
   const router = useRouter()
   const params = useParams()
-  const token = params?.token as string
+  const id = params?.id as string
   const [info, setInfo] = useState<any>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -16,7 +16,7 @@ export default function AcceptInvitationPage() {
     const run = async () => {
       try {
         setLoading(true)
-        const data = await previewInvitation(token)
+        const data = await previewInvitation(id)
         setInfo(data)
         setError('')
       } catch {
@@ -25,12 +25,12 @@ export default function AcceptInvitationPage() {
         setLoading(false)
       }
     }
-    if (token) run()
-  }, [token])
+    if (id) run()
+  }, [id])
 
   const handleAccept = async () => {
     try {
-      await acceptInvitation(token)
+      await acceptInvitation(id)
       router.replace(`/dashboard/notes/${info?.noteId}`)
     } catch {
       setError('接受失败，请登录后重试')

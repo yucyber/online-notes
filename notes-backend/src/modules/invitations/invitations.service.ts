@@ -3,7 +3,6 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Invitation, InvitationDocument } from './schemas/invitation.schema'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
-import * as crypto from 'crypto'
 import { AuditService } from '../audit/audit.service'
 import { UsersService } from '../users/users.service'
 import { NotificationsService } from '../notifications/notifications.service'
@@ -24,10 +23,8 @@ export class InvitationsService {
     if (!note) throw new NotFoundException('笔记不存在')
     const actor = new Types.ObjectId(inviterId)
     if (!note.userId.equals(actor)) throw new BadRequestException('无权限')
-    const token = crypto.randomBytes(24).toString('hex')
-    const hash = crypto.createHash('sha256').update(token).digest('hex')
     const expiresAt = new Date(Date.now() + ttl * 3600 * 1000)
-    const doc = new this.invitationModel({ noteId: note._id, inviterId: actor, role, inviteeEmail, tokenHash: hash, expiresAt, status: 'pending' })
+    const doc = new this.invitationModel({ noteId: note._id, inviterId: actor, role, inviteeEmail, expiresAt, status: 'pending' })
     await doc.save()
     // 给受邀用户写通知（若存在账号）
     let invitedUserId: string | undefined
@@ -42,7 +39,7 @@ export class InvitationsService {
     }
     // 记录邀请对象与权限，供活动日志展示"邀请了谁、开了什么权限"
     await this.audit.record('invitation_created', inviterId, 'note', note._id.toString(), { after: { role, ...(invitedUserId ? { invitedUserId } : {}), ...(inviteeEmail ? { inviteeEmail } : {}) } })
-    return { token, expiresAt }
+    return { id: doc._id.toString(), expiresAt }
   }
 
   async listForNote(noteId: string, actorId: string) {
@@ -70,23 +67,20 @@ export class InvitationsService {
       role: inv.role,
       expiresAt: inv.expiresAt,
       status: inv.status,
-      hash: (inv as any).tokenHash,
     }))
   }
 
-  async preview(token: string) {
-    const isHash = /^[a-f0-9]{64}$/i.test(token)
-    const hash = isHash ? token : crypto.createHash('sha256').update(token).digest('hex')
-    const inv = await this.invitationModel.findOne({ tokenHash: hash }).exec()
+  async preview(id: string) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('邀请不存在')
+    const inv = await this.invitationModel.findById(id).exec()
     if (!inv) throw new NotFoundException('邀请不存在')
     if (inv.status !== 'pending' || inv.expiresAt.getTime() < Date.now()) throw new NotFoundException('邀请已失效')
     return { noteId: inv.noteId.toString(), role: inv.role, expiresAt: inv.expiresAt }
   }
 
-  async accept(token: string, userId: string) {
-    const isHash = /^[a-f0-9]{64}$/i.test(token)
-    const hash = isHash ? token : crypto.createHash('sha256').update(token).digest('hex')
-    const inv = await this.invitationModel.findOne({ tokenHash: hash }).exec()
+  async accept(id: string, userId: string) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('邀请不存在')
+    const inv = await this.invitationModel.findById(id).exec()
     if (!inv) throw new NotFoundException('邀请不存在')
     if (inv.expiresAt.getTime() < Date.now() || inv.status === 'revoked') {
       inv.status = 'expired'
@@ -128,11 +122,9 @@ export class InvitationsService {
     return { ok: true }
   }
 
-  async revoke(token: string, actorId: string) {
-    // 列表管理只暴露文档 ID；旧邀请链接仍按 token hash 查找，避免把可接受邀请的凭证返回给侧栏。
-    const inv = Types.ObjectId.isValid(token)
-      ? await this.invitationModel.findById(token).exec()
-      : await this.invitationModel.findOne({ tokenHash: crypto.createHash('sha256').update(token).digest('hex') }).exec()
+  async revoke(id: string, actorId: string) {
+    if (!Types.ObjectId.isValid(id)) throw new NotFoundException('邀请不存在')
+    const inv = await this.invitationModel.findById(id).exec()
     if (!inv) throw new NotFoundException('邀请不存在')
     const note = await this.noteModel.findById(inv.noteId).exec()
     if (!note) throw new NotFoundException('笔记不存在')

@@ -10,7 +10,6 @@ export type InvitationDocument = Invitation & Document
       ret.id = ret._id
       delete ret._id
       delete ret.__v
-      delete ret.tokenHash
       return ret
     },
   },
@@ -27,9 +26,6 @@ export class Invitation {
 
   @Prop({ required: true, enum: ['editor', 'viewer'] })
   role: string
-
-  @Prop({ required: true })
-  tokenHash: string
 
   @Prop({ required: true })
   expiresAt: Date
