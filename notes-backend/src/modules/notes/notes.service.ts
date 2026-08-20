@@ -65,7 +65,7 @@ export class NotesService {
     this.updateEmbedding(savedNote);
     this.generateAndSaveSummary(savedNote);
 
-    return savedNote;
+    return this.serializeNote(savedNote);
   }
 
   async refreshDerivedFields(note: NoteDocument): Promise<void> {
@@ -185,15 +185,14 @@ export class NotesService {
   async findOne(id: string, userId: string): Promise<Note> {
     const note = await this.noteModel
       .findOne(this.noteAccess.readScope(id, userId))
-      .populate('categoryId', 'name')
-      .populate('tags', 'name')
       .exec();
 
     if (!note) {
       throw new NotFoundException('笔记不存在');
     }
 
-    return note;
+    // 统一输出 string 引用：categoryId/tags 由 ObjectId 派生为字符串 id
+    return this.serializeNote(note);
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
@@ -227,8 +226,6 @@ export class NotesService {
         updatePayload,
         { new: true, runValidators: true },
       )
-      .populate('categoryId', 'name')
-      .populate('tags', 'name')
       .exec();
 
     if (!updatedNote) {
@@ -261,7 +258,7 @@ export class NotesService {
       )
     }
 
-    return updatedNote;
+    return this.serializeNote(updatedNote);
   }
 
   async remove(id: string, userId: string): Promise<void> {
@@ -346,6 +343,18 @@ export class NotesService {
   async getRecommendations(userId: string, currentNoteId?: string, limit: number = 5, context?: NoteFilterDto): Promise<Note[]> {
     if (!this.noteRecommendations) throw new Error('Note recommendation service is not available.')
     return this.noteRecommendations.getRecommendations(userId, currentNoteId, limit, context)
+  }
+
+  /** 统一单笔记输出的 id 与 string 引用：id 由 _id 派生，categoryId/tags 输出为字符串 id */
+  private serializeNote(note: any): Note {
+    const obj = note.toObject ? note.toObject() : note
+    const { _id, ...rest } = obj
+    return {
+      ...rest,
+      id: String(_id),
+      categoryId: obj.categoryId ? String(obj.categoryId) : undefined,
+      tags: (obj.tags || []).map((t: any) => String(t)),
+    }
   }
 
   async generateRoomTicket(noteId: string, userId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> {
