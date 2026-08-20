@@ -3,7 +3,7 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteAccessService } from '../notes/note-access.service'
-import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, SaveKnowledgeGraphDto, UpdateKnowledgeBaseDto } from './dto'
+import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, SaveKnowledgeGraphDto } from './dto'
 import {
   clampUnitInterval,
   normalizeKnowledgeGraphNodeType,
@@ -50,32 +50,6 @@ export class KnowledgeBasesService {
       .exec()
 
     return docs.map((doc) => this.serializeKnowledgeBase(doc))
-  }
-
-  async update(id: string, input: UpdateKnowledgeBaseDto, userId: string) {
-    const $set: Record<string, unknown> = {}
-    if (input.name !== undefined) $set.name = this.cleanName(input.name)
-    if (input.description !== undefined) $set.description = this.cleanDescription(input.description)
-
-    const doc = await this.kbModel.findOneAndUpdate(
-      { _id: this.objectId(id, 'knowledge base id'), userId: this.objectId(userId, 'user id') },
-      { $set },
-      { new: true },
-    ).exec()
-    if (!doc) throw new NotFoundException('Knowledge base not found')
-
-    return this.serializeKnowledgeBase(doc)
-  }
-
-  async remove(id: string, userId: string) {
-    const kb = await this.requireKnowledgeBase(id, userId)
-    const userObjectId = this.objectId(userId, 'user id')
-    const scope = { knowledgeBaseId: this.idOf(kb), userId: userObjectId }
-    // 先清理关联和图谱，再删除知识库主体，避免主体消失后留下孤儿数据。
-    await this.kbNoteModel.deleteMany(scope).exec()
-    await this.graphService.remove(scope, this.requireGraphNodeModel(), this.requireGraphEdgeModel())
-    await this.kbModel.deleteOne({ _id: this.idOf(kb), userId: userObjectId }).exec()
-    return { ok: true }
   }
 
   async addNote(id: string, noteId: string, userId: string) {

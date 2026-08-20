@@ -61,19 +61,6 @@ export class CategoriesService {
       .exec();
   }
 
-  async findOne(id: string, userId: string): Promise<Category> {
-    const category = await this.categoryModel.findOne({
-      _id: new Types.ObjectId(id),
-      userId: new Types.ObjectId(userId),
-    }).exec();
-
-    if (!category) {
-      throw new NotFoundException('分类不存在');
-    }
-
-    return category;
-  }
-
   async assertOwnedIds(ids: string[], userId: string): Promise<void> {
     await assertOwnedByUser(ids, userId, this.categoryModel, '分类')
   }

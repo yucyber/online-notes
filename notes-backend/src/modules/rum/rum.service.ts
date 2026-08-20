@@ -31,13 +31,4 @@ export class RumService {
         }
     }
 
-    report(date?: string) {
-        const dateKey = date || (() => {
-            const d = new Date()
-            return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
-        })()
-        const day = this.store.get(dateKey) || new Map()
-        const entries = Array.from(day.entries()).map(([k, v]) => ({ key: k, count: v.count, avg: v.count ? v.sum / v.count : 0 }))
-        return { date: dateKey, metrics: entries }
-    }
 }

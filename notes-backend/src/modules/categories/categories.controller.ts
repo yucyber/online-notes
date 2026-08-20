@@ -28,11 +28,6 @@ export class CategoriesController {
     return this.categoriesService.findAll(req.user.id);
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string, @Request() req) {
-    return this.categoriesService.findOne(id, req.user.id);
-  }
-
   @Patch(':id')
   async update(
     @Param('id') id: string,

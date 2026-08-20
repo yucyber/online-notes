@@ -8,9 +8,6 @@ export const savedFiltersAPI = {
 
   create: (data: CreateSavedFilterDto) =>
     api.post<SavedFilter>('/saved-filters', data).then(res => res as unknown as SavedFilter),
-
-  delete: (id: string) =>
-    api.delete(`/saved-filters/${id}`).then(res => res as unknown as void),
 }
 
 // 分类相关API

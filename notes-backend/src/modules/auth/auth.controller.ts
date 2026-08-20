@@ -1,5 +1,4 @@
-import { Controller, Post, Body, UseGuards, Get, Request, Res, HttpCode } from '@nestjs/common';
-import { AuthGuard } from '@nestjs/passport';
+import { Controller, Post, Body, Res, HttpCode } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import { CreateUserDto, LoginUserDto } from '../users/dto';
@@ -41,11 +40,5 @@ export class AuthController {
   async logout(@Res({ passthrough: true }) res: Response) {
     res.clearCookie('notes_token', { path: '/' });
     return { message: 'OK' };
-  }
-
-  @UseGuards(AuthGuard('jwt'))
-  @Get('me')
-  getProfile(@Request() req) {
-    return this.authService.getProfile(req.user.id);
   }
 }

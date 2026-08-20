@@ -34,11 +34,6 @@ export class TagsController {
     return this.tagsService.findAll(req.user.id);
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string, @Request() req) {
-    return this.tagsService.findOne(id, req.user.id);
-  }
-
   @Patch(':id')
   async update(
     @Param('id') id: string,

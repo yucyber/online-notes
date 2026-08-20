@@ -59,15 +59,6 @@ test('getAcl: canManage is true only for the creator (not ACL owner role)', asyn
   assert.equal(result.canManage, false)
 })
 
-test('addCollaborator: ACL owner role does not grant owner rights', async () => {
-  const note = makeDoc({ userId: OWNER_ID, acl: [{ userId: PSEUDO_OWNER_ID, role: 'owner' }] })
-  const svc = makeService(note)
-  await assert.rejects(
-    () => svc.addCollaborator(String(NOTE_ID), String(PSEUDO_OWNER_ID), String(TARGET_ID), 'viewer'),
-    (err: any) => err?.name === 'NotFoundException',
-  )
-})
-
 test('updateCollaboratorRole: ACL owner role does not grant owner rights', async () => {
   const note = makeDoc({ userId: OWNER_ID, acl: [{ userId: PSEUDO_OWNER_ID, role: 'owner' }, { userId: TARGET_ID, role: 'viewer' }] })
   const svc = makeService(note)

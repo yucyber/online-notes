@@ -324,25 +324,6 @@ export class NotesService {
     return { visibility: note.visibility, canManage, acl: [owner, ...members] }
   }
 
-  async addCollaborator(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer'): Promise<any> {
-    const actor = new Types.ObjectId(actorId)
-    const target = new Types.ObjectId(targetUserId)
-    const note = await this.noteModel.findById(id).exec()
-    if (!note) throw new NotFoundException('笔记不存在')
-    // 管理协作者只允许创建者（owner 由 note.userId 派生，ACL 不再持有 owner）。
-    if (!note.userId.equals(actor)) throw new NotFoundException('无权限')
-    const acl = ((note as any).acl || []) as any[]
-    const exists = acl.find((a: any) => a.userId?.equals(target))
-    if (exists) {
-      exists.role = role
-    } else {
-      acl.push({ userId: target, role })
-    }
-    ; (note as any).acl = acl
-    await note.save()
-    return { ok: true }
-  }
-
   async updateCollaboratorRole(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer') {
     const actor = new Types.ObjectId(actorId)
     const target = new Types.ObjectId(targetUserId)

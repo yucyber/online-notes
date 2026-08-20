@@ -103,12 +103,6 @@ export class NotesController {
     return this.notesService.getAcl(id, req.user.id)
   }
 
-  @Post(':id/acl')
-  async addCollaborator(@Param('id') id: string, @Body() body: any, @Request() req) {
-    const { userId, role } = body
-    return this.notesService.addCollaborator(id, req.user.id, userId, role)
-  }
-
   @Patch(':id/acl/:userId')
   async updateCollaboratorRole(@Param('id') id: string, @Param('userId') userId: string, @Body() body: any, @Request() req) {
     const { role } = body
