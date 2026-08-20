@@ -58,8 +58,8 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Request-ID', 'Idempotency-Key', 'If-Match', 'If-None-Match', 'X-Search-ID', 'x-search-id', 'X-Skip-Auth-Redirect', 'x-skip-auth-redirect'],
-    exposedHeaders: ['X-Request-Id', 'ETag', 'X-Idempotency-Applied', 'X-Trace-Id'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Request-Id', 'X-Request-ID', 'Idempotency-Key', 'X-Search-ID', 'x-search-id', 'X-Skip-Auth-Redirect', 'x-skip-auth-redirect'],
+    exposedHeaders: ['X-Request-Id'],
   })
 
   app.use(cookieParser());

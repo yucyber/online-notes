@@ -120,8 +120,6 @@ test('SemanticService.searchVector applies readable scope and caller pagination/
     limit: 1,
     categoryId: 'category-1',
     tagIds: ['tag-1'],
-    tagsMode: 'any',
-    threshold: 0.8,
   })
 
   assert.equal(page.page, 2)
@@ -132,5 +130,6 @@ test('SemanticService.searchVector applies readable scope and caller pagination/
   const vectorStage = capturedPipeline.find((stage) => stage.$vectorSearch)?.$vectorSearch
   assert.ok(vectorStage.limit > 10)
   assert.ok(capturedPipeline.some((stage) => stage.$match?.$and?.some((clause: any) => clause.categoryId === 'category-1')))
-  assert.ok(capturedPipeline.some((stage) => stage.$match?.$and?.some((clause: any) => clause.tags?.$in?.includes('tag-1'))))
+  // tagsMode 已废弃，标签过滤固定为 $all（AND）
+  assert.ok(capturedPipeline.some((stage) => stage.$match?.$and?.some((clause: any) => clause.tags?.$all?.includes('tag-1'))))
 })

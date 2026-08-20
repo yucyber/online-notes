@@ -19,13 +19,12 @@ export type SemanticSearchPage = {
   data: SemanticSearchItem[]
 }
 export const semanticAPI = {
-  search: (q: string, opts?: { mode?: 'keyword' | 'vector' | 'hybrid'; page?: number; limit?: number; threshold?: number; categoryId?: string; tagIds?: string[] }) => {
+  search: (q: string, opts?: { mode?: 'keyword' | 'vector' | 'hybrid'; page?: number; limit?: number; categoryId?: string; tagIds?: string[] }) => {
     const sp = new URLSearchParams()
     sp.set('q', q)
     if (opts?.mode) sp.set('mode', opts.mode)
     if (opts?.page) sp.set('page', String(opts.page))
     if (opts?.limit) sp.set('limit', String(opts.limit))
-    if (opts?.threshold != null) sp.set('threshold', String(opts.threshold))
     if (opts?.categoryId) sp.set('categoryId', opts.categoryId)
     if (opts?.tagIds && opts.tagIds.length > 0) opts.tagIds.filter(Boolean).forEach(id => sp.append('tagIds', id))
     const isVectorLike = (opts?.mode === 'vector' || opts?.mode === 'hybrid')

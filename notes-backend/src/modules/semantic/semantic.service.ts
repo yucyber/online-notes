@@ -21,8 +21,6 @@ export type SemanticSearchOpts = {
   limit?: number
   categoryId?: string
   tagIds?: string[]
-  threshold?: number
-  tagsMode?: 'any' | 'all'
 }
 
 @Injectable()
@@ -41,7 +39,6 @@ export class SemanticService {
   async searchVector(query: string, userId: string, opts: SemanticSearchOpts = {}): Promise<SemanticPage> {
     const page = Math.max(1, Number(opts.page || 1))
     const limit = Math.max(1, Math.min(100, Number(opts.limit || 10)))
-    const threshold = Number(opts.threshold ?? 0)
     const vector = await this.embeddingService.generateEmbedding(query);
     if (!vector || vector.length === 0) {
       return { page, limit, total: 0, totalPages: 1, hasNext: false, data: [] }
@@ -50,9 +47,7 @@ export class SemanticService {
     const accessAnd: any[] = [this.noteAccess.readableFilter(userId)]
     if (opts.categoryId) accessAnd.push({ categoryId: opts.categoryId })
     if (Array.isArray(opts.tagIds) && opts.tagIds.length > 0) {
-      accessAnd.push(opts.tagsMode === 'any'
-        ? { tags: { $in: opts.tagIds } }
-        : { tags: { $all: opts.tagIds } })
+      accessAnd.push({ tags: { $all: opts.tagIds } })
     }
 
     // Atlas vectorSearch cannot reliably express the ACL/public $or filter on every
@@ -87,7 +82,6 @@ export class SemanticService {
       score: Number(n.score || 0),
       updatedAt: String(n.updatedAt || ''),
     }))
-    if (threshold > 0) mapped = mapped.filter((item) => item.score >= threshold)
 
     const total = mapped.length
     const start = (page - 1) * limit
@@ -99,13 +93,10 @@ export class SemanticService {
   async search(q: string, userId: string, opts: SemanticSearchOpts = {}): Promise<SemanticPage> {
     const page = Math.max(1, Number(opts.page || 1))
     const limit = Math.max(1, Math.min(100, Number(opts.limit || 10)))
-    const threshold = Number(opts.threshold ?? 0)
-
     const and: any[] = [this.noteAccess.readableFilter(userId)]
     if (opts.categoryId) and.push({ categoryId: opts.categoryId })
     if (Array.isArray(opts.tagIds) && opts.tagIds.length > 0) {
-      if (opts.tagsMode === 'any') and.push({ tags: { $in: opts.tagIds } })
-      else and.push({ tags: { $all: opts.tagIds } })
+      and.push({ tags: { $all: opts.tagIds } })
     }
 
     const isCJK = !!q && /[\u4e00-\u9fff]/.test(q)
@@ -183,7 +174,6 @@ export class SemanticService {
       score: Number((n as any).score || 0),
       updatedAt: String(n.updatedAt || ''),
     }))
-    if (threshold > 0) mapped = mapped.filter((x) => Number(x.score || 0) >= threshold)
     const totalPages = Math.max(1, Math.ceil(Number(total || 0) / limit))
     const hasNext = page < totalPages
     return { page, limit, total, totalPages, hasNext, data: mapped }
