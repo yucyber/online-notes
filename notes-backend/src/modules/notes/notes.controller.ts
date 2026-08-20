@@ -120,16 +120,6 @@ export class NotesController {
     return this.notesService.removeCollaborator(id, req.user.id, userId)
   }
 
-  @Post(':id/lock')
-  async lock(@Param('id') id: string, @Request() req) {
-    return this.notesService.lockNote(id, req.user.id)
-  }
-
-  @Delete(':id/lock')
-  async unlock(@Param('id') id: string, @Request() req) {
-    return this.notesService.unlockNote(id, req.user.id)
-  }
-
   @UseGuards(AuthGuard('jwt'))
   @Post(':id/room-ticket')
   async generateRoomTicket(@Param('id') id: string, @Request() req) {

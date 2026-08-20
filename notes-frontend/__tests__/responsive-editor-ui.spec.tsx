@@ -31,8 +31,6 @@ jest.mock('@/lib/api', () => ({
   fetchCategories: jest.fn(() => new Promise(() => {})),
   fetchTags: jest.fn(() => new Promise(() => {})),
   updateNote: jest.fn(),
-  lockNote: jest.fn(),
-  unlockNote: jest.fn(),
   boardsAPI: { create: jest.fn() },
   mindmapsAPI: { create: jest.fn() },
 }))
@@ -47,7 +45,6 @@ jest.mock('@/components/editor/useEditorAutoSave', () => ({
 }))
 jest.mock('@/components/editor/note-permissions', () => ({
   canWriteNote: () => true,
-  shouldManageNoteLock: () => false,
 }))
 
 describe('编辑页窄视口布局', () => {

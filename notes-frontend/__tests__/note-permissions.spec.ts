@@ -1,4 +1,4 @@
-import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
+import { canWriteNote } from '@/components/editor/note-permissions'
 
 describe('note editor permissions', () => {
   test('viewer cannot write while owner and editor can', () => {
@@ -14,12 +14,5 @@ describe('note editor permissions', () => {
     expect(canWriteNote(note, 'editor')).toBe(true)
     expect(canWriteNote(note, 'viewer')).toBe(false)
     expect(canWriteNote(note, 'stranger')).toBe(false)
-  })
-
-  test('viewer does not manage write locks', () => {
-    const note = { userId: 'owner', acl: [{ userId: 'viewer', role: 'viewer' }] }
-
-    expect(shouldManageNoteLock(note, 'viewer')).toBe(false)
-    expect(shouldManageNoteLock(note, 'owner')).toBe(true)
   })
 })

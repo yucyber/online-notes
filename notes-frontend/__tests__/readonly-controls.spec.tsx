@@ -35,8 +35,6 @@ jest.mock('@/lib/api', () => ({
   fetchTags: jest.fn().mockResolvedValue([{ id: 'tag-1', name: '标签一' }]),
   updateNote: jest.fn().mockResolvedValue(undefined),
   createTag: jest.fn().mockResolvedValue({ id: 'tag-new', name: '新标签' }),
-  lockNote: jest.fn().mockResolvedValue(undefined),
-  unlockNote: jest.fn().mockResolvedValue(undefined),
   boardsAPI: { create: jest.fn() },
   mindmapsAPI: { create: jest.fn() },
   aclAPI: { get: jest.fn().mockResolvedValue({ visibility: 'shared', acl: [] }) },

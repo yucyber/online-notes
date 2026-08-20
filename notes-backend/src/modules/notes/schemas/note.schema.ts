@@ -42,18 +42,6 @@ export class Note {
   @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['editor', 'viewer'] } }])
   acl?: { userId: Types.ObjectId; role: string }[];
 
-  @Prop({ type: Types.ObjectId })
-  currentVersionId?: Types.ObjectId;
-
-  @Prop({ type: Number, default: 0 })
-  versionCount?: number;
-
-  @Prop({ type: Types.ObjectId, ref: 'User' })
-  editingBy?: Types.ObjectId;
-
-  @Prop({ type: Date })
-  lockedAt?: Date;
-
   @Prop({ type: [Number], index: true })
   embedding?: number[];
 }

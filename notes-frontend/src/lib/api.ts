@@ -12,7 +12,6 @@ export {
   auditAPI,
   notificationsAPI,
   commentsAPI,
-  noteLockAPI,
 } from './api/collab'
 export { savedFiltersAPI, categoriesAPI, tagsAPI } from './api/taxonomy'
 export { knowledgeBasesAPI } from './api/knowledge-bases'
@@ -29,7 +28,6 @@ import {
   versionsAPI,
   auditAPI,
   commentsAPI,
-  noteLockAPI,
 } from './api/collab'
 import { categoriesAPI, tagsAPI } from './api/taxonomy'
 import { dashboardAPI } from './api/dashboard'
@@ -63,5 +61,3 @@ export const restoreVersion = versionsAPI.restore
 export const listAuditLogs = auditAPI.list
 export const listComments = commentsAPI.list
 export const createComment = commentsAPI.create
-export const lockNote = noteLockAPI.lock
-export const unlockNote = noteLockAPI.unlock

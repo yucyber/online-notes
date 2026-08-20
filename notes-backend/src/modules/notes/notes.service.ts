@@ -371,53 +371,6 @@ export class NotesService {
     return { ok: true }
   }
 
-  async lockNote(id: string, userId: string) {
-    try {
-      const u = new Types.ObjectId(userId)
-      const note = await this.noteModel.findOne(this.noteAccess.writeScope(id, userId)).exec()
-      if (!note) throw new NotFoundException('无权限')
-        ; (note as any).editingBy = u
-        ; (note as any).lockedAt = new Date()
-      await note.save()
-      return { ok: true }
-    } catch (e) {
-      // React StrictMode 在开发环境可能重复触发锁请求；并行保存冲突可视为锁已写入。
-      if (e.name === 'ParallelSaveError') {
-        return { ok: true }
-      }
-      console.error('lockNote error', e)
-      throw e
-    }
-  }
-
-  async unlockNote(id: string, userId: string) {
-    try {
-      const u = new Types.ObjectId(userId)
-      const note = await this.noteModel.findById(id).exec()
-      if (!note) throw new NotFoundException('笔记不存在')
-      // 只有创建者或当前加锁者能解锁；ACL editor 不能解除他人的编辑占用。
-      const isLocker = (note as any).editingBy && (note as any).editingBy.toString() === u.toString();
-      const isOwner = note.userId.toString() === u.toString();
-
-      if (isOwner || isLocker) {
-        ; (note as any).editingBy = undefined
-          ; (note as any).lockedAt = undefined
-        await note.save()
-        return { ok: true }
-      }
-      // 未加锁时解锁保持幂等，调用方无需额外查询锁状态。
-      if (!(note as any).editingBy) return { ok: true }
-
-      throw new NotFoundException('无权限')
-    } catch (e) {
-      // 与加锁一致，把 StrictMode 导致的并行保存视为幂等成功。
-      if (e.name === 'ParallelSaveError') {
-        return { ok: true }
-      }
-      console.error('unlockNote error', e)
-      throw e
-    }
-  }
 
   async getRecommendations(userId: string, currentNoteId?: string, limit: number = 5, context?: NoteFilterDto): Promise<Note[]> {
     if (!this.noteRecommendations) throw new Error('Note recommendation service is not available.')

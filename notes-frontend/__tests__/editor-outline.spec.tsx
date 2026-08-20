@@ -28,15 +28,12 @@ jest.mock('@/components/editor/useEditorAutoSave', () => ({
 }))
 jest.mock('@/components/editor/note-permissions', () => ({
   canWriteNote: () => true,
-  shouldManageNoteLock: () => false,
 }))
 jest.mock('@/lib/api', () => ({
   fetchCategories: jest.fn(() => new Promise(() => {})),
   fetchTags: jest.fn(() => new Promise(() => {})),
   fetchNoteById: jest.fn(),
   fetchNotes: jest.fn(() => Promise.resolve({ items: [] })),
-  lockNote: jest.fn(),
-  unlockNote: jest.fn(),
   boardsAPI: { create: jest.fn() },
   mindmapsAPI: { create: jest.fn() },
 }))

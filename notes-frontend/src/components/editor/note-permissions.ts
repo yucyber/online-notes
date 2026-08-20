@@ -19,6 +19,4 @@ export function canWriteNote(note: NoteAccessShape | null, userId: string): bool
   ))
 }
 
-export function shouldManageNoteLock(note: NoteAccessShape | null, userId: string): boolean {
-  return canWriteNote(note, userId)
-}
+

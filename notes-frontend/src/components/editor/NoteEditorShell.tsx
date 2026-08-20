@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, lockNote, unlockNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
@@ -18,7 +18,7 @@ import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
 import type { EditorSnapshot } from '@/components/editor/editor-save-types'
-import { canWriteNote, shouldManageNoteLock } from '@/components/editor/note-permissions'
+import { canWriteNote } from '@/components/editor/note-permissions'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
 import { appToast } from '@/lib/app-toast'
 import { DEFAULT_EDITOR_FORMAT_STATE } from '@/components/editor/editor-format-state'
@@ -335,12 +335,6 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     if (initialData && !searchParams?.get('restored')) return
     void loadNote()
   }, [loadNote, initialData, searchParams])
-
-  useEffect(() => {
-    if (!id || !shouldManageNoteLock(note, me.id)) return
-    lockNote(id).catch(() => { })
-    return () => { unlockNote(id).catch(() => { }) }
-  }, [id, note, me.id])
 
   useEffect(() => {
     const loadMeta = async () => {

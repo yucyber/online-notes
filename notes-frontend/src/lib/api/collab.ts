@@ -85,7 +85,3 @@ export const commentsAPI = {
   delete: (commentId: string) => api.delete(`/comments/${commentId}`).then(res => res as unknown as { ok: boolean }),
 }
 
-export const noteLockAPI = {
-  lock: (noteId: string) => api.post(`/notes/${noteId}/lock`, {}).then(res => res as unknown as any),
-  unlock: (noteId: string) => api.delete(`/notes/${noteId}/lock`).then(res => res as unknown as any),
-}
