@@ -18,7 +18,7 @@ export class InvitationsService {
     private readonly notifications: NotificationsService,
   ) {}
 
-  async create(noteId: string, inviterId: string, role: 'editor'|'viewer', inviteeEmail?: string, ttlHours: number = 24, requestId?: string) {
+  async create(noteId: string, inviterId: string, role: 'editor'|'viewer', inviteeEmail?: string, ttlHours: number = 24) {
     const ttl = Math.min(Math.max(ttlHours || 24, 1), 72)
     const note = await this.noteModel.findById(noteId).exec()
     if (!note) throw new NotFoundException('笔记不存在')
@@ -27,7 +27,7 @@ export class InvitationsService {
     const token = crypto.randomBytes(24).toString('hex')
     const hash = crypto.createHash('sha256').update(token).digest('hex')
     const expiresAt = new Date(Date.now() + ttl * 3600 * 1000)
-    const doc = new this.invitationModel({ noteId: note._id, inviterId: actor, role, inviteeEmail, tokenHash: hash, expiresAt, status: 'pending', requestId })
+    const doc = new this.invitationModel({ noteId: note._id, inviterId: actor, role, inviteeEmail, tokenHash: hash, expiresAt, status: 'pending' })
     await doc.save()
     // 给受邀用户写通知（若存在账号）
     let invitedUserId: string | undefined
@@ -41,7 +41,7 @@ export class InvitationsService {
       } catch {}
     }
     // 记录邀请对象与权限，供活动日志展示"邀请了谁、开了什么权限"
-    await this.audit.record('invitation_created', inviterId, 'note', note._id.toString(), { requestId, after: { role, ...(invitedUserId ? { invitedUserId } : {}), ...(inviteeEmail ? { inviteeEmail } : {}) } })
+    await this.audit.record('invitation_created', inviterId, 'note', note._id.toString(), { after: { role, ...(invitedUserId ? { invitedUserId } : {}), ...(inviteeEmail ? { inviteeEmail } : {}) } })
     return { token, expiresAt }
   }
 
@@ -83,7 +83,7 @@ export class InvitationsService {
     return { noteId: inv.noteId.toString(), role: inv.role, expiresAt: inv.expiresAt }
   }
 
-  async accept(token: string, userId: string, requestId?: string) {
+  async accept(token: string, userId: string) {
     const isHash = /^[a-f0-9]{64}$/i.test(token)
     const hash = isHash ? token : crypto.createHash('sha256').update(token).digest('hex')
     const inv = await this.invitationModel.findOne({ tokenHash: hash }).exec()
@@ -121,9 +121,8 @@ export class InvitationsService {
     await note.save()
     inv.status = 'accepted'
     inv.usedAt = new Date()
-    inv.requestId = requestId
     await inv.save()
-    await this.audit.record('invitation_accepted', userId, 'note', note._id.toString(), { requestId, after: { role: inv.role } })
+    await this.audit.record('invitation_accepted', userId, 'note', note._id.toString(), { after: { role: inv.role } })
     // 通知邀请人
     try { await this.notifications.create(inv.inviterId as any, 'invitation', { noteId: note._id.toString(), acceptedBy: userId }) } catch {}
     return { ok: true }

@@ -44,18 +44,8 @@ export class TagsController {
   }
 
   @Delete(':id')
-  async remove(
-    @Param('id') id: string,
-    @Request() req,
-    @Query('mode') mode?: 'remove' | 'reassign',
-    @Query('targetId') targetId?: string,
-  ) {
-    // 默认策略：移除模式
-    if (mode === 'reassign' && targetId) {
-      await this.tagsService.merge([id], targetId, req.user.id);
-    } else {
-      await this.tagsService.remove(id, req.user.id);
-    }
+  async remove(@Param('id') id: string, @Request() req) {
+    await this.tagsService.remove(id, req.user.id);
     return { message: '标签删除成功' };
   }
 

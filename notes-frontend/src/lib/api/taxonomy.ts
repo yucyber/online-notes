@@ -76,5 +76,5 @@ export const tagsAPI = {
     api.post<{ total: number; updated: number }>('/tags/sync').then(res => res as unknown as { total: number; updated: number }),
 
   delete: (id: string) =>
-    api.delete(`/tags/${id}`, { params: { mode: 'remove' } }).then(res => res as unknown as void),
+    api.delete(`/tags/${id}`).then(res => res as unknown as void),
 }

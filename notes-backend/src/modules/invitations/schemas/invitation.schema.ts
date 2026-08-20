@@ -39,9 +39,6 @@ export class Invitation {
 
   @Prop()
   usedAt?: Date
-
-  @Prop()
-  requestId?: string
 }
 
 export const InvitationSchema = SchemaFactory.createForClass(Invitation)

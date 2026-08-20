@@ -50,9 +50,8 @@ export class BoardsService {
     throw new NotFoundException('Board not found')
   }
 
-  async update(id: string, userId: string, input: { title?: string; content?: any }) {
+  async update(id: string, userId: string, input: { content?: any }) {
     const updateData: any = {}
-    if (input.title !== undefined) updateData.title = input.title
     if (input.content !== undefined) updateData.content = input.content
 
     const doc = await this.model.findOneAndUpdate(

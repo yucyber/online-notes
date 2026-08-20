@@ -47,5 +47,4 @@ export interface AiKnowledgeGraphInput {
 
 export interface AiPetInput {
   message: string
-  conversationId?: string
 }

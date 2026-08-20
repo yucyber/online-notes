@@ -9,7 +9,7 @@ export class NotificationsController {
 
   @Get()
   async list(@Query() q: any, @Request() req) {
-    return this.service.list(req.user.id, Number(q.page) || 1, Number(q.size) || 20, q.type, q.status)
+    return this.service.list(req.user.id, Number(q.page) || 1, Number(q.size) || 20, q.status)
   }
 
   @Patch(':id/read')

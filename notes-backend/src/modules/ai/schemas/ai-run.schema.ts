@@ -27,9 +27,6 @@ export class AiRun {
   @Prop()
   error?: string
 
-  @Prop({ type: Object })
-  metadata?: Record<string, unknown>
-
   @Prop({ type: Date })
   finishedAt?: Date
 }

@@ -53,13 +53,13 @@ export const auditAPI = {
 }
 
 export const notificationsAPI = {
-  list: (page: number = 1, size: number = 20, type?: string, status?: string) => {
+  list: (page: number = 1, size: number = 20, status?: string) => {
     const user = getStoredUser()
     if (!user) {
       return Promise.resolve({ items: [], page, size, total: 0 }) as Promise<{ items: any[]; page: number; size: number; total: number }>
     }
     return api
-      .get('/notifications', { params: { page, size, type, status }, headers: { 'X-Skip-Auth-Redirect': '1' } })
+      .get('/notifications', { params: { page, size, status }, headers: { 'X-Skip-Auth-Redirect': '1' } })
       .then(res => res as unknown as { items: any[]; page: number; size: number; total: number })
   },
   markRead: (id: string) =>

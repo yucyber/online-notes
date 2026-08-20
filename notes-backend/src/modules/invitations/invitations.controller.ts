@@ -10,8 +10,8 @@ export class InvitationsController {
   @UseGuards(AuthGuard('jwt'))
   @Post('notes/:id')
   async create(@Param('id') id: string, @Body() body: any, @Request() req) {
-    const { role, inviteeEmail, ttlHours, requestId } = body
-    return this.service.create(id, req.user.id, role, inviteeEmail, ttlHours, requestId)
+    const { role, inviteeEmail, ttlHours } = body
+    return this.service.create(id, req.user.id, role, inviteeEmail, ttlHours)
   }
 
   @UseGuards(AuthGuard('jwt'))
@@ -35,9 +35,8 @@ export class InvitationsController {
 
   @UseGuards(AuthGuard('jwt'))
   @Post(':token/accept')
-  async accept(@Param('token') token: string, @Body() body: any, @Request() req) {
-    const { requestId } = body
-    return this.service.accept(token, req.user.id, requestId)
+  async accept(@Param('token') token: string, @Request() req) {
+    return this.service.accept(token, req.user.id)
   }
 
   @UseGuards(AuthGuard('jwt'))

@@ -15,7 +15,7 @@ export default function NotificationsPage() {
     try {
       const iv = await listMyInvitations('pending')
       setInvites(iv || [])
-      const ns = await listNotifications(page, size, undefined, 'unread')
+      const ns = await listNotifications(page, size, 'unread')
       setNotes(ns)
     } catch {}
   }, [page, size])
