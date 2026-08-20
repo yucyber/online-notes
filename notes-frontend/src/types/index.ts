@@ -154,31 +154,6 @@ export interface Tag {
   createdAt: string
 }
 
-// API响应类型
-export interface ApiResponse<T> {
-  success: boolean
-  data?: T
-  message?: string
-  error?: string
-}
-
-// 分页相关类型
-export interface PaginationParams {
-  page?: number
-  limit?: number
-  search?: string
-  sortBy?: string
-  sortOrder?: 'asc' | 'desc'
-}
-
-export interface PaginatedResponse<T> {
-  data: T[]
-  total: number
-  page: number
-  limit: number
-  totalPages: number
-}
-
 export interface DashboardStats {
   notes: number
   categories: number

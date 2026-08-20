@@ -56,7 +56,7 @@ NoteSchema.index({ 'acl.userId': 1 }, { name: 'idx_acl_user' })
 NoteSchema.index({ categoryId: 1 }, { name: 'idx_categoryId' })
 NoteSchema.index({ tags: 1 }, { name: 'idx_tags' })
 NoteSchema.index({ createdAt: -1 }, { name: 'idx_createdAt' })
-// 补充按更新时间排序与过滤的索引，保障 sortBy=updatedAt 的场景
+// 补充按更新时间排序与过滤的索引，保障列表按 updatedAt 降序分页
 NoteSchema.index({ updatedAt: -1 }, { name: 'idx_updatedAt' })
 NoteSchema.index({ userId: 1, status: 1, updatedAt: -1 }, { name: 'idx_user_status_updated' })
 // 文本索引（可选）：用于 keyword 搜索提升性能；如需严格相关度排序，可在服务层切换为 $text 查询

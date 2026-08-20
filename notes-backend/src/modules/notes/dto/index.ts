@@ -126,7 +126,7 @@ export class NoteFilterDto {
   @IsEnum(NoteStatus)
   status?: NoteStatus;
 
-  // Pagination & Sorting
+  // 分页：列表固定按 updatedAt 降序，只接受 page/size
   @IsOptional()
   @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
   @IsInt()
@@ -138,32 +138,18 @@ export class NoteFilterDto {
   @IsInt()
   @Min(1)
   @Max(100)
-  limit?: number;
-
-  // 兼容 size 别名
-  @IsOptional()
-  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
-  @IsInt()
-  @Min(1)
-  @Max(100)
   size?: number;
-
-  @IsOptional()
-  @IsString()
-  sortBy?: string;
-
-  @IsOptional()
-  @IsIn(['asc', 'desc'])
-  sortOrder?: 'asc' | 'desc';
-
-  // Cursor-based pagination：基于 `createdAt` 的时间游标
-  @IsOptional()
-  @IsDateString()
-  cursor?: string;
 }
 
 export class RecommendationQueryDto extends NoteFilterDto {
   @IsOptional()
   @IsMongoId()
   currentNoteId?: string;
+
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? undefined : parseInt(value, 10))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  limit?: number;
 }

@@ -28,7 +28,7 @@ export const buildNotesCacheKey = (params?: any) => {
     if (params.status) sp.set('status', params.status)
     if (Array.isArray(params.ids)) params.ids.filter(Boolean).forEach((id: string) => sp.append('ids', id))
     const page = (params as any).page
-    const size = (params as any).size ?? (params as any).limit
+    const size = (params as any).size
     if (page) sp.set('page', String(page))
     if (size) sp.set('size', String(size))
   }
@@ -51,7 +51,7 @@ const writeSessionCache = (key: string, payload: NotesListPayload) => {
 
 // 笔记相关API
 export const notesAPI = {
-  getAll: (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
+  getAll: (params?: NoteFilterParams & { page?: number; size?: number }, signal?: AbortSignal) => {
     const sp = new URLSearchParams()
     if (params) {
       if (params.keyword) sp.set('keyword', params.keyword)
@@ -69,7 +69,7 @@ export const notesAPI = {
         sp.set('ids', params.ids.join(','))
       }
       const page = (params as any).page
-      const size = (params as any).size ?? (params as any).limit
+      const size = (params as any).size
       if (page) sp.set('page', String(page))
       if (size) sp.set('size', String(size))
     }
@@ -124,7 +124,7 @@ export const notesAPI = {
     }),
 
   update: (id: string, note: UpdateNoteDto) =>
-    api.put<Note>(`/notes/${id}`, note).then((res) => {
+    api.patch<Note>(`/notes/${id}`, note).then((res) => {
       clearNotesCache()
       return res as unknown as Note
     }),
@@ -157,7 +157,7 @@ export const notesAPI = {
     })
   },
   // 带缓存与后台重验证
-  getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number; limit?: number }, signal?: AbortSignal) => {
+  getAllCached: async (params?: NoteFilterParams & { page?: number; size?: number }, signal?: AbortSignal) => {
     const key = buildNotesCacheKey(params)
     const now = Date.now()
     const mem = notesCache.get(key)

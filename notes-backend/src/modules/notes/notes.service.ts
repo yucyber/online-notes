@@ -81,13 +81,12 @@ export class NotesService {
   }
 
   async findAll(userId: string, filterDto: NoteFilterDto = {}): Promise<{ items: Note[]; page: number; size: number; total: number }> {
-    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, ids } = filterDto;
+    const { keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, ids } = filterDto;
     const page = Math.max(1, Number(filterDto.page || 1))
-    const size = Math.max(1, Math.min(100, Number(filterDto.limit ?? filterDto.size ?? 20)))
-    const sortBy = (filterDto.sortBy || 'createdAt')
-    const sortOrder = (filterDto.sortOrder || 'desc')
+    const size = Math.max(1, Math.min(100, Number(filterDto.size || 20)))
 
-    const keyPayload = { userId, keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, cursor, page, size, sortBy, sortOrder, ids, previewFieldsVersion: 'content-v1' }
+    // 列表固定按 updatedAt 降序页码分页；排序字段与游标已废弃。
+    const keyPayload = { userId, keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, page, size, ids, previewFieldsVersion: 'content-v1' }
     const listRevision = await this.noteCache.getListRevision()
     const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload, listRevision)
     if (cached) return cached
@@ -146,27 +145,12 @@ export class NotesService {
       if (endDate) {
         dateQuery.$lte = new Date(endDate);
       }
-      // 日期范围跟随排序字段，避免列表按更新时间排序却按创建时间过滤。
-      andConditions.push({ [sortBy === 'createdAt' ? 'createdAt' : 'updatedAt']: dateQuery });
+      // 列表固定按 updatedAt 排序，日期范围跟随 updatedAt 过滤。
+      andConditions.push({ updatedAt: dateQuery });
     }
 
     if (status) {
       andConditions.push({ status });
-    }
-
-    // 当前游标只表达 createdAt；拒绝其他排序字段，避免返回看似成功但顺序错误的分页结果。
-    if (cursor) {
-      const c = new Date(cursor)
-      if (isNaN(c.getTime())) {
-        const { HttpException, HttpStatus } = require('@nestjs/common')
-        throw new HttpException('invalid cursor', HttpStatus.BAD_REQUEST)
-      }
-      if (sortBy === 'createdAt') {
-        andConditions.push({ createdAt: sortOrder === 'desc' ? { $lt: c } : { $gt: c } })
-      } else {
-        const { HttpException, HttpStatus } = require('@nestjs/common')
-        throw new HttpException('cursor only supports sortBy=createdAt', HttpStatus.BAD_REQUEST)
-      }
     }
 
     const query = andConditions.length > 0 ? { $and: andConditions } : {};
@@ -174,7 +158,7 @@ export class NotesService {
     const [items, total] = await Promise.all([
       this.noteModel
         .find(query)
-        .sort({ [sortBy]: sortOrder === 'asc' ? 1 : -1 })
+        .sort({ updatedAt: -1 })
         .skip((page - 1) * size)
         .limit(size)
         .maxTimeMS(300)
@@ -183,11 +167,7 @@ export class NotesService {
         .exec(),
       this.noteModel.countDocuments(query),
     ])
-    // 返回时间游标供深分页切换为 seek 模式，避免页码越深时 skip 成本持续增加。
-    const nextCursor = (sortBy === 'createdAt' && items.length > 0)
-      ? new Date(((items[items.length - 1] as any).createdAt) as any).toISOString()
-      : undefined
-    const resp: any = { items, page, size, total, ...(nextCursor ? { nextCursor } : {}) }
+    const resp: any = { items, page, size, total }
     await this.noteCache.setList(userId, keyPayload, resp, listRevision)
     return resp
   }
