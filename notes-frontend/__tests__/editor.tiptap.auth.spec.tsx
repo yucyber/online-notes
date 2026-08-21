@@ -78,6 +78,24 @@ describe('TiptapEditor collaboration auth', () => {
     process.env.NEXT_PUBLIC_YWS_URL = 'ws://localhost:1234'
   })
 
+  test('keeps a local-only new note editable without requesting a room ticket', async () => {
+    const { container } = render(
+      <TiptapEditor
+        noteId="new"
+        localOnly
+        initialHTML="<p></p>"
+        onSave={async () => { }}
+        user={user}
+      />,
+    )
+
+    await waitFor(() => {
+      expect(container.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true')
+    })
+    expect(mockGetRoomTicket).not.toHaveBeenCalled()
+    expect((WebsocketProvider as any).instances).toHaveLength(0)
+  })
+
   test('passes the room ticket to WebsocketProvider after ticket issuance', async () => {
     mockGetRoomTicket.mockResolvedValue({ ticket: 'room-ticket', role: 'writer', expiresIn: 300 })
 

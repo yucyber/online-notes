@@ -51,10 +51,14 @@ function preflightIndexedDbPersistence(name: string): Promise<boolean> {
 }
 
 /** IndexedDB 持久化：断网/刷新后仍能恢复 Y.Doc */
-export function useTiptapPersistence(room: string, ydoc: Y.Doc) {
+export function useTiptapPersistence(room: string, ydoc: Y.Doc, enabled = true) {
   const [idbSynced, setIdbSynced] = useState(false)
 
   useEffect(() => {
+    if (!enabled) {
+      setIdbSynced(false)
+      return
+    }
     let cancelled = false
     let persistence: IndexeddbPersistence | null = null
     const handleUnhandledRejection = (event: PromiseRejectionEvent) => {
@@ -129,7 +133,7 @@ export function useTiptapPersistence(room: string, ydoc: Y.Doc) {
     void startPersistence()
 
     return cleanup
-  }, [room, ydoc])
+  }, [room, ydoc, enabled])
 
   return { idbSynced }
 }

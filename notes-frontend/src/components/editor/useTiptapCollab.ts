@@ -15,20 +15,21 @@ export function useTiptapCollab(opts: {
   room: string
   ydoc: Y.Doc
   user: CollabUser
+  localOnly?: boolean
 }) {
-  const { noteId, versionKey, room, ydoc, user } = opts
+  const { noteId, versionKey, room, ydoc, user, localOnly = false } = opts
   const userRef = useRef(user)
   userRef.current = user
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<CollabStatus>('connecting')
   const [roomTicket, setRoomTicket] = useState<string | null>(null)
-  const [roomRole, setRoomRole] = useState<'writer' | 'reader' | null>(null)
+  const [roomRole, setRoomRole] = useState<'writer' | 'reader' | null>(localOnly ? 'writer' : null)
   const [ticketError, setTicketError] = useState<string | null>(null)
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
   const participantsCache = useRef<Array<{ id: string; name?: string }>>([])
   const cacheTimeout = useRef<ReturnType<typeof setTimeout>>()
-  const [collabEnabled, setCollabEnabled] = useState(true)
-  const [localMode, setLocalMode] = useState(false)
+  const [collabEnabled, setCollabEnabled] = useState(!localOnly)
+  const [localMode, setLocalMode] = useState(localOnly)
   const [wsDebug, setWsDebug] = useState<{ connecting: boolean; connected: boolean; synced: boolean }>({
     connecting: false,
     connected: false,
@@ -36,7 +37,7 @@ export function useTiptapCollab(opts: {
   })
 
   useEffect(() => {
-    if (!noteId) return
+    if (!noteId || localOnly) return
     let cancelled = false
     setRoomRole(null)
     notesAPI.getRoomTicket(noteId)
@@ -54,9 +55,17 @@ export function useTiptapCollab(opts: {
         }
       })
     return () => { cancelled = true }
-  }, [noteId])
+  }, [noteId, localOnly])
 
   useEffect(() => {
+    if (localOnly) {
+      setProvider(null)
+      setRoomRole('writer')
+      setLocalMode(true)
+      setCollabEnabled(false)
+      setConnStatus('local')
+      return
+    }
     const yws = process.env.NEXT_PUBLIC_YWS_URL
 
     if (!yws) {
@@ -298,7 +307,7 @@ export function useTiptapCollab(opts: {
       aw.off('update', updateAwareness)
       p?.destroy()
     }
-  }, [noteId, versionKey, ydoc, roomTicket, room, ticketError])
+  }, [noteId, versionKey, ydoc, roomTicket, room, ticketError, localOnly])
 
   useEffect(() => {
     if (provider && provider.awareness) {

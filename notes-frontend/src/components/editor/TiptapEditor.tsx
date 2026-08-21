@@ -30,6 +30,7 @@ type Props = {
   className?: string
   style?: React.CSSProperties
   updatedAt?: string
+  localOnly?: boolean
 }
 
 const CONTENT_NORMALIZATION_VERSION = 1
@@ -52,7 +53,7 @@ export function isLegacyRawMarkdownDocument(
   }
 }
 
-export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onFormatChange, onContentChange, onParticipantsChange, versionKey, className, style, updatedAt }: Props) {
+export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onFormatChange, onContentChange, onParticipantsChange, versionKey, className, style, updatedAt, localOnly = false }: Props) {
   const documentKey = `${noteId}:${versionKey || ''}`
   const initialSeedRef = useRef<{
     key: string
@@ -78,11 +79,11 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     collabEnabled,
     wsDebug,
     participants,
-  } = useTiptapCollab({ noteId, versionKey, room, ydoc, user })
+  } = useTiptapCollab({ noteId, versionKey, room, ydoc, user, localOnly })
   const effectiveReadOnly = readOnly || roomRole !== 'writer'
   const effectiveReadOnlyRef = useRef(effectiveReadOnly)
   effectiveReadOnlyRef.current = effectiveReadOnly
-  const { idbSynced } = useTiptapPersistence(room, ydoc)
+  const { idbSynced } = useTiptapPersistence(room, ydoc, !localOnly)
 
   const injectBusyRef = useRef(false)
   const lastInjectedHTMLRef = useRef<string>('')
@@ -150,7 +151,7 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     editable: !effectiveReadOnly,
     immediatelyRender: false,
   }, [provider, collabEnabled, documentKey])
-  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef, readOnly: effectiveReadOnly, readOnlyRef: effectiveReadOnlyRef })
+  useTiptapCommentMarks({ editor, noteId, suppressSelectionRef, readOnly: effectiveReadOnly || localOnly, readOnlyRef: effectiveReadOnlyRef })
 
   useEffect(() => {
     if (!editor) return

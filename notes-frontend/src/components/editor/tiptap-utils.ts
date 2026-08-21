@@ -6,6 +6,7 @@ export type CollabStatus =
   | 'connecting'
   | 'connected'
   | 'disconnected'
+  | 'local'
 
 export const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className: string; detail?: string }> = {
   'config-missing': { label: '协作配置缺失', className: 'text-red-600', detail: '已本地降级' },
@@ -15,6 +16,7 @@ export const COLLAB_STATUS_META: Record<CollabStatus, { label: string; className
   connecting: { label: '连接中', className: 'text-yellow-600' },
   connected: { label: '已连接', className: 'text-green-600' },
   disconnected: { label: '实时协作暂不可用，已离线编辑', className: 'text-amber-700' },
+  local: { label: '本地编辑', className: 'text-gray-600' },
 }
 
 export function colorFromString(s: string) {
