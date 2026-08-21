@@ -18,6 +18,10 @@ export function useNewNotePage() {
   const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('markdown')
   const [newTitle, setNewTitle] = useState('')
+  const [currentContent, setCurrentContent] = useState('<p></p>')
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const savingRef = useRef(false)
   const [selection, setSelection] = useState({ start: 0, end: 0 })
   const [isFullscreen, setIsFullscreen] = useState(false)
   const editorContainerRef = useRef<HTMLDivElement>(null)
@@ -105,15 +109,24 @@ export function useNewNotePage() {
   }
 
   const saveNote = async (title: string, content: string, status?: 'draft') => {
+    if (savingRef.current) return
     if (!title.trim()) throw new Error('请输入笔记标题')
+    savingRef.current = true
+    setSaving(true)
+    setSaveError('')
     try {
       const note = await createNote({ title: title.trim(), content: content.trim(), categoryId: selectedCategory || undefined, tags: mergeTagIds(selectedTags, []), ...(status ? { status } : {}), visibility: visibility as any })
       router.push(`/dashboard/notes/${note.id}`)
     } catch (error) {
       console.error(status ? 'Failed to create draft note:' : 'Failed to create note:', error)
-      throw new Error(status ? '保存草稿失败，请重试' : '创建笔记失败，请重试')
+      const message = status ? '保存草稿失败，请重试' : '创建笔记失败，请重试'
+      setSaveError(message)
+      throw new Error(message)
+    } finally {
+      savingRef.current = false
+      setSaving(false)
     }
   }
 
-  return { categories, tags, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, visibility, setVisibility, editorMode, setEditorMode, newTitle, setNewTitle, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleCancel: () => { if (window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')) router.back() } }
+  return { categories, tags, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, visibility, setVisibility, editorMode, setEditorMode, newTitle, setNewTitle, currentContent, setCurrentContent, saving, saveError, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleCancel: () => { if (window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')) router.back() } }
 }

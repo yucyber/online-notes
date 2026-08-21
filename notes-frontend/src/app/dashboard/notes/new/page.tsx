@@ -1,8 +1,10 @@
 'use client'
 
 import dynamic from 'next/dynamic'
-import { ArrowLeft } from 'lucide-react'
+import { useState } from 'react'
 import { Button } from '@/components/ui/button'
+import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
+import { EditorNoteProperties } from '@/components/editor/EditorNoteProperties'
 import TiptapToolbar from '@/components/editor/TiptapToolbar'
 import { useNewNotePage } from './useNewNotePage'
 
@@ -10,15 +12,98 @@ const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), {
 
 export default function NewNotePage() {
   const page = useNewNotePage()
-  return <div className="space-y-6">
-    <div className="flex items-center justify-between"><div className="flex items-center gap-4"><Button variant="ghost" size="icon" onClick={page.handleCancel} className="text-gray-500 hover:text-gray-700"><ArrowLeft className="h-4 w-4" /></Button><h1 className="text-2xl font-bold" style={{ background: 'linear-gradient(to right, #111827, #2563eb, #111827)', WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>新建笔记</h1></div></div>
-    <div className="bg-white" style={{ borderRadius: '12px', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -2px rgba(0, 0, 0, 0.1)' }}>
-      <div className="grid gap-6 border-b border-gray-100 p-6 md:grid-cols-2">
-        <div><div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium text-gray-700">选择分类</span>{page.metaLoading && <span className="text-xs text-gray-400">加载中...</span>}</div><select className="w-full rounded-lg border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" value={page.selectedCategory} onChange={(event) => page.setSelectedCategory(event.target.value)} disabled={page.metaLoading || !!page.metaError}><option value="">未分类</option>{page.categories.map((category) => <option key={page.resolveCategoryId(category) || category.name} value={page.resolveCategoryId(category)}>{category.name}</option>)}</select></div>
-        <div><div className="mb-4"><div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium text-gray-700">可见性</span></div><select className="w-full rounded-lg border border-gray-200 p-3 text-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" value={page.visibility} onChange={(event) => page.setVisibility(event.target.value as 'private' | 'public')}><option value="private">仅自己</option><option value="public">公开只读</option></select></div><div className="mb-2 flex items-center justify-between"><span className="text-sm font-medium text-gray-700">标签（可多选）</span>{page.metaLoading && <span className="text-xs text-gray-400">加载中...</span>}</div><div className="mb-2 flex items-center gap-2"><input type="text" value={page.tagInput} onChange={(event) => page.setTagInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter') { const parts = page.tagInput.split(/[,\s]+/); page.setTagInput(''); void page.addTagsByNames(parts) } }} placeholder="输入标签，Enter 添加，支持逗号分隔" className="flex-1 rounded-lg border border-gray-200 p-2 text-sm" /><button className="px-3 py-1 rounded border text-sm text-gray-700 hover:bg-gray-50" onClick={() => page.setSelectedTags([])}>清空标签</button></div>{page.tagInput && <div className="mb-2 rounded-lg border border-gray-200 p-2 bg-white shadow-sm"><div className="text-xs text-gray-500 mb-1">建议</div><div className="flex flex-wrap gap-2">{page.tags.filter((tag) => tag.name.toLowerCase().includes(page.tagInput.toLowerCase())).slice(0, 10).map((tag) => { const id = page.resolveTagId(tag); return <button key={id || tag.name} type="button" onClick={() => id && page.toggleTag(id)} className="rounded-full border px-3 py-1 text-xs hover:border-blue-300 hover:text-blue-600">{tag.name}</button> })}<button type="button" onClick={() => { void page.addTagsByNames([page.tagInput]); page.setTagInput('') }} className="rounded-full border px-3 py-1 text-xs text-gray-700 hover:bg-gray-50">创建标签 “{page.tagInput}”</button></div></div>}{page.tags.length === 0 ? <p className="text-sm text-gray-400">{page.metaError || '暂无可用标签'}</p> : <div className="flex flex-wrap gap-2">{page.tags.map((tag) => { const id = page.resolveTagId(tag); const active = id ? page.selectedTags.includes(id) : false; return <button key={id || tag.name} type="button" onClick={() => id && page.toggleTag(id)} disabled={!id} className={`rounded-full border px-3 py-1 text-sm transition ${active ? 'border-blue-500 bg-blue-50 text-blue-600 shadow-sm' : 'border-gray-200 text-gray-600 hover:border-blue-200 hover:text-blue-500'}`}>{tag.name}</button> })}</div>}</div>
-        {page.metaError && <p className="md:col-span-2 text-sm text-red-500">{page.metaError}</p>}
+  const [propertiesOpen, setPropertiesOpen] = useState(true)
+
+  const save = async (content = page.currentContent) => {
+    try {
+      await page.handleSave(page.newTitle, content)
+    } catch {
+      // 创建失败时保留当前输入，错误由页面状态统一展示。
+    }
+  }
+
+  return (
+    <main className="editor-shell new-note-editor" aria-label="新建笔记编辑器">
+      <div className="editor-layout-main new-note-editor__layout">
+        <header className="editor-header">
+          <nav className="editor-header__breadcrumb" aria-label="编辑器面包屑">
+            <button type="button" className="new-note-editor__back" onClick={page.handleCancel}>
+              <PrototypeGlyph name="chevron-left" className="h-3 w-3" />
+              我的笔记
+            </button>
+            <PrototypeGlyph name="chevron-right" className="h-3 w-3" />
+            <h1>{page.newTitle.trim() || '未命名笔记'}</h1>
+          </nav>
+          <div className="editor-header__actions">
+            <span className="new-note-editor__local-status">仅本地 · 创建后启用协作</span>
+            <Button type="button" variant="ghost" size="icon" aria-label="打开笔记属性" aria-expanded={propertiesOpen} onClick={() => setPropertiesOpen((open) => !open)}>
+              <PrototypeGlyph name="settings" className="h-4 w-4" />
+            </Button>
+            <Button id="save-button" type="button" disabled={page.saving} onClick={() => void save()}>
+              <PrototypeGlyph name="save" className="h-4 w-4" />
+              {page.saving ? '创建中…' : '创建笔记'}
+            </Button>
+          </div>
+        </header>
+
+        {propertiesOpen && (
+          <aside className="editor-properties-popover new-note-editor__properties" aria-label="笔记属性">
+            <div className="editor-properties-popover__header"><h2>笔记属性</h2><p>创建前设置归档方式与可见范围</p></div>
+            <div className="editor-properties-popover__body">
+              <section className="editor-properties__section new-note-editor__visibility">
+                <label htmlFor="new-note-visibility">可见性</label>
+                <select id="new-note-visibility" value={page.visibility} onChange={(event) => page.setVisibility(event.target.value as 'private' | 'public')}>
+                  <option value="private">仅自己</option>
+                  <option value="public">公开只读</option>
+                </select>
+              </section>
+              <EditorNoteProperties
+                categories={page.categories}
+                tags={page.tags}
+                selectedCategory={page.selectedCategory}
+                selectedTags={page.selectedTags}
+                tagInput={page.tagInput}
+                metaLoading={page.metaLoading}
+                metaError={page.metaError}
+                readOnly={false}
+                resolveCategoryId={page.resolveCategoryId}
+                setSelectedCategory={page.setSelectedCategory}
+                setSelectedTags={page.setSelectedTags}
+                setTagInput={page.setTagInput}
+                toggleTag={page.toggleTag}
+                addTagsByNames={page.addTagsByNames}
+                rejectReadOnlyWrite={() => false}
+              />
+            </div>
+          </aside>
+        )}
+
+        {page.saveError && <div className="editor-error-banner" role="alert">{page.saveError}</div>}
+
+        <div className="editor-edit-row">
+          <div ref={page.editorContainerRef} className="editor-rich-editor" data-fullscreen={page.isFullscreen} style={page.isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'var(--bg)' } : undefined}>
+            <TiptapToolbar disabled={page.saving} isFullscreen={page.isFullscreen} exec={(command, payload) => {
+              if (command === 'comments') return
+              if (command === 'fullscreen') { page.handleToggleFullscreen(); return }
+              document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: command, payload } }))
+            }} />
+            <div className="editor-paper new-note-editor__paper">
+              <input type="text" value={page.newTitle} onChange={(event) => page.setNewTitle(event.target.value)} placeholder="未命名笔记" aria-label="笔记标题" className="new-note-editor__title" maxLength={200} />
+              <TiptapEditor
+                noteId="new"
+                localOnly
+                initialHTML="<p></p>"
+                onSave={save}
+                user={{ id: 'me', name: '我' }}
+                readOnly={false}
+                onSelectionChange={(start, end) => page.setSelection({ start, end })}
+                onContentChange={page.setCurrentContent}
+                className="new-note-editor__body"
+              />
+            </div>
+          </div>
+        </div>
       </div>
-      <div ref={page.editorContainerRef} className="space-y-3 p-6" style={page.isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', background: 'transparent' } : undefined}><input type="text" value={page.newTitle} onChange={(event) => page.setNewTitle(event.target.value)} placeholder="标题" className="w-full rounded-lg border border-gray-200 p-3 text-lg focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-200" /><TiptapToolbar disabled={false} isFullscreen={page.isFullscreen} exec={(command, payload) => { if (command === 'comments') return; if (command === 'fullscreen') { page.handleToggleFullscreen(); return } document.dispatchEvent(new CustomEvent('tiptap:exec', { detail: { cmd: command, payload } })) }} /><TiptapEditor noteId="new" initialHTML="<p></p>" onSave={async (html: string) => page.handleSave(page.newTitle, html)} user={{ id: 'me', name: '我' }} readOnly={false} onSelectionChange={(start, end) => page.setSelection({ start, end })} className="min-h-[calc(100vh-200px)]" /></div>
-    </div>
-  </div>
+    </main>
+  )
 }
