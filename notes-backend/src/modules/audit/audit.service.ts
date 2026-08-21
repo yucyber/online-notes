@@ -60,7 +60,10 @@ export class AuditService {
     const editableNoteIdsAsStrings = editableNoteIds.map(id => String(id))
     const query: any = { resourceId: { $in: editableNoteIdsAsStrings } }
     if (params.resourceType) query.resourceType = params.resourceType
-    if (params.resourceId) query.resourceId = new Types.ObjectId(params.resourceId)
+    if (params.resourceId) {
+      const requestedId = String(new Types.ObjectId(params.resourceId))
+      query.resourceId = editableNoteIdsAsStrings.includes(requestedId) ? requestedId : { $in: [] }
+    }
     if (params.eventType) query.eventType = params.eventType
     if (params.eventTypePrefixes && params.eventTypePrefixes.length > 0) {
       query.$or = params.eventTypePrefixes.map(p => ({ eventType: { $regex: `^${p}` } }))

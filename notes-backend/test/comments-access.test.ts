@@ -26,6 +26,7 @@ test('CommentsService.reply checks member scope before mutating the comment', as
     } as any,
     { memberScope: (targetNoteId: string, targetUserId: string) => ({ targetNoteId, targetUserId }) } as any,
     { record: async () => undefined } as any,
+    { findById: async () => null } as any,
   )
 
   await assert.rejects(() => service.reply(String(commentId), userId, 'reply'), /无权限|not found/i)
@@ -44,6 +45,7 @@ test('CommentsService.create keeps its member scope before writing', async () =>
     { findOne: () => ({ exec: async () => ({ _id: noteId }) }) } as any,
     { memberScope: (targetNoteId: string, targetUserId: string) => ({ targetNoteId, targetUserId }) } as any,
     { record: async () => undefined } as any,
+    { findById: async () => null } as any,
   )
 
   await service.create(String(noteId), userId, 1, 2, 'text')

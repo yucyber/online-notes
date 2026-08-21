@@ -5,42 +5,55 @@ import { AuditService } from '../src/modules/audit/audit.service'
 
 const uidA = new Types.ObjectId().toString()
 const uidB = new Types.ObjectId().toString()
-const noteId = new Types.ObjectId().toString()
+const editableNoteId = new Types.ObjectId().toString()
+const hiddenNoteId = new Types.ObjectId().toString()
 
 function makeDoc(over: Record<string, unknown>) {
   return {
     _id: new Types.ObjectId(),
-    actorId: over.actorId,
-    eventType: over.eventType,
-    resourceId: over.resourceId,
     resourceType: 'note',
     createdAt: new Date(),
     requestId: 'req-1',
-    toObject: () => over,
+    ...over,
+    toObject() { return { ...this } },
   }
 }
 
+function matchesResource(resourceId: string, condition: any) {
+  if (condition?.$in) return condition.$in.map(String).includes(String(resourceId))
+  return String(resourceId) === String(condition)
+}
+
 function makeAuditModel(records: any[]) {
-  const match = (query: any) => records.filter((r) =>
-    r.actorId === query.actorId &&
-    (!query.eventType || r.eventType === query.eventType) &&
-    (!query.resourceId || r.resourceId === query.resourceId),
+  const match = (query: any) => records.filter((record) =>
+    matchesResource(record.resourceId, query.resourceId)
+    && (!query.eventType || record.eventType === query.eventType),
   )
   return {
-    find: (query: any) => {
-      // 断言调用方强制携带 actorId 过滤
-      assert.ok(query.actorId, 'audit.find must filter by actorId')
-      return {
-        sort: () => ({ skip: () => ({ limit: () => ({ exec: async () => match(query) }) }) }),
-      }
-    },
+    find: (query: any) => ({
+      sort: () => ({
+        skip: () => ({
+          limit: () => ({
+            populate: () => ({ exec: async () => match(query) }),
+          }),
+        }),
+      }),
+    }),
     countDocuments: async (query: any) => match(query).length,
   }
 }
 
 function makeNoteModel() {
   return {
-    find: () => ({ select: () => ({ lean: () => ({ exec: async () => [] }) }) }),
+    find: (query: any) => ({
+      select: () => ({
+        lean: () => ({
+          exec: async () => query.$or
+            ? [{ _id: editableNoteId }]
+            : [{ _id: editableNoteId, title: '可编辑笔记' }],
+        }),
+      }),
+    }),
   }
 }
 
@@ -48,34 +61,31 @@ function makeService(records: any[]) {
   return new AuditService(makeAuditModel(records) as any, makeNoteModel() as any)
 }
 
-test('AuditService.list only returns records belonging to the actor', async () => {
+test('AuditService.list returns all collaborator events on editable notes only', async () => {
   const records = [
-    makeDoc({ actorId: uidA, eventType: 'invitation_created', resourceId: noteId }),
-    makeDoc({ actorId: uidB, eventType: 'comment_created', resourceId: noteId }),
-    makeDoc({ actorId: uidA, eventType: 'version_created', resourceId: noteId }),
+    makeDoc({ actorId: uidA, eventType: 'invitation_created', resourceId: editableNoteId }),
+    makeDoc({ actorId: uidB, eventType: 'comment_created', resourceId: editableNoteId }),
+    makeDoc({ actorId: uidA, eventType: 'version_created', resourceId: hiddenNoteId }),
   ]
-  const svc = makeService(records)
 
-  const resA = await svc.list({ actorId: uidA, page: 1, size: 20 })
-  const resB = await svc.list({ actorId: uidB, page: 1, size: 20 })
+  const result = await makeService(records).list({ actorId: uidA, page: 1, size: 20 })
 
-  // 用户 A 只能看到自己的 2 条
-  assert.equal(resA.total, 2)
-  assert.ok(resA.items.every((it: any) => it.actorId === uidA))
-  // 用户 B 只能看到自己的 1 条
-  assert.equal(resB.total, 1)
-  assert.ok(resB.items.every((it: any) => it.actorId === uidB))
+  assert.equal(result.total, 2)
+  assert.deepEqual(result.items.map((item: any) => item.actorId), [uidA, uidB])
+  assert.ok(result.items.every((item: any) => item.noteTitle === '可编辑笔记'))
 })
 
-test('AuditService.list forces actorId scope regardless of other filters', async () => {
+test('AuditService.list filters cannot expand the editable note scope', async () => {
   const records = [
-    makeDoc({ actorId: uidA, eventType: 'invitation_created', resourceId: noteId }),
-    makeDoc({ actorId: uidB, eventType: 'comment_created', resourceId: noteId }),
+    makeDoc({ actorId: uidA, eventType: 'comment_created', resourceId: editableNoteId }),
+    makeDoc({ actorId: uidB, eventType: 'comment_created', resourceId: hiddenNoteId }),
   ]
-  const svc = makeService(records)
+  const service = makeService(records)
 
-  // 即使指定了 eventType/resourceId，也不能跨越 actorId 边界
-  const res = await svc.list({ actorId: uidA, eventType: 'comment_created', page: 1, size: 20 })
-  assert.equal(res.total, 0)
-  assert.deepEqual(res.items, [])
+  const hidden = await service.list({ actorId: uidA, resourceId: hiddenNoteId, eventType: 'comment_created' })
+  const editable = await service.list({ actorId: uidA, resourceId: editableNoteId, eventType: 'comment_created' })
+
+  assert.equal(hidden.total, 0)
+  assert.deepEqual(hidden.items, [])
+  assert.equal(editable.total, 1)
 })

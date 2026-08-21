@@ -87,6 +87,8 @@ describe('NewNotePage', () => {
     expect(properties).toBeInTheDocument()
     expect(screen.queryByLabelText('可见性')).not.toBeInTheDocument()
     expect(screen.queryByRole('link', { name: '查看历史版本' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '关闭笔记属性' }))
+    expect(screen.queryByRole('dialog', { name: '笔记属性' })).not.toBeInTheDocument()
   })
 
   test('uses the same draft content for header save and editor updates', () => {

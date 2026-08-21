@@ -1,6 +1,7 @@
 import { useCallback } from 'react'
 import { updateNote, createTag } from '@/lib/api'
 import { mergeTagIds } from '@/app/dashboard/notes/new/new-note-utils'
+import { resolveTagIdsByNames } from '@/lib/tag-utils'
 import type { Note, Tag } from '@/types'
 
 interface UseNoteSaveOptions {
@@ -24,27 +25,9 @@ export function useNoteSave({
   setTags,
 }: UseNoteSaveOptions) {
   const addTagsByNames = useCallback(async (names: string[]): Promise<string[]> => {
-    const trimmed = Array.from(new Set(names.map(n => n.trim()).filter(Boolean)))
-    if (trimmed.length === 0) return []
-    const mapByName = new Map<string, Tag>()
-    tags.forEach(t => mapByName.set(String(t.name).toLowerCase(), t))
-    const resultIds: string[] = []
-    for (const name of trimmed) {
-      const key = name.toLowerCase()
-      const hit = mapByName.get(key)
-      if (hit) {
-        const tagId = hit.id || (hit as unknown as { _id?: string })?._id || ''
-        if (tagId) resultIds.push(tagId)
-        continue
-      }
-      const created = await createTag(name)
-      const tagId = created.id || (created as unknown as { _id?: string })?._id || ''
-      if (tagId) {
-        resultIds.push(tagId)
-        setTags(prev => [{ ...created, id: tagId }, ...prev])
-      }
-    }
-    return resultIds
+    const result = await resolveTagIdsByNames(names, tags, createTag)
+    if (result.created.length > 0) setTags(prev => [...result.created, ...prev])
+    return result.ids
   }, [tags, setTags])
 
   const save = useCallback(async (title: string, content: string, status: 'published' | 'draft') => {
@@ -52,7 +35,7 @@ export function useNoteSave({
       const updatedNote = await updateNote(id, {
         title: title.trim(),
         content: content.trim(),
-        categoryId: selectedCategory || undefined,
+        categoryId: selectedCategory || null,
         tags: mergeTagIds(selectedTags, []),
         status,
       })

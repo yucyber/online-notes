@@ -62,7 +62,7 @@ export class UpdateNoteDto {
 
   @IsOptional()
   @IsMongoId({ message: '分类ID格式不正确' })
-  categoryId?: string;
+  categoryId?: string | null;
 
   @IsOptional()
   @IsArray({ message: '标签必须是数组' })

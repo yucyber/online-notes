@@ -42,6 +42,8 @@ function createService(noteModel: any, categoriesService: any, tagsService: any)
     { writeScope: () => ({ _id: new Types.ObjectId(), permission: 'write' }) } as any,
     { incrementForCreate: async () => undefined, updateCategories: async () => undefined, updateTags: async () => undefined } as any,
     { invalidateLists: async () => undefined } as any,
+    { record: async () => undefined } as any,
+    { findById: async () => null } as any,
   )
 }
 

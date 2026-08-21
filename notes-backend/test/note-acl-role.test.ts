@@ -46,7 +46,7 @@ function makeService(note: any | null) {
   const cache = {} as any
   const jwt = require('jsonwebtoken')
   const jwtService = { sign: (p: any, o: any) => jwt.sign(p, 'test-secret', o) } as any
-  return new NotesService(noteModel, cats, tags, embed, ai, noteAccess, counter, cache, undefined, undefined, jwtService)
+  return new NotesService(noteModel, cats, tags, embed, ai, noteAccess, counter, cache, { record: async () => undefined } as any, { findById: async () => null } as any, undefined, undefined, jwtService)
 }
 
 // 删除 ACL owner 角色后，owner 权限只能由 note.userId（创建者）持有。

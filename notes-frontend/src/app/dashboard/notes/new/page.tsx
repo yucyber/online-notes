@@ -88,6 +88,7 @@ export default function NewNotePage() {
             open={propertiesOpen}
             panelRef={propertiesPanelRef}
             showVersions={false}
+            onClose={() => setPropertiesOpen(false)}
             properties={(
               <EditorNoteProperties
                 categories={page.categories}

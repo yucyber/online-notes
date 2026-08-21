@@ -102,6 +102,7 @@ describe('knowledge base frontend entry', () => {
       expect(mockKnowledgeBasesAPI.removeNote).toHaveBeenCalledWith('kb-1', 'note-1')
     })
 
+    fireEvent.click(screen.getByRole('button', { name: '新建知识库' }))
     fireEvent.change(screen.getByPlaceholderText('知识库名称'), {
       target: { value: 'Project Memory' },
     })

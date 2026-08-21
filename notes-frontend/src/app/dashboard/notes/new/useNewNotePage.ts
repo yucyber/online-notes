@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createNote, createTag, fetchCategories, fetchNotes, fetchTags } from '@/lib/api'
 import type { Category, Note, Tag } from '@/types'
 import { mergeTagIds } from './new-note-utils'
+import { resolveTagIdsByNames } from '@/lib/tag-utils'
 
 export function useNewNotePage() {
   const router = useRouter()
@@ -95,26 +96,22 @@ export function useNewNotePage() {
     }
   }, [handleToggleFullscreen, isFullscreen])
 
-  const resolveCategoryId = (category: Category) => category.id || (category as unknown as { _id?: string })._id || ''
-  const resolveTagId = (tag: Tag) => tag.id || (tag as unknown as { _id?: string })._id || ''
+  const resolveCategoryId = (category: Category) => category.id
+  const resolveTagId = (tag: Tag) => tag.id
   const toggleTag = (tagId: string) => setSelectedTags((prev) => prev.includes(tagId) ? prev.filter((id) => id !== tagId) : [...prev, tagId])
 
   const addTagsByNames = async (names: string[]) => {
-    const trimmed = Array.from(new Set(names.map((name) => name.trim()).filter(Boolean)))
-    if (trimmed.length === 0) return []
-    const mapByName = new Map(tags.map((tag) => [String(tag.name).toLowerCase(), tag]))
-    const resultIds: string[] = []
-    for (const name of trimmed) {
-      const hit = mapByName.get(name.toLowerCase())
-      if (hit) { const id = resolveTagId(hit); if (id) resultIds.push(id); continue }
+    const result = await resolveTagIdsByNames(names, tags, async (name) => {
       try {
-        const created = await createTag(name)
-        const id = created.id || (created as unknown as { _id?: string })._id || ''
-        if (id) { resultIds.push(id); setTags((prev) => [{ ...created, id }, ...prev]) }
-      } catch { /* one failed tag must not prevent the note from being saved */ }
-    }
-    if (resultIds.length > 0) setSelectedTags((prev) => mergeTagIds(prev, resultIds))
-    return resultIds
+        return await createTag(name)
+      } catch {
+        // 单个标签失败不能阻断其余标签和笔记保存。
+        return null
+      }
+    })
+    if (result.created.length > 0) setTags((prev) => [...result.created, ...prev])
+    if (result.ids.length > 0) setSelectedTags((prev) => mergeTagIds(prev, result.ids))
+    return result.ids
   }
 
   const saveNote = async (title: string, content: string, status?: 'draft') => {

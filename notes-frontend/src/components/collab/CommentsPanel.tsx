@@ -135,7 +135,7 @@ export function CommentsPanel({ noteId, selection, readOnly = false, mode = 'sel
                 onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add() } }}
               />
             </label>
-            <button type="button" className="collab-button collab-button--primary" onClick={add} disabled={readOnly || !text.trim()}>提交</button>
+            <button type="button" className="collab-button collab-button--primary" aria-label="提交评论" onClick={add} disabled={readOnly || !text.trim()}>提交</button>
           </div>
           <div aria-live="polite" className="comments-panel__error">{message}</div>
         </>
@@ -196,7 +196,7 @@ export function CommentsPanel({ noteId, selection, readOnly = false, mode = 'sel
                     onKeyDown={async (e) => { if (e.key==='Enter') { e.preventDefault(); if (readOnly) return; const val = replyTexts[cid] || ''; await reply(cid, val); setReplyTexts(prev => ({ ...prev, [cid]: '' })) } }}
                   />
                 </label>
-                <button type="button" className="collab-button" disabled={readOnly} onClick={async () => { if (readOnly) return; const val = replyTexts[cid] || ''; await reply(cid, val); setReplyTexts(prev => ({ ...prev, [cid]: '' })) }}>回复</button>
+                <button type="button" className="collab-button" aria-label="提交回复" disabled={readOnly} onClick={async () => { if (readOnly) return; const val = replyTexts[cid] || ''; await reply(cid, val); setReplyTexts(prev => ({ ...prev, [cid]: '' })) }}>回复</button>
               </div>
             </li>
           )

@@ -470,26 +470,27 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
   top: 64px;
   right: 16px;
   z-index: 70;
-  width: min(340px, calc(100vw - 32px));
+  width: calc(100vw - 32px);
+  max-width: 380px;
   max-height: calc(100vh - 96px);
   overflow-y: auto;
   border: 1px solid var(--product-line, var(--border));
-  border-radius: var(--product-radius-md, 10px);
+  border-radius: 10px;
   background: var(--product-panel, var(--surface-1));
-  box-shadow: var(--shadow-lg);
+  box-shadow: 0 18px 48px rgba(24, 24, 22, 0.12);
 }
 
-.editor-properties-popover__header,
-.editor-properties-popover__body { padding: 14px 16px; }
 .editor-properties-popover__header {
   display: flex;
+  height: 48px;
   align-items: center;
   justify-content: space-between;
   gap: 12px;
-  min-height: 56px;
+  padding: 0 16px;
   border-bottom: 1px solid var(--product-line-soft, var(--border));
 }
 .editor-properties-popover__header h2 { font-size: 14px; font-weight: 700; }
+.editor-properties-popover__body { padding: 14px 16px 16px; }
 .editor-properties-popover__close {
   display: grid;
   width: 28px;
@@ -1010,13 +1011,13 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
   font-weight: 700;
 }
 
-.editor-properties,
-.editor-properties__section,
-.editor-properties__tree,
-.editor-properties__tags {
-  display: grid;
-  gap: 10px;
+.editor-properties { display: flex; flex-direction: column; gap: 16px; }
+.editor-properties__section { min-width: 0; }
+.editor-properties__section + .editor-properties__section {
+  padding-top: 16px;
+  border-top: 1px solid var(--product-line-soft, var(--border));
 }
+.editor-properties__tree { display: grid; gap: 10px; }
 
 .editor-properties__label-row,
 .editor-properties__category,
@@ -1028,38 +1029,29 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
 
 .editor-properties__label-row {
   justify-content: space-between;
+  margin-bottom: 8px;
   color: var(--product-text-secondary, var(--text-muted));
   font-size: 12px;
 }
 
-.editor-properties select,
 .editor-properties input[type="text"] {
   width: 100%;
-  min-height: 42px;
+  height: 40px;
   border: 1px solid var(--product-line, var(--border));
-  border-radius: var(--product-radius-md, 10px);
+  border-radius: 8px;
   background: var(--product-panel, var(--surface-1));
   color: var(--product-text, var(--on-surface));
-  padding: 0 10px;
+  padding: 0 12px;
   font-size: 13px;
+  transition: border-color 150ms, box-shadow 150ms;
 }
 
-.editor-properties select {
-  appearance: none;
-  -webkit-appearance: none;
-  padding-right: 32px;
-  background-image: linear-gradient(45deg, transparent 50%, var(--product-text-secondary, var(--text-muted)) 50%), linear-gradient(135deg, var(--product-text-secondary, var(--text-muted)) 50%, transparent 50%);
-  background-position: calc(100% - 18px) 50%, calc(100% - 13px) 50%;
-  background-size: 5px 5px, 5px 5px;
-  background-repeat: no-repeat;
-  cursor: pointer;
-}
-
-.editor-properties select:focus-visible,
 .editor-properties input[type="text"]:focus-visible {
-  outline: 2px solid var(--product-accent, var(--primary));
+  /* 覆盖全局 :focus-visible 的 primary 蓝色 outline，改用项目 accent 灰蓝 */
+  outline-color: var(--product-accent, var(--primary-600));
   outline-offset: -1px;
   border-color: var(--product-accent-line, var(--product-line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--product-accent, var(--primary-600)) 12%, transparent);
 }
 
 .editor-properties__hint {
@@ -1088,12 +1080,17 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
 
 .editor-properties__tag-input > button {
   flex: none;
+  height: 40px;
+  padding: 0 12px;
+  border-radius: 8px;
+  font-size: 13px;
 }
 
 .editor-properties__tags {
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
+  margin-top: 8px;
 }
 
 .editor-properties__tags p,
@@ -1105,7 +1102,13 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
 
 .editor-properties__create-tag {
   width: 100%;
+  height: 34px;
+  margin-top: 8px;
+  padding: 0 12px;
+  border-radius: 8px;
   justify-content: flex-start !important;
+  color: var(--product-accent, var(--primary)) !important;
+  font-size: 13px;
 }
 
 .editor-metadata-panel__toc {
@@ -2165,6 +2168,125 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
   height: 24px;
   font-size: 10px;
   background: var(--collab-muted);
+}
+
+/* 自定义下拉（替代原生 select），使展开后的选项悬停高亮可用 CSS 完全控制 */
+.ui-select {
+  position: relative;
+  width: 100%;
+}
+
+.ui-select__trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  height: 40px;
+  gap: 8px;
+  padding: 0 10px 0 12px;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: 8px;
+  background: var(--product-panel, var(--surface-1));
+  color: var(--product-text, var(--on-surface));
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 150ms, box-shadow 150ms;
+}
+
+.ui-select__trigger:hover:not(:disabled) {
+  border-color: var(--product-line-strong, var(--border-strong));
+}
+
+.ui-select__trigger:focus-visible {
+  outline-color: var(--product-accent, var(--primary-600));
+  outline-offset: -1px;
+  border-color: var(--product-accent-line, var(--product-line-strong));
+  box-shadow: 0 0 0 3px color-mix(in srgb, var(--product-accent, var(--primary-600)) 12%, transparent);
+}
+
+.ui-select__trigger:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.ui-select__value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select__placeholder {
+  color: var(--product-muted, var(--text-muted));
+}
+
+.ui-select__caret {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  color: var(--product-muted, var(--text-muted));
+  transition: transform 150ms;
+}
+
+.ui-select__caret--open {
+  transform: rotate(180deg);
+}
+
+.ui-select__menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  z-index: 80;
+  max-height: 240px;
+  margin: 0;
+  padding: 4px;
+  overflow-y: auto;
+  list-style: none;
+  border: 1px solid var(--product-line, var(--border));
+  border-radius: 8px;
+  background: var(--product-panel, var(--surface-1));
+  box-shadow: var(--shadow-lg);
+}
+
+.ui-select__option {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 0 10px;
+  min-height: 34px;
+  border-radius: 7px;
+  color: var(--product-text, var(--on-surface));
+  font-size: 13px;
+  cursor: pointer;
+}
+
+/* 悬停/键盘高亮：使用项目 accent 蓝，替代原生灰色高亮 */
+.ui-select__option--highlighted {
+  background: var(--product-accent, var(--primary-600));
+  color: #fff;
+}
+
+.ui-select__option--selected {
+  color: var(--product-accent, var(--primary-600));
+  font-weight: 600;
+}
+
+.ui-select__option--selected.ui-select__option--highlighted {
+  color: #fff;
+}
+
+.ui-select__option-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-select__check {
+  width: 16px;
+  height: 16px;
+  flex: none;
 }
 
 .new-note-editor__paper {

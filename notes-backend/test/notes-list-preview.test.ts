@@ -54,6 +54,8 @@ test('NotesService.findAll selects note content for list preview fallback', asyn
       },
       setList: async () => undefined,
     } as any,
+    { record: async () => undefined } as any,
+    { findById: async () => null } as any,
   )
 
   const result = await service.findAll(userId)

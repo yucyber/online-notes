@@ -51,7 +51,9 @@ export interface CreateNoteDto {
   visibility?: 'private' | 'public'
 }
 
-export type UpdateNoteDto = Partial<CreateNoteDto>
+export type UpdateNoteDto = Partial<Omit<CreateNoteDto, 'categoryId'>> & {
+  categoryId?: string | null
+}
 
 export interface NoteFilterParams {
   keyword?: string

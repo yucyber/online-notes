@@ -92,11 +92,11 @@ test('read-only editor header describes viewing while retaining collaborator acc
 })
 
 test('read-only drawers expose existing collaboration data without writable comment or invite controls', async () => {
-  render(<NoteEditorDrawers id="n1" selection={{ start: 0, end: 2 }} showCollabDrawer showCommentsDrawer
+  render(<NoteEditorDrawers id="n1" selection={{ start: 0, end: 2 }} commentsMode="selection" showCollabDrawer showCommentsDrawer
     commentsDrawerRef={{ current: null }} onCloseCollab={jest.fn()} onCloseComments={jest.fn()} readOnly />)
 
   expect(await screen.findByRole('dialog', { name: '协作' })).toBeInTheDocument()
-  expect(screen.getByRole('heading', { name: '成员' })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: '成员' })).toBeInTheDocument()
   expect(screen.queryByRole('textbox', { name: '邀请邮箱' })).not.toBeInTheDocument()
   expect(screen.getByRole('button', { name: '提交评论' })).toBeDisabled()
 })
@@ -107,10 +107,10 @@ test('viewer write attempts never issue note, tag, or comment requests while rea
   render(<NoteEditorShell id="n1" initialData={note as any} />)
 
   fireEvent.click(screen.getByRole('button', { name: '打开笔记属性' }))
-  await waitFor(() => expect(screen.getByRole('option', { name: '分类一' })).toBeInTheDocument())
+  await waitFor(() => expect(screen.getByRole('button', { name: '选择分类' })).toHaveTextContent('未分类'))
   expect(screen.getByRole('combobox', { name: '样式' })).toBeDisabled()
-  expect(screen.getByRole('option', { name: '未分类' }).closest('select')).toBeDisabled()
-  expect(screen.getByRole('button', { name: '标签一' })).toBeDisabled()
+  expect(screen.getByRole('button', { name: '选择分类' })).toBeDisabled()
+  await waitFor(() => expect(screen.getByRole('button', { name: '标签一' })).toBeDisabled())
 
   fireEvent.click(screen.getByRole('button', { name: '打开协作' }))
   expect(await screen.findByRole('dialog', { name: '协作' })).toBeInTheDocument()

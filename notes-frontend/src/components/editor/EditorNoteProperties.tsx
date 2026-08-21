@@ -1,5 +1,7 @@
 import { Button } from '@/components/ui/button'
 import { TagChip } from '@/components/ui/tag-chip'
+import { Select } from '@/components/ui/select'
+import { parseTagNames } from '@/lib/tag-utils'
 import type { Category, Tag } from '@/types'
 
 type Props = {
@@ -39,7 +41,7 @@ export function EditorNoteProperties({
 }: Props) {
   const commitTagInput = () => {
     if (rejectReadOnlyWrite()) return
-    const names = tagInput.split(/[,\s]+/).filter(Boolean)
+    const names = parseTagNames(tagInput)
     if (names.length === 0) return
     setTagInput('')
     void addTagsByNames(names)
@@ -52,26 +54,29 @@ export function EditorNoteProperties({
           <label htmlFor="editor-category">选择分类</label>
           {metaLoading && <span className="editor-properties__hint">加载中...</span>}
         </div>
-        <select
+        <Select
           id="editor-category"
           value={selectedCategory}
           disabled={readOnly || metaLoading || Boolean(metaError)}
-          onChange={(event) => {
+          placeholder="未分类"
+          options={[
+            { value: '', label: '未分类' },
+            ...categories.map((category) => {
+              const value = resolveCategoryId(category)
+              return { value, label: category.name }
+            }),
+          ]}
+          onChange={(value) => {
             if (rejectReadOnlyWrite()) return
-            setSelectedCategory(event.target.value)
+            setSelectedCategory(value)
           }}
-        >
-          <option value="">未分类</option>
-          {categories.map((category) => {
-            const value = resolveCategoryId(category)
-            return <option key={value || category.name} value={value}>{category.name}</option>
-          })}
-        </select>
+        />
       </section>
 
       <section className="editor-properties__section">
         <div className="editor-properties__label-row">
           <label htmlFor="editor-tag-input">标签</label>
+          {!metaLoading && <span className="editor-properties__hint">输入后按 Enter 添加</span>}
           {metaLoading && <span className="editor-properties__hint">加载中...</span>}
         </div>
         <div className="editor-properties__tag-input">
@@ -80,7 +85,7 @@ export function EditorNoteProperties({
             type="text"
             value={tagInput}
             disabled={readOnly}
-            placeholder="输入标签后按 Enter"
+            placeholder="输入标签"
             onChange={(event) => {
               if (rejectReadOnlyWrite()) return
               setTagInput(event.target.value)
@@ -97,13 +102,13 @@ export function EditorNoteProperties({
           }}>清空</Button>
         </div>
         {tagInput && (
-          <Button type="button" variant="link" className="editor-properties__create-tag" onClick={commitTagInput}>
-            创建标签“{tagInput}”
+          <Button type="button" variant="ghost" className="editor-properties__create-tag" onClick={commitTagInput}>
+            创建标签「{tagInput}」
           </Button>
         )}
         <div className="editor-properties__tags">
           {tags.map((tag) => {
-            const id = tag.id || (tag as Tag & { _id?: string })._id || ''
+            const id = tag.id
             const active = selectedTags.includes(id)
             return (
               <TagChip

@@ -27,6 +27,8 @@ function createService(noteModel: any, noteAccess: any, overrides: Record<string
     noteAccess,
     overrides.noteCounter || { updateCategories: async () => undefined, updateTags: async () => undefined },
     overrides.noteCache || { invalidateLists: async () => undefined } as any,
+    overrides.audit || { record: async () => undefined } as any,
+    overrides.users || { findById: async () => null } as any,
     overrides.noteRecommendations,
   )
 }

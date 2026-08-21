@@ -342,18 +342,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
 
   const resolveCategoryId = (category: Category | Note['category']) =>
     (typeof category === 'object' && category
-      ? ((category as Category).id ||
-        (category as unknown as { _id?: string })?._id)
+      ? (category as Category).id
       : '') || ''
 
   const normalizeCategoryValue = (value: unknown) => {
     if (typeof value === 'string') return value
     if (value && typeof value === 'object') {
-      return (
-        (value as { id?: string }).id ||
-        (value as { _id?: string })._id ||
-        ''
-      );
+      return (value as { id?: string }).id || ''
     }
     return ''
   }
@@ -361,11 +356,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const resolveTagId = (tag: Tag | string | Note['tags'][number]) => {
     if (typeof tag === 'string') return tag
     if (!tag) return ''
-    return (
-      (tag as Tag).id ||
-      (tag as unknown as { _id?: string })?._id ||
-      ''
-    )
+    return (tag as Tag).id || ''
   }
 
   useEffect(() => {
@@ -412,7 +403,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       title: currentTitle,
       content: currentContent,
       visibility: note?.visibility,
-      categoryId: selectedCategory || undefined,
+      categoryId: selectedCategory || null,
       tags: selectedTags,
       status: 'published',
     },

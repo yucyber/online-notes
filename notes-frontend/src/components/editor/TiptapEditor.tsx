@@ -151,6 +151,12 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     editable: !effectiveReadOnly,
     immediatelyRender: false,
   }, [provider, collabEnabled, documentKey])
+
+  useEffect(() => {
+    if (!editor) return
+    editor.setEditable(!effectiveReadOnly)
+  }, [editor, effectiveReadOnly])
+
   useTiptapCommentMarks({ editor, noteId, suppressSelectionRef, readOnly: effectiveReadOnly || localOnly, readOnlyRef: effectiveReadOnlyRef })
 
   useEffect(() => {

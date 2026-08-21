@@ -18,6 +18,8 @@ function createService(calls: any[], overrides: { embedding?: number[]; summary?
     {} as any,
     {} as any,
     {} as any,
+    { record: async () => undefined } as any,
+    { findById: async () => null } as any,
   )
 }
 

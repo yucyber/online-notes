@@ -4,7 +4,7 @@ export type EditorSnapshot = {
   title: string
   content: string
   visibility?: UpdateNoteDto['visibility']
-  categoryId?: string
+  categoryId?: UpdateNoteDto['categoryId']
   tags: string[]
   status?: UpdateNoteDto['status']
 }

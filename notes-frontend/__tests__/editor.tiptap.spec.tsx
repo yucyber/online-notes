@@ -162,8 +162,8 @@ describe('TiptapEditor 全区域输入', () => {
     const props = { noteId: 'delayed-readonly', initialHTML: '<p>初始内容</p>', onSave: async () => {}, user }
     const { rerender } = render(<TiptapEditor {...props} />)
 
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true'))
     const editable = document.querySelector('.ProseMirror') as HTMLElement
-    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
     expect(mockWebsocketProviderInstances).toHaveLength(1)
     const provider = mockWebsocketProviderInstances[0]
     const ydoc = provider.doc as Y.Doc
@@ -186,8 +186,8 @@ describe('TiptapEditor 全区域输入', () => {
       .mockReturnValueOnce(new Promise(resolve => { resolveComments = resolve }))
     const props = { noteId: 'replay-readonly', initialHTML: '<p>原始内容</p>', onSave: async () => {}, user }
     const { rerender } = render(<TiptapEditor {...props} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true'))
     const editable = document.querySelector('.ProseMirror') as HTMLElement
-    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
 
     document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: 'replay-readonly' } }))
     await waitFor(() => expect(mockListCommentMarks).toHaveBeenCalledTimes(2))
@@ -202,14 +202,15 @@ describe('TiptapEditor 全区域输入', () => {
     mockListCommentMarks.mockResolvedValueOnce([{ _id: 'restored-comment', start: 1, end: 3 }])
     const props = { noteId: 'replay-after-permission', initialHTML: '<p>原始内容</p>', onSave: async () => {}, user }
     const { rerender } = render(<TiptapEditor {...props} readOnly />)
-    const editable = document.querySelector('.ProseMirror') as HTMLElement
+    let editable = document.querySelector('.ProseMirror') as HTMLElement
 
     document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: 'replay-after-permission' } }))
     expect(mockListCommentMarks).not.toHaveBeenCalled()
 
     rerender(<TiptapEditor {...props} />)
 
-    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true'))
+    editable = document.querySelector('.ProseMirror') as HTMLElement
     await waitFor(() => expect(editable.querySelector('[data-comment-id="restored-comment"]')).toBeInTheDocument())
     expect(mockListCommentMarks).toHaveBeenCalledWith('replay-after-permission')
   })
@@ -243,9 +244,8 @@ describe('TiptapEditor 全区域输入', () => {
   ])('将明确 Markdown %s 粘贴为富文本', async (_label, plainText, selector) => {
     mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'test-ticket', role: 'writer', expiresIn: 60 })
     render(<TiptapEditor noteId={`paste-${_label}`} initialHTML={'<p></p>'} onSave={async () => {}} user={user} />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true'))
     const editable = document.querySelector('.ProseMirror') as HTMLElement
-
-    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
 
     const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(pasteEvent, 'clipboardData', {
@@ -260,8 +260,8 @@ describe('TiptapEditor 全区域输入', () => {
     mockGetRoomTicket.mockResolvedValueOnce({ ticket: 'test-ticket', role: 'writer', expiresIn: 60 })
     const props = { noteId: 'stable-seed', onSave: async () => {}, user }
     const { rerender } = render(<TiptapEditor {...props} initialHTML="<p>初稿</p>" />)
+    await waitFor(() => expect(document.querySelector('.ProseMirror')).toHaveAttribute('contenteditable', 'true'))
     let editable = document.querySelector('.ProseMirror') as HTMLElement
-    await waitFor(() => expect(editable).toHaveAttribute('contenteditable', 'true'))
 
     const pasteEvent = new Event('paste', { bubbles: true, cancelable: true })
     Object.defineProperty(pasteEvent, 'clipboardData', {
@@ -429,8 +429,9 @@ describe('TiptapToolbar', () => {
     render(<TiptapToolbar disabled={false} exec={jest.fn()} />)
 
     const insertGroup = screen.getByRole('group', { name: '插入' })
+    const linkGroup = screen.getByRole('group', { name: '链接' })
     expect(within(insertGroup).getByRole('button', { name: '插入更多内容' })).toBeEnabled()
-    expect(within(insertGroup).getByRole('button', { name: '插入链接' })).toBeEnabled()
+    expect(within(linkGroup).getByRole('button', { name: '插入链接' })).toBeEnabled()
     expect(within(insertGroup).getByRole('button', { name: '插入图片' })).toBeEnabled()
     expect(within(insertGroup).getByRole('button', { name: '插入表格' })).toBeEnabled()
     expect(screen.queryByRole('button', { name: '评论' })).not.toBeInTheDocument()
@@ -453,9 +454,10 @@ describe('TiptapToolbar', () => {
     try {
       render(<TiptapToolbar disabled={false} exec={exec} />)
       const insertGroup = screen.getByRole('group', { name: '插入' })
+      const linkGroup = screen.getByRole('group', { name: '链接' })
 
       fireEvent.click(within(insertGroup).getByRole('button', { name: '插入更多内容' }))
-      fireEvent.click(within(insertGroup).getByRole('button', { name: '插入链接' }))
+      fireEvent.click(within(linkGroup).getByRole('button', { name: '插入链接' }))
       fireEvent.click(within(insertGroup).getByRole('button', { name: '插入表格' }))
       fireEvent.change(insertGroup.querySelector('input[type="file"]')!, {
         target: { files: [new File(['image'], 'toolbar.png', { type: 'image/png' })] },
@@ -478,12 +480,11 @@ describe('TiptapToolbar', () => {
     expect(screen.queryByRole('button', { name: '协作成员' })).not.toBeInTheDocument()
   })
 
-  it('moves low-frequency formatting into an accessible more menu', () => {
+  it('keeps low-frequency formatting directly accessible', () => {
     const exec = jest.fn()
     render(<TiptapToolbar disabled={false} exec={exec} />)
 
-    fireEvent.click(screen.getByRole('button', { name: '更多格式' }))
-    fireEvent.click(screen.getByRole('menuitem', { name: '上标' }))
+    fireEvent.click(screen.getByRole('button', { name: '上标' }))
 
     expect(exec).toHaveBeenCalledWith('sup')
   })

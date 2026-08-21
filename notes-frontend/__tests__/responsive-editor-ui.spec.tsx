@@ -118,6 +118,40 @@ describe('编辑页窄视口布局', () => {
     expect(screen.queryByRole('dialog', { name: '笔记属性' })).not.toBeInTheDocument()
   })
 
+  test('笔记属性弹窗采用设计稿的紧凑尺寸', () => {
+    const style = document.createElement('style')
+    style.textContent = `:root { --product-line-soft: #e4e4e1; }\n${readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')}`
+    document.head.appendChild(style)
+
+    render(
+      <NoteEditorMetadataPanel
+        id="n1"
+        open
+        panelRef={{ current: null }}
+        properties={(
+          <div className="editor-properties">
+            <section className="editor-properties__section">分类</section>
+            <section className="editor-properties__section">标签</section>
+          </div>
+        )}
+      />,
+    )
+
+    const dialog = screen.getByRole('dialog', { name: '笔记属性' })
+    const header = dialog.querySelector('.editor-properties-popover__header') as HTMLElement
+    const body = dialog.querySelector('.editor-properties-popover__body') as HTMLElement
+    const sections = dialog.querySelectorAll<HTMLElement>('.editor-properties__section')
+
+    expect(getComputedStyle(dialog).maxWidth).toBe('380px')
+    expect(getComputedStyle(dialog).borderRadius).toBe('10px')
+    expect(getComputedStyle(header).height).toBe('48px')
+    expect(getComputedStyle(header).paddingLeft).toBe('16px')
+    expect(getComputedStyle(body).padding).toBe('14px 16px 16px')
+    expect(getComputedStyle(sections[1]).paddingTop).toBe('16px')
+
+    style.remove()
+  })
+
   test('左栏收起后释放轨道并保留边缘恢复触点', () => {
     const productCss = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
 

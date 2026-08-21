@@ -53,7 +53,7 @@ function makeService(note: any | null) {
   const counter = { incrementForCreate: async () => {} } as any
   const cache = { get: async () => null, set: async () => {}, invalidate: async () => {} } as any
   const jwtService = makeJwtService(JWT_SECRET) as any
-  return new NotesService(noteModel, cats, tags, embed, ai, noteAccess, counter, cache, undefined, undefined, jwtService)
+  return new NotesService(noteModel, cats, tags, embed, ai, noteAccess, counter, cache, { record: async () => undefined } as any, { findById: async () => null } as any, undefined, undefined, jwtService)
 }
 
 test('generateRoomTicket: owner receives writer role', async () => {

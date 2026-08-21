@@ -53,7 +53,7 @@ describe('原型交互视觉回归', () => {
     const navigation = read('src/components/dashboard/dashboard-navigation.tsx')
     expect(css).toContain('max-width: 1260px;')
     expect(css).toContain('.prototype-search-shell { position: relative; margin-bottom: 22px;')
-    expect(css).toContain('.prototype-search-box svg { width: 16px; height: 16px; flex: none; fill: none;')
+    expect(css).toContain('.prototype-search-box svg { width: 14px; height: 14px; flex: none; fill: none;')
     expect(search).toContain('prototype-filter-select')
     expect(search).toContain('prototype-filter-popover')
     expect(search).not.toContain('prototype-filter-button')
