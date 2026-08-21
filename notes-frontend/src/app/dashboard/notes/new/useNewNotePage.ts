@@ -2,20 +2,21 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createNote, createTag, fetchCategories, fetchTags } from '@/lib/api'
-import type { Category, Tag } from '@/types'
+import { createNote, createTag, fetchCategories, fetchNotes, fetchTags } from '@/lib/api'
+import type { Category, Note, Tag } from '@/types'
 import { mergeTagIds } from './new-note-utils'
 
 export function useNewNotePage() {
   const router = useRouter()
   const [categories, setCategories] = useState<Category[]>([])
   const [tags, setTags] = useState<Tag[]>([])
+  const [directoryNotes, setDirectoryNotes] = useState<Note[]>([])
+  const [directorySearch, setDirectorySearch] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
   const [selectedTags, setSelectedTags] = useState<string[]>([])
   const [tagInput, setTagInput] = useState('')
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
-  const [visibility, setVisibility] = useState<'private' | 'public'>('private')
   const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('markdown')
   const [newTitle, setNewTitle] = useState('')
   const [currentContent, setCurrentContent] = useState('<p></p>')
@@ -40,6 +41,14 @@ export function useNewNotePage() {
       } finally { setMetaLoading(false) }
     }
     void loadMeta()
+  }, [])
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void fetchNotes({ page: 1, size: 100 }, controller.signal)
+      .then((result) => setDirectoryNotes(result.items))
+      .catch(() => undefined)
+    return () => controller.abort()
   }, [])
 
   const handleToggleFullscreen = useCallback(() => {
@@ -115,7 +124,8 @@ export function useNewNotePage() {
     setSaving(true)
     setSaveError('')
     try {
-      const note = await createNote({ title: title.trim(), content: content.trim(), categoryId: selectedCategory || undefined, tags: mergeTagIds(selectedTags, []), ...(status ? { status } : {}), visibility: visibility as any })
+      // 创建页不暴露公开开关，避免用户在尚未进入分享流程时误将内容公开给所有账号。
+      const note = await createNote({ title: title.trim(), content: content.trim(), categoryId: selectedCategory || undefined, tags: mergeTagIds(selectedTags, []), ...(status ? { status } : {}), visibility: 'private' })
       router.push(`/dashboard/notes/${note.id}`)
     } catch (error) {
       console.error(status ? 'Failed to create draft note:' : 'Failed to create note:', error)
@@ -128,5 +138,7 @@ export function useNewNotePage() {
     }
   }
 
-  return { categories, tags, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, visibility, setVisibility, editorMode, setEditorMode, newTitle, setNewTitle, currentContent, setCurrentContent, saving, saveError, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleCancel: () => { if (window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')) router.back() } }
+  const confirmLeave = () => window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')
+
+  return { categories, tags, directoryNotes, directorySearch, setDirectorySearch, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, editorMode, setEditorMode, newTitle, setNewTitle, currentContent, setCurrentContent, saving, saveError, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleOpenNote: (id: string) => { if (confirmLeave()) router.push(`/dashboard/notes/${id}/edit`) }, handleCancel: () => { if (confirmLeave()) router.back() } }
 }

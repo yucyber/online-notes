@@ -4,7 +4,6 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } f
 import { useRouter, useSearchParams } from 'next/navigation'
 import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, boardsAPI, mindmapsAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
-import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
 import { getCurrentUser } from '@/lib/auth'
@@ -14,6 +13,8 @@ import { NoteEditorHeader } from '@/components/editor/NoteEditorHeader'
 import { NoteEditorMetadataPanel } from '@/components/editor/NoteEditorMetadataPanel'
 import { EditorNoteProperties } from '@/components/editor/EditorNoteProperties'
 import { EditorWorkspaceSidebar } from '@/components/editor/EditorWorkspaceSidebar'
+import { EditorOutline } from '@/components/editor/EditorOutline'
+import { extractEditorHeadings, sameEditorHeadings } from '@/components/editor/editor-outline-utils'
 import { useNoteEditorPage } from '@/components/editor/useNoteEditorPage'
 import { useNoteSave } from '@/components/editor/useNoteSave'
 import { useEditorAutoSave } from '@/components/editor/useEditorAutoSave'
@@ -137,27 +138,9 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     return () => { document.removeEventListener('tiptap:exec', rejectHistoricalCommand, true) }
   }, [readOnly, rejectReadOnlyWrite])
 
-  // 生成 HTML 大纲（用于 TipTap）
   const extractHeadingsFromHTML = useCallback((html: string) => {
-    try {
-      const doc = new DOMParser().parseFromString(html, 'text/html')
-      const hs = Array.from(doc.querySelectorAll('h1, h2, h3, h4, h5, h6'))
-      const result = hs.map((h, i) => {
-        const level = Number(h.tagName.substring(1))
-        const text = (h.textContent || '').trim()
-        const id = (h.id && h.id.trim()) || text.toLowerCase().replace(/[^a-z0-9\u4e00-\u9fa5]+/gi, '-').replace(/^-+|-+$/g, '') + '-' + i
-        return { id, text, level }
-      })
-      setToc(prev => {
-        if (prev.length !== result.length) return result
-        for (let i = 0; i < prev.length; i++) {
-          if (prev[i].id !== result[i].id || prev[i].text !== result[i].text || prev[i].level !== result[i].level) return result
-        }
-        return prev
-      })
-    } catch {
-      setToc([])
-    }
+    const result = extractEditorHeadings(html)
+    setToc((previous) => sameEditorHeadings(previous, result) ? previous : result)
   }, [])
 
   // 读取当前用户信息用于协作指示
@@ -665,33 +648,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 updatedAt={note.updatedAt}
                     />
               </div>
-              {!isFullscreen && (
-                <aside className="editor-outline" data-pinned={outlinePinned} aria-label="大纲">
-                  <div className="editor-outline__pin">
-                    <span className="editor-outline__pin-text">大纲</span>
-                    <button
-                      type="button"
-                      className="editor-outline__hide"
-                      aria-label={outlinePinned ? '收起大纲' : '展开大纲'}
-                      onClick={(event) => {
-                        event.currentTarget.blur()
-                        setOutlinePinned((value) => !value)
-                      }}
-                    >
-                      <PrototypeGlyph name={outlinePinned ? 'eye-off' : 'eye'} className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <div className="editor-outline__view">
-                    <div className="editor-outline__list">
-                      {toc.length === 0 ? <span className="editor-outline__empty">暂无标题</span> : toc.map((heading, index) => (
-                        <div key={heading.id} className="editor-outline__item" data-depth={heading.level}>
-                          <button type="button" className="editor-outline__link" onClick={() => document.dispatchEvent(new CustomEvent('editor:scrollToHeading', { detail: { index } }))}>{heading.text}</button>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </aside>
-              )}
+              {!isFullscreen && <EditorOutline headings={toc} pinned={outlinePinned} onPinnedChange={setOutlinePinned} />}
             </div>
           </div>
         </div>

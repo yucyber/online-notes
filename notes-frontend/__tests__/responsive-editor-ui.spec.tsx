@@ -218,6 +218,7 @@ describe('编辑页窄视口布局', () => {
 
   test('editor gives the document and outline independent full-height scroll surfaces', () => {
     const shell = readFileSync(resolve(process.cwd(), 'src/components/editor/NoteEditorShell.tsx'), 'utf8')
+    const outline = readFileSync(resolve(process.cwd(), 'src/components/editor/EditorOutline.tsx'), 'utf8')
     const tiptap = readFileSync(resolve(process.cwd(), 'src/components/editor/TiptapEditor.tsx'), 'utf8')
     const css = readFileSync(resolve(process.cwd(), 'src/styles/editor-tokens.css'), 'utf8')
 
@@ -232,6 +233,6 @@ describe('编辑页窄视口布局', () => {
     expect(css).toMatch(/\.editor-outline\[data-pinned="false"\]\s*\{[^}]*position:\s*absolute[^}]*right:\s*0[^}]*width:\s*18px/s)
     expect(css).toMatch(/\.editor-left-navigation\s*\{[^}]*--editor-sidebar-bg:\s*var\(--product-panel-soft\)[^}]*background:\s*var\(--editor-sidebar-bg\)/s)
     expect(tiptap).not.toContain("background: 'var(--surface-1)'")
-    expect(shell).toContain('event.currentTarget.blur()')
+    expect(outline).toContain('event.currentTarget.blur()')
   })
 })

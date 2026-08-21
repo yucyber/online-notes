@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react'
+import { useState, useRef, useEffect, type ReactNode } from 'react'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
@@ -17,6 +17,7 @@ type Props = {
   readOnly?: boolean
   collaborators?: Array<{ id: string; name?: string }>
   onChangeTitle?: (value: string) => Promise<void> | void
+  creationAction?: ReactNode
 }
 
 const COLLAB_AVATAR_COLORS = [
@@ -45,6 +46,7 @@ export function NoteEditorHeader({
   readOnly = false,
   collaborators = [],
   onChangeTitle,
+  creationAction,
 }: Props) {
   const shown = collaborators.slice(0, 3)
   const overflow = collaborators.length - shown.length
@@ -128,6 +130,15 @@ export function NoteEditorHeader({
         )}
       </nav>
       <div className="editor-header__actions">
+        {creationAction ? (
+          <>
+            <span className="editor-tooltip" data-tooltip="笔记属性">
+              <Button variant="ghost" size="icon" aria-label="打开笔记属性" aria-expanded={propertiesOpen} onClick={onToggleProperties}><PrototypeGlyph name="settings" className="h-4 w-4" /></Button>
+            </span>
+            {creationAction}
+          </>
+        ) : (
+          <>
         {collaborators.length > 0 && (
           <div className="editor-collab-avatars" aria-label="协作中的成员">
             {shown.map((user) => (
@@ -155,6 +166,8 @@ export function NoteEditorHeader({
         <span className="editor-tooltip" data-tooltip="笔记属性">
           <Button variant="ghost" size="icon" aria-label="打开笔记属性" aria-expanded={propertiesOpen} onClick={onToggleProperties}><PrototypeGlyph name="settings" className="h-4 w-4" /></Button>
         </span>
+          </>
+        )}
       </div>
     </header>
   )

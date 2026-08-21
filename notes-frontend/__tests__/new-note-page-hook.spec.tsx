@@ -2,6 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 
 const mockCreateNote = jest.fn()
 const mockPush = jest.fn()
+const mockFetchNotes = jest.fn()
 
 jest.mock('next/navigation', () => ({
   useRouter: () => ({ push: mockPush, back: jest.fn() }),
@@ -12,6 +13,7 @@ jest.mock('@/lib/api', () => ({
   createTag: jest.fn(),
   fetchCategories: jest.fn().mockResolvedValue([]),
   fetchTags: jest.fn().mockResolvedValue([]),
+  fetchNotes: (...args: unknown[]) => mockFetchNotes(...args),
 }))
 
 import { useNewNotePage } from '@/app/dashboard/notes/new/useNewNotePage'
@@ -20,6 +22,8 @@ describe('useNewNotePage save flow', () => {
   beforeEach(() => {
     mockCreateNote.mockReset()
     mockPush.mockReset()
+    mockFetchNotes.mockReset()
+    mockFetchNotes.mockResolvedValue({ items: [{ id: 'existing-1', title: '已有笔记' }], page: 1, size: 100, total: 1 })
   })
 
   test('blocks duplicate creates while the first request is pending', async () => {
@@ -34,6 +38,7 @@ describe('useNewNotePage save flow', () => {
     })
 
     expect(mockCreateNote).toHaveBeenCalledTimes(1)
+    expect(mockCreateNote).toHaveBeenCalledWith(expect.objectContaining({ visibility: 'private' }))
     expect(result.current.saving).toBe(true)
 
     await act(async () => {
@@ -42,6 +47,14 @@ describe('useNewNotePage save flow', () => {
     })
     expect(mockPush).toHaveBeenCalledWith('/dashboard/notes/note-1')
     expect(result.current.saving).toBe(false)
+  })
+
+  test('loads the existing note directory for the shared workspace sidebar', async () => {
+    const { result } = renderHook(() => useNewNotePage())
+
+    await waitFor(() => expect(result.current.directoryNotes).toHaveLength(1))
+    expect(mockFetchNotes).toHaveBeenCalledWith({ page: 1, size: 100 }, expect.any(AbortSignal))
+    expect(result.current.directoryNotes[0].title).toBe('已有笔记')
   })
 
   test('exposes a recoverable error when creation fails', async () => {

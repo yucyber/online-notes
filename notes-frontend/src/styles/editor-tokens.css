@@ -1810,45 +1810,6 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
   }
 }
 
-.new-note-editor__layout { min-height: 100vh; }
-.new-note-editor__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  cursor: pointer;
-}
-.new-note-editor__back:hover { color: var(--product-accent, var(--primary)); }
-.new-note-editor__local-status {
-  color: var(--product-text-muted, var(--text-muted));
-  font-size: 12px;
-  white-space: nowrap;
-}
-.new-note-editor__properties .editor-properties-popover__header p {
-  margin-top: 3px;
-  color: var(--product-text-muted, var(--text-muted));
-  font-size: 12px;
-}
-.new-note-editor__visibility {
-  display: grid;
-  gap: 7px;
-  margin-bottom: 16px;
-}
-.new-note-editor__visibility label {
-  color: var(--product-text-secondary, var(--text-muted));
-  font-size: 12px;
-  font-weight: 650;
-}
-.new-note-editor__visibility select {
-  min-height: 36px;
-  padding: 0 10px;
-  border: 1px solid var(--product-line, var(--border));
-  border-radius: var(--product-radius-sm, 7px);
-  background: var(--product-panel, var(--surface-1));
-  color: var(--product-text, var(--on-surface));
-}
 .new-note-editor__paper {
   display: flex;
   flex-direction: column;
@@ -1871,9 +1832,3 @@ html[data-theme="dark"] .editor-left-edge-trigger:focus-visible {
 .new-note-editor__title::placeholder { color: var(--product-text-subtle, var(--text-muted)); }
 .new-note-editor__title:focus { border-bottom-color: var(--product-accent, var(--primary)); }
 .new-note-editor__body { min-height: 58vh; }
-
-@media (max-width: 720px) {
-  .new-note-editor .editor-header { align-items: flex-start; padding: 10px 14px; }
-  .new-note-editor__local-status { display: none; }
-  .new-note-editor__properties { top: 64px; right: 10px; width: calc(100vw - 20px); }
-}

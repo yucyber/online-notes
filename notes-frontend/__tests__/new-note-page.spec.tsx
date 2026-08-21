@@ -20,6 +20,10 @@ jest.mock('@/app/dashboard/notes/new/useNewNotePage', () => ({
   useNewNotePage: () => ({
     categories: [],
     tags: [],
+    directoryNotes: [{ id: 'existing-1', title: '已有笔记', content: '', tags: [], visibility: 'private' }],
+    directorySearch: '',
+    setDirectorySearch: jest.fn(),
+    handleOpenNote: jest.fn(),
     selectedCategory: '',
     setSelectedCategory: jest.fn(),
     selectedTags: [],
@@ -28,8 +32,6 @@ jest.mock('@/app/dashboard/notes/new/useNewNotePage', () => ({
     setTagInput: jest.fn(),
     metaLoading: false,
     metaError: '',
-    visibility: 'private',
-    setVisibility: jest.fn(),
     newTitle: '计划标题',
     setNewTitle: mockSetNewTitle,
     currentContent: '<p></p>',
@@ -63,8 +65,16 @@ describe('NewNotePage', () => {
     const { container } = render(<NewNotePage />)
 
     expect(screen.getByRole('main', { name: '新建笔记编辑器' })).toHaveClass('new-note-editor')
+    expect(container.querySelector('.editor-layout-grid')).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: '编辑器导航' })).toBeInTheDocument()
+    expect(screen.getByRole('complementary', { name: '大纲' })).toBeInTheDocument()
+    expect(container.querySelector('.editor-header')).toBeInTheDocument()
+    expect(container.querySelector('.editor-paper')).toBeInTheDocument()
     expect(screen.getByTestId('new-note-tiptap')).toHaveAttribute('data-local-only', 'true')
     expect(screen.getByRole('button', { name: '创建笔记' })).toBeInTheDocument()
+    expect(screen.queryByText(/仅本地/)).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '打开评论' })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '打开协作' })).not.toBeInTheDocument()
     expect(container.querySelector('[style*="linear-gradient"]')).toBeNull()
   })
 
@@ -73,7 +83,10 @@ describe('NewNotePage', () => {
 
     expect(screen.queryByRole('complementary', { name: '笔记属性' })).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '打开笔记属性' }))
-    expect(screen.getByRole('complementary', { name: '笔记属性' })).toBeInTheDocument()
+    const properties = screen.getByRole('dialog', { name: '笔记属性' })
+    expect(properties).toBeInTheDocument()
+    expect(screen.queryByLabelText('可见性')).not.toBeInTheDocument()
+    expect(screen.queryByRole('link', { name: '查看历史版本' })).not.toBeInTheDocument()
   })
 
   test('uses the same draft content for header save and editor updates', () => {
