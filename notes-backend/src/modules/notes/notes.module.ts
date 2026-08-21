@@ -14,6 +14,8 @@ import { CategoriesModule } from '../categories/categories.module';
 import { TagsModule } from '../tags/tags.module';
 import { SemanticModule } from '../semantic/semantic.module';
 import { AiModule } from '../ai/ai.module';
+import { AuditModule } from '../audit/audit.module';
+import { UsersModule } from '../users/users.module';
 
 @Module({
   imports: [
@@ -22,6 +24,8 @@ import { AiModule } from '../ai/ai.module';
     TagsModule,
     forwardRef(() => SemanticModule),
     forwardRef(() => AiModule),
+    AuditModule,
+    UsersModule,
     JwtModule.registerAsync({
       imports: [ConfigModule],
       useFactory: async (configService: ConfigService) => ({
@@ -32,6 +36,6 @@ import { AiModule } from '../ai/ai.module';
   ],
   controllers: [NotesController],
   providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService],
-  exports: [NotesService, NoteAccessService, NoteCounterService],
+  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService],
 })
 export class NotesModule { }

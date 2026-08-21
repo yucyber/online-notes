@@ -6,6 +6,7 @@ import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { AuditService } from '../audit/audit.service'
 import { UsersService } from '../users/users.service'
 import { NotificationsService } from '../notifications/notifications.service'
+import { NoteCacheService } from '../notes/note-cache.service'
 
 @Injectable()
 export class InvitationsService {
@@ -15,6 +16,7 @@ export class InvitationsService {
     private readonly audit: AuditService,
     private readonly users: UsersService,
     private readonly notifications: NotificationsService,
+    private readonly noteCache: NoteCacheService,
   ) {}
 
   async create(noteId: string, inviterId: string, role: 'editor'|'viewer', inviteeEmail?: string, ttlHours: number = 24) {
@@ -28,17 +30,19 @@ export class InvitationsService {
     await doc.save()
     // 给受邀用户写通知（若存在账号）
     let invitedUserId: string | undefined
+    let inviteeName: string | undefined
     if (inviteeEmail) {
       try {
         const u = await this.users.findByEmail(inviteeEmail)
         if (u) {
           invitedUserId = String(u._id)
+          inviteeName = u.displayName
           await this.notifications.create(u._id as any, 'invitation', { noteId: note._id.toString(), role, expiresAt })
         }
       } catch {}
     }
     // 记录邀请对象与权限，供活动日志展示"邀请了谁、开了什么权限"
-    await this.audit.record('invitation_created', inviterId, 'note', note._id.toString(), { after: { role, ...(invitedUserId ? { invitedUserId } : {}), ...(inviteeEmail ? { inviteeEmail } : {}) } })
+    await this.audit.record('invitation_created', inviterId, 'invitation', note._id.toString(), { after: { role, ...(invitedUserId ? { invitedUserId } : {}), ...(inviteeEmail ? { inviteeEmail } : {}), ...(inviteeName ? { inviteeName } : {}) } })
     return { id: doc._id.toString(), expiresAt }
   }
 
@@ -113,10 +117,20 @@ export class InvitationsService {
     }
     ;(note as any).acl = acl
     await note.save()
+    // 授予协作者访问权后失效列表缓存，让被邀请人立即在列表看到该笔记。
+    await this.noteCache.invalidateLists()
     inv.status = 'accepted'
     inv.usedAt = new Date()
     await inv.save()
-    await this.audit.record('invitation_accepted', userId, 'note', note._id.toString(), { after: { role: inv.role } })
+    // 反查邀请人真实身份，供活动日志展示"接受了谁的邀请"而非无意义的 ID 片段
+    let inviterName: string | undefined
+    let inviterEmail: string | undefined
+    try {
+      const inviter = await this.users.findById(inv.inviterId.toString())
+      inviterName = inviter.displayName
+      inviterEmail = inviter.email
+    } catch {}
+    await this.audit.record('invitation_accepted', userId, 'invitation', note._id.toString(), { after: { role: inv.role, ...(inviterName ? { inviterName } : {}), ...(inviterEmail ? { inviterEmail } : {}) } })
     // 通知邀请人
     try { await this.notifications.create(inv.inviterId as any, 'invitation', { noteId: note._id.toString(), acceptedBy: userId }) } catch {}
     return { ok: true }
@@ -132,7 +146,15 @@ export class InvitationsService {
     if (!note.userId.equals(actor)) throw new BadRequestException('无权限')
     inv.status = 'revoked'
     await inv.save()
-    await this.audit.record('invitation_revoked', actorId, 'note', note._id.toString(), {})
+    // 记录邀请对象与权限，供活动日志展示"撤销了谁的邀请、原来开的是什么权限"
+    let inviteeName: string | undefined
+    if (inv.inviteeEmail) {
+      try {
+        const invitee = await this.users.findByEmail(inv.inviteeEmail)
+        inviteeName = invitee.displayName
+      } catch {}
+    }
+    await this.audit.record('invitation_revoked', actorId, 'invitation', note._id.toString(), { after: { role: inv.role, ...(inv.inviteeEmail ? { inviteeEmail: inv.inviteeEmail } : {}), ...(inviteeName ? { inviteeName } : {}) } })
     return { ok: true }
   }
 }

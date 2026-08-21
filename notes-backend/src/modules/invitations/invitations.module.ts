@@ -7,6 +7,7 @@ import { Note, NoteSchema } from '../notes/schemas/note.schema'
 import { AuditModule } from '../audit/audit.module'
 import { UsersModule } from '../users/users.module'
 import { NotificationsModule } from '../notifications/notifications.module'
+import { NotesModule } from '../notes/notes.module'
 
 @Module({
   imports: [
@@ -17,6 +18,7 @@ import { NotificationsModule } from '../notifications/notifications.module'
     AuditModule,
     UsersModule,
     NotificationsModule,
+    NotesModule,
   ],
   controllers: [InvitationsController],
   providers: [InvitationsService],

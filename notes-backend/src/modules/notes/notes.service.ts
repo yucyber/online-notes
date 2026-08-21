@@ -13,6 +13,8 @@ import { NoteCounterService } from './note-counter.service';
 import { NoteCacheService } from './note-cache.service';
 import { NoteRecommendationService } from './note-recommendation.service';
 import { NoteDerivedService } from './note-derived.service';
+import { AuditService } from '../audit/audit.service';
+import { UsersService } from '../users/users.service';
 
 @Injectable()
 export class NotesService {
@@ -25,6 +27,8 @@ export class NotesService {
     private readonly noteAccess: NoteAccessService,
     private readonly noteCounter: NoteCounterService,
     private readonly noteCache: NoteCacheService,
+    private readonly audit: AuditService,
+    private readonly users: UsersService,
     @Optional() private readonly noteRecommendations?: NoteRecommendationService,
     @Optional() noteDerived?: NoteDerivedService,
     @Optional() private readonly jwtService?: JwtService,
@@ -55,6 +59,9 @@ export class NotesService {
 
     const savedNote = await createdNote.save();
     await this.noteCache.invalidateLists()
+
+    // 记录创建笔记的生命周期事件，供活动日志"内容"栏展示。
+    await this.audit.record('note_created', userId, 'note', savedNote._id.toString(), { after: { title: savedNote.title } })
 
     await this.noteCounter.incrementForCreate({
       categoryId: createNoteDto.categoryId,
@@ -277,6 +284,9 @@ export class NotesService {
 
     await this.noteCache.invalidateLists()
 
+    // 记录删除笔记的生命周期事件，供活动日志"内容"栏展示。
+    await this.audit.record('note_deleted', userId, 'note', note._id.toString(), { after: { title: note.title } })
+
     await this.noteCounter.decrementForDelete({
       categoryId: note.categoryId?.toString(),
       tags: (note.tags || []).map(t => t.toString()),
@@ -311,6 +321,23 @@ export class NotesService {
     return { visibility: note.visibility, canManage, acl: [owner, ...members] }
   }
 
+  // 统一 ACL 写路径：赋值 + 落库 + 失效列表缓存。所有协作者变更都必须经此封装，避免遗漏缓存失效。
+  private async persistAcl(note: any, acl: any[]) {
+    ;(note as any).acl = acl
+    await note.save()
+    await this.noteCache.invalidateLists()
+  }
+
+  // 反查协作者身份用于审计展示；用户不存在时静默降级为 undefined。
+  private async resolveCollaboratorIdentity(targetUserId: string) {
+    try {
+      const u = await this.users.findById(targetUserId)
+      return { email: u.email, displayName: u.displayName }
+    } catch {
+      return { email: undefined, displayName: undefined }
+    }
+  }
+
   async updateCollaboratorRole(id: string, actorId: string, targetUserId: string, role: 'editor' | 'viewer') {
     const actor = new Types.ObjectId(actorId)
     const target = new Types.ObjectId(targetUserId)
@@ -321,8 +348,9 @@ export class NotesService {
     const entry = acl.find((a: any) => a.userId?.equals(target))
     if (!entry) throw new NotFoundException('协作者不存在')
     entry.role = role
-      ; (note as any).acl = acl
-    await note.save()
+    await this.persistAcl(note, acl)
+    const identity = await this.resolveCollaboratorIdentity(targetUserId)
+    await this.audit.record('collaborator_role_changed', actorId, 'acl', note._id.toString(), { after: { userId: targetUserId, role, ...(identity.email ? { email: identity.email } : {}), ...(identity.displayName ? { displayName: identity.displayName } : {}) } })
     return { ok: true }
   }
 
@@ -333,9 +361,12 @@ export class NotesService {
     if (!note) throw new NotFoundException('笔记不存在')
     if (!note.userId.equals(actor)) throw new NotFoundException('无权限')
     const acl = ((note as any).acl || []) as any[]
+    const removed = acl.find((a: any) => a.userId?.equals(target))
+    if (!removed) throw new NotFoundException('协作者不存在')
     const next = acl.filter((a: any) => !a.userId?.equals(target))
-      ; (note as any).acl = next
-    await note.save()
+    await this.persistAcl(note, next)
+    const identity = await this.resolveCollaboratorIdentity(targetUserId)
+    await this.audit.record('collaborator_removed', actorId, 'acl', note._id.toString(), { after: { userId: targetUserId, role: removed.role, ...(identity.email ? { email: identity.email } : {}), ...(identity.displayName ? { displayName: identity.displayName } : {}) } })
     return { ok: true }
   }
 

@@ -8,6 +8,7 @@ export class AuditController {
   constructor(private readonly service: AuditService) {}
   @Get('logs')
   async list(@Query() q: any, @Request() req) {
-    return this.service.list({ actorId: req.user.id, resourceType: q.resourceType, resourceId: q.resourceId, eventType: q.eventType, page: Number(q.page) || 1, size: Number(q.size) || 20 })
+    const prefixes = Array.isArray(q.eventTypePrefixes) ? q.eventTypePrefixes : (q.eventTypePrefixes ? [q.eventTypePrefixes] : undefined)
+    return this.service.list({ actorId: req.user.id, resourceType: q.resourceType, resourceId: q.resourceId, eventType: q.eventType, eventTypePrefixes: prefixes, since: q.since, page: Number(q.page) || 1, size: Number(q.size) || 20 })
   }
 }

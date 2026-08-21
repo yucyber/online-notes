@@ -173,3 +173,34 @@ export interface DashboardOverview {
     Pick<Category, 'id' | 'name' | 'color' | 'noteCount'>
   >
 }
+
+// 活动日志相关类型
+// after 是动态字段（不同事件存不同字段），这里只声明活动日志展示所依赖的字段，其余保持宽松。
+export interface AuditEventAfter {
+  role?: 'editor' | 'viewer' | 'owner' | string
+  title?: string
+  // 邀请事件：对象身份
+  inviterName?: string
+  inviterEmail?: string
+  inviteeName?: string
+  inviteeEmail?: string
+  // 协作者事件：对象身份
+  displayName?: string
+  email?: string
+  [key: string]: unknown
+}
+
+export interface AuditEvent {
+  id?: string
+  _id?: string
+  eventType: string
+  actorId?: string
+  actorName?: string
+  resourceType?: string
+  resourceId?: string
+  noteTitle?: string
+  before?: AuditEventAfter
+  after?: AuditEventAfter
+  createdAt: string
+  updatedAt?: string
+}

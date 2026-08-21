@@ -1,5 +1,6 @@
 import api from './client'
 import { getStoredUser } from '../auth'
+import { clearNotesCache } from './notes'
 
 export type NoteVisibility = 'private' | 'public'
 export type AclRole = 'owner' | 'editor' | 'viewer'
@@ -29,8 +30,16 @@ export type InvitationSummary = {
 
 export const aclAPI = {
   get: (noteId: string) => api.get(`/notes/${noteId}/acl`).then(res => res as unknown as AclResponse),
-  update: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => res as unknown as any),
-  remove: (noteId: string, userId: string) => api.delete(`/notes/${noteId}/acl/${userId}`).then(res => res as unknown as any),
+  update: (noteId: string, userId: string, role: 'editor' | 'viewer') => api.patch(`/notes/${noteId}/acl/${userId}`, { role }).then(res => {
+    // 协作者角色变化会改变其可读范围，需同步失效前端列表缓存，避免旧列表残留。
+    clearNotesCache()
+    return res as unknown as any
+  }),
+  remove: (noteId: string, userId: string) => api.delete(`/notes/${noteId}/acl/${userId}`).then(res => {
+    // 移除协作者后该用户不应再看到笔记，同步失效前端列表缓存。
+    clearNotesCache()
+    return res as unknown as any
+  }),
 }
 
 export const invitationsAPI = {
@@ -49,7 +58,7 @@ export const versionsAPI = {
 }
 
 export const auditAPI = {
-  list: (resourceType?: string, resourceId?: string, eventType?: string, page: number = 1, size: number = 20) => api.get('/audit/logs', { params: { resourceType, resourceId, eventType, page, size } }).then(res => res as unknown as { items: any[]; page: number; size: number; total: number }),
+  list: (resourceType?: string, resourceId?: string, eventType?: string, eventTypePrefixes?: string[], since?: string, page: number = 1, size: number = 20) => api.get('/audit/logs', { params: { resourceType, resourceId, eventType, eventTypePrefixes, since, page, size } }).then(res => res as unknown as { items: any[]; page: number; size: number; total: number }),
 }
 
 export const notificationsAPI = {
