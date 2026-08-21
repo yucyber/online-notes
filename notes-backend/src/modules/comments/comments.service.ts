@@ -5,6 +5,7 @@ import { Comment, CommentDocument } from './schemas/comment.schema'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
 import { NoteAccessService } from '../notes/note-access.service'
 import { AuditService } from '../audit/audit.service'
+import { UsersService } from '../users/users.service'
 
 @Injectable()
 export class CommentsService {
@@ -13,7 +14,35 @@ export class CommentsService {
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
     private readonly noteAccess: NoteAccessService,
     private readonly audit: AuditService,
+    private readonly usersService: UsersService,
   ) {}
+
+  // 把 authorId 序列化为带名字/邮箱的视图，并把 replies 一起展开。
+  // 用户不存在或查询失败时降级为空字符串，保证列表渲染不会因个别用户被删除而 500。
+  private async enrichAuthor<T extends { authorId: any; replies?: any[] }>(comment: T): Promise<any> {
+    const authorId = (comment.authorId ? String((comment.authorId as any).toString?.() || comment.authorId) : '') || ''
+    const replyIds = (comment.replies || [])
+      .map((r: any) => (r?.authorId ? String(r.authorId.toString?.() || r.authorId) : ''))
+      .filter(Boolean)
+    const ids = Array.from(new Set([authorId, ...replyIds])).filter(Boolean)
+    const users = await Promise.all(ids.map((id) => this.usersService.findById(id).catch(() => null)))
+    const map = new Map<string, { id: string; name: string; email: string }>()
+    ids.forEach((id, i) => {
+      const u = users[i]
+      if (u) map.set(id, { id, name: (u as any).displayName || '', email: (u as any).email || '' })
+      else map.set(id, { id, name: '', email: '' })
+    })
+    const lookup = (id: string) => map.get(id) || { id, name: '', email: '' }
+    return {
+      ...comment,
+      authorId,
+      author: lookup(authorId),
+      replies: (comment.replies || []).map((r: any) => {
+        const rid = r?.authorId ? String(r.authorId.toString?.() || r.authorId) : ''
+        return { ...r, authorId: rid, author: lookup(rid) }
+      }),
+    }
+  }
 
   async list(
     noteId: string,
@@ -35,7 +64,8 @@ export class CommentsService {
         : [{ start: { $gte: s } }, { end: { $lte: e } }]
     }
     const lim = Math.min(Math.max(Number(limit) || 50, 1), 100)
-    return this.commentModel.find(filter).sort({ createdAt: -1, _id: -1 }).limit(lim).exec()
+    const items = await this.commentModel.find(filter).sort({ createdAt: -1, _id: -1 }).limit(lim).exec()
+    return Promise.all(items.map((c) => this.enrichAuthor(c.toJSON ? c.toJSON() : c)))
   }
 
   async create(noteId: string, userId: string, start: number | undefined, end: number | undefined, text: string, requestId?: string) {
@@ -49,7 +79,7 @@ export class CommentsService {
     const c = new this.commentModel(body)
     await c.save()
     await this.audit.record('comment_added', userId, 'note', note._id.toString(), { requestId, message: 'comment_added' })
-    return c
+    return this.enrichAuthor(c.toJSON ? c.toJSON() : c)
   }
 
   async reply(commentId: string, userId: string, text: string, requestId?: string) {

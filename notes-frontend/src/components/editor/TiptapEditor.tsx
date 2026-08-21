@@ -194,9 +194,24 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     return () => document.removeEventListener('editor:scrollToHeading', handler)
   }, [editor])
 
+  // 全部评论模式下，点击某条评论时滚动定位到对应正文片段（按 commentId 匹配 data-comment-id）。
   useEffect(() => {
-    editor?.setEditable(!effectiveReadOnly)
-  }, [editor, effectiveReadOnly])
+    if (!editor) return
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail
+      const commentId = String(detail?.commentId || '')
+      if (!commentId) return
+      const el = editor.view.dom.querySelector<HTMLElement>(`[data-comment-id="${CSS.escape(commentId)}"]`)
+      if (el) {
+        el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+        // 短暂高亮目标片段，帮助用户定位。
+        el.classList.add('comment-mark--flash')
+        window.setTimeout(() => el.classList.remove('comment-mark--flash'), 1600)
+      }
+    }
+    document.addEventListener('comments:locate', handler)
+    return () => document.removeEventListener('comments:locate', handler)
+  }, [editor])
 
   useEffect(() => {
     if (!editor || effectiveReadOnly) return

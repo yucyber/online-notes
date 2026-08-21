@@ -1,53 +1,89 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { MessageSquare } from 'lucide-react'
 import { listComments, createComment, commentsAPI } from '@/lib/api'
 import { buildCommentIdempotencyKey } from '@/lib/comments-key'
-import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 
-type Reply = { _id?: string; authorId?: string; text: string; createdAt?: string }
-type CommentItem = { _id?: string; id?: string; start: number; end: number; text: string; authorId?: string; createdAt?: string; replies?: Reply[]; likes?: number }
-type Props = { noteId: string; selection: { start: number; end: number }; readOnly?: boolean }
+type Author = { id: string; name?: string; email?: string }
+type Reply = { _id?: string; authorId?: string; author?: Author; text: string; createdAt?: string }
+type CommentItem = { _id?: string; id?: string; start: number; end: number; text: string; authorId?: string; author?: Author; createdAt?: string; replies?: Reply[]; likes?: number }
+// overview：全部评论浏览模式（右上角按钮）；selection：当前选区评论模式（划词触发）
+type Props = { noteId: string; selection: { start: number; end: number }; readOnly?: boolean; mode?: 'overview' | 'selection'; onLocate?: (commentId: string) => void }
 
-export function CommentsPanel({ noteId, selection, readOnly = false }: Props) {
+function initials(authorId?: string) {
+  return (authorId || 'U').charAt(0).toUpperCase()
+}
+
+// 优先展示显示名称；其次 email 本地部分；最后才用 authorId 兜底，避免泄露完整 ID。
+function authorLabel(author?: Author | null, fallbackId?: string): string {
+  const name = author?.name?.trim()
+  if (name) return name
+  const email = author?.email?.trim()
+  if (email) {
+    const local = email.split('@')[0]
+    if (local) return local
+  }
+  if (fallbackId) {
+    // ID 太长只取尾部 6 字符，避免溢出评论卡片宽度
+    const id = String(fallbackId)
+    return id.length > 8 ? `用户 ${id.slice(-6)}` : `用户 ${id}`
+  }
+  return '用户'
+}
+
+function authorInitial(author?: Author | null, fallbackId?: string): string {
+  const name = author?.name?.trim()
+  if (name) return name.charAt(0).toUpperCase()
+  const email = author?.email?.trim()
+  if (email) return email.charAt(0).toUpperCase()
+  return initials(fallbackId)
+}
+
+export function CommentsPanel({ noteId, selection, readOnly = false, mode = 'selection', onLocate }: Props) {
   const [items, setItems] = useState<CommentItem[]>([])
   const [text, setText] = useState('')
   const [activeId, setActiveId] = useState<string | null>(null)
   const [replyTexts, setReplyTexts] = useState<Record<string, string>>({})
   const [message, setMessage] = useState('')
-  const me = useMemo(() => ({ id: (typeof localStorage !== 'undefined' ? String(localStorage.getItem('notes_user_id') || '') : ''), name: '我' }), [])
+  // 惰性初始化：只在首次渲染读取一次 localStorage，避免每次渲染重复访问。
+  const [me] = useState(() => ({ id: (typeof localStorage !== 'undefined' ? String(localStorage.getItem('notes_user_id') || '') : ''), name: '我' }))
   const appliedRef = useRef<Set<string>>(new Set())
   const selectDebounceRef = useRef<number | null>(null)
   const load = async () => {
-    const hasRange = typeof selection.start === 'number' && typeof selection.end === 'number'
+    // overview 模式加载全部评论，selection 模式按选区交集加载。
+    const hasRange = mode === 'selection' && typeof selection.start === 'number' && typeof selection.end === 'number'
     const r = hasRange ? await commentsAPI.list(noteId, { start: selection.start, end: selection.end, intersects: true, limit: 50 }) : await listComments(noteId)
     const mapped = (r || []).map((c: any) => ({ ...c, id: c._id || c.id }))
     setItems(mapped)
-    try {
-      mapped.forEach((c) => {
+    // 批量派发一次 marks 事件，让 mark 应用合并到单个 transaction，避免 N 条评论触发 N 次 dispatch。
+    const marks = mapped
+      .filter((c) => {
         const cid = String(c.id || c._id || '')
-        if (!cid) return
-        if (appliedRef.current.has(cid)) return
-        if (typeof c.start === 'number' && typeof c.end === 'number' && c.start !== c.end) {
-          const evt = new CustomEvent('comments:mark', { detail: { start: c.start, end: c.end, commentId: cid } })
-          document.dispatchEvent(evt)
-          appliedRef.current.add(cid)
-        }
+        if (!cid || appliedRef.current.has(cid)) return false
+        return typeof c.start === 'number' && typeof c.end === 'number' && c.start !== c.end
       })
-    } catch {}
+      .map((c) => ({ start: c.start, end: c.end, commentId: String(c.id || c._id) }))
+    if (marks.length > 0) {
+      try {
+        document.dispatchEvent(new CustomEvent('comments:mark', { detail: { marks } }))
+      } catch {}
+      marks.forEach((m) => appliedRef.current.add(m.commentId))
+    }
   }
   const loadRef = useRef(load)
   loadRef.current = load
-  useEffect(() => { appliedRef.current.clear(); void loadRef.current() }, [noteId])
+  useEffect(() => { appliedRef.current.clear(); void loadRef.current() }, [noteId, mode])
   useEffect(() => {
+    // overview 模式展示全部评论，选区变化不触发重新加载。
+    if (mode !== 'selection') return
     if (selection.start === selection.end) return
     if (selectDebounceRef.current) clearTimeout(selectDebounceRef.current as any)
     selectDebounceRef.current = window.setTimeout(() => { void loadRef.current() }, 250)
-  }, [selection.start, selection.end])
+  }, [mode, selection.start, selection.end])
   const add = async () => {
     if (readOnly) return
     if (!text.trim()) return
     if (selection.start === selection.end) {
-      setMessage('请选择文本范围后再添加评论')
+      setMessage('请先划选正文，再添加评论')
       return
     }
     try {
@@ -61,7 +97,7 @@ export function CommentsPanel({ noteId, selection, readOnly = false }: Props) {
         const commentId = created?.id || created?._id
         if (!commentId) return
         // 只有服务端确认的评论才允许落下持久标记，取消或失败不会污染正文。
-        document.dispatchEvent(new CustomEvent('comments:mark', { detail: { start: selection.start, end: selection.end, commentId } }))
+        document.dispatchEvent(new CustomEvent('comments:mark', { detail: { marks: [{ start: selection.start, end: selection.end, commentId }] } }))
         const createdEvt = new CustomEvent('comments:created', { detail: { noteId, start: selection.start, end: selection.end, commentId, idempotencyKey: idemKey } })
         document.dispatchEvent(createdEvt)
       } catch {}
@@ -82,58 +118,90 @@ export function CommentsPanel({ noteId, selection, readOnly = false }: Props) {
     return () => { document.removeEventListener('comments:hover', onHover as any) }
   }, [])
   return (
-    <div className="space-y-3">
-      <div className="font-medium">评论</div>
-      <div className="text-xs text-gray-500">当前选区：{selection.start}–{selection.end}</div>
-      <div className="flex gap-2">
-        <label htmlFor="comment-input" className="sr-only">评论内容</label>
-        <Input id="comment-input" aria-label="评论内容" value={text} onChange={e => setText(e.target.value)} placeholder="添加评论" disabled={readOnly} />
-        <Button aria-label="提交评论" onClick={add} disabled={readOnly}>提交</Button>
-      </div>
-      <div aria-live="polite" className="text-xs text-red-600">{message}</div>
-      <ul className="space-y-3" aria-label="评论列表" role="list">
+    <div className="comments-panel">
+      {mode === 'selection' && (
+        <>
+          <div className="comments-panel__compose">
+            <label className="collab-invite-field" htmlFor="comment-input">
+              <MessageSquare aria-hidden="true" />
+              <span className="sr-only">评论内容</span>
+              <input
+                id="comment-input"
+                aria-label="评论内容"
+                value={text}
+                onChange={e => setText(e.target.value)}
+                placeholder="添加评论"
+                disabled={readOnly}
+                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add() } }}
+              />
+            </label>
+            <button type="button" className="collab-button collab-button--primary" onClick={add} disabled={readOnly || !text.trim()}>提交</button>
+          </div>
+          <div aria-live="polite" className="comments-panel__error">{message}</div>
+        </>
+      )}
+      <ul className="comments-panel__list" aria-label="评论列表" role="list">
         {items.map((c) => {
+          const cid = String(c._id || c.id)
           const canDelete = String(c.authorId||'') === String(me.id||'')
           const isActive = activeId && (c._id===activeId || c.id===activeId)
+          const clickable = mode === 'overview' && typeof c.start === 'number' && typeof c.end === 'number'
           return (
-            <li key={c._id || c.id} className="rounded" style={{ border: '1px solid #e5e7eb', borderRadius: 'var(--radius-card)', boxShadow: 'var(--shadow-md)', transition: 'all 300ms ease-in-out', background: isActive ? 'rgba(255,235,59,0.08)' : '#fff' }}>
-              <div className="px-3 py-2">
-                <div className="flex items-center gap-2">
-                  <div className="h-11 w-11 rounded-full flex items-center justify-center text-xs font-semibold" style={{ background: '#2468F2', color: '#fff' }}>{(c.authorId||'U')[0]?.toUpperCase()}</div>
-                  <div className="text-sm font-medium">{c.authorId || '用户'}</div>
-                  <div className="text-xs text-gray-500 ml-auto">{format(c.createdAt)}</div>
-                </div>
-                <div className="mt-2 text-sm">{c.text}</div>
-                <div className="mt-2 flex items-center gap-2">
-                  <Button aria-label="回复" onClick={() => { if (readOnly) return; setActiveId(String(c._id || c.id)) }} disabled={readOnly}>回复</Button>
-                  <Button aria-pressed={Boolean(c.likes)} aria-label="点赞" onClick={() => { if (readOnly) return; setItems(prev => prev.map(x => (x._id===c._id||x.id===c.id) ? { ...x, likes: (x.likes||0)+1 } : x)) }} disabled={readOnly}>赞{c.likes ? `(${c.likes})` : ''}</Button>
-                  <Button aria-label="删除评论" onClick={async () => { if (readOnly) return; try { await commentsAPI.delete(c._id || c.id!); await load() } catch {} }} disabled={readOnly || !canDelete}>删除</Button>
-                </div>
-                <div className="mt-2 space-y-2">
+            <li
+              key={c._id || c.id}
+              className="comments-item"
+              data-active={isActive}
+              data-clickable={clickable}
+              role={clickable ? 'button' : undefined}
+              tabIndex={clickable ? 0 : undefined}
+              aria-label={clickable ? '定位到评论对应正文' : undefined}
+              onClick={clickable ? () => onLocate?.(cid) : undefined}
+              onKeyDown={clickable ? (e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onLocate?.(cid) } } : undefined}
+            >
+              <div className="comments-item__head">
+                <div className="comments-avatar">{authorInitial(c.author, c.authorId)}</div>
+                <div className="comments-item__author">{authorLabel(c.author, c.authorId)}</div>
+                <div className="comments-item__time">{format(c.createdAt)}</div>
+              </div>
+              <div className="comments-item__text">{c.text}</div>
+              <div className="comments-item__actions">
+                <button type="button" className="comments-action" aria-label="回复" onClick={() => { if (readOnly) return; setActiveId(cid) }} disabled={readOnly}>回复</button>
+                <button type="button" className="comments-action" aria-pressed={Boolean(c.likes)} aria-label="点赞" onClick={() => { if (readOnly) return; setItems(prev => prev.map(x => (x._id===c._id||x.id===c.id) ? { ...x, likes: (x.likes||0)+1 } : x)) }} disabled={readOnly}>赞{c.likes ? `(${c.likes})` : ''}</button>
+                <button type="button" className="comments-action comments-action--danger" aria-label="删除评论" onClick={async () => { if (readOnly) return; try { await commentsAPI.delete(cid); await load() } catch {} }} disabled={readOnly || !canDelete}>删除</button>
+              </div>
+              {(c.replies || []).length > 0 && (
+                <div className="comments-item__replies">
                   {(c.replies || []).map((r, k) => (
-                    <div key={r._id || k} className="ml-6 p-2 rounded" style={{ background: '#fafafa', border: '1px solid #e5e7eb', borderRadius: 'var(--radius-card)' }}>
-                      <div className="flex items-center gap-2">
-                        <div className="h-11 w-11 rounded-full flex items-center justify-center text-[10px] font-semibold" style={{ background: '#6b7280', color: '#fff' }}>{(r.authorId||'U')[0]?.toUpperCase()}</div>
-                        <div className="text-xs">{r.authorId || '用户'}</div>
-                        <div className="text-[11px] text-gray-500 ml-auto">{format(r.createdAt)}</div>
+                    <div key={r._id || k} className="comments-reply">
+                      <div className="comments-item__head">
+                        <div className="comments-avatar comments-avatar--reply">{authorInitial(r.author, r.authorId)}</div>
+                        <div className="comments-item__author">{authorLabel(r.author, r.authorId)}</div>
+                        <div className="comments-item__time">{format(r.createdAt)}</div>
                       </div>
-                      <div className="mt-1 text-xs text-gray-700">{r.text}</div>
+                      <div className="comments-item__text">{r.text}</div>
                     </div>
                   ))}
                 </div>
-                <div className="mt-2 flex gap-2">
-                  <Input aria-label="回复内容" placeholder="回复评论"
-                    value={replyTexts[String(c._id || c.id)] || ''}
+              )}
+              <div className="comments-item__reply-form">
+                <label className="collab-invite-field collab-invite-field--reply" htmlFor={`reply-input-${cid}`}>
+                  <span className="sr-only">回复内容</span>
+                  <input
+                    id={`reply-input-${cid}`}
+                    aria-label="回复内容"
+                    placeholder="回复评论"
+                    value={replyTexts[cid] || ''}
                     disabled={readOnly}
-                    onChange={(e) => setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: e.target.value }))}
-                    onKeyDown={async (e) => { if (e.key==='Enter') { if (readOnly) return; const val = replyTexts[String(c._id||c.id)] || ''; await reply(String(c._id||c.id), val); setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: '' })); } }} />
-                  <Button aria-label="提交回复" disabled={readOnly} onClick={async () => { if (readOnly) return; const val = replyTexts[String(c._id||c.id)] || ''; await reply(String(c._id||c.id), val); setReplyTexts(prev => ({ ...prev, [String(c._id || c.id)]: '' })); }}>回复</Button>
-                </div>
+                    onChange={(e) => setReplyTexts(prev => ({ ...prev, [cid]: e.target.value }))}
+                    onKeyDown={async (e) => { if (e.key==='Enter') { e.preventDefault(); if (readOnly) return; const val = replyTexts[cid] || ''; await reply(cid, val); setReplyTexts(prev => ({ ...prev, [cid]: '' })) } }}
+                  />
+                </label>
+                <button type="button" className="collab-button" disabled={readOnly} onClick={async () => { if (readOnly) return; const val = replyTexts[cid] || ''; await reply(cid, val); setReplyTexts(prev => ({ ...prev, [cid]: '' })) }}>回复</button>
               </div>
             </li>
           )
         })}
-        {items.length === 0 && <div className="text-sm text-gray-500">暂无评论</div>}
+        {items.length === 0 && <li className="comments-panel__empty">暂无评论</li>}
       </ul>
     </div>
   )

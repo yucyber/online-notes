@@ -60,6 +60,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   }, [id, readOnly])
   const [showCollabDrawer, setShowCollabDrawer] = useState(false)
   const [showCommentsDrawer, setShowCommentsDrawer] = useState(false)
+  const [commentsMode, setCommentsMode] = useState<'overview' | 'selection'>('selection')
   const commentsDrawerRef = useRef<HTMLDivElement>(null)
   const [toc, setToc] = useState<Array<{ id: string; text: string; level: number }>>([])
   const {
@@ -255,15 +256,13 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     const onToggle = () => { handleToggleFullscreenRef.current() }
     document.addEventListener('editor:toggleFullscreen', onToggle as any)
     document.addEventListener('keydown', onKey)
-    const onCommentsHover = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50) }
-    const onCommentsOpen = () => { setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50); try { document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: noteIdRef.current, strategy: 'context' } })) } catch { } }
-    document.addEventListener('comments:hover', onCommentsHover as any)
+    // 划词触发（正文选中文字后点「添加评论」）：右侧弹出小浮层，聚焦当前选区的评论。
+    const onCommentsOpen = () => { setCommentsMode('selection'); setShowCommentsDrawer(true); setTimeout(() => { const input = document.getElementById('comment-input') as HTMLInputElement | null; input?.focus() }, 50) }
     document.addEventListener('comments:open', onCommentsOpen as any)
     return () => {
       document.removeEventListener('fullscreenchange', onFsChange)
       document.removeEventListener('editor:toggleFullscreen', onToggle as any)
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener('comments:hover', onCommentsHover as any)
       document.removeEventListener('comments:open', onCommentsOpen as any)
     }
   }, [setIsFullscreen, setShowCommentsDrawer])
@@ -573,7 +572,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             readOnly={readOnly}
             editorMode="rich"
             collaborators={participants}
-            onOpenComments={() => setShowCommentsDrawer(true)}
+            onOpenComments={() => { setCommentsMode('overview'); setShowCommentsDrawer(true); try { document.dispatchEvent(new CustomEvent('comments:replay', { detail: { noteId: noteIdRef.current, strategy: 'context' } })) } catch { } }}
             onOpenCollab={() => setShowCollabDrawer(true)}
             onToggleProperties={() => setShowProperties((open) => !open)}
             propertiesOpen={showProperties}
@@ -584,6 +583,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             id={id}
             open={showProperties}
             panelRef={propertiesPanelRef as React.RefObject<HTMLDivElement>}
+            onClose={() => setShowProperties(false)}
             properties={(
               <EditorNoteProperties
                 categories={categories}
@@ -660,10 +660,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
         selection={selection}
         showCollabDrawer={showCollabDrawer}
         showCommentsDrawer={showCommentsDrawer}
+        commentsMode={commentsMode}
         collaborators={participants}
         commentsDrawerRef={commentsDrawerRef as React.RefObject<HTMLDivElement>}
         onCloseCollab={() => setShowCollabDrawer(false)}
         onCloseComments={() => setShowCommentsDrawer(false)}
+        onLocateComment={(commentId) => {
+          try { document.dispatchEvent(new CustomEvent('comments:locate', { detail: { commentId } })) } catch {}
+        }}
         readOnly={readOnly}
       />
       {!isFullscreen && !readOnly && (

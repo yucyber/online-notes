@@ -1,4 +1,5 @@
 import { Button } from '@/components/ui/button'
+import { TagChip } from '@/components/ui/tag-chip'
 import type { Category, Tag } from '@/types'
 
 type Props = {
@@ -49,7 +50,7 @@ export function EditorNoteProperties({
       <section className="editor-properties__section">
         <div className="editor-properties__label-row">
           <label htmlFor="editor-category">选择分类</label>
-          {metaLoading && <span>加载中...</span>}
+          {metaLoading && <span className="editor-properties__hint">加载中...</span>}
         </div>
         <select
           id="editor-category"
@@ -71,7 +72,7 @@ export function EditorNoteProperties({
       <section className="editor-properties__section">
         <div className="editor-properties__label-row">
           <label htmlFor="editor-tag-input">标签</label>
-          {metaLoading && <span>加载中...</span>}
+          {metaLoading && <span className="editor-properties__hint">加载中...</span>}
         </div>
         <div className="editor-properties__tag-input">
           <input
@@ -90,13 +91,13 @@ export function EditorNoteProperties({
               commitTagInput()
             }}
           />
-          <Button type="button" variant="outline" disabled={readOnly || selectedTags.length === 0} onClick={() => {
+          <Button type="button" variant="ghost" disabled={readOnly || selectedTags.length === 0} onClick={() => {
             if (rejectReadOnlyWrite()) return
             setSelectedTags([])
           }}>清空</Button>
         </div>
         {tagInput && (
-          <Button type="button" variant="ghost" className="editor-properties__create-tag" onClick={commitTagInput}>
+          <Button type="button" variant="link" className="editor-properties__create-tag" onClick={commitTagInput}>
             创建标签“{tagInput}”
           </Button>
         )}
@@ -105,14 +106,12 @@ export function EditorNoteProperties({
             const id = tag.id || (tag as Tag & { _id?: string })._id || ''
             const active = selectedTags.includes(id)
             return (
-              <Button
+              <TagChip
                 key={id || tag.name}
-                type="button"
-                variant={active ? 'default' : 'outline'}
+                active={active}
                 disabled={readOnly || !id}
-                aria-pressed={active}
                 onClick={() => id && toggleTag(id)}
-              >{tag.name}</Button>
+              >{tag.name}</TagChip>
             )
           })}
           {!metaLoading && tags.length === 0 && <p>{metaError || '暂无可用标签'}</p>}

@@ -61,17 +61,22 @@ export class IdempotencyInterceptor implements NestInterceptor {
       throw new HttpException('idempotency in-flight', HttpStatus.CONFLICT)
     }
     await this.redis.expire(lockKey, 30)
+    // 首次处理的请求在响应发送前标记头，避免在 tap（响应已发出）阶段再写 header 触发 ERR_HTTP_HEADERS_SENT。
+    try { res.setHeader('X-Idempotency-Applied', 'false') } catch {}
     return next.handle().pipe(
-      tap(async (response) => {
-        try {
-          const ttl = Number(process.env.IDEMPOTENCY_TTL_SECONDS || 24 * 60 * 60)
-          const status = res.statusCode || 200
-          const envelope = (response && typeof response === 'object' && 'code' in response && 'timestamp' in response) ? response : { code: 0, message: 'OK', data: response, timestamp: Date.now() }
-          await this.redis.set(cacheKey, JSON.stringify({ payloadHash, status, envelope, storedAt: Date.now() }), 'EX', ttl)
-          res.setHeader('X-Idempotency-Applied', 'false')
-        } finally {
-          try { await this.redis.del(lockKey) } catch {}
-        }
+      tap({
+        next: async (response) => {
+          try {
+            const ttl = Number(process.env.IDEMPOTENCY_TTL_SECONDS || 24 * 60 * 60)
+            const status = res.statusCode || 200
+            const envelope = (response && typeof response === 'object' && 'code' in response && 'timestamp' in response) ? response : { code: 0, message: 'OK', data: response, timestamp: Date.now() }
+            await this.redis.set(cacheKey, JSON.stringify({ payloadHash, status, envelope, storedAt: Date.now() }), 'EX', ttl)
+          } catch {
+            // 缓存写入失败不应影响已完成的响应，也不应升级为未捕获 rejection 导致进程退出。
+          } finally {
+            try { await this.redis.del(lockKey) } catch {}
+          }
+        },
       }),
     )
   }

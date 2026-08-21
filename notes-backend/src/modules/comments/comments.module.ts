@@ -6,6 +6,7 @@ import { CommentsService } from './comments.service'
 import { CommentsController, CommentRepliesController } from './comments.controller'
 import { AuditModule } from '../audit/audit.module'
 import { NotesModule } from '../notes/notes.module'
+import { UsersModule } from '../users/users.module'
 
 @Module({
   imports: [
@@ -15,6 +16,7 @@ import { NotesModule } from '../notes/notes.module'
     ]),
     AuditModule,
     forwardRef(() => NotesModule),
+    UsersModule,
   ],
   controllers: [CommentsController, CommentRepliesController],
   providers: [CommentsService],
