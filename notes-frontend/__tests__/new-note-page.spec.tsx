@@ -68,6 +68,14 @@ describe('NewNotePage', () => {
     expect(container.querySelector('[style*="linear-gradient"]')).toBeNull()
   })
 
+  test('keeps properties collapsed until the user opens them', () => {
+    render(<NewNotePage />)
+
+    expect(screen.queryByRole('complementary', { name: '笔记属性' })).not.toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: '打开笔记属性' }))
+    expect(screen.getByRole('complementary', { name: '笔记属性' })).toBeInTheDocument()
+  })
+
   test('uses the same draft content for header save and editor updates', () => {
     render(<NewNotePage />)
 

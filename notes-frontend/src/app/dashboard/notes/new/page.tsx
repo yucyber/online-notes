@@ -12,7 +12,7 @@ const TiptapEditor = dynamic(() => import('@/components/editor/TiptapEditor'), {
 
 export default function NewNotePage() {
   const page = useNewNotePage()
-  const [propertiesOpen, setPropertiesOpen] = useState(true)
+  const [propertiesOpen, setPropertiesOpen] = useState(false)
 
   const save = async (content = page.currentContent) => {
     try {
