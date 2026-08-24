@@ -1,9 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Module, forwardRef } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import { TagsController } from './tags.controller';
 import { TagsService } from './tags.service';
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
 import { Tag, TagSchema } from './schemas/tag.schema';
+import { NotesModule } from '../notes/notes.module';
 
 @Module({
   imports: [
@@ -11,6 +12,7 @@ import { Tag, TagSchema } from './schemas/tag.schema';
       { name: Tag.name, schema: TagSchema },
       { name: Note.name, schema: NoteSchema },
     ]),
+    forwardRef(() => NotesModule),
   ],
   controllers: [TagsController],
   providers: [TagsService],

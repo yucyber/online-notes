@@ -237,7 +237,7 @@ export function useNotesPage() {
 
     void loadNotesFast()
     return () => controller.abort()
-  }, [page, size, searchParams])
+  }, [page, size, searchParams, pathname])
 
   useEffect(() => {
     let last = 0
@@ -377,7 +377,7 @@ export function useNotesPage() {
     typeof tag === 'string' ? tag : extractId(tag)
 
   const resolveTagLabel = (tag: string | { name?: string; id?: string; _id?: string }) => {
-    if (typeof tag === 'string') return tagMap[tag] || tag
+    if (typeof tag === 'string') return tagMap[tag] || ''
     const id = extractId(tag)
     if (id && tagMap[id]) return tagMap[id]
     return tag.name || ''

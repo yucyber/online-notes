@@ -5,12 +5,14 @@ import { Note, NoteDocument } from '../notes/schemas/note.schema';
 import { Tag, TagDocument } from './schemas/tag.schema';
 import { CreateTagDto, UpdateTagDto } from './dto';
 import { assertOwnedByUser } from '../taxonomy/taxonomy-ownership';
+import { NoteCacheService } from '../notes/note-cache.service';
 
 @Injectable()
 export class TagsService {
   constructor(
     @InjectModel(Tag.name) private tagModel: Model<TagDocument>,
     @InjectModel(Note.name) private noteModel: Model<NoteDocument>,
+    private readonly noteCache: NoteCacheService,
   ) { }
 
   async create(createTagDto: CreateTagDto, userId: string): Promise<Tag> {
@@ -154,20 +156,26 @@ export class TagsService {
     if (sourceIds.length > 3) throw new ConflictException('一次最多合并 3 个标签')
     const userObj = new Types.ObjectId(userId)
     const srcObjIds = sourceIds.map(id => new Types.ObjectId(id))
+    const srcStringIds = sourceIds.map(id => id.toString())
     const targetObjId = new Types.ObjectId(targetId)
+    // 历史笔记可能把标签 ID 存成 ObjectId 或 String，迁移时必须同时匹配两种格式，
+    // 否则漏掉的字符串 ID 会在源标签删除后变成悬空引用，导致后续保存报「标签不存在」。
+    const matchAnySrc = { $in: [...srcObjIds, ...srcStringIds] }
     // 先补目标标签再移除源标签，保证每篇受影响笔记在迁移过程中仍有可用标签。
     const addRes = await this.noteModel.updateMany(
-      { userId: userObj, tags: { $in: srcObjIds } },
+      { userId: userObj, tags: matchAnySrc },
       { $addToSet: { tags: targetObjId } }
     ).exec()
     await this.noteModel.updateMany(
-      { userId: userObj, tags: { $in: srcObjIds } },
-      { $pull: { tags: { $in: srcObjIds } } }
+      { userId: userObj, tags: matchAnySrc },
+      { $pull: { tags: matchAnySrc } }
     ).exec()
 
     await this.tagModel.deleteMany({ _id: { $in: srcObjIds }, userId: userObj }).exec()
     // modifiedCount 是实际新增目标标签的笔记数，用它增量修正目标标签计数。
     await this.tagModel.findByIdAndUpdate(targetObjId, { $inc: { noteCount: addRes.modifiedCount || 0 } }).exec()
+    // 合并改变了笔记的 tags 字段，必须使列表缓存失效，否则前端最多 5 分钟内仍看到旧 tagId。
+    await this.noteCache.invalidateLists()
 
     return { affectedNotes: addRes.modifiedCount || 0 }
   }
