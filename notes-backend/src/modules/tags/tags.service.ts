@@ -58,6 +58,13 @@ export class TagsService {
       .exec();
   }
 
+  async findRefsByIds(ids: string[]): Promise<Array<{ id: string; name: string; color?: string }>> {
+    const objectIds = ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id))
+    if (objectIds.length === 0) return []
+    const tags = await this.tagModel.find({ _id: { $in: objectIds } }).select('name color').lean().exec()
+    return tags.map((tag: any) => ({ id: String(tag._id), name: tag.name, color: tag.color }))
+  }
+
   async assertOwnedIds(ids: string[], userId: string): Promise<void> {
     await assertOwnedByUser(ids, userId, this.tagModel, '标签')
   }

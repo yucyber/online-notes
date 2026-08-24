@@ -61,6 +61,13 @@ export class CategoriesService {
       .exec();
   }
 
+  async findRefsByIds(ids: string[]): Promise<Array<{ id: string; name: string; color?: string }>> {
+    const objectIds = ids.filter((id) => Types.ObjectId.isValid(id)).map((id) => new Types.ObjectId(id))
+    if (objectIds.length === 0) return []
+    const categories = await this.categoryModel.find({ _id: { $in: objectIds } }).select('name color').lean().exec()
+    return categories.map((category: any) => ({ id: String(category._id), name: category.name, color: category.color }))
+  }
+
   async assertOwnedIds(ids: string[], userId: string): Promise<void> {
     await assertOwnedByUser(ids, userId, this.categoryModel, '分类')
   }

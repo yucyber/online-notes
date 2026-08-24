@@ -93,7 +93,7 @@ export class NotesService {
     const size = Math.max(1, Math.min(100, Number(filterDto.size || 20)))
 
     // 列表固定按 updatedAt 降序页码分页；排序字段与游标已废弃。
-    const keyPayload = { userId, keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, page, size, ids, previewFieldsVersion: 'content-v1' }
+    const keyPayload = { userId, keyword, categoryId, tagIds, startDate, endDate, status, tagsMode, searchMode, page, size, ids, previewFieldsVersion: 'content-taxonomy-v2' }
     const listRevision = await this.noteCache.getListRevision()
     const cached = await this.noteCache.getList<{ items: Note[]; page: number; size: number; total: number }>(userId, keyPayload, listRevision)
     if (cached) return cached
@@ -184,7 +184,8 @@ export class NotesService {
         tags: (it.tags || []).map((t: any) => String(t)),
       }
     })
-    const resp: any = { items: normalized, page, size, total }
+    const enriched = await this.enrichTaxonomyRefs(normalized)
+    const resp: any = { items: enriched, page, size, total }
     await this.noteCache.setList(userId, keyPayload, resp, listRevision)
     return resp
   }
@@ -199,7 +200,8 @@ export class NotesService {
     }
 
     // 统一输出 string 引用：categoryId/tags 由 ObjectId 派生为字符串 id
-    return this.serializeNote(note);
+    const [enriched] = await this.enrichTaxonomyRefs([this.serializeNote(note)])
+    return enriched;
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
@@ -386,6 +388,25 @@ export class NotesService {
       categoryId: obj.categoryId ? String(obj.categoryId) : undefined,
       tags: (obj.tags || []).map((t: any) => String(t)),
     }
+  }
+
+  private async enrichTaxonomyRefs(notes: any[]): Promise<any[]> {
+    const categoryIds = Array.from(new Set(notes.map((note) => note.categoryId).filter(Boolean))) as string[]
+    const tagIds = Array.from(new Set(notes.flatMap((note) => note.tags || []).map((tag) => String(tag)).filter(Boolean)))
+
+    // 只有先通过 note ACL 的引用才会进入查询；这里不按当前用户过滤，否则协作者无法解析所有者的名称。
+    const [categories, tags] = await Promise.all([
+      this.categoriesService.findRefsByIds(categoryIds),
+      this.tagsService.findRefsByIds(tagIds),
+    ])
+    const categoryMap = new Map(categories.map((category) => [category.id, category]))
+    const tagMap = new Map(tags.map((tag) => [tag.id, tag]))
+
+    return notes.map((note) => ({
+      ...note,
+      category: note.categoryId ? categoryMap.get(note.categoryId) || null : null,
+      tags: (note.tags || []).map((tag: string) => tagMap.get(String(tag)) || String(tag)),
+    }))
   }
 
   async generateRoomTicket(noteId: string, userId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> {

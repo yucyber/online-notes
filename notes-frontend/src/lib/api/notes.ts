@@ -32,7 +32,7 @@ export const buildNotesCacheKey = (params?: any) => {
     if (page) sp.set('page', String(page))
     if (size) sp.set('size', String(size))
   }
-  return `notes:${sp.toString()}`
+  return `notes:taxonomy-v2:${sp.toString()}`
 }
 const readSessionCache = (key: string): NotesListPayload | null => {
   try {
@@ -82,13 +82,17 @@ export const notesAPI = {
       .then((res) => {
         const payload = res as unknown as { items: any[]; page: number; size: number; total: number }
         const items = (payload.items || []).map((raw: any) => {
-          // 后端已统一输出 id 与 string 引用（categoryId/tags），无需双形态兜底
           const id = raw.id
           const categoryId = raw.categoryId
-          const category = raw.categoryId && typeof raw.categoryId === 'object' && raw.categoryId.name
-            ? { id: String(raw.categoryId.id || ''), name: String(raw.categoryId.name) }
+          // 共享笔记的 taxonomy 属于所有者，名称由笔记接口在 ACL 校验后随引用返回。
+          const category = raw.category && typeof raw.category === 'object' && raw.category.name
+            ? { id: String(raw.category.id || categoryId || ''), name: String(raw.category.name), color: raw.category.color }
             : undefined
-          const tags = Array.isArray(raw.tags) ? raw.tags.map((t: any) => String(t)) : []
+          const tags = Array.isArray(raw.tags) ? raw.tags.map((tag: any) => (
+            tag && typeof tag === 'object' && tag.name
+              ? { id: String(tag.id || ''), name: String(tag.name), color: tag.color }
+              : String(tag)
+          )) : []
           return {
             id: String(id),
             title: String(raw.title || ''),
