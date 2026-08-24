@@ -21,7 +21,7 @@ import { UsersModule } from '../users/users.module';
   imports: [
     MongooseModule.forFeature([{ name: Note.name, schema: NoteSchema }]),
     CategoriesModule,
-    TagsModule,
+    forwardRef(() => TagsModule),
     forwardRef(() => SemanticModule),
     forwardRef(() => AiModule),
     AuditModule,

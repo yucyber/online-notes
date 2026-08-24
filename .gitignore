@@ -60,3 +60,6 @@ notes-backend/tsconfig.tsbuildinfo
 # superpowers runtime process state (not docs/plans)
 .superpowers/**/state/
 
+# 临时 commit message 文件
+.git-commit-msg.txt
+

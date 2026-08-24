@@ -40,8 +40,8 @@ test('NotesService.findAll selects note content for list preview fallback', asyn
   }
   const service = new NotesService(
     noteModel as any,
-    {} as any,
-    {} as any,
+    { findRefsByIds: async () => [] } as any,
+    { findRefsByIds: async () => [] } as any,
     {} as any,
     {} as any,
     new NoteAccessService(),
@@ -60,7 +60,7 @@ test('NotesService.findAll selects note content for list preview fallback', asyn
 
   const result = await service.findAll(userId)
 
-  assert.equal(cachePayload?.previewFieldsVersion, 'content-v1')
+  assert.equal(cachePayload?.previewFieldsVersion, 'content-taxonomy-v2')
   assert.match(selectedFields, /\bcontent\b/)
   assert.equal((result.items[0] as any).content, '<p>Preview body</p>')
 })

@@ -82,7 +82,9 @@ export function NotesListCard({
           {note.tags.length > 0 && (
             <>
               <span className="text-[var(--border)]">·</span>
-              <span>标签 {note.tags.length}</span>
+              <span className="truncate max-w-[8rem]">
+                {note.tags.map((tag) => resolveTagLabel(tag)).filter(Boolean).join('、')}
+              </span>
             </>
           )}
           {note.status === 'draft' && (

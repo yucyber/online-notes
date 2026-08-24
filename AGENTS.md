@@ -35,6 +35,7 @@
 - Commit message 统一使用**中文**撰写。
 - 格式：`类型(范围): 简述`，如 `fix(backend): 修复登录态丢失问题`。
 - 正文换行后补充原因和关键改动，不复述代码 diff。
+- PowerShell 提交中文 commit message 时，用 `git commit -F <utf8文件>` 读取 UTF-8 文件，避免命令行直接写中文导致乱码。
 
 ## 分支命名
 
@@ -42,3 +43,23 @@
 - `类型` 用英文小写：`feat` / `fix` / `chore` / `refactor` / `docs` / `test`。
 - 中文简述要**简洁明了**，用连字符分隔多个词，如 `优化缓存策略`、`修复权限校验`。
 - 日期取创建分支当天的日期。
+
+# Debug 工作流规范
+
+## 调试入口
+
+- 排查 bug、报错、异常或回归问题时，先加载本项目专属 skill：`project-debug`。
+- 该 skill 采用渐进式披露，入口在 `SKILL.md`，细节按需展开到 `workflow.md`、`debug-record-format.md`、`scripts.md`、`gotchas.md`。
+
+## 记录 Debug 记录
+
+- 当用户确认 bug 成功解决时，将「现象 → 根因 → 修复方案 → 相关文件 → 经验教训」追加进 `docs/debug-records.md`。
+- 解决 bug 前先检索 `docs/debug-records.md`，避免重复踩坑。
+
+## Skill 三处同步
+
+- `project-debug` skill 同时维护在三个目录，内容须保持一致：
+  - `.codebuddy/skills/project-debug/`
+  - `.agents/skills/project-debug/`
+  - `.claude/skills/project-debug/`
+- 修改 skill 时，三处需同步更新，避免不同 agent 读到不一致的规范。
