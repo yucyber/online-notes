@@ -58,11 +58,14 @@ export class AuditService {
     // 资源 ID 用字符串形式传给 mongoose：mongoose 会自动 cast 成 ObjectId 匹配新记录，
     // 对历史未 cast 的字符串资源也能直接按字符串匹配。
     const editableNoteIdsAsStrings = editableNoteIds.map(id => String(id))
-    const query: any = { resourceId: { $in: editableNoteIdsAsStrings } }
+    // 审计记录的 resourceId 可能以 ObjectId 或字符串两种形态存储（历史数据未 cast），
+    // 用 $or 同时按两种形态匹配，避免仅按字符串查询匹配不到 ObjectId 存储的记录。
+    const editableNoteIdsAsObjectIds = editableNoteIds.map(id => new Types.ObjectId(String(id)))
+    const query: any = { resourceId: { $in: [...editableNoteIdsAsObjectIds, ...editableNoteIdsAsStrings] } }
     if (params.resourceType) query.resourceType = params.resourceType
     if (params.resourceId) {
       const requestedId = String(new Types.ObjectId(params.resourceId))
-      query.resourceId = editableNoteIdsAsStrings.includes(requestedId) ? requestedId : { $in: [] }
+      query.resourceId = editableNoteIdsAsStrings.includes(requestedId) ? { $in: [new Types.ObjectId(requestedId), requestedId] } : { $in: [] }
     }
     if (params.eventType) query.eventType = params.eventType
     if (params.eventTypePrefixes && params.eventTypePrefixes.length > 0) {
