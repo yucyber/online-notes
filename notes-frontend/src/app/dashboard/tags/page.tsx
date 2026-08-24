@@ -4,6 +4,8 @@ import { useEffect, useMemo, useState } from 'react'
 import { tagsAPI } from '@/lib/api'
 import type { Tag } from '@/types'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 
 export default function TagsManagePage() {
   const [tags, setTags] = useState<Tag[]>([])
@@ -49,7 +51,7 @@ export default function TagsManagePage() {
   }, [tags, search])
 
   const handleBulkCreate = async () => {
-    const parts = Array.from(new Set(bulkInput.split(/[\s,]+/).map(s => s.trim()).filter(Boolean)))
+    const parts = Array.from(new Set(bulkInput.split(/[\s,,，]+/).map(s => s.trim()).filter(Boolean)))
     if (parts.length === 0) return
     await tagsAPI.bulkCreate(parts)
     setBulkInput('')
@@ -132,16 +134,18 @@ export default function TagsManagePage() {
         <div className={`product-merge-bar ${selected.length ? 'is-visible' : ''}`}><span>已选择 <b>{selected.length}</b> 个标签</span><select value={mergeTarget} onChange={(event) => setMergeTarget(event.target.value)}><option value="">选择目标</option>{tags.filter((tag) => !selected.includes(tag.id)).map((tag) => <option key={tag.id} value={tag.id}>{tag.name}</option>)}</select><button className="prototype-button" disabled={!mergeTarget} onClick={handleMerge}>合并到目标</button></div>
       </div>
       {pendingDeleteId && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center" style={{ background: 'var(--overlay)' }}>
-          <div className="rounded-xl shadow-xl w-[92%] max-w-md p-5 border" style={{ background: 'var(--surface-1)', borderColor: 'var(--border)', color: 'var(--on-surface)' }}>
-            <h3 className="text-lg font-semibold mb-2">确认删除标签</h3>
-            <p className="text-sm mb-5" style={{ color: 'var(--text-muted)' }}>删除后将从所有相关笔记中移除该标签，且不可恢复。</p>
-            <div className="flex justify-end gap-3">
-              <button className="px-4 py-2 rounded border" style={{ borderColor: 'var(--border)', background: 'var(--surface-1)', color: 'var(--on-surface)' }} onClick={cancelDelete}>取消</button>
-              <button className="px-4 py-2 rounded" style={{ background: 'var(--primary-600)', color: '#fff' }} onClick={confirmDelete}>确认删除</button>
-            </div>
-          </div>
-        </div>
+        <Dialog open onOpenChange={(open) => { if (!open) setPendingDeleteId(null) }}>
+          <DialogContent className="max-w-md">
+            <DialogHeader>
+              <DialogTitle>确认删除标签</DialogTitle>
+              <DialogDescription>删除后将从所有相关笔记中移除该标签，且不可恢复。</DialogDescription>
+            </DialogHeader>
+            <DialogFooter className="gap-2 sm:gap-2">
+              <Button variant="outline" onClick={cancelDelete}>取消</Button>
+              <Button variant="destructive" onClick={confirmDelete}>确认删除</Button>
+            </DialogFooter>
+          </DialogContent>
+        </Dialog>
       )}
     </>
   )
