@@ -25,18 +25,18 @@ export default function KnowledgeBasesPage() {
       <button className="prototype-button prototype-button--primary" disabled={page.saving}><PrototypeGlyph name="plus" />{page.saving ? '创建中...' : '创建知识库'}</button>
     </form> : null}
 
-    <div className="knowledge-base-workspace">
-      <aside className="knowledge-base-sidebar">
-        <header><h2>知识库</h2><span>{page.knowledgeBases.length}</span></header>
-        <div>{page.knowledgeBases.map((item) => <button key={item.id} className={page.selectedId === item.id ? 'is-active' : ''} onClick={() => { page.setSelectedId(item.id); setActiveTab('graph') }}>
-          <b>{item.name}</b><small>{item.description || '暂无描述'}</small>{page.selectedId === item.id ? <em>{page.links.length}</em> : null}
+    <div className="product-kb-layout">
+      <aside className="prototype-panel">
+        <header className="prototype-panel-head padded"><h2>知识库</h2><span>{page.knowledgeBases.length}</span></header>
+        <div className="prototype-collection">{page.knowledgeBases.map((item) => <button key={item.id} className={page.selectedId === item.id ? 'is-active' : ''} onClick={() => { page.setSelectedId(item.id); setActiveTab('graph') }}>
+          <b>{item.name}<span className="n">{page.selectedId === item.id ? page.links.length : ''}</span></b><small>{item.description || '暂无描述'}</small>
         </button>)}{page.knowledgeBases.length === 0 ? <p>还没有知识库。先创建一个，再从笔记列表加入内容。</p> : null}</div>
       </aside>
 
-      <section className="knowledge-base-detail">
+      <section className="prototype-panel knowledge-base-detail">
         {page.selectedId ? <>
-          <header className="knowledge-base-detail__head"><div><h2>{page.selectedKnowledgeBase?.name}</h2><p>{page.selectedKnowledgeBase?.description || '暂无描述'} · {page.links.length} 篇笔记</p></div><Link className="prototype-button" href={`/dashboard/notes?select=knowledge-base&knowledgeBaseId=${encodeURIComponent(page.selectedId)}`}>从笔记选择</Link></header>
-          <nav className="knowledge-base-tabs" aria-label="知识库视图">
+          <header className="prototype-panel-head padded"><div><h2>{page.selectedKnowledgeBase?.name}</h2><small>{page.selectedKnowledgeBase?.description || '暂无描述'} · {page.links.length} 篇笔记</small></div><Link className="prototype-button" href={`/dashboard/notes?select=knowledge-base&knowledgeBaseId=${encodeURIComponent(page.selectedId)}`}>从笔记选择</Link></header>
+          <nav className="detail-tabs" aria-label="知识库视图">
             <button type="button" className={activeTab === 'graph' ? 'is-active' : ''} onClick={() => setActiveTab('graph')}>知识图谱 <span>{page.visibleGraph ? `${page.visibleGraph.nodes.length} 节点 / ${page.visibleGraph.edges.length} 关系` : '未生成'}</span></button>
             <button type="button" className={activeTab === 'notes' ? 'is-active' : ''} onClick={() => setActiveTab('notes')}>笔记 <span>{page.links.length}</span></button>
           </nav>

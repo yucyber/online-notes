@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
-import { Background, Controls, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, type NodeProps } from '@xyflow/react'
+import { Background, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, type NodeProps } from '@xyflow/react'
 import type { KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
 import { buildKnowledgeGraphFlow, type KnowledgeFlowNodeData } from './knowledge-graph-layout'
 
@@ -24,11 +24,11 @@ function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: Kn
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges)
   const [selectedId, setSelectedId] = useState('')
   const [zoom, setZoom] = useState(1)
-  const { fitView } = useReactFlow()
+  const { fitView, zoomIn, zoomOut } = useReactFlow()
 
   useEffect(() => {
     setNodes(initial.nodes); setEdges(initial.edges); setSelectedId('')
-    requestAnimationFrame(() => void fitView({ padding: 0.16, duration: 250 }))
+    requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 }))
   }, [fitView, initial, setEdges, setNodes])
 
   const connectedIds = useMemo(() => {
@@ -46,16 +46,23 @@ function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: Kn
   const linkedNotes = selected ? links.filter((link) => selected.noteIds.includes(link.noteId)) : []
   const relayout = useCallback(() => {
     const next = buildKnowledgeGraphFlow(graph); setNodes(next.nodes); setEdges(next.edges)
-    requestAnimationFrame(() => void fitView({ padding: 0.16, duration: 300 }))
+    requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 300 }))
   }, [fitView, graph, setEdges, setNodes])
 
   return <div className="knowledge-graph-stage">
     <div className="knowledge-graph-canvas" data-testid="knowledge-graph-canvas">
-      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={(_, node) => setSelectedId((current) => current === node.id ? '' : node.id)} onPaneClick={() => setSelectedId('')} onMove={(_, viewport) => setZoom(viewport.zoom)} minZoom={0.25} maxZoom={1.75} fitView fitViewOptions={{ padding: 0.16 }} nodesConnectable={false} proOptions={{ hideAttribution: true }}>
-        <Background gap={22} size={1} /><Controls position="top-right" showInteractive={false} />
-        <button type="button" className="knowledge-graph-relayout" onClick={relayout}>重排</button>
+      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={(_, node) => setSelectedId((current) => current === node.id ? '' : node.id)} onPaneClick={() => setSelectedId('')} onMove={(_, viewport) => setZoom(viewport.zoom)} minZoom={0.25} maxZoom={1.75} fitView fitViewOptions={{ padding: 0.12, minZoom: 0.82, maxZoom: 1.05 }} nodesConnectable={false} proOptions={{ hideAttribution: true }}>
+        <Background gap={22} size={1} />
         {graph.nodes.length > 20 ? <MiniMap pannable zoomable /> : null}
       </ReactFlow>
+      <div className="knowledge-graph-controls" aria-label="图谱控制">
+        <button type="button" aria-label="缩小" onClick={() => void zoomOut()}>−</button>
+        <button type="button" aria-label="放大" onClick={() => void zoomIn()}>＋</button>
+        <button type="button" aria-label="适应画布" onClick={() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 })}>⌗</button>
+        <i />
+        <button type="button" aria-label="重新布局" onClick={relayout}>↻</button>
+      </div>
+      <div className="knowledge-graph-hint">滚轮缩放 · 拖拽画布平移 · 点击节点查看来源</div>
       <div className="knowledge-graph-legend"><span data-type="concept">概念</span><span data-type="entity">实体</span><span data-type="topic">主题</span><span data-type="claim">论断</span></div>
     </div>
     {selected ? <aside className="knowledge-node-detail" aria-label="节点详情">

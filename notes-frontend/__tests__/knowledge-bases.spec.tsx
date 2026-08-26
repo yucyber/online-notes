@@ -98,6 +98,9 @@ describe('knowledge base frontend entry', () => {
     render(<KnowledgeBasesPage />)
 
     expect((await screen.findAllByText('AI Research')).length).toBeGreaterThan(0)
+    expect(document.querySelector('.product-kb-layout')).toBeInTheDocument()
+    expect(document.querySelectorAll('.product-kb-layout > .prototype-panel')).toHaveLength(2)
+    expect(document.querySelector('.knowledge-base-workspace')).not.toBeInTheDocument()
     fireEvent.click(await screen.findByRole('button', { name: /笔记 1/ }))
     expect(await screen.findByText('Transformer Notes')).toBeInTheDocument()
 
