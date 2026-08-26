@@ -56,6 +56,7 @@ export class NotesService {
     const createdNote = new this.noteModel({
       ...createNoteDto,
       summary: fallbackSummary,
+      summarySource: 'fallback',
       userId: new Types.ObjectId(userId),
       tags: createNoteDto.tags ? createNoteDto.tags.map(tag => new Types.ObjectId(tag)) : [],
       categoryId: createNoteDto.categoryId ? new Types.ObjectId(createNoteDto.categoryId) : undefined,
@@ -247,6 +248,8 @@ export class NotesService {
     // 即使正文被显式清空也要同步刷新兜底摘要，不能遗留旧内容摘要。
     if (contentChanged) {
       updatePayload.summary = this.noteDerived.buildFallbackSummary(updatePayload.content)
+      updatePayload.summarySource = 'fallback'
+      updatePayload.summaryUpdatedAt = null
     }
 
     const updatedNote = await this.noteModel

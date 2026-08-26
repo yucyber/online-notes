@@ -51,3 +51,25 @@ test('普通文本跨 Chunk 时保留有限重叠上下文', () => {
   const previousTail = chunks[0].content.slice(-20)
   assert.ok(chunks[1].content.includes(previousTail))
 })
+
+test('HTML 笔记按小标题建立路径且不会从标签中间切断', () => {
+  const service = new NoteChunkerService()
+  const longItem = `<p><strong>复杂度</strong>：${'二叉树节点访问。'.repeat(180)}</p>`
+  const content = [
+    '<h1>二叉树基础</h1>',
+    '<pre><code>function walk(node) { return node.left }</code></pre>',
+    '<h2>复杂度分析</h2>',
+    `<blockquote>${longItem.repeat(8)}</blockquote>`,
+  ].join('')
+
+  const chunks = service.buildChunks({ title: '数据结构', content })
+  const codeChunk = chunks.find((chunk) => chunk.content.includes('function walk'))
+  const analysisChunks = chunks.filter((chunk) => chunk.headingPath.includes('复杂度分析'))
+
+  assert.ok(codeChunk)
+  assert.deepEqual(codeChunk.headingPath, ['数据结构', '二叉树基础'])
+  assert.ok(analysisChunks.length > 1)
+  assert.ok(analysisChunks.every((chunk) => chunk.headingPath.join(' / ') === '数据结构 / 二叉树基础 / 复杂度分析'))
+  assert.ok(chunks.every((chunk) => !/^trong>|^\/strong>/.test(chunk.content)))
+  assert.ok(chunks.every((chunk) => (chunk.content.match(/<strong>/g) || []).length === (chunk.content.match(/<\/strong>/g) || []).length))
+})

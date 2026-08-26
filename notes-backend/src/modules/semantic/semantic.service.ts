@@ -40,6 +40,21 @@ export type SemanticSearchOpts = {
   tagIds?: string[]
 }
 
+function buildPreview(content: unknown): string {
+  return String(content || '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/p>|<\/li>|<\/h[1-6]>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&amp;/gi, '&')
+    .replace(/[ \t]+/g, ' ')
+    .replace(/\n\s*\n+/g, '\n')
+    .trim()
+    .slice(0, 220)
+}
+
 @Injectable()
 export class SemanticService {
   private readonly logger = new Logger(SemanticService.name);
@@ -98,7 +113,7 @@ export class SemanticService {
     let mapped: SemanticItem[] = (items || []).map((n: any) => ({
       id: String(n._id || n.id || ''),
       title: String(n.title || ''),
-      preview: String(n.content || '').slice(0, 220),
+      preview: buildPreview(n.content),
       score: Number(n.score || 0),
       updatedAt: String(n.updatedAt || ''),
     }))
@@ -140,9 +155,12 @@ export class SemanticService {
     addRanked(keywordPage.data, 'keyword')
     addRanked(vectorPage.data, 'vector')
 
-    const ranked = [...merged.values()]
-      .sort((left, right) => right.fusionScore - left.fusionScore)
-      .map(({ fusionScore, ...item }) => ({ ...item, score: fusionScore }))
+    const fused = [...merged.values()].sort((left, right) => right.fusionScore - left.fusionScore)
+    const maxFusionScore = fused[0]?.fusionScore || 1
+    const ranked = fused.map(({ fusionScore, ...item }) => ({
+      ...item,
+      score: Number((fusionScore / maxFusionScore).toFixed(6)),
+    }))
     const total = ranked.length
     const start = (page - 1) * limit
     const data = ranked.slice(start, start + limit)
@@ -185,7 +203,7 @@ export class SemanticService {
       return {
         id: noteId,
         title: String(note?.title || best.title || ''),
-        preview: String(note?.content || best.content || '').slice(0, 220),
+        preview: buildPreview(note?.content || best.content),
         score: best.score,
         updatedAt: String(note?.updatedAt || ''),
         bestChunk: {
@@ -292,7 +310,7 @@ export class SemanticService {
     let mapped: SemanticItem[] = (items || []).map((n: any) => ({
       id: String(n._id || n.id || ''),
       title: String(n.title || ''),
-      preview: String(n.content || '').slice(0, 220),
+      preview: buildPreview(n.content),
       score: Number((n as any).score || 0),
       updatedAt: String(n.updatedAt || ''),
     }))

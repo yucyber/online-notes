@@ -72,13 +72,13 @@ export class NoteDerivedService {
   }
 
   generateAndSaveSummary(note: NoteDocument, expectedContent = String(note.content || '')) {
-    this.aiService.generateSummary(expectedContent)
-      .then(async summary => {
+    this.generateSummaryResult(expectedContent)
+      .then(async ({ summary, source }) => {
         if (!summary) return
         // content 匹配条件确保在内容已被修改时不覆盖更新后的摘要。
         await this.noteModel.updateOne(
           { _id: note._id, content: expectedContent },
-          { $set: { summary } },
+          { $set: { summary, summarySource: source, summaryUpdatedAt: new Date() } },
           { timestamps: false },
         ).exec()
         // AI 摘要异步写回后需再次失效列表缓存，否则前端列表最长 300 秒仍显示旧兜底摘要。
@@ -130,10 +130,11 @@ export class NoteDerivedService {
   async refreshTopicArtifacts(snapshot: NoteDerivedSnapshot, changes: NoteDerivedChanges): Promise<void> {
     let finalSummary = snapshot.summary
     if (changes.contentChanged) {
-      finalSummary = await this.aiService.generateSummary(snapshot.content) || snapshot.summary
+      const generated = await this.generateSummaryResult(snapshot.content)
+      finalSummary = generated.summary || snapshot.summary
       const result = await this.noteModel.updateOne(
         { _id: snapshot.noteId, updatedAt: snapshot.expectedUpdatedAt },
-        { $set: { summary: finalSummary } },
+        { $set: { summary: finalSummary, summarySource: generated.source, summaryUpdatedAt: new Date() } },
         { timestamps: false },
       ).exec()
       if (!result.matchedCount) return
@@ -165,6 +166,13 @@ export class NoteDerivedService {
         expectedUpdatedAt: snapshot.expectedUpdatedAt,
       })
     }
+  }
+
+  private async generateSummaryResult(content: string) {
+    if (typeof (this.aiService as any).generateSummaryResult === 'function') {
+      return (this.aiService as any).generateSummaryResult(content)
+    }
+    return { summary: await this.aiService.generateSummary(content), source: 'ai' as const }
   }
 
   async updateTopicEmbedding(note: { _id: any }, source: string, expectedUpdatedAt?: Date): Promise<void> {

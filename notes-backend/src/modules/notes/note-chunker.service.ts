@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { createHash } from 'node:crypto'
+import { parseFragment, serialize } from 'parse5'
 
 export interface BuiltNoteChunk {
   chunkIndex: number
@@ -80,6 +81,10 @@ export class NoteChunkerService {
   }
 
   private parseBlocks(title: string, content: string): MarkdownBlock[] {
+    if (/<(?:h[1-6]|p|pre|blockquote|ul|ol|table|div)\b/i.test(content)) {
+      return this.parseHtmlBlocks(title, content)
+    }
+
     const root = title ? [title] : []
     let headings: string[] = []
     let paragraph: string[] = []
@@ -124,8 +129,57 @@ export class NoteChunkerService {
     return blocks
   }
 
+  private parseHtmlBlocks(title: string, content: string): MarkdownBlock[] {
+    const root = title ? [title] : []
+    const blocks: MarkdownBlock[] = []
+    let headings: string[] = []
+    const fragment: any = parseFragment(content)
+    const blockTags = new Set(['p', 'pre', 'table'])
+    const containerTags = new Set(['blockquote', 'ul', 'ol', 'li', 'div', 'section', 'article'])
+
+    const textOf = (node: any): string => node.nodeName === '#text'
+      ? String(node.value || '')
+      : (node.childNodes || []).map(textOf).join('')
+    const path = () => [...root, ...headings]
+
+    const visit = (node: any) => {
+      const tag = String(node.tagName || '').toLowerCase()
+      const heading = /^h([1-6])$/.exec(tag)
+      if (heading) {
+        const depth = Number(heading[1])
+        headings = [...headings.slice(0, depth - 1), textOf(node).trim()].filter(Boolean)
+        return
+      }
+
+      if (blockTags.has(tag)) {
+        const value = serialize(node).trim()
+        if (value) blocks.push({ headingPath: path(), content: value, code: tag === 'pre' })
+        return
+      }
+
+      if (containerTags.has(tag)) {
+        const children = node.childNodes || []
+        const hasBlockChild = children.some((child: any) => {
+          const childTag = String(child.tagName || '').toLowerCase()
+          return blockTags.has(childTag) || containerTags.has(childTag) || /^h[1-6]$/.test(childTag)
+        })
+        if (!hasBlockChild) {
+          const value = serialize(node).trim()
+          if (value) blocks.push({ headingPath: path(), content: value, code: false })
+          return
+        }
+      }
+
+      for (const child of node.childNodes || []) visit(child)
+    }
+
+    for (const child of fragment.childNodes || []) visit(child)
+    return blocks
+  }
+
   private splitOversizedBlock(block: MarkdownBlock): MarkdownBlock[] {
     if (block.code || this.estimateTokens(block.content) <= this.targetTokens) return [block]
+    if (/<[a-z][^>]*>/i.test(block.content)) return this.splitOversizedHtmlBlock(block)
 
     const parts: MarkdownBlock[] = []
     let remaining = block.content
@@ -145,6 +199,47 @@ export class NoteChunkerService {
       remaining = `${overlap}\n${remaining.slice(cut).trimStart()}`
     }
     if (remaining.trim()) parts.push({ ...block, content: remaining.trim() })
+    return parts
+  }
+
+  private splitOversizedHtmlBlock(block: MarkdownBlock): MarkdownBlock[] {
+    const parts: MarkdownBlock[] = []
+    const openTags: Array<{ name: string; source: string }> = []
+    const tokens = block.content.match(/<[^>]+>|[^<]+/g) || []
+    let current = ''
+    let currentTokens = 0
+
+    const closeTags = () => [...openTags].reverse().map((tag) => `</${tag.name}>`).join('')
+    const reopenTags = () => openTags.map((tag) => tag.source).join('')
+    const flush = () => {
+      const value = `${current}${closeTags()}`.trim()
+      if (value) parts.push({ ...block, content: value })
+      current = reopenTags()
+      currentTokens = 0
+    }
+
+    for (const token of tokens) {
+      if (token.startsWith('<')) {
+        current += token
+        const closing = /^<\/\s*([\w-]+)/.exec(token)
+        const opening = /^<\s*([\w-]+)(?:\s[^>]*)?>$/.exec(token)
+        if (closing) {
+          const index = openTags.map((tag) => tag.name).lastIndexOf(closing[1].toLowerCase())
+          if (index >= 0) openTags.splice(index, 1)
+        } else if (opening && !/\/$/.test(token.slice(0, -1).trim()) && !/^(?:br|hr|img|input|meta|link)$/i.test(opening[1])) {
+          openTags.push({ name: opening[1].toLowerCase(), source: token })
+        }
+        continue
+      }
+
+      for (const char of token) {
+        current += char
+        currentTokens += this.estimateTokens(char)
+        const naturalBoundary = /[。！？.!?；;\s]/.test(char)
+        if (currentTokens >= this.targetTokens || (currentTokens >= this.targetTokens * 0.75 && naturalBoundary)) flush()
+      }
+    }
+    if (current.replace(/<[^>]+>/g, '').trim()) flush()
     return parts
   }
 

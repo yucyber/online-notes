@@ -7,6 +7,11 @@ import { KnowledgeGraphBuildGraph } from './graphs/knowledge-graph-build.graph'
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service'
 import { buildMermaidPrompt, buildMermaidRepairPrompt, buildMindmapPrompt, buildMindmapRepairPrompt, buildWriterPrompt, cleanText, cleanTopicName, normalizeMermaidCode, normalizeMindmapAnswer, truncateContent } from './ai-content'
 
+export type SummaryGenerationResult = {
+  summary: string
+  source: 'ai' | 'passthrough' | 'fallback'
+}
+
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name)
@@ -31,11 +36,15 @@ export class AiService {
   }
 
   async generateSummary(content: string): Promise<string> {
+    return (await this.generateSummaryResult(content)).summary
+  }
+
+  async generateSummaryResult(content: string): Promise<SummaryGenerationResult> {
     const cleanContent = cleanText(content)
-    if (!cleanContent) return ''
+    if (!cleanContent) return { summary: '', source: 'passthrough' }
     // 极短正文直接返回全文作为摘要；信息已接近完整，AI 提炼无增益。
     if (cleanContent.length <= this.minSummaryChars) {
-      return cleanContent
+      return { summary: cleanContent, source: 'passthrough' }
     }
     // 目标长度基于整篇正文长度计算，分段时每段与最终合并都沿用同一目标，避免拼接后超长。
     const targetChars = this.summaryTargetChars(cleanContent.length)
@@ -43,18 +52,18 @@ export class AiService {
     try {
       // 短内容走单次摘要，避免不必要的额外请求。
       if (cleanContent.length <= this.summarySegmentChars) {
-        return await this.summarizeChunk(cleanContent, targetChars)
+        return { summary: await this.summarizeChunk(cleanContent, targetChars), source: 'ai' }
       }
 
       const segments = this.splitSegments(cleanContent, this.summarySegmentChars)
       const summaries = await Promise.all(segments.map((segment) => this.summarizeChunk(segment, targetChars)))
       // 先合并各段摘要，再让 AI 提炼一份最终摘要，避免拼接文本语义割裂。
       const merged = summaries.filter(Boolean).join('\n')
-      if (!merged) return ''
-      return await this.summarizeChunk(`[以下为长笔记各部分的摘要]\n${merged}`, targetChars)
+      if (!merged) return { summary: '', source: 'fallback' }
+      return { summary: await this.summarizeChunk(`[以下为长笔记各部分的摘要]\n${merged}`, targetChars), source: 'ai' }
     } catch (error: any) {
       this.logger.warn(`Summary generation failed, using fallback: ${error.message}`)
-      return truncateContent(cleanContent)
+      return { summary: truncateContent(cleanContent), source: 'fallback' }
     }
   }
 

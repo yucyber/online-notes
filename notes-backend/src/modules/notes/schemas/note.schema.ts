@@ -24,6 +24,12 @@ export class Note {
   @Prop({ required: false })
   summary?: string;
 
+  @Prop({ enum: ['ai', 'passthrough', 'fallback'], default: 'fallback' })
+  summarySource?: 'ai' | 'passthrough' | 'fallback';
+
+  @Prop({ type: Date })
+  summaryUpdatedAt?: Date;
+
   @Prop({ type: Types.ObjectId, ref: 'Category' })
   categoryId?: Types.ObjectId;
 

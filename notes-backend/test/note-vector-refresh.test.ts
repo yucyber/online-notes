@@ -44,7 +44,7 @@ test('正文变化时先生成最终摘要，再用分类和标签名称生成�
   const service = new NoteDerivedService(
     noteModel as any,
     { generateEmbedding: async (text: string) => { embeddedTexts.push(text); return [0.1] } } as any,
-    { generateSummary: async () => { summaryCalls++; return 'AI 最终摘要' } } as any,
+    { generateSummaryResult: async () => { summaryCalls++; return { summary: 'AI 最终摘要', source: 'ai' } } } as any,
     { invalidateLists: async () => undefined } as any,
     new NoteVectorSourceService(),
     { findOwnedName: async () => '前端' } as any,
@@ -67,6 +67,8 @@ test('正文变化时先生成最终摘要，再用分类和标签名称生成�
   assert.equal(embeddedTexts[0], '标题：React Diff\n摘要：AI 最终摘要\n分类：前端\n标签：React、性能')
   assert.equal(embeddedTexts[0].includes('旧正文'), false)
   assert.deepEqual(updates[0][0], { _id: 'note-1', updatedAt: expectedUpdatedAt })
+  assert.equal(updates[0][1].$set.summarySource, 'ai')
+  assert.ok(updates[0][1].$set.summaryUpdatedAt instanceof Date)
 })
 
 test('只修改分类标签时复用现有摘要，不调用摘要模型', async () => {
