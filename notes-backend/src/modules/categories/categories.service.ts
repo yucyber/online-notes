@@ -72,6 +72,16 @@ export class CategoriesService {
     await assertOwnedByUser(ids, userId, this.categoryModel, '分类')
   }
 
+  async findOwnedName(id: string | undefined, userId: string): Promise<string | undefined> {
+    if (!id) return undefined
+    const category = await this.categoryModel
+      .findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) })
+      .select('name')
+      .lean()
+      .exec()
+    return category?.name
+  }
+
   async update(id: string, updateCategoryDto: UpdateCategoryDto, userId: string): Promise<Category> {
     // 重命名时排除自身，同时仍把唯一性限制在当前用户空间内。
     if (updateCategoryDto.name) {

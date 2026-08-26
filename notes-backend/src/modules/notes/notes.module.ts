@@ -10,6 +10,9 @@ import { NoteCacheService } from './note-cache.service';
 import { NoteRecommendationService } from './note-recommendation.service';
 import { NoteDerivedService } from './note-derived.service';
 import { NoteVectorSourceService } from './note-vector-source.service';
+import { NoteChunk, NoteChunkSchema } from './schemas/note-chunk.schema';
+import { NoteChunkerService } from './note-chunker.service';
+import { NoteChunkIndexService } from './note-chunk-index.service';
 import { Note, NoteSchema } from './schemas/note.schema';
 import { CategoriesModule } from '../categories/categories.module';
 import { TagsModule } from '../tags/tags.module';
@@ -24,6 +27,7 @@ import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
     MongooseModule.forFeature([
       { name: Note.name, schema: NoteSchema },
       { name: Mindmap.name, schema: MindmapSchema },
+      { name: NoteChunk.name, schema: NoteChunkSchema },
     ]),
     CategoriesModule,
     forwardRef(() => TagsModule),
@@ -40,7 +44,7 @@ import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
     }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService, NoteVectorSourceService],
+  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService],
   exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService],
 })
 export class NotesModule { }

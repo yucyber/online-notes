@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Optional } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
 import { EmbeddingService } from '../semantic/embedding.service'
@@ -6,17 +6,43 @@ import { AiService } from '../ai/ai.service'
 import { NoteCacheService } from './note-cache.service'
 import { Note, NoteDocument } from './schemas/note.schema'
 import { NoteVectorSourceService } from './note-vector-source.service'
+import { NoteDerivedScheduler } from './note-derived-scheduler'
+import { CategoriesService } from '../categories/categories.service'
+import { TagsService } from '../tags/tags.service'
+import { NoteChunkIndexService } from './note-chunk-index.service'
 
 const TOPIC_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-8B'
 
+export interface NoteDerivedChanges {
+  titleChanged: boolean
+  contentChanged: boolean
+  taxonomyChanged: boolean
+}
+
+export interface NoteDerivedSnapshot {
+  noteId: string
+  userId: string
+  title: string
+  content: string
+  summary: string
+  categoryId?: string
+  tagIds: string[]
+  expectedUpdatedAt: Date
+}
+
 @Injectable()
 export class NoteDerivedService {
+  private readonly scheduler = new NoteDerivedScheduler()
+
   constructor(
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     private readonly embeddingService: EmbeddingService,
     private readonly aiService: AiService,
     private readonly noteCache: NoteCacheService,
     private readonly vectorSource: NoteVectorSourceService = new NoteVectorSourceService(),
+    @Optional() private readonly categoriesService?: CategoriesService,
+    @Optional() private readonly tagsService?: TagsService,
+    @Optional() private readonly chunkIndex?: NoteChunkIndexService,
   ) {}
 
   buildFallbackSummary(content: string) {
@@ -78,12 +104,75 @@ export class NoteDerivedService {
     }
   }
 
-  async updateTopicEmbedding(note: NoteDocument, source: string): Promise<void> {
+  schedule(note: NoteDocument, changes: NoteDerivedChanges): void {
+    const noteId = String(note._id)
+    const expectedUpdatedAt = new Date((note as any).updatedAt)
+    const snapshot: NoteDerivedSnapshot = {
+      noteId,
+      userId: String(note.userId || ''),
+      title: String(note.title || ''),
+      content: String(note.content || ''),
+      summary: String(note.summary || ''),
+      categoryId: note.categoryId ? String(note.categoryId) : undefined,
+      tagIds: (note.tags || []).map((tag) => String(tag)),
+      expectedUpdatedAt,
+    }
+
+    this.scheduler.schedule(noteId, async () => {
+      try {
+        await this.refreshTopicArtifacts(snapshot, changes)
+      } catch (error) {
+        console.error(`Failed to refresh derived fields for note ${noteId}`, error)
+      }
+    })
+  }
+
+  async refreshTopicArtifacts(snapshot: NoteDerivedSnapshot, changes: NoteDerivedChanges): Promise<void> {
+    let finalSummary = snapshot.summary
+    if (changes.contentChanged) {
+      finalSummary = await this.aiService.generateSummary(snapshot.content) || snapshot.summary
+      const result = await this.noteModel.updateOne(
+        { _id: snapshot.noteId, updatedAt: snapshot.expectedUpdatedAt },
+        { $set: { summary: finalSummary } },
+        { timestamps: false },
+      ).exec()
+      if (!result.matchedCount) return
+      await this.noteCache.invalidateLists()
+    }
+
+    const [categoryName, tagNames] = await Promise.all([
+      this.categoriesService?.findOwnedName(snapshot.categoryId, snapshot.userId),
+      this.tagsService?.findOwnedNames(snapshot.tagIds, snapshot.userId) || Promise.resolve([]),
+    ])
+    const source = this.vectorSource.buildTopicVectorSource({
+      title: snapshot.title,
+      summary: finalSummary,
+      categoryName,
+      tagNames,
+    })
+    await this.updateTopicEmbedding(
+      { _id: snapshot.noteId },
+      source,
+      snapshot.expectedUpdatedAt,
+    )
+
+    if (changes.titleChanged || changes.contentChanged) {
+      await this.chunkIndex?.refreshNoteChunks({
+        noteId: snapshot.noteId,
+        userId: snapshot.userId,
+        title: snapshot.title,
+        content: snapshot.content,
+        expectedUpdatedAt: snapshot.expectedUpdatedAt,
+      })
+    }
+  }
+
+  async updateTopicEmbedding(note: { _id: any }, source: string, expectedUpdatedAt?: Date): Promise<void> {
     const embedding = await this.embeddingService.generateEmbedding(source)
     if (!embedding?.length) return
 
     await this.noteModel.updateOne(
-      { _id: note._id },
+      { _id: note._id, ...(expectedUpdatedAt ? { updatedAt: expectedUpdatedAt } : {}) },
       {
         $set: {
           embedding,

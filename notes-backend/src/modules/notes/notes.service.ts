@@ -16,6 +16,7 @@ import { NoteDerivedService } from './note-derived.service';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
 import { Mindmap } from '../mindmaps/schemas/mindmap.schema';
+import { NoteChunk } from './schemas/note-chunk.schema';
 
 @Injectable()
 export class NotesService {
@@ -34,6 +35,7 @@ export class NotesService {
     @Optional() noteDerived?: NoteDerivedService,
     @Optional() private readonly jwtService?: JwtService,
     @Optional() @InjectModel(Mindmap.name) private readonly mindmapModel?: Model<Mindmap>,
+    @Optional() @InjectModel(NoteChunk.name) private readonly noteChunkModel?: Model<NoteChunk>,
   ) {
     this.noteDerived = noteDerived || new NoteDerivedService(noteModel, embeddingService, aiService, noteCache)
   }
@@ -70,9 +72,12 @@ export class NotesService {
       tags: createNoteDto.tags,
     })
 
-    // embedding 和 AI 摘要属于派生数据，失败不能阻断笔记创建主流程。
-    this.updateEmbedding(savedNote);
-    this.generateAndSaveSummary(savedNote);
+    // 自动保存和派生计算解耦；创建后也进入同一静默期，避免紧接着的编辑重复调用 AI。
+    this.noteDerived.schedule(savedNote, {
+      titleChanged: true,
+      contentChanged: true,
+      taxonomyChanged: true,
+    })
 
     return this.serializeNote(savedNote);
   }
@@ -225,9 +230,22 @@ export class NotesService {
     }
 
     const updatePayload: Record<string, any> = { ...updateNoteDto }
+    const titleChanged = updatePayload.title !== undefined
+      && String(updatePayload.title) !== String(originalNote.title || '')
+    const contentChanged = updatePayload.content !== undefined
+      && String(updatePayload.content) !== String(originalNote.content || '')
+    const categoryChanged = updatePayload.categoryId !== undefined
+      && String(updatePayload.categoryId || '') !== String(originalNote.categoryId || '')
+    const originalTags = (originalNote.tags || []).map((tag) => String(tag)).sort()
+    const nextTags = Array.isArray(updatePayload.tags)
+      ? [...new Set(updatePayload.tags.map((tag: any) => String(tag)))].sort()
+      : originalTags
+    const tagsChanged = updatePayload.tags !== undefined
+      && (originalTags.length !== nextTags.length || originalTags.some((tag, index) => tag !== nextTags[index]))
+    const taxonomyChanged = categoryChanged || tagsChanged
 
     // 即使正文被显式清空也要同步刷新兜底摘要，不能遗留旧内容摘要。
-    if (updatePayload.content !== undefined) {
+    if (contentChanged) {
       updatePayload.summary = this.noteDerived.buildFallbackSummary(updatePayload.content)
     }
 
@@ -246,12 +264,8 @@ export class NotesService {
     // 派生字段异步刷新，不延长保存请求；服务内部会防止旧任务覆盖更新后的正文。
     await this.noteCache.invalidateLists()
 
-    if (updatePayload.title !== undefined || updatePayload.content !== undefined) {
-      this.updateEmbedding(updatedNote);
-    }
-
-    if (updatePayload.content !== undefined) {
-      this.generateAndSaveSummary(updatedNote);
+    if (titleChanged || contentChanged || taxonomyChanged) {
+      this.noteDerived.schedule(updatedNote, { titleChanged, contentChanged, taxonomyChanged })
     }
 
     // 分类计数只在明确提交 categoryId（含清空 null）时更新；undefined 表示未修改，不触发。
@@ -285,6 +299,11 @@ export class NotesService {
         if (!note) throw new NotFoundException('笔记不存在')
 
         await this.mindmapModel
+          ?.deleteMany({ noteId: note._id })
+          .session(session)
+          .exec()
+
+        await this.noteChunkModel
           ?.deleteMany({ noteId: note._id })
           .session(session)
           .exec()

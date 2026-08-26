@@ -30,6 +30,7 @@ function createService(noteModel: any, noteAccess: any, overrides: Record<string
     overrides.audit || { record: async () => undefined } as any,
     overrides.users || { findById: async () => null } as any,
     overrides.noteRecommendations,
+    overrides.noteDerived,
   )
 }
 
@@ -121,4 +122,68 @@ test('NotesService.update invalidates cached note lists after a successful write
   await service.update(noteId, { title: 'new' }, userId)
 
   assert.equal(invalidations, 1)
+})
+
+test('NotesService.update does not schedule derived work when autosave repeats the same values', async () => {
+  let schedules = 0
+  const original = {
+    _id: noteId,
+    title: 'same',
+    content: 'body',
+    categoryId: null,
+    tags: [],
+  }
+  const noteModel = {
+    findOne: () => execResult(original),
+    findOneAndUpdate: (_query: any, payload: any) => updateChain({ ...original, ...payload }),
+  }
+  const service = createService(noteModel, {
+    writeScope: () => ({ _id: noteId, permission: 'write' }),
+    ownerScope: () => ({ _id: noteId, permission: 'owner' }),
+  }, {
+    tagsService: { assertOwnedIds: async () => undefined },
+    noteDerived: {
+      buildFallbackSummary: () => 'fallback',
+      schedule: () => { schedules++ },
+    },
+  })
+
+  await service.update(noteId, { title: 'same', content: 'body', tags: [] }, userId)
+
+  assert.equal(schedules, 0)
+})
+
+test('NotesService.update schedules one derived task describing actual input changes', async () => {
+  const schedules: any[] = []
+  const original = {
+    _id: noteId,
+    title: 'old',
+    content: 'body',
+    categoryId: null,
+    tags: [],
+  }
+  const updatedAt = new Date('2026-08-26T09:00:00.000Z')
+  const noteModel = {
+    findOne: () => execResult(original),
+    findOneAndUpdate: (_query: any, payload: any) => updateChain({ ...original, ...payload, updatedAt }),
+  }
+  const service = createService(noteModel, {
+    writeScope: () => ({ _id: noteId, permission: 'write' }),
+    ownerScope: () => ({ _id: noteId, permission: 'owner' }),
+  }, {
+    noteDerived: {
+      buildFallbackSummary: () => 'fallback',
+      schedule: (note: any, changes: any) => schedules.push({ note, changes }),
+    },
+  })
+
+  await service.update(noteId, { title: 'new' }, userId)
+
+  assert.equal(schedules.length, 1)
+  assert.deepEqual(schedules[0].changes, {
+    titleChanged: true,
+    contentChanged: false,
+    taxonomyChanged: false,
+  })
+  assert.equal(schedules[0].note.updatedAt, updatedAt)
 })

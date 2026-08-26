@@ -69,6 +69,19 @@ export class TagsService {
     await assertOwnedByUser(ids, userId, this.tagModel, '标签')
   }
 
+  async findOwnedNames(ids: string[], userId: string): Promise<string[]> {
+    if (!ids.length) return []
+    const tags = await this.tagModel
+      .find({
+        _id: { $in: ids.map((id) => new Types.ObjectId(id)) },
+        userId: new Types.ObjectId(userId),
+      })
+      .select('name')
+      .lean()
+      .exec()
+    return [...new Set(tags.map((tag) => tag.name.trim()).filter(Boolean))].sort()
+  }
+
   async update(id: string, updateTagDto: UpdateTagDto, userId: string): Promise<Tag> {
     // 重命名时排除自身，同时仍把唯一性限制在当前用户空间内。
     if (updateTagDto.name) {
