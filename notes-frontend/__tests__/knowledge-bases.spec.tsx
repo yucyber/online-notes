@@ -26,6 +26,10 @@ jest.mock('react-hot-toast', () => ({
   toast: mockToast,
 }))
 
+jest.mock('@/components/knowledge-bases/KnowledgeGraphCanvas', () => ({
+  KnowledgeGraphCanvas: ({ graph }: { graph: typeof graphProposal }) => <div data-testid="knowledge-graph-canvas">{graph.nodes.map((node) => <span key={node.id}>{node.label}</span>)}{graph.edges.map((edge) => <span key={edge.id}>{edge.relation}</span>)}</div>,
+}))
+
 const kb = {
   id: 'kb-1',
   name: 'AI Research',
@@ -94,6 +98,7 @@ describe('knowledge base frontend entry', () => {
     render(<KnowledgeBasesPage />)
 
     expect((await screen.findAllByText('AI Research')).length).toBeGreaterThan(0)
+    fireEvent.click(await screen.findByRole('button', { name: /笔记 1/ }))
     expect(await screen.findByText('Transformer Notes')).toBeInTheDocument()
 
     fireEvent.click(screen.getByLabelText('从知识库移除 Transformer Notes'))
@@ -143,7 +148,8 @@ describe('knowledge base frontend entry', () => {
 
     render(<KnowledgeBasesPage />)
 
-    expect(await screen.findByText('Transformer Notes')).toBeInTheDocument()
+    expect((await screen.findAllByText('AI Research')).length).toBeGreaterThan(0)
+    await screen.findByRole('button', { name: /笔记 1/ })
 
     fireEvent.click(screen.getByTestId('build-graph-proposal'))
 
@@ -153,7 +159,8 @@ describe('knowledge base frontend entry', () => {
     expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
     expect(screen.getAllByText('Graphs').length).toBeGreaterThan(0)
     expect(screen.getByText('supports')).toBeInTheDocument()
-    expect(screen.getByText('Low evidence edge kept for review.')).toBeInTheDocument()
+    fireEvent.click(screen.getByRole('button', { name: /Low evidence edge kept for review/ }))
+    expect(screen.getAllByText('Low evidence edge kept for review.').length).toBeGreaterThan(0)
   })
 
   test('saves a generated graph proposal to the selected knowledge base', async () => {
@@ -161,7 +168,8 @@ describe('knowledge base frontend entry', () => {
 
     render(<KnowledgeBasesPage />)
 
-    expect(await screen.findByText('Transformer Notes')).toBeInTheDocument()
+    expect((await screen.findAllByText('AI Research')).length).toBeGreaterThan(0)
+    await screen.findByRole('button', { name: /笔记 1/ })
     fireEvent.click(screen.getByTestId('build-graph-proposal'))
     expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
 
@@ -173,7 +181,7 @@ describe('knowledge base frontend entry', () => {
         edges: graphProposal.edges,
       })
     })
-    expect(await screen.findByText('已保存图谱')).toBeInTheDocument()
+    expect(await screen.findByText(/已保存图谱/)).toBeInTheDocument()
   })
 
   test('shows empty states when no knowledge base exists', async () => {

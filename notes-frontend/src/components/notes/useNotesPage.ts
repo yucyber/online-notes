@@ -18,6 +18,11 @@ import { extractId, parseNotesPagination } from './notes-page-utils'
 import { buildNotesQueryParams } from './useNotesQuery'
 import { removeNoteById, toggleIdInSet } from './useNotesBulkActions'
 import { buildNotesCacheKey } from '@/lib/api/notes'
+import type { SemanticChunkHit } from '@/lib/api/semantic'
+
+export type NoteWithSearchEvidence = Note & {
+  searchEvidence?: { bestChunk?: SemanticChunkHit; additionalChunkHits: number; additionalChunks: SemanticChunkHit[] }
+}
 
 export function useNotesPage() {
   const searchParams = useSearchParams()
@@ -26,7 +31,7 @@ export function useNotesPage() {
   const selectionKnowledgeBaseId = searchParams.get('select') === 'knowledge-base'
     ? searchParams.get('knowledgeBaseId') || ''
     : ''
-  const [notes, setNotes] = useState<Note[]>([])
+  const [notes, setNotes] = useState<NoteWithSearchEvidence[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const [fallbackMsg, setFallbackMsg] = useState('')
@@ -89,6 +94,11 @@ export function useNotesPage() {
             updatedAt: it.updatedAt,
             tags: [],
             status: 'published',
+            searchEvidence: {
+              bestChunk: it.bestChunk,
+              additionalChunkHits: Number(it.additionalChunkHits || 0),
+              additionalChunks: Array.isArray(it.additionalChunks) ? it.additionalChunks : [],
+            },
           })) as any
           const seen = new Set<string>()
           const unique = mapped.filter((n: any) => {

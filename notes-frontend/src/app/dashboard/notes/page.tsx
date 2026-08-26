@@ -160,6 +160,7 @@ function NotesPageContent() {
                   resolveTagId={resolveTagId}
                   resolveTagLabel={resolveTagLabel}
                   currentUserId={currentUserId}
+                  searchQuery={searchParams.get('keyword') || undefined}
                 />
               ))}
             </div>

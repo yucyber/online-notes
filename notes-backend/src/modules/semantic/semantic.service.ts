@@ -28,6 +28,7 @@ export type SemanticItem = {
   updatedAt: string
   bestChunk?: SemanticChunkHit
   additionalChunkHits?: number
+  additionalChunks?: SemanticChunkHit[]
 }
 export type SemanticPage = { page: number; limit: number; total: number; totalPages: number; hasNext: boolean; data: SemanticItem[] }
 
@@ -131,6 +132,7 @@ export class SemanticService {
           additionalChunkHits: source === 'vector'
             ? item.additionalChunkHits
             : previous?.additionalChunkHits,
+          additionalChunks: source === 'vector' ? item.additionalChunks : previous?.additionalChunks,
           fusionScore,
         })
       })
@@ -194,6 +196,13 @@ export class SemanticService {
           matchType: 'semantic' as const,
         },
         additionalChunkHits: Math.max(0, noteHits.length - 1),
+        additionalChunks: noteHits.slice(1, 4).map((hit) => ({
+          chunkId: hit.chunkId,
+          headingPath: hit.headingPath,
+          content: hit.content,
+          score: hit.score,
+          matchType: 'semantic' as const,
+        })),
       }
     }).sort((left, right) => right.score - left.score)
     const total = ranked.length

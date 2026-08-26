@@ -33,7 +33,7 @@ export function KnowledgeBaseNotesPanel(props: {
     removingNoteId,
     graphProposal,
     visibleGraph,
-    graphNodeLabels,
+    graphNodeLabels: _graphNodeLabels,
     buildingGraph,
     loadingGraph,
     savingGraph,
@@ -62,10 +62,9 @@ export function KnowledgeBaseNotesPanel(props: {
       <CardContent className="pt-6">
         {selectedId && (
           <KnowledgeGraphPanel
-            linksCount={links.length}
+            links={links}
             graphProposal={graphProposal}
             visibleGraph={visibleGraph}
-            graphNodeLabels={graphNodeLabels}
             buildingGraph={buildingGraph}
             loadingLinks={loadingLinks}
             loadingGraph={loadingGraph}

@@ -47,6 +47,9 @@ test('Chunk 搜索按 noteId 聚合并返回最佳片段和额外命中数', asy
     matchType: 'semantic',
   })
   assert.equal(page.data[0].additionalChunkHits, 1)
+  assert.deepEqual(page.data[0].additionalChunks, [{
+    chunkId: 'chunk-2', headingPath: ['React', '坑'], content: '另一个证据', score: 0.8, matchType: 'semantic',
+  }])
 })
 
 test('hybrid 合并关键词与 Chunk 候选且同一笔记只返回一次', async () => {

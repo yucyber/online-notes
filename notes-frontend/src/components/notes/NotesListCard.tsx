@@ -2,14 +2,15 @@
 
 import Link from 'next/link'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
-import type { Note } from '@/types'
 import { formatDate } from '@/utils'
 import { getCategoryLabel } from './notes-page-utils'
 import { canWriteNote } from '@/components/editor/note-permissions'
 import { NoteHoverPreview } from './NoteHoverPreview'
+import { SearchHitEvidence } from './SearchHitEvidence'
+import type { NoteWithSearchEvidence } from './useNotesPage'
 
 type NotesListCardProps = {
-  note: Note
+  note: NoteWithSearchEvidence
   index: number
   categoryMap: Record<string, string>
   isSelectionMode: boolean
@@ -19,6 +20,7 @@ type NotesListCardProps = {
   resolveTagId: (tag: string | { id?: string; _id?: string }) => string
   resolveTagLabel: (tag: string | { name?: string; id?: string; _id?: string }) => string
   currentUserId: string
+  searchQuery?: string
 }
 
 export function NotesListCard({
@@ -32,6 +34,7 @@ export function NotesListCard({
   resolveTagId,
   resolveTagLabel,
   currentUserId,
+  searchQuery,
 }: NotesListCardProps) {
   const categoryLabel = getCategoryLabel(note, categoryMap)
   const writable = canWriteNote(note, currentUserId)
@@ -125,6 +128,8 @@ export function NotesListCard({
           )}
         </div>
       </div>
+
+      {note.searchEvidence?.bestChunk ? <SearchHitEvidence noteId={note.id} hit={note.searchEvidence.bestChunk} additionalCount={note.searchEvidence.additionalChunkHits} additionalHits={note.searchEvidence.additionalChunks} query={searchQuery} /> : null}
 
       <NoteHoverPreview
         note={note}

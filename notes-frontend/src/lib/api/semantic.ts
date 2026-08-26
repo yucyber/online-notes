@@ -9,6 +9,16 @@ export type SemanticSearchItem = {
   score: number
   updatedAt: string
   matchedSegments?: Array<{ text: string; start?: number; end?: number }>
+  bestChunk?: SemanticChunkHit
+  additionalChunkHits?: number
+  additionalChunks?: SemanticChunkHit[]
+}
+export type SemanticChunkHit = {
+  chunkId: string
+  headingPath: string[]
+  content: string
+  score: number
+  matchType: 'keyword' | 'semantic'
 }
 export type SemanticSearchPage = {
   page: number
