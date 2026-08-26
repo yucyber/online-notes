@@ -5,6 +5,9 @@ import { EmbeddingService } from '../semantic/embedding.service'
 import { AiService } from '../ai/ai.service'
 import { NoteCacheService } from './note-cache.service'
 import { Note, NoteDocument } from './schemas/note.schema'
+import { NoteVectorSourceService } from './note-vector-source.service'
+
+const TOPIC_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-8B'
 
 @Injectable()
 export class NoteDerivedService {
@@ -13,6 +16,7 @@ export class NoteDerivedService {
     private readonly embeddingService: EmbeddingService,
     private readonly aiService: AiService,
     private readonly noteCache: NoteCacheService,
+    private readonly vectorSource: NoteVectorSourceService = new NoteVectorSourceService(),
   ) {}
 
   buildFallbackSummary(content: string) {
@@ -72,5 +76,23 @@ export class NoteDerivedService {
     } catch (error) {
       console.error(`Failed to update embedding for note ${note._id}:`, error)
     }
+  }
+
+  async updateTopicEmbedding(note: NoteDocument, source: string): Promise<void> {
+    const embedding = await this.embeddingService.generateEmbedding(source)
+    if (!embedding?.length) return
+
+    await this.noteModel.updateOne(
+      { _id: note._id },
+      {
+        $set: {
+          embedding,
+          embeddingSourceHash: this.vectorSource.hashTopicVectorSource(source),
+          embeddingModel: TOPIC_EMBEDDING_MODEL,
+          embeddingUpdatedAt: new Date(),
+        },
+      },
+      { timestamps: false },
+    ).exec()
   }
 }

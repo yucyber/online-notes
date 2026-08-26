@@ -44,6 +44,15 @@ export class Note {
 
   @Prop({ type: [Number], index: true })
   embedding?: number[];
+
+  @Prop()
+  embeddingSourceHash?: string;
+
+  @Prop()
+  embeddingModel?: string;
+
+  @Prop({ type: Date })
+  embeddingUpdatedAt?: Date;
 }
 
 export const NoteSchema = SchemaFactory.createForClass(Note);
