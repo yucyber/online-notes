@@ -1,4 +1,4 @@
-import { Injectable, Inject, Logger } from '@nestjs/common'
+import { Injectable, Inject, Logger, Optional } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import Redis from 'ioredis'
@@ -8,11 +8,27 @@ import { REDIS_CLIENT } from '../../common/redis/redis.constants'
 import { EmbeddingService } from './embedding.service'
 import { TagsService } from '../tags/tags.service'
 import { AiService } from '../ai/ai.service'
+import { ChunkRetrievalService, ChunkSearchResult } from './chunk-retrieval.service'
 
 // Explicitly reference the type definition to ensure ts-node picks it up
 /// <reference path="../../types/ml-kmeans.d.ts" />
 
-export type SemanticItem = { id: string; title: string; preview: string; score: number; updatedAt: string }
+export type SemanticChunkHit = {
+  chunkId: string
+  headingPath: string[]
+  content: string
+  score: number
+  matchType: 'keyword' | 'semantic'
+}
+export type SemanticItem = {
+  id: string
+  title: string
+  preview: string
+  score: number
+  updatedAt: string
+  bestChunk?: SemanticChunkHit
+  additionalChunkHits?: number
+}
 export type SemanticPage = { page: number; limit: number; total: number; totalPages: number; hasNext: boolean; data: SemanticItem[] }
 
 export type SemanticSearchOpts = {
@@ -34,9 +50,12 @@ export class SemanticService {
     private readonly tagsService: TagsService,
     private readonly noteAccess: NoteAccessService,
     @Inject(REDIS_CLIENT) private readonly redis: Redis,
+    @Optional() private readonly chunkRetrieval?: ChunkRetrievalService,
   ) { }
 
   async searchVector(query: string, userId: string, opts: SemanticSearchOpts = {}): Promise<SemanticPage> {
+    if (this.chunkRetrieval) return this.searchChunkVector(query, userId, opts)
+
     const page = Math.max(1, Number(opts.page || 1))
     const limit = Math.max(1, Math.min(100, Number(opts.limit || 10)))
     const vector = await this.embeddingService.generateEmbedding(query);
@@ -86,6 +105,100 @@ export class SemanticService {
     const total = mapped.length
     const start = (page - 1) * limit
     const data = mapped.slice(start, start + limit)
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    return { page, limit, total, totalPages, hasNext: page < totalPages, data }
+  }
+
+  async searchHybrid(query: string, userId: string, opts: SemanticSearchOpts = {}): Promise<SemanticPage> {
+    if (!this.chunkRetrieval) return this.searchVector(query, userId, opts)
+    const page = Math.max(1, Number(opts.page || 1))
+    const limit = Math.max(1, Math.min(100, Number(opts.limit || 10)))
+    const candidateLimit = Math.min(100, Math.max(20, page * limit * 5))
+    const [keywordPage, vectorPage] = await Promise.all([
+      this.search(query, userId, { ...opts, mode: 'keyword', page: 1, limit: candidateLimit }),
+      this.searchChunkVector(query, userId, { ...opts, mode: 'vector', page: 1, limit: candidateLimit }),
+    ])
+    const merged = new Map<string, SemanticItem & { fusionScore: number }>()
+
+    const addRanked = (items: SemanticItem[], source: 'keyword' | 'vector') => {
+      items.forEach((item, index) => {
+        const previous = merged.get(item.id)
+        const fusionScore = (previous?.fusionScore || 0) + 1 / (60 + index + 1)
+        merged.set(item.id, {
+          ...(previous || item),
+          ...item,
+          bestChunk: source === 'vector' ? item.bestChunk : previous?.bestChunk,
+          additionalChunkHits: source === 'vector'
+            ? item.additionalChunkHits
+            : previous?.additionalChunkHits,
+          fusionScore,
+        })
+      })
+    }
+    addRanked(keywordPage.data, 'keyword')
+    addRanked(vectorPage.data, 'vector')
+
+    const ranked = [...merged.values()]
+      .sort((left, right) => right.fusionScore - left.fusionScore)
+      .map(({ fusionScore, ...item }) => ({ ...item, score: fusionScore }))
+    const total = ranked.length
+    const start = (page - 1) * limit
+    const data = ranked.slice(start, start + limit)
+    const totalPages = Math.max(1, Math.ceil(total / limit))
+    return { page, limit, total, totalPages, hasNext: page < totalPages, data }
+  }
+
+  private async searchChunkVector(query: string, userId: string, opts: SemanticSearchOpts): Promise<SemanticPage> {
+    const page = Math.max(1, Number(opts.page || 1))
+    const limit = Math.max(1, Math.min(100, Number(opts.limit || 10)))
+    const eligibleAnd: any[] = [this.noteAccess.readableFilter(userId)]
+    if (opts.categoryId) eligibleAnd.push({ categoryId: opts.categoryId })
+    if (opts.tagIds?.length) eligibleAnd.push({ tags: { $all: opts.tagIds } })
+    const eligible = await this.noteModel.find({ $and: eligibleAnd }).select('_id').lean().exec()
+    const eligibleIds = eligible.map((note: any) => String(note._id))
+    if (!eligibleIds.length) return { page, limit, total: 0, totalPages: 1, hasNext: false, data: [] }
+
+    const hits = await this.chunkRetrieval!.searchChunks({
+      query,
+      noteIds: eligibleIds,
+      limit: Math.min(200, Math.max(20, page * limit * 5)),
+    }, userId)
+    const grouped = new Map<string, ChunkSearchResult[]>()
+    for (const hit of hits) {
+      const group = grouped.get(hit.noteId) || []
+      group.push(hit)
+      grouped.set(hit.noteId, group)
+    }
+    const noteIds = [...grouped.keys()]
+    const notes = await this.noteModel
+      .find({ _id: { $in: noteIds } })
+      .select('_id title content updatedAt')
+      .lean()
+      .exec()
+    const byId = new Map(notes.map((note: any) => [String(note._id), note]))
+    const ranked: SemanticItem[] = noteIds.map((noteId) => {
+      const note: any = byId.get(noteId)
+      const noteHits = grouped.get(noteId)!.sort((left, right) => right.score - left.score)
+      const best = noteHits[0]
+      return {
+        id: noteId,
+        title: String(note?.title || best.title || ''),
+        preview: String(note?.content || best.content || '').slice(0, 220),
+        score: best.score,
+        updatedAt: String(note?.updatedAt || ''),
+        bestChunk: {
+          chunkId: best.chunkId,
+          headingPath: best.headingPath,
+          content: best.content,
+          score: best.score,
+          matchType: 'semantic' as const,
+        },
+        additionalChunkHits: Math.max(0, noteHits.length - 1),
+      }
+    }).sort((left, right) => right.score - left.score)
+    const total = ranked.length
+    const start = (page - 1) * limit
+    const data = ranked.slice(start, start + limit)
     const totalPages = Math.max(1, Math.ceil(total / limit))
     return { page, limit, total, totalPages, hasNext: page < totalPages, data }
   }

@@ -61,7 +61,9 @@ export class SemanticController {
 
     if (mode === 'vector' || mode === 'hybrid') {
       try {
-        const results = await this.semantic.searchVector(String(q || ''), userId, baseOpts);
+        const results = mode === 'hybrid'
+          ? await this.semantic.searchHybrid(String(q || ''), userId, baseOpts)
+          : await this.semantic.searchVector(String(q || ''), userId, baseOpts);
 
         if (results.data.length > 0) {
           return results
