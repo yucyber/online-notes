@@ -9,7 +9,8 @@
     "dev": "nodemon",
     "start:prod": "node dist/main.js",
     "test:unit": "node scripts/run-unit-tests.mjs",
-    "cleanup:pre-july-2026": "node -r ts-node/register -r ./scripts/set-dns.ts scripts/cleanup-pre-july-2026.ts"
+    "cleanup:pre-july-2026": "node -r ts-node/register -r ./scripts/set-dns.ts scripts/cleanup-pre-july-2026.ts",
+    "backfill:note-vectors": "node -r ts-node/register -r ./scripts/set-dns.ts scripts/backfill-note-vectors.ts"
   },
   "dependencies": {
     "@nestjs/common": "^10.3.0",

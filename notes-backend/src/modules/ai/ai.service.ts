@@ -68,15 +68,15 @@ export class AiService {
   }
 
   // 单个 AI 摘要调用，失败时抛出由外层统一降级，这里不吞异常。
-  // maxTokens 是推理模型 thinking+content 的共享预算，给足 2000 避免思考过程耗尽正文；
-  // 若仍因 length 溢出导致正文为空，让 gateway 以更高预算重试一次。
+  // SenseNova text 路由当前模型仍会产生 reasoning；8000 初始预算加一次 16000 重试，
+  // 避免实测中 4000/8000 两档都被 reasoning 耗尽而没有 summary 正文。
   private async summarizeChunk(text: string, targetChars: number): Promise<string> {
     return this.gateway.chat({
       route: 'text',
       system: 'You summarize notes for a knowledge management app. Return only the summary.',
       prompt: `Summarize the following note in Chinese within ${targetChars} Chinese characters. Keep the core facts and avoid prefaces.\n\n${text}`,
-      maxTokens: 2000,
-      temperature: 0.7,
+      maxTokens: 8000,
+      temperature: 0.2,
       retryOnLengthOverflow: true,
     })
   }

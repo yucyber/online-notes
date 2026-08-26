@@ -77,7 +77,7 @@ export class AiGatewayClient {
   // 重试预算在原值基础上翻倍，但不超过一个安全上限，避免单次摘要请求无界放大成本。
   private retryMaxTokens(original?: number): number {
     const base = original ?? 1024
-    return Math.min(Math.max(base * 2, 2048), 8000)
+    return Math.min(Math.max(base * 2, 2048), 16000)
   }
 
   // 兼容不同厂商的非标准返回结构：优先 OpenAI choices，其次顶层 content/result 等字段。
@@ -254,16 +254,27 @@ export class AiGatewayClient {
 
   private async postJson(url: string, apiKey: string, body: any, label: string) {
     const retryableStatuses = new Set([429, 502, 503, 504])
+    const timeoutMs = Math.max(1000, Number(this.configService.get<string>('AI_REQUEST_TIMEOUT_MS') || 120_000))
 
     for (let attempt = 0; attempt <= 2; attempt += 1) {
-      const response = await this.fetchImpl(url, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify(body),
-      })
+      let response: any
+      try {
+        response = await this.fetchImpl(url, {
+          method: 'POST',
+          headers: {
+            Authorization: `Bearer ${apiKey}`,
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify(body),
+          signal: AbortSignal.timeout(timeoutMs),
+        })
+      } catch (error: any) {
+        if (attempt < 2) {
+          await this.sleep(500 * (2 ** attempt))
+          continue
+        }
+        throw new HttpException(`${label} request failed: ${error?.name || 'network error'}`, HttpStatus.SERVICE_UNAVAILABLE)
+      }
 
       if (response.ok) return response
 

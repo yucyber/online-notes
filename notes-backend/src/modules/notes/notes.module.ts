@@ -13,6 +13,7 @@ import { NoteVectorSourceService } from './note-vector-source.service';
 import { NoteChunk, NoteChunkSchema } from './schemas/note-chunk.schema';
 import { NoteChunkerService } from './note-chunker.service';
 import { NoteChunkIndexService } from './note-chunk-index.service';
+import { NoteVectorBackfillRunner } from './note-vector-backfill.runner';
 import { Note, NoteSchema } from './schemas/note.schema';
 import { CategoriesModule } from '../categories/categories.module';
 import { TagsModule } from '../tags/tags.module';
@@ -44,7 +45,7 @@ import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
     }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService],
-  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService],
+  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService, NoteVectorBackfillRunner],
+  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteVectorBackfillRunner],
 })
 export class NotesModule { }

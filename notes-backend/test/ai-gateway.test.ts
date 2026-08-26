@@ -380,9 +380,11 @@ test('AiService skips AI for short content and returns it directly', async () =>
 
 test('AiService uses dynamic target length for medium content (40% of length)', async () => {
   const calls: string[] = []
+  const optionsSeen: any[] = []
   const gateway = {
     chat: async (options: any) => {
       calls.push(options.prompt)
+      optionsSeen.push(options)
       return 'AI summary'
     },
   }
@@ -396,6 +398,26 @@ test('AiService uses dynamic target length for medium content (40% of length)', 
 
   assert.equal(calls.length, 1)
   assert.match(calls[0], /within 62 Chinese characters/)
+  assert.equal(optionsSeen[0].maxTokens, 8000)
+  assert.equal(optionsSeen[0].temperature, 0.2)
+})
+
+test('AiGatewayClient 为外部请求设置超时并重试瞬时网络错误', async () => {
+  const signals: any[] = []
+  let attempts = 0
+  const fetchImpl = async (_url: any, init: any) => {
+    signals.push(init.signal)
+    attempts++
+    if (attempts === 1) throw new TypeError('fetch failed')
+    return jsonResponse({ choices: [{ message: { content: 'recovered' } }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_REQUEST_TIMEOUT_MS: '120000' }) as any, fetchImpl as any)
+
+  const result = await client.chat({ route: 'text', prompt: 'hello' })
+
+  assert.equal(result, 'recovered')
+  assert.equal(attempts, 2)
+  assert.ok(signals.every((signal) => signal instanceof AbortSignal))
 })
 
 test('AiService caps summary target at 120 for long content', async () => {
