@@ -9,10 +9,11 @@ import type { KnowledgeBase } from '@/types'
 
 type AddToKnowledgeBasePanelProps = {
   noteIds: string[]
+  preferredKnowledgeBaseId?: string
   onAdded?: () => void
 }
 
-export function AddToKnowledgeBasePanel({ noteIds, onAdded }: AddToKnowledgeBasePanelProps) {
+export function AddToKnowledgeBasePanel({ noteIds, preferredKnowledgeBaseId, onAdded }: AddToKnowledgeBasePanelProps) {
   const [knowledgeBases, setKnowledgeBases] = useState<KnowledgeBase[]>([])
   const [selectedKnowledgeBaseId, setSelectedKnowledgeBaseId] = useState('')
   const [loading, setLoading] = useState(true)
@@ -30,7 +31,13 @@ export function AddToKnowledgeBasePanel({ noteIds, onAdded }: AddToKnowledgeBase
         const data = await knowledgeBasesAPI.getAll()
         if (!mounted) return
         setKnowledgeBases(data)
-        setSelectedKnowledgeBaseId((current) => current || data[0]?.id || '')
+        setSelectedKnowledgeBaseId((current) => {
+          if (current && data.some((item) => item.id === current)) return current
+          if (preferredKnowledgeBaseId && data.some((item) => item.id === preferredKnowledgeBaseId)) {
+            return preferredKnowledgeBaseId
+          }
+          return data[0]?.id || ''
+        })
       } catch (err) {
         console.error('Failed to load knowledge bases', err)
         if (mounted) setError('知识库加载失败')
@@ -42,7 +49,7 @@ export function AddToKnowledgeBasePanel({ noteIds, onAdded }: AddToKnowledgeBase
     return () => {
       mounted = false
     }
-  }, [])
+  }, [preferredKnowledgeBaseId])
 
   const handleAdd = async () => {
     if (!selectedKnowledgeBaseId || uniqueNoteIds.length === 0) return

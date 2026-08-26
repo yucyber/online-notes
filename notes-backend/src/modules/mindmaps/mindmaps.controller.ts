@@ -8,7 +8,7 @@ export class MindmapsController {
   constructor(private readonly svc: MindmapsService) { }
 
   @Post()
-  async create(@Req() req: any, @Body() payload: { title: string; noteId?: string; content?: any; _id?: string }) {
+  async create(@Req() req: any, @Body() payload: { title: string; noteId: string; content?: any; _id?: string }) {
     return await this.svc.create({
       title: String(payload.title || ''),
       noteId: payload.noteId,
@@ -24,7 +24,7 @@ export class MindmapsController {
   }
 
   @Put(':id')
-  async update(@Param('id') id: string, @Req() req: any, @Body() payload: { content?: any }) {
+  async update(@Param('id') id: string, @Req() req: any, @Body() payload: { title?: string; content?: any }) {
     return await this.svc.update(id, req.user.id, payload)
   }
 }

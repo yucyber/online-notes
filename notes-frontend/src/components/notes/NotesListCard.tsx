@@ -39,31 +39,38 @@ export function NotesListCard({
   return (
     <div
       key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${index}`}
-      className={`prototype-note-row notes-list-item group ${isSelectionMode && selectedNoteIds.has(note.id) ? 'is-selected' : ''}`}
+      className={`prototype-note-row notes-list-item group ${isSelectionMode ? 'grid-cols-[32px_minmax(0,1fr)] gap-1' : ''} ${isSelectionMode && selectedNoteIds.has(note.id) ? 'is-selected' : ''}`}
     >
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {isSelectionMode && (
-          <>
-            <div
-              role="button"
-              tabIndex={0}
-              className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
-              onClick={(e) => {
-                e.stopPropagation()
-                onToggleSelection(note.id)
-              }}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleSelection(note.id) } }}
-            />
-            <div className="absolute top-3 left-3 z-20 pointer-events-none">
-              <div
-                className={`w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${selectedNoteIds.has(note.id) ? 'bg-blue-500 border-blue-500' : 'border-gray-300 bg-white/80'}`}
-              >
-                {selectedNoteIds.has(note.id) && <PrototypeGlyph name="tasks" className="w-3.5 h-3.5 text-white" />}
-              </div>
-            </div>
-          </>
+          <div
+            role="button"
+            tabIndex={0}
+            className="absolute inset-0 z-10 cursor-pointer pointer-events-auto"
+            onClick={(e) => {
+              e.stopPropagation()
+              onToggleSelection(note.id)
+            }}
+            onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onToggleSelection(note.id) } }}
+          />
         )}
       </div>
+
+      {isSelectionMode && (
+        <button
+          type="button"
+          aria-label={`${selectedNoteIds.has(note.id) ? '取消选择' : '选择'} ${note.title || '无标题'}`}
+          aria-pressed={selectedNoteIds.has(note.id)}
+          className="relative z-20 grid h-8 w-8 place-items-center self-center rounded-full"
+          onClick={() => onToggleSelection(note.id)}
+        >
+          <span
+            className={`flex h-5 w-5 items-center justify-center rounded-full border-2 transition-colors ${selectedNoteIds.has(note.id) ? 'border-blue-500 bg-blue-500' : 'border-gray-300 bg-white/80'}`}
+          >
+            {selectedNoteIds.has(note.id) && <PrototypeGlyph name="tasks" className="h-3.5 w-3.5 text-white" />}
+          </span>
+        </button>
+      )}
 
       <div className="prototype-note-main">
         <div className="flex-1 min-w-0 overflow-hidden">

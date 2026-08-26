@@ -90,11 +90,13 @@ export class KnowledgeGraphBuildGraph {
     }
 
     const answer = await this.gateway.chat({
-      route: 'reasoning',
+      route: 'text',
       system: 'You extract knowledge graph proposals for a notes knowledge base. Return JSON only.',
       prompt: this.buildPrompt(knowledgeBaseId, notes),
       maxTokens: 2400,
       temperature: 0.2,
+      reasoningEffort: 'none',
+      responseFormat: { type: 'json_object' },
     })
 
     return this.normalizeProposal(knowledgeBaseId, notes, parseJsonObject(answer))

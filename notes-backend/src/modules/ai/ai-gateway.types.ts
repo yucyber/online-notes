@@ -6,6 +6,11 @@ export interface AiChatOptions {
   prompt: string
   temperature?: number
   maxTokens?: number
+  reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
+  responseFormat?: { type: 'json_object' }
+  // 允许 content 为空且 finish_reason=length 时，以更高的 maxTokens 有限重试一次。
+  // 用于推理型模型：默认小预算可能被思考过程耗尽导致正文为空。
+  retryOnLengthOverflow?: boolean
 }
 
 export interface AiProviderConfig {

@@ -1,11 +1,12 @@
 "use client"
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { useParams, useRouter } from 'next/navigation'
 import { mindmapsAPI } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import dynamic from 'next/dynamic'
 import { useAI } from '@/context/AIContext'
 import { getAIMindMapData } from '@/lib/ai-client'
+import { appToast } from '@/lib/app-toast'
 
 const MindElixirMap = dynamic(() => import('@/components/mindmap/MindElixirMap'), { ssr: false })
 
@@ -13,7 +14,7 @@ export default function MindmapDetailPage() {
   const params = useParams()
   const router = useRouter()
   const id = params?.id as string
-  const [map, setMap] = useState<{ id: string; title: string; content?: any } | null>(null)
+  const [map, setMap] = useState<{ id: string; title: string; content?: any; noteId: string; noteTitle: string } | null>(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const { setMindMapData, setIsAILoading, isAILoading } = useAI()
@@ -34,17 +35,7 @@ export default function MindmapDetailPage() {
       } catch (e: any) {
         const status = e.response?.status
         if (status === 404) {
-          try {
-            const newMap = await mindmapsAPI.create({ _id: id, title: '未命名思维导图' })
-            setMap(newMap)
-            setError('')
-          } catch (createError: any) {
-            if (createError.response?.status === 409) {
-              setError('思维导图已存在或无权限访问')
-            } else {
-              setError('创建思维导图失败')
-            }
-          }
+          setError('思维导图不存在')
         } else if (status === 401 || status === 403) {
           setError('无权限访问该思维导图')
         } else {
@@ -57,6 +48,47 @@ export default function MindmapDetailPage() {
     if (id) load()
   }, [id])
 
+  const handleRename = useCallback(async (value: string) => {
+    const title = value.trim()
+    if (!title) {
+      appToast.error({ id: 'mindmap:rename', title: '名称不能为空' })
+      throw new Error('Mindmap title is required')
+    }
+    try {
+      const updated = await mindmapsAPI.update(id, { title })
+      setMap((current) => current ? { ...current, title: updated?.title || title } : current)
+      appToast.success({ id: 'mindmap:rename', title: '名称已更新' })
+    } catch (error) {
+      appToast.error({ id: 'mindmap:rename', title: '重命名失败', message: '请稍后重试。' })
+      throw error
+    }
+  }, [id])
+
+  useEffect(() => {
+    if (!map?.noteId) return
+    // DashboardHeader 位于当前页面外层，通过事件同步业务面包屑，卸载时恢复 URL 默认面包屑。
+    const detail = {
+      items: [
+        { label: '我的笔记', href: '/dashboard/notes' },
+        { label: map.noteTitle, href: `/dashboard/notes/${map.noteId}` },
+        { label: map.title },
+      ],
+      onRename: handleRename,
+    }
+    document.dispatchEvent(new CustomEvent('dashboard:breadcrumbs', { detail }))
+    return () => {
+      document.dispatchEvent(new CustomEvent('dashboard:breadcrumbs', { detail: null }))
+    }
+  }, [handleRename, map?.noteId, map?.noteTitle, map?.title])
+
+  const handleBack = () => {
+    if (window.opener) {
+      window.close()
+      return
+    }
+    router.push(map?.noteId ? `/dashboard/notes/${map.noteId}` : '/dashboard/notes')
+  }
+
   const handleAIGenerate = async () => {
     if (!prompt) return;
     try {
@@ -64,7 +96,11 @@ export default function MindmapDetailPage() {
       const data = await getAIMindMapData(prompt);
       setMindMapData(data);
     } catch {
-      alert('AI 生成失败，请检查配置或重试');
+      appToast.error({
+        id: 'mindmap:ai-generate',
+        title: 'AI 生成失败',
+        message: '模型服务暂时不可用，请稍后重试。',
+      })
     } finally {
       setIsAILoading(false);
     }
@@ -81,7 +117,11 @@ export default function MindmapDetailPage() {
       }, '*')
       // Optional: window.close()
     } else {
-      alert('无法找到来源页面，请手动复制链接')
+      appToast.error({
+        id: 'mindmap:insert',
+        title: '无法插入到笔记',
+        message: '未找到来源页面，请手动复制链接。',
+      })
     }
   }
 
@@ -93,7 +133,7 @@ export default function MindmapDetailPage() {
     <div className="flex flex-col h-[calc(100vh-64px)]">
       <div className="flex items-center justify-between p-4 border-b bg-white">
         <div className="flex items-center gap-4">
-          <Button variant="ghost" onClick={() => router.back()}>返回</Button>
+          <Button variant="ghost" onClick={handleBack}>返回</Button>
           <h1 className="text-lg font-semibold">{map.title}</h1>
         </div>
         <div className="flex items-center gap-2">

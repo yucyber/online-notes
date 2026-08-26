@@ -27,6 +27,7 @@ function NotesPageContent() {
     page,
     size,
     total,
+    selectionKnowledgeBaseId,
     isSelectionMode,
     selectedNoteIds,
     setSelectedNoteIds,
@@ -101,6 +102,7 @@ function NotesPageContent() {
                 <>
                   <AddToKnowledgeBasePanel
                     noteIds={Array.from(selectedNoteIds)}
+                    preferredKnowledgeBaseId={selectionKnowledgeBaseId}
                     onAdded={() => setSelectedNoteIds(new Set())}
                   />
                   <button

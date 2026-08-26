@@ -60,7 +60,10 @@ function createNoteModel(seed: any[] = []) {
                 if (clause.userId) return String(row.userId) === String(clause.userId)
                 if (clause.acl?.$elemMatch?.userId) {
                   const target = String(clause.acl.$elemMatch.userId)
-                  return Array.isArray(row.acl) && row.acl.some((entry: any) => String(entry.userId) === target)
+                  return Array.isArray(row.acl) && row.acl.some((entry: any) =>
+                    String(entry.userId) === target &&
+                    (!clause.acl.$elemMatch.role || entry.role === clause.acl.$elemMatch.role)
+                  )
                 }
                 if (clause.visibility) return row.visibility === clause.visibility
                 return false
@@ -193,4 +196,74 @@ test('mindmaps service allows owner update', async () => {
 
   const result = await service.update(String(mapId), String(ownerId), { content: { nodes: [{ id: 'a' }] } })
   assert.deepEqual(result.content, { nodes: [{ id: 'a' }] })
+})
+
+test('mindmaps service requires a source note', async () => {
+  const service = new MindmapsService(createModel() as any, createNoteModel() as any, noteAccess)
+
+  await assert.rejects(
+    () => service.create({ userId: String(new Types.ObjectId()), title: 'M' } as any),
+    /Note id is required/,
+  )
+})
+
+test('mindmaps service rejects creation without note write access', async () => {
+  const ownerId = new Types.ObjectId()
+  const otherId = new Types.ObjectId()
+  const noteId = new Types.ObjectId()
+  const service = new MindmapsService(
+    createModel() as any,
+    createNoteModel([{ _id: noteId, userId: ownerId, acl: [], visibility: 'private' }]) as any,
+    noteAccess,
+  )
+
+  await assert.rejects(
+    () => service.create({ userId: String(otherId), noteId: String(noteId), title: 'M' }),
+    /Note not found/,
+  )
+})
+
+test('mindmaps service returns source note metadata', async () => {
+  const ownerId = new Types.ObjectId()
+  const mapId = new Types.ObjectId()
+  const noteId = new Types.ObjectId()
+  const service = new MindmapsService(
+    createModel([{ _id: mapId, userId: ownerId, noteId, title: 'M', content: {} }]) as any,
+    createNoteModel([{ _id: noteId, userId: ownerId, title: 'Source note', acl: [] }]) as any,
+    noteAccess,
+  )
+
+  const result = await service.getById(String(mapId), String(ownerId))
+
+  assert.equal(result.noteId, String(noteId))
+  assert.equal(result.noteTitle, 'Source note')
+})
+
+test('mindmaps service trims and updates title', async () => {
+  const ownerId = new Types.ObjectId()
+  const mapId = new Types.ObjectId()
+  const service = new MindmapsService(
+    createModel([{ _id: mapId, userId: ownerId, title: 'Old', content: {} }]) as any,
+    createNoteModel() as any,
+    noteAccess,
+  )
+
+  const result = await service.update(String(mapId), String(ownerId), { title: '  New title  ' })
+
+  assert.equal(result.title, 'New title')
+})
+
+test('mindmaps service rejects an empty title update', async () => {
+  const ownerId = new Types.ObjectId()
+  const mapId = new Types.ObjectId()
+  const service = new MindmapsService(
+    createModel([{ _id: mapId, userId: ownerId, title: 'Old', content: {} }]) as any,
+    createNoteModel() as any,
+    noteAccess,
+  )
+
+  await assert.rejects(
+    () => service.update(String(mapId), String(ownerId), { title: '   ' }),
+    /Mindmap title is required/,
+  )
 })

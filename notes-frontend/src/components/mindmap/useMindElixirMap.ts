@@ -1,5 +1,6 @@
 import { useCallback, useRef, useState } from 'react'
 import { mindmapsAPI } from '@/lib/api'
+import { appToast } from '@/lib/app-toast'
 
 export function useMindElixirMap(id: string) {
   const containerRef = useRef<HTMLDivElement>(null)
@@ -9,10 +10,14 @@ export function useMindElixirMap(id: string) {
     if (!mindElixirInstance) return
     const data = mindElixirInstance.getData()
     mindmapsAPI.save(id, data).then(() => {
-      alert('保存成功')
+      appToast.success({ id: 'mindmap:save', title: '保存成功' })
     }).catch((error) => {
       console.error('保存失败', error)
-      alert('保存失败')
+      appToast.error({
+        id: 'mindmap:save',
+        title: '保存失败',
+        message: '请稍后重试。',
+      })
     })
   }, [id, mindElixirInstance])
 

@@ -39,13 +39,20 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
   assert.match(calls[0].prompt, /Knowledge base: kb-1/)
   assert.match(calls[0].prompt, /note-1/)
   assert.match(calls[0].prompt, /note-2/)
+  assert.equal(calls[0].route, 'text')
+  assert.equal(calls[0].reasoningEffort, 'none')
+  assert.deepEqual(calls[0].responseFormat, { type: 'json_object' })
 })
 
 test('AiService builds knowledge graph proposals from readable knowledge base notes', async () => {
   const graphCalls: any[] = []
   const runStarts: any[] = []
+  const describedRoutes: string[] = []
   const gateway = {
-    describeChatRoute: () => ({ provider: 'mimo', model: 'mimo-v2.5-pro' }),
+    describeChatRoute: (route: string) => {
+      describedRoutes.push(route)
+      return { provider: 'sensenova', model: 'sensenova-6.8-flash-lite' }
+    },
   }
   const runs = {
     start: async (payload: any) => {
@@ -82,6 +89,8 @@ test('AiService builds knowledge graph proposals from readable knowledge base no
   assert.deepEqual(graphCalls[0].notes, [{ id: 'note-1', title: 'Only readable', content: 'Scoped note' }])
   assert.equal(runStarts[0].graphName, 'KnowledgeGraphBuildGraph')
   assert.equal(runStarts[0].userId, 'user-1')
+  assert.deepEqual(describedRoutes, ['text'])
+  assert.equal(runStarts[0].model, 'sensenova-6.8-flash-lite')
 })
 
 test('AiService requires KnowledgeBasesService at module startup', () => {

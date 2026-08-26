@@ -16,10 +16,14 @@ import { SemanticModule } from '../semantic/semantic.module';
 import { AiModule } from '../ai/ai.module';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
+import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
 
 @Module({
   imports: [
-    MongooseModule.forFeature([{ name: Note.name, schema: NoteSchema }]),
+    MongooseModule.forFeature([
+      { name: Note.name, schema: NoteSchema },
+      { name: Mindmap.name, schema: MindmapSchema },
+    ]),
     CategoriesModule,
     forwardRef(() => TagsModule),
     forwardRef(() => SemanticModule),

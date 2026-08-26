@@ -19,15 +19,72 @@ export class AiService {
     @Optional() private readonly knowledgeGraphBuildGraph?: KnowledgeGraphBuildGraph,
   ) {}
 
+  // 单段摘要的上限字符数；超过则分段各自摘要再合并，保证长笔记后半部分也参与主题向量。
+  private readonly summarySegmentChars = 3000
+
+  // 低于该长度的正文视为"内容较少"：全文信息量少，直接作为 summary，不调用 AI。
+  private readonly minSummaryChars = 120
+
+  // 动态计算单次摘要的目标字数：短正文压到约 40%，长正文封顶 120 字。
+  private summaryTargetChars(textLength: number): number {
+    return Math.min(120, Math.max(30, Math.floor(textLength * 0.4)))
+  }
+
   async generateSummary(content: string): Promise<string> {
-    const cleanContent = cleanText(content).slice(0, 3000)
+    const cleanContent = cleanText(content)
     if (!cleanContent) return ''
+    // 极短正文直接返回全文作为摘要；信息已接近完整，AI 提炼无增益。
+    if (cleanContent.length <= this.minSummaryChars) {
+      return cleanContent
+    }
+    // 目标长度基于整篇正文长度计算，分段时每段与最终合并都沿用同一目标，避免拼接后超长。
+    const targetChars = this.summaryTargetChars(cleanContent.length)
+
     try {
-      return await this.gateway.chat({ route: 'text', system: 'You summarize notes for a knowledge management app. Return only the summary.', prompt: `Summarize the following note in Chinese within 120 Chinese characters. Keep the core facts and avoid prefaces.\n\n${cleanContent}`, maxTokens: 256, temperature: 0.2 })
+      // 短内容走单次摘要，避免不必要的额外请求。
+      if (cleanContent.length <= this.summarySegmentChars) {
+        return await this.summarizeChunk(cleanContent, targetChars)
+      }
+
+      const segments = this.splitSegments(cleanContent, this.summarySegmentChars)
+      const summaries = await Promise.all(segments.map((segment) => this.summarizeChunk(segment, targetChars)))
+      // 先合并各段摘要，再让 AI 提炼一份最终摘要，避免拼接文本语义割裂。
+      const merged = summaries.filter(Boolean).join('\n')
+      if (!merged) return ''
+      return await this.summarizeChunk(`[以下为长笔记各部分的摘要]\n${merged}`, targetChars)
     } catch (error: any) {
       this.logger.warn(`Summary generation failed, using fallback: ${error.message}`)
       return truncateContent(cleanContent)
     }
+  }
+
+  // 单个 AI 摘要调用，失败时抛出由外层统一降级，这里不吞异常。
+  // maxTokens 是推理模型 thinking+content 的共享预算，给足 2000 避免思考过程耗尽正文；
+  // 若仍因 length 溢出导致正文为空，让 gateway 以更高预算重试一次。
+  private async summarizeChunk(text: string, targetChars: number): Promise<string> {
+    return this.gateway.chat({
+      route: 'text',
+      system: 'You summarize notes for a knowledge management app. Return only the summary.',
+      prompt: `Summarize the following note in Chinese within ${targetChars} Chinese characters. Keep the core facts and avoid prefaces.\n\n${text}`,
+      maxTokens: 2000,
+      temperature: 0.7,
+      retryOnLengthOverflow: true,
+    })
+  }
+
+  // 按句子边界尽量切成长度接近但不超过 limit 的分段；避免从句子中间硬切导致摘要信息丢失。
+  private splitSegments(text: string, limit: number): string[] {
+    const segments: string[] = []
+    let rest = text
+    while (rest.length > limit) {
+      const head = rest.slice(0, limit)
+      const cutAt = Math.max(head.lastIndexOf('。'), head.lastIndexOf('！'), head.lastIndexOf('？'), head.lastIndexOf('.\n'))
+      const split = cutAt > limit * 0.5 ? cutAt + 1 : limit
+      segments.push(rest.slice(0, split))
+      rest = rest.slice(split).trim()
+    }
+    if (rest) segments.push(rest)
+    return segments
   }
 
   async generateAggregateSummary(notes: any[], context?: AiWorkflowContext): Promise<{ summary: string }> {
@@ -44,7 +101,7 @@ export class AiService {
     if (!this.knowledgeBases) throw new Error('Knowledge base service is not available.')
     const graph = this.knowledgeGraphBuildGraph || new KnowledgeGraphBuildGraph(this.gateway)
     const notes = await this.knowledgeBases.listGraphNotes(id, userId)
-    return this.withAiRun({ graphName: 'KnowledgeGraphBuildGraph', route: 'reasoning', context }, () => graph.run({ knowledgeBaseId: id, notes }))
+    return this.withAiRun({ graphName: 'KnowledgeGraphBuildGraph', route: 'text', context }, () => graph.run({ knowledgeBaseId: id, notes }))
   }
 
   async streamWriter(input: AiWriterInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
@@ -70,7 +127,7 @@ export class AiService {
   }
 
   async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
-    return this.withAiRun({ graphName: 'PetChatGraph', route: 'text', context }, () => this.gateway.streamChat({ route: 'text', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 1200, temperature: 0.6 }))
+    return this.withAiRun({ graphName: 'PetChatGraph', route: 'text', context }, () => this.gateway.streamChat({ route: 'text', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 400, temperature: 0.6, reasoningEffort: 'none' }))
   }
 
   async generateEmbedding(text: string): Promise<number[]> { return this.gateway.embedding(text) }

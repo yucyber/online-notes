@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import AIPet from '@/components/ai/AIPet'
-import { DashboardHeader, DashboardSidebar, shouldUseOverlaySidebar } from '@/components/dashboard/dashboard-navigation'
+import { BreadcrumbOverride, DashboardHeader, DashboardSidebar, shouldUseOverlaySidebar } from '@/components/dashboard/dashboard-navigation'
 import { AUTH_CHANGED_EVENT, getCurrentUser, isAuthenticated, logout } from '@/lib/auth'
 import { globalHotkeys } from '@/lib/hotkeys'
 import { listNotifications } from '@/lib/api'
@@ -23,8 +23,15 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const [hoveredNav, setHoveredNav] = useState<string | null>(null)
   const [unreadCount, setUnreadCount] = useState(0)
   const [isDark, setIsDark] = useState(typeof document !== 'undefined' && document.documentElement.classList.contains('dark'))
+  const [breadcrumbOverride, setBreadcrumbOverride] = useState<BreadcrumbOverride | null>(null)
 
   const isEditorWorkspace = isEditorWorkspaceRoute(pathname)
+
+  useEffect(() => {
+    const handleBreadcrumbs = (event: Event) => setBreadcrumbOverride((event as CustomEvent<BreadcrumbOverride | null>).detail || null)
+    document.addEventListener('dashboard:breadcrumbs', handleBreadcrumbs)
+    return () => document.removeEventListener('dashboard:breadcrumbs', handleBreadcrumbs)
+  }, [])
 
   useEffect(() => {
     if (!isAuthenticated()) {
@@ -97,7 +104,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   return <div className={isSidebarHidden ? 'app-shell app-shell--sidebar-hidden' : 'app-shell'}>
     <DashboardSidebar pathname={pathname} isHidden={isSidebarHidden} isMobileOpen={isMobileMenuOpen} hoveredNav={hoveredNav} onHover={setHoveredNav} onNavigate={(href) => router.push(href)} onLogout={handleLogout} onCloseMobile={() => setIsMobileMenuOpen(false)} />
     <main className="app-main">
-      <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} onLogout={handleLogout} />
+      <DashboardHeader pathname={pathname} user={user} isDark={isDark} isSidebarHidden={isSidebarHidden} unreadCount={unreadCount} breadcrumbOverride={breadcrumbOverride} onToggleSidebar={toggleSidebar} onToggleTheme={toggleTheme} onNavigate={(href) => router.push(href)} onLogout={handleLogout} />
       <div className="page-container">{children}</div>
     </main>
     <AIPet />

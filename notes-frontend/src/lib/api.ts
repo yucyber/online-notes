@@ -36,6 +36,7 @@ export const login = authAPI.login
 export const register = authAPI.register
 export const fetchNotes = notesAPI.getAllCached
 export const semanticSearch = semanticAPI.search
+export const semanticSearchCached = semanticAPI.searchCached
 export const fetchNoteById = notesAPI.getById
 export const createNote = notesAPI.create
 export const updateNote = notesAPI.update

@@ -24,8 +24,9 @@ async function postAiJson(path: string, body: Record<string, unknown>) {
 }
 
 function requireContent(data: any): unknown {
-  if (data && Object.prototype.hasOwnProperty.call(data, 'content')) {
-    return data.content
+  const payload = data?.data && typeof data.data === 'object' ? data.data : data
+  if (payload && Object.prototype.hasOwnProperty.call(payload, 'content')) {
+    return payload.content
   }
   throw new Error('No AI response was returned')
 }

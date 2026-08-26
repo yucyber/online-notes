@@ -18,8 +18,8 @@ export class Mindmap {
   @Prop({ required: true })
   title: string
 
-  @Prop({ type: Types.ObjectId })
-  noteId?: Types.ObjectId
+  @Prop({ type: Types.ObjectId, ref: 'Note', required: true })
+  noteId: Types.ObjectId
 
   @Prop({ type: Types.ObjectId, ref: 'User', required: true })
   userId: Types.ObjectId

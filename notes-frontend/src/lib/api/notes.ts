@@ -11,7 +11,8 @@ export const clearNotesCache = () => {
     const keys: string[] = []
     for (let i = 0; i < sessionStorage.length; i++) {
       const k = sessionStorage.key(i)
-      if (k && k.startsWith('cache:notes:')) keys.push(k)
+      // 同时清掉 notes: 与 semantic: 两类搜索结果缓存，避免编辑笔记后语义检索命中旧结果。
+      if (k && k.startsWith('cache:')) keys.push(k)
     }
     keys.forEach(k => sessionStorage.removeItem(k))
   } catch { }

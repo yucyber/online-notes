@@ -18,8 +18,48 @@ export type SemanticSearchPage = {
   hasNext: boolean
   data: SemanticSearchItem[]
 }
+
+export type SemanticSearchOpts = {
+  mode?: 'keyword' | 'vector' | 'hybrid'
+  page?: number
+  limit?: number
+  categoryId?: string
+  tagIds?: string[]
+}
+
+// 语义搜索结果也做轻量客户端缓存（仅 sessionStorage，30s），与笔记列表 getAllCached 一致：
+// 命中即先返回旧结果并后台重验证，避免离开/重进带搜索词时整页闪"正在整理笔记…"。
+// 不做内存 Map，统一由 notes.clearNotesCache 在笔记增删改时清掉 cache: 前缀的缓存。
+const SEARCH_SESSION_TTL_MS = 30_000
+
+function buildSearchCacheKey(q: string, opts?: SemanticSearchOpts): string {
+  const sp = new URLSearchParams()
+  sp.set('q', q)
+  if (opts?.mode) sp.set('mode', opts.mode)
+  if (opts?.page) sp.set('page', String(opts.page))
+  if (opts?.limit) sp.set('limit', String(opts.limit))
+  if (opts?.categoryId) sp.set('categoryId', opts.categoryId)
+  if (opts?.tagIds && opts.tagIds.length > 0) opts.tagIds.filter(Boolean).forEach((id) => sp.append('tagIds', id))
+  return `semantic:${sp.toString()}`
+}
+
+function readSearchSessionCache(key: string): SemanticSearchPage | null {
+  try {
+    const raw = sessionStorage.getItem(`cache:${key}`)
+    if (!raw) return null
+    const parsed = JSON.parse(raw)
+    if (!parsed || typeof parsed !== 'object') return null
+    if (Date.now() - Number(parsed.ts || 0) > SEARCH_SESSION_TTL_MS) return null
+    return parsed.payload as SemanticSearchPage
+  } catch { return null }
+}
+
+function writeSearchSessionCache(key: string, payload: SemanticSearchPage) {
+  try { sessionStorage.setItem(`cache:${key}`, JSON.stringify({ ts: Date.now(), payload })) } catch { }
+}
+
 export const semanticAPI = {
-  search: (q: string, opts?: { mode?: 'keyword' | 'vector' | 'hybrid'; page?: number; limit?: number; categoryId?: string; tagIds?: string[] }) => {
+  search: (q: string, opts?: SemanticSearchOpts) => {
     const sp = new URLSearchParams()
     sp.set('q', q)
     if (opts?.mode) sp.set('mode', opts.mode)
@@ -67,5 +107,23 @@ export const semanticAPI = {
         }
         throw error
       })
+  },
+
+  // 缓存版：命中缓存先返回，后台静默重验证并更新缓存供下次命中。
+  searchCached: async (q: string, opts?: SemanticSearchOpts): Promise<SemanticSearchPage> => {
+    const key = buildSearchCacheKey(q, opts)
+    const cached = readSearchSessionCache(key)
+    if (cached) {
+      ;(async () => {
+        try {
+          const latest = await semanticAPI.search(q, opts)
+          writeSearchSessionCache(key, latest)
+        } catch { }
+      })()
+      return cached
+    }
+    const data = await semanticAPI.search(q, opts)
+    writeSearchSessionCache(key, data)
+    return data
   },
 }

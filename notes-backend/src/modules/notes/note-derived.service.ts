@@ -3,6 +3,7 @@ import { InjectModel } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
 import { EmbeddingService } from '../semantic/embedding.service'
 import { AiService } from '../ai/ai.service'
+import { NoteCacheService } from './note-cache.service'
 import { Note, NoteDocument } from './schemas/note.schema'
 
 @Injectable()
@@ -11,6 +12,7 @@ export class NoteDerivedService {
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     private readonly embeddingService: EmbeddingService,
     private readonly aiService: AiService,
+    private readonly noteCache: NoteCacheService,
   ) {}
 
   buildFallbackSummary(content: string) {
@@ -41,15 +43,16 @@ export class NoteDerivedService {
 
   generateAndSaveSummary(note: NoteDocument, expectedContent = String(note.content || '')) {
     this.aiService.generateSummary(expectedContent)
-      .then(summary => {
-        if (summary) {
-          // content 匹配条件确保在内容已被修改时不覆盖更新后的摘要。
-          this.noteModel.updateOne(
-            { _id: note._id, content: expectedContent },
-            { $set: { summary } },
-            { timestamps: false },
-          ).exec()
-        }
+      .then(async summary => {
+        if (!summary) return
+        // content 匹配条件确保在内容已被修改时不覆盖更新后的摘要。
+        await this.noteModel.updateOne(
+          { _id: note._id, content: expectedContent },
+          { $set: { summary } },
+          { timestamps: false },
+        ).exec()
+        // AI 摘要异步写回后需再次失效列表缓存，否则前端列表最长 300 秒仍显示旧兜底摘要。
+        await this.noteCache.invalidateLists()
       })
       .catch(err => console.error(`Failed to generate summary for note ${note._id}`, err))
   }

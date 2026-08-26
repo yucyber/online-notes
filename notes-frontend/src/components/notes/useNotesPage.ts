@@ -23,6 +23,9 @@ export function useNotesPage() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
+  const selectionKnowledgeBaseId = searchParams.get('select') === 'knowledge-base'
+    ? searchParams.get('knowledgeBaseId') || ''
+    : ''
   const [notes, setNotes] = useState<Note[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -38,7 +41,7 @@ export function useNotesPage() {
   // 保存最新 total 供加载 effect 派发事件时读取，避免把 total 加入 deps 触发重复请求
   const totalRef = useRef(total)
   totalRef.current = total
-  const [isSelectionMode, setIsSelectionMode] = useState(false)
+  const [isSelectionMode, setIsSelectionMode] = useState(() => Boolean(selectionKnowledgeBaseId))
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   const [showSummaryDialog, setShowSummaryDialog] = useState(false)
   const [summaryResult, setSummaryResult] = useState('')
@@ -71,7 +74,7 @@ export function useNotesPage() {
 
         if (isNlq && (params.keyword || '')) {
           const mode = (sp.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid'
-          const nlqResp = await (await import('@/lib/api')).semanticSearch(params.keyword!, {
+          const nlqResp = await (await import('@/lib/api')).semanticSearchCached(params.keyword!, {
             mode,
             page,
             limit: size,
@@ -422,6 +425,7 @@ export function useNotesPage() {
     page,
     size,
     total,
+    selectionKnowledgeBaseId,
     isSelectionMode,
     selectedNoteIds,
     setSelectedNoteIds,

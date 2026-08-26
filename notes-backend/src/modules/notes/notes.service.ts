@@ -15,6 +15,7 @@ import { NoteRecommendationService } from './note-recommendation.service';
 import { NoteDerivedService } from './note-derived.service';
 import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
+import { Mindmap } from '../mindmaps/schemas/mindmap.schema';
 
 @Injectable()
 export class NotesService {
@@ -32,8 +33,9 @@ export class NotesService {
     @Optional() private readonly noteRecommendations?: NoteRecommendationService,
     @Optional() noteDerived?: NoteDerivedService,
     @Optional() private readonly jwtService?: JwtService,
+    @Optional() @InjectModel(Mindmap.name) private readonly mindmapModel?: Model<Mindmap>,
   ) {
-    this.noteDerived = noteDerived || new NoteDerivedService(noteModel, embeddingService, aiService)
+    this.noteDerived = noteDerived || new NoteDerivedService(noteModel, embeddingService, aiService, noteCache)
   }
 
   private readonly noteDerived: NoteDerivedService
@@ -272,26 +274,39 @@ export class NotesService {
 
   async remove(id: string, userId: string): Promise<void> {
     // 删除会影响整篇笔记及领域计数，因此只接受 owner 范围。
-    const note = await this.noteModel.findOne(this.noteAccess.ownerScope(id, userId)).exec();
+    const session = await this.noteModel.db.startSession()
+    let note: NoteDocument | null = null
+    try {
+      await session.withTransaction(async () => {
+        note = await this.noteModel
+          .findOne(this.noteAccess.ownerScope(id, userId))
+          .session(session)
+          .exec()
+        if (!note) throw new NotFoundException('笔记不存在')
 
-    if (!note) {
-      throw new NotFoundException('笔记不存在');
-    }
+        await this.mindmapModel
+          ?.deleteMany({ noteId: note._id })
+          .session(session)
+          .exec()
 
-    const result = await this.noteModel.deleteOne(this.noteAccess.ownerScope(id, userId)).exec();
-
-    if (result.deletedCount === 0) {
-      throw new NotFoundException('笔记不存在');
+        const result = await this.noteModel
+          .deleteOne(this.noteAccess.ownerScope(id, userId))
+          .session(session)
+          .exec()
+        if (result.deletedCount === 0) throw new NotFoundException('笔记不存在')
+      })
+    } finally {
+      await session.endSession()
     }
 
     await this.noteCache.invalidateLists()
 
     // 记录删除笔记的生命周期事件，供活动日志"内容"栏展示。
-    await this.audit.record('note_deleted', userId, 'note', note._id.toString(), { after: { title: note.title } })
+    await this.audit.record('note_deleted', userId, 'note', note!._id.toString(), { after: { title: note!.title } })
 
     await this.noteCounter.decrementForDelete({
-      categoryId: note.categoryId?.toString(),
-      tags: (note.tags || []).map(t => t.toString()),
+      categoryId: note!.categoryId?.toString(),
+      tags: (note!.tags || []).map(t => t.toString()),
     })
   }
 
