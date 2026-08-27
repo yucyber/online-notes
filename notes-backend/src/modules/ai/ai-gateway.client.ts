@@ -240,16 +240,10 @@ export class AiGatewayClient {
       stream: extra.stream || undefined,
     }
     if (options.responseFormat) body.response_format = options.responseFormat
-    // reasoning_effort 仅对支持它的 provider 发送；SenseNova 6.8 官方未声明该参数，避免发送未声明字段。
-    if (options.reasoningEffort && this.supportsReasoningEffort(provider.provider)) {
+    if (options.reasoningEffort) {
       body.reasoning_effort = options.reasoningEffort
     }
     return body
-  }
-
-  // 已知声明 reasoning_effort 参数的 provider 才允许发送；其余（如 SenseNova）不发送，避免依赖未声明行为。
-  private supportsReasoningEffort(provider: string): boolean {
-    return provider !== 'sensenova'
   }
 
   private async postJson(url: string, apiKey: string, body: any, label: string) {

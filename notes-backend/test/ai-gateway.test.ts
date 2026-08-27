@@ -99,7 +99,7 @@ test('AiGatewayClient forwards explicit reasoning and JSON output options to sup
   assert.deepEqual(calls[0].body.response_format, { type: 'json_object' })
 })
 
-test('AiGatewayClient does not send reasoning_effort to SenseNova', async () => {
+test('AiGatewayClient forwards explicit reasoning_effort to SenseNova', async () => {
   const calls: Array<{ body: any }> = []
   const fetchImpl = async (_url: any, init: any) => {
     calls.push({ body: JSON.parse(init.body) })
@@ -110,11 +110,10 @@ test('AiGatewayClient does not send reasoning_effort to SenseNova', async () => 
   await client.chat({
     route: 'text',
     prompt: 'hello',
-    reasoningEffort: 'low',
+    reasoningEffort: 'none',
   })
 
-  // SenseNova 官方未声明 reasoning_effort 参数，不应发送未声明字段。
-  assert.equal(calls[0].body.reasoning_effort, undefined)
+  assert.equal(calls[0].body.reasoning_effort, 'none')
 })
 
 test('AiGatewayClient retries once on length overflow with higher budget', async () => {
