@@ -1,9 +1,13 @@
 {
   "scripts": {
+    "check:runtime": "node scripts/check-runtime.mjs",
     "check:api-contract": "node scripts/check-api-contract.mjs",
     "check:ai-config": "node scripts/check-ai-config.mjs",
     "check:ai-config:live": "node scripts/check-ai-config.mjs --live",
     "check:semantic-search": "node scripts/check-semantic-search.mjs"
+  },
+  "engines": {
+    "node": ">=22 <23"
   },
   "devDependencies": {
     "ts-node": "^10.9.2",

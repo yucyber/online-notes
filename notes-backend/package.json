@@ -62,5 +62,8 @@
     "mongodb"
   ],
   "author": "在线知识笔记平台团队",
-  "license": "MIT"
+  "license": "MIT",
+  "engines": {
+    "node": ">=22 <23"
+  }
 }
