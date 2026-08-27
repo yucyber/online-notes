@@ -64,11 +64,6 @@ AI 配置检查：2 tests passed，dry-run 无警告
 
 ### 明确未实现或仅部分实现
 
-- 完整 `AiTask` 策略表与除 `note_summary` 外的任务映射；
-- 完整 `off / auto / deep` adapter；目前只完成 Qwen `off → enable_thinking=false` 和已验证模型的安全参数处理；
-- 通用 `qualityFallback / providerFallback` 状态机；目前只有 `note_summary` 的 B.AI provider fallback；
-- AR Claude Opus 4.8 的高风险任务 `expertQualityTarget` 路由；
-- AI run 的完整 fallbackType、fallbackReason、重试和结构校验审计字段；
 - `evidenceChunkIds` 图谱证据持久化；
 - Query Planner、Query Rewrite、GraphRAG 编排；
 - 笔记引用定位与 RAG 回答 UI；
@@ -125,12 +120,12 @@ P0 和 P1 在代码上可以交错推进，但 P2 之后不得继续使用旧 `t
 
 **Produces:** Node 22.x 和 npm 的可执行前置检查；不自动修改用户 NVM 状态。
 
-- [ ] 编写 `check-runtime` 失败测试，覆盖 Node <22、错误包管理器 lockfile 和合法环境。
-- [ ] 添加 `.nvmrc`，内容固定为 `22`。
-- [ ] 在三个 `package.json` 增加 `engines.node: ">=22 <23"`；根 package 增加 `check:runtime`。
-- [ ] `check-runtime.mjs` 检查 `process.versions.node`、根 `package-lock.json` 和禁止出现的工作区级 pnpm lockfile；只报告修复命令，不自动切换 Node。
-- [ ] 使用 Node 22 运行 `node --test scripts/check-runtime.test.mjs` 和 `npm run check:runtime`。
-- [ ] 提交：`chore(项目): 固定 Node 与包管理器基线`。
+- [x] 编写 `check-runtime` 失败测试，覆盖 Node <22、错误包管理器 lockfile 和合法环境。
+- [x] 添加 `.nvmrc`，内容固定为 `22`。
+- [x] 在三个 `package.json` 增加 `engines.node: ">=22 <23"`；根 package 增加 `check:runtime`。
+- [x] `check-runtime.mjs` 检查 `process.versions.node`、根 `package-lock.json` 和禁止出现的工作区级 pnpm lockfile；只报告修复命令，不自动切换 Node。
+- [x] 使用 Node 22 运行 `node --test scripts/check-runtime.test.mjs` 和 `npm run check:runtime`。
+- [x] 提交：`chore(项目): 固定 Node 与包管理器基线`。
 
 ## Task 0.2～0.7：实现模型分层、adapter、fallback、审计和评测
 
@@ -148,15 +143,16 @@ interface AiModelPolicy {
 
 执行约束：
 
-- [ ] 将 economy、standard、deep 策略表完整映射到所有 `AiTask`；当前 standard/deep 默认 route 和 `note_summary` 已接入，economy 任务尚未迁移。
-- [ ] 增加可选 `expertQualityTarget=AgentRouter claude-opus-4-8`；基础 adapter 已完成，仍需只映射到高风险 deep 任务并禁止成为默认 Provider。
+- [x] 将 economy、standard、deep 策略表完整映射到所有 `AiTask`；业务调用点已迁移到 `chatTask / streamTask`。
+- [x] 增加可选 `expertQualityTarget=AgentRouter claude-opus-4-8`；只映射到高风险 deep 任务且不作为默认 Provider。
 - [x] AgentRouter adapter 注入固定 User-Agent，且不发送未经确认的 reasoning 参数。
 - [x] SiliconFlow Qwen 的 `off` 映射为 `enable_thinking=false`。
-- [ ] 主模型出现结构/正文质量错误时只走 `qualityFallback`。
-- [ ] 将 B.AI `providerFallback` 扩展到策略表声明的任务；`note_summary` 的 429/503 分支已完成并有测试。
-- [ ] 单次任务最多一个 fallback；400、401、403、安全拒绝和 ACL 拒绝不 fallback。
-- [ ] 流式响应只允许首个正文 chunk 之前切换 provider。
-- [ ] AI run 记录 task、reasoningMode、模型、耗时、重试、fallbackType 和校验结果，不记录完整正文/reasoning/key。
+- [x] 主模型出现结构/正文质量错误时只走 `qualityFallback`。
+- [x] 将 B.AI `providerFallback` 扩展到策略表声明的任务。
+- [x] 单次任务最多一个 fallback；400、401、403、安全拒绝和 ACL 拒绝不 fallback。
+- [x] 流式响应只允许首个正文 chunk 之前切换 provider。
+- [x] AI run 记录 task、reasoningMode、模型、耗时、重试、fallbackType 和校验结果，不记录完整正文/reasoning/key。
+- [x] `AI_TASK_ROUTING_ENABLED=false` 时恢复迁移前的 text/reasoning 两级路由，便于灰度回退。
 - [x] `AI_TASK_ROUTING_ENABLED=true` 已启用；默认 text/reasoning 和 `note_summary` live smoke 均通过。
 
 ## P0-A 检查点：恢复现有笔记 Summary（已完成）
@@ -174,9 +170,10 @@ interface AiModelPolicy {
 
 **P0 Exit Gate:**
 
-- [x] 当前后端 159 个单测和 build 通过。
-- [x] 当前固定样本已验证 Qwen3-14B、B.AI DeepSeek-V4-Flash 与 AR Claude Opus 4.8 的摘要、图谱、提案、RAG 基础能力；不合格模型不进入路由。
-- [ ] 故障注入验证 quality/provider 两条 fallback 不串联。
+- [x] 当前后端 183 个单测和 build 通过。
+- [x] 20 个固定 live 样例覆盖摘要、图谱、提案、RAG：有效率 100%、空正文率 0%；Qwen3-14B 四条链路 P95 均小于 1.3 秒。
+- [x] SiliconFlow standard/deep 与 AR expert live smoke 均为 HTTP 200；B.AI provider fallback 通过故障注入测试。
+- [x] 故障注入验证 quality/provider 两条 fallback 不串联，流式输出开始后不切换 provider。
 - [ ] live smoke 已通过；仍需用户在控制台完成 U1 的账户归属、余额与 RPM/TPM 确认。
 
 ---
@@ -537,11 +534,10 @@ note_chunks.note_chunk_vector_index
 
 立即开始且不需要额外产品决策的工作：
 
-1. Task 0.1 固定 Node/npm；
-2. 继续 P0：实现完整 `AiTask` 策略表、通用 quality/provider fallback、AR expertQualityTarget 和审计字段；
-3. Task 1.1 完善 Atlas 索引/回填诊断与 runbook；
-4. Task 1.2 运行前端全量测试、正式 build 和搜索/图谱视觉验收；
-5. 用户完成 U1 账户额度确认与 U2 Atlas Search Index 确认；U3 已完成；
-6. P0/P1 Exit Gate 关闭后进入 P2 图谱证据绑定。
+1. P0 代码与自动化验收已完成；用户在供应商控制台完成 U1 账户归属、余额与 RPM/TPM 确认后关闭外部 Exit Gate；
+2. Task 1.1 完善 Atlas 索引/回填诊断与 runbook；
+3. Task 1.2 运行前端全量测试、正式 build 和搜索/图谱视觉验收；
+4. 用户完成 U2 Atlas Search Index 确认；U3 已完成；
+5. P1 Exit Gate 关闭后进入 P2 图谱证据绑定。
 
 禁止提前并行实现 P4/P5。它们依赖 P0 的模型审计、P2 的证据和 P3 暴露出的真实检索质量；提前开发只会把不稳定推理结果直接变成高风险写操作。

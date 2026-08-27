@@ -59,6 +59,20 @@ test('AiGatewayClient describes task routes from the explicit model policy', () 
   })
 })
 
+test('AiGatewayClient falls back to legacy text and reasoning routes when task routing is disabled', () => {
+  const client = new AiGatewayClient(createConfig() as any, (async () => jsonResponse({})) as any)
+
+  assert.deepEqual(client.describeTaskRoute('topic_name'), {
+    provider: 'siliconflow',
+    model: 'Qwen/Qwen3-14B',
+  })
+  assert.deepEqual(client.describeTaskRoute('mermaid'), {
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+  })
+  assert.equal(client.describeQualityFallbackRoute('conflict_analysis'), undefined)
+})
+
 test('AiGatewayClient uses provider fallback only for transient provider failure', async () => {
   const calls: Array<{ url: string; body: any }> = []
   const fetchImpl = async (url: any, init: any) => {

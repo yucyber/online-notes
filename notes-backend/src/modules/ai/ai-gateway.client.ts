@@ -191,7 +191,7 @@ export class AiGatewayClient {
   }
 
   async streamTask(options: AiChatOptions & { task: AiTask }): Promise<ReadableStream<Uint8Array>> {
-    const policy = resolveAiModelPolicy(options.task)
+    const policy = this.resolveActiveTaskPolicy(options.task)
     const taskOptions = {
       ...options,
       reasoningMode: policy.reasoningMode,
@@ -373,6 +373,29 @@ export class AiGatewayClient {
     return String(this.configService.get<string>('AI_TASK_ROUTING_ENABLED') || '').toLowerCase() === 'true'
   }
 
+  private resolveActiveTaskPolicy(task: AiTask): ReturnType<typeof resolveAiModelPolicy> {
+    const policy = resolveAiModelPolicy(task)
+    if (this.taskRoutingEnabled()) return policy
+
+    // 灰度开关关闭时保持迁移前的 text/reasoning 两级路由，并禁止触发新策略的跨供应商 fallback。
+    const legacyReasoningTasks: AiTask[] = [
+      'aggregate_summary',
+      'mindmap',
+      'mermaid',
+      'destructive_reorganization',
+      'conflict_analysis',
+      'proposal_revision',
+    ]
+    const useReasoning = legacyReasoningTasks.includes(task)
+    return {
+      ...policy,
+      primary: useReasoning ? 'siliconflow_deep' : 'siliconflow_standard',
+      reasoningMode: useReasoning ? 'deep' : 'off',
+      qualityFallback: undefined,
+      providerFallback: undefined,
+    }
+  }
+
   private resolveChatProviderName(route: AiChatRoute): string {
     return String(
       this.configService.get<string>(route === 'reasoning' ? 'AI_REASONING_PROVIDER' : 'AI_TEXT_PROVIDER') ||
@@ -429,20 +452,20 @@ export class AiGatewayClient {
   }
 
   describeTaskRoute(task: AiTask): Pick<AiProviderConfig, 'provider' | 'model'> {
-    const policy = resolveAiModelPolicy(task)
+    const policy = this.resolveActiveTaskPolicy(task)
     const { provider, model } = this.resolveModelTarget(policy.primary)
     return { provider, model }
   }
 
   describeQualityFallbackRoute(task: AiTask): Pick<AiProviderConfig, 'provider' | 'model'> | undefined {
-    const target = resolveAiModelPolicy(task).qualityFallback
+    const target = this.resolveActiveTaskPolicy(task).qualityFallback
     if (!target || !this.isModelTarget(target)) return undefined
     const { provider, model } = this.resolveModelTarget(target)
     return { provider, model }
   }
 
   async chatTask(options: AiChatOptions & { task: AiTask }): Promise<AiTaskResult> {
-    const policy = resolveAiModelPolicy(options.task)
+    const policy = this.resolveActiveTaskPolicy(options.task)
     const taskOptions = {
       ...options,
       reasoningMode: policy.reasoningMode,

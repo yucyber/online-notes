@@ -9,6 +9,7 @@
     "dev": "nodemon",
     "start:prod": "node dist/main.js",
     "test:unit": "node scripts/run-unit-tests.mjs",
+    "evaluate:ai-routes": "node -r ts-node/register scripts/evaluate-ai-routes.ts",
     "cleanup:pre-july-2026": "node -r ts-node/register -r ./scripts/set-dns.ts scripts/cleanup-pre-july-2026.ts",
     "backfill:note-vectors": "node -r ts-node/register -r ./scripts/set-dns.ts scripts/backfill-note-vectors.ts"
   },
