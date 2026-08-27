@@ -21,8 +21,16 @@
 | B.AI `deepseek-v4-flash` | 通过 | 通过 | 通过 | 通过 | 能力合格，但存在突发 429 |
 | B.AI `mimo-v2.5` | 空正文 | 空正文 | 空正文 | 通过 | reasoning 可能耗尽输出预算 |
 | B.AI `hy3` | 空正文 | 空正文 | 空正文 | 空正文 | 当前接口行为不适合作为主链路 |
+| AgentRouter `claude-opus-4-8`（低预算） | 摘要超长 | 空正文 | 空正文 | 正文截断 | 不能沿用 standard 小预算 |
+| AgentRouter `claude-opus-4-8`（4096 token） | 不作为高频摘要模型 | 通过 | 通过 | 通过 | 复杂任务的可选专家质量升级模型 |
+| AgentRouter `claude-opus-5` | 摘要超长 | JSON 截断 | JSON 截断 | 引用不完整 | 当前无替换优势 |
+| AgentRouter `gpt-5.6-sol` | 通过 | 通过但延迟高 | `<think>` 污染 JSON | `<think>` 污染正文 | 当前输出清洁度不满足生产契约 |
+| AgentRouter `deepseek-v4-flash` | 摘要可用 | 空正文 | 通过 | 正文截断 | 不优于现有同模型通道 |
+| AgentRouter `glm-5.3` | 空正文 | 空正文 | 空正文 | 空正文 | reasoning 耗尽当前预算 |
 
-MiMo 和 Hy3 的失败响应为 HTTP 200、`finish_reason=length`、reasoning 非空而 content 为空。这不是限流；限流由 HTTP 429 表示。两者不进入本次生产路由，后续只有重新通过固定评测集后才能启用。
+MiMo、Hy3 和 AgentRouter GLM-5.3 的失败响应为 HTTP 200、`finish_reason=length`、reasoning 非空而 content 为空。这不是限流；限流由 HTTP 429 表示。它们不进入本次生产路由，后续只有重新通过固定评测集后才能启用。
+
+AgentRouter `claude-opus-4-8` 在 900～1100 token 下出现空正文、截断或不完整回答，提高到 4096 token 后才通过图谱 JSON、复杂提案和带引用 RAG 样本，单次耗时约 13～22 秒。因此它不替换 economy/standard/deep 的日常主模型，只作为指定复杂任务的 `qualityFallback` 或显式专家复核目标。AgentRouter 网关还要求固定 `User-Agent: claude-cli/2.1.75 (external, cli)`；该参数由 gateway adapter 注入，业务调用不得自行拼接。
 
 ## 路由模型
 
@@ -70,6 +78,8 @@ type AiReasoningMode = 'off' | 'auto' | 'deep'
 
 B.AI `deepseek-v4-flash` 只承担跨供应商容灾。由于当前观察到 B.AI 有突发 429，它不作为唯一生产通道。同为 DeepSeek-V4-Flash 的硅基流动实例用于同供应商能力升级，两者名称相近，但触发原因不同。
 
+AgentRouter `claude-opus-4-8` 不构成第四个默认层级，定义为可选的 `expertQualityTarget`：仅在指定 deep 任务的主响应通过 HTTP 但未通过结构、完整性或冲突校验时使用。它不是 provider fallback，也不参与摘要、普通图谱、普通 RAG、query rewrite、Planner、宠物聊天等高频链路。
+
 ## AI 链路矩阵
 
 | AI 链路 | 层级 | 主模型 | 质量 fallback | 供应商 fallback | Reasoning | 原因 |
@@ -78,10 +88,10 @@ B.AI `deepseek-v4-flash` 只承担跨供应商容灾。由于当前观察到 B.A
 | 多篇笔记聚合摘要 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off；发现冲突才升级 deep | 日常是综合，冲突才需要复杂比较 |
 | 知识图谱抽取 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off | JSON 或结构校验失败时升级能力 |
 | 基础标签、分类、归属提案 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off | 属于受约束语义匹配 |
-| 拆分、合并、内容修改提案 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 需要比较、去重、冲突处理和内容完整性检查 |
-| 用户反馈后的复杂返工 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 需要理解旧方案与修改意见的差异 |
+| 拆分、合并、内容修改提案 | deep | 硅基流动 DeepSeek-V4-Flash | AR Claude Opus 4.8 | B.AI DeepSeek-V4-Flash | deep；AR ≥4096 token | 高风险动作在结构或完整性校验失败时升级专家模型 |
+| 用户反馈后的复杂返工 | deep | 硅基流动 DeepSeek-V4-Flash | AR Claude Opus 4.8 | B.AI DeepSeek-V4-Flash | deep；AR ≥4096 token | 需要理解旧方案与修改意见的差异 |
 | 普通 RAG 最终回答 | standard | Qwen3-14B | 重新检索或明确证据不足 | B.AI DeepSeek-V4-Flash | off | 不用换强模型掩盖证据不足 |
-| 检索证据冲突分析 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 需要识别冲突、版本和不确定性 |
+| 检索证据冲突分析 | deep | 硅基流动 DeepSeek-V4-Flash | AR Claude Opus 4.8 | B.AI DeepSeek-V4-Flash | deep；AR ≥4096 token | 需要识别冲突、版本和不确定性 |
 | Query rewrite | economy | Qwen3.5-4B | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 输出短、风险低 |
 | Query Planner | 本地规则优先 | Qwen3.5-4B | 固定安全工具组 | 无 | off | 明显问题不产生额外模型调用 |
 | 搜索命中说明 | economy | Qwen3.5-4B | 直接展示 Chunk | 无 | off | 失败不影响搜索证据本身 |
@@ -89,7 +99,7 @@ B.AI `deepseek-v4-flash` 只承担跨供应商容灾。由于当前观察到 B.A
 | 宠物聊天 | economy | Qwen3.5-4B | 无 | B.AI DeepSeek-V4-Flash | off | 不检索用户笔记，低风险 |
 | 续写、润色 | standard | Qwen3-14B | 无 | B.AI DeepSeek-V4-Flash | off | 主要关注表达质量 |
 | 思维导图 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off | 优先保证 JSON 合法；修复时可升级 |
-| Mermaid | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 图语法和失败修复需要多步骤检查 |
+| Mermaid | deep | 硅基流动 DeepSeek-V4-Flash | AR Claude Opus 4.8（仅复杂修复） | B.AI DeepSeek-V4-Flash | deep；AR ≥4096 token | 普通失败先本地校验修复，复杂结构失败才升级 |
 | 主题/Chunk embedding | 专用模型 | Qwen3-Embedding-8B | 不自动切模型 | 无 | 不适用 | 必须保持向量维度和索引一致 |
 | Rerank | 专用模型 | Qwen3-Reranker-8B | 原始融合排序 | 无 | 不适用 | 失败可安全退回已有检索分数 |
 
@@ -117,6 +127,8 @@ SiliconFlow Qwen:
 
 模型能力表由代码维护，不能根据 provider 名称猜测参数支持。未知参数不得发送到远端。
 
+AgentRouter Claude Opus 当前不发送 `reasoning_effort`。其 reasoning 无可靠关闭参数，只有 deep 任务可以选择，并为 reasoning 和正文共同预留至少 4096 token。返回 `<think>`、空正文、截断 JSON 或无效引用都视为质量失败，reasoning 不得作为正文使用。
+
 ## 两类 Fallback 与重试边界
 
 fallback 必须按目的拆分，不能用一个模糊字段同时表示“模型能力不足”和“供应商不可用”：
@@ -129,7 +141,7 @@ interface AiModelPolicy {
 }
 ```
 
-- `qualityFallback`：主请求已经成功返回，但正文为空、结构不合法或任务质量校验失败。它可以是同供应商更强模型，也可以是原文截断、原始检索结果等本地安全降级。
+- `qualityFallback`：主请求已经成功返回，但正文为空、结构不合法或任务质量校验失败。它可以是同供应商更强模型、指定复杂任务的 AgentRouter Claude Opus 4.8，也可以是原文截断、原始检索结果等本地安全降级。
 - `providerFallback`：主供应商发生 429、超时、网络错误或临时 5xx。它必须使用另一供应商，当前固定为 B.AI DeepSeek-V4-Flash。
 
 知识图谱的典型策略是：
@@ -189,6 +201,7 @@ SiliconFlow Qwen3-14B
 | 普通 RAG、宠物聊天 | 600～1200 |
 | 图谱、提案、思维导图 | 1600～3000 |
 | deep 提案、Mermaid | 4000～8000 |
+| AR Claude Opus 4.8 专家质量升级 | 4096～8000 |
 
 只有 `finish_reason=length` 且任务允许时才扩大一次预算。不得把 reasoning 当作正文 fallback，也不得将 reasoning 写入 summary、图谱或用户回答。
 
@@ -204,9 +217,13 @@ SILICONFLOW_DEEP_REASONING_MODEL=deepseek-ai/DeepSeek-V4-Flash
 BAI_API_KEY=
 BAI_BASE_URL=https://api.b.ai/v1
 BAI_FALLBACK_MODEL=deepseek-v4-flash
+
+AR_API_KEY=
+AR_BASE_URL=https://ps.air-outer.com/v1
+AR_MODEL=claude-opus-4-8
 ```
 
-旧的 `SENSENOVA_TEXT_MODEL` 和 `SENSENOVA_REASONING_MODEL` 在迁移期间保留，但不再作为新链路默认值。配置检查只能输出 provider、model 和能力，不得输出密钥。
+SenseNova 已从活动运行时和配置模板中移除。`AI_TEXT_PROVIDER` 与 `AI_REASONING_PROVIDER` 均固定为 `siliconflow`；AR 只能由明确的复杂 `AiTask` 策略选择。配置检查只能输出 provider、model 和能力，不得输出密钥。
 
 ## 可观测性
 
@@ -231,6 +248,7 @@ BAI_FALLBACK_MODEL=deepseek-v4-flash
 - `off` 模式对硅基流动 Qwen 发送 `enable_thinking=false`，不再错误地只发送 `reasoning_effort=none`。
 - standard 链路默认使用 Qwen3-14B；economy 链路使用 Qwen3.5-4B；deep 链路才使用 DeepSeek-V4-Flash。
 - MiMo-V2.5 和 Hy3 不进入生产路由。
+- AgentRouter Claude Opus 4.8 只用于指定 deep 任务的专家质量升级，预算不低于 4096 token；不得成为默认 text provider。
 - 质量错误只选择 quality fallback；429、临时 5xx 和超时只选择跨供应商 fallback。
 - 单次任务最多执行一个 fallback，不形成“主模型→质量 fallback→供应商 fallback”的连续调用链。
 - 400、401、403 不会通过 fallback 掩盖配置问题。

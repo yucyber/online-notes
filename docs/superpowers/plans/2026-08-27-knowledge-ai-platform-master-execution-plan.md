@@ -6,7 +6,7 @@
 
 **Architecture:** 整体按“运行环境与模型路由基础设施 → 检索和图谱证据层 → 只读 GraphRAG → 只读整理提案 → 可撤销写操作”构建。上层不得绕过下层权限、证据和审计接口；云端索引、额度和产品高风险决策设置为用户验收门，不由代码或代理猜测。
 
-**Tech Stack:** Node.js 22、NestJS 10、Next.js 16、React 18、TypeScript、Mongoose 8、MongoDB Atlas Vector Search、React Flow、SiliconFlow、B.AI、Jest、Node Test Runner。
+**Tech Stack:** Node.js 22、NestJS 10、Next.js 16、React 18、TypeScript、Mongoose 8、MongoDB Atlas Vector Search、React Flow、SiliconFlow、B.AI、AgentRouter、Jest、Node Test Runner。
 
 ## Global Constraints
 
@@ -15,6 +15,8 @@
 - 第一阶段已有代码先验收、修缺口，不重写已通过测试的主题向量、Chunk、混合搜索和图谱 UI。
 - 每个 AI 调用声明 `AiTask`；业务代码不得直接拼接供应商 reasoning 参数。
 - economy、standard、deep 分别使用 Qwen3.5-4B、Qwen3-14B、DeepSeek-V4-Flash；MiMo-V2.5 与 Hy3 不进入生产路由。
+- AgentRouter Claude Opus 4.8 不是默认层级，只允许作为拆分合并、复杂返工、证据冲突和复杂 Mermaid 的专家 `qualityFallback`，且预算不低于 4096 token。
+- SenseNova 已从活动运行时、配置模板和配置检查中移除；旧 SenseNova 专项文档只保留为历史决策与事故记录，不代表当前路由。
 - `qualityFallback` 处理合法响应的质量问题；`providerFallback` 处理 429、超时、网络错误和临时 5xx；单次任务最多执行一个 fallback。
 - 所有检索、图谱扩展和提案候选在模型调用前后都按服务端 `userId` 与 Note ACL 过滤。
 - GraphRAG 回答必须引用真实 Chunk；没有证据时明确说明，不允许用模型自身知识伪造“你的笔记中记录了”。
@@ -34,7 +36,7 @@
 | --- | --- | --- | --- |
 | 主题向量来源 | `title + summary + categoryName + tagNames`，含来源哈希 | `note-vector-source.test.ts`、`note-vector-refresh.test.ts` | 已完成 |
 | 自动保存派生调度 | 按 note 合并任务、静默执行、陈旧快照拒绝写回 | `note-derived-scheduler.test.ts`、`notes-async-metadata.test.ts` | 已完成 |
-| Summary 时序 | 正文变化先生成 summary，再生成主题向量；失败可 fallback | `note-vector-refresh.test.ts`、`ai-gateway.test.ts` | 已完成，但仍使用旧模型路由 |
+| Summary 时序 | 正文变化先生成 summary，再生成主题向量；SiliconFlow 失败可切换 B.AI | `note-vector-refresh.test.ts`、`ai-gateway.test.ts` | 已完成并迁移到新路由 |
 | 结构化 Chunk | Markdown/HTML 标题路径、完整代码块、HTML 标签完整、重叠 | `note-chunker.test.ts` | 已完成 |
 | Chunk embedding | 内容哈希复用、失败保留旧版、快照校验 | `note-chunk-index.test.ts` | 已完成 |
 | Chunk 检索权限 | 服务端可读笔记范围、knowledgeBaseId 边界 | `chunk-retrieval-access.test.ts` | 已完成 |
@@ -47,8 +49,10 @@
 ### 本轮实际验证
 
 ```text
-后端单测：152 passed / 0 failed
+后端单测：159 passed / 0 failed
 后端 TypeScript 编译：通过
+AI 配置检查：2 tests passed，dry-run 无警告
+真实模型 smoke test：SiliconFlow standard/deep、B.AI fallback、AR expert 均为 HTTP 200 且正文非空
 前端定向测试：3 suites、10 tests 断言通过
 前端 type-check：通过
 ```
@@ -58,7 +62,7 @@
 ### 明确未实现
 
 - `AiTask`、economy/standard/deep 策略表；
-- SiliconFlow/B.AI chat provider 统一路由；
+- 完整 `AiTask` 策略表与除 `note_summary` 外的任务映射；
 - `off / auto / deep` 的供应商参数 adapter；
 - `qualityFallback / providerFallback` 状态机；
 - `evidenceChunkIds` 图谱证据持久化；
@@ -142,6 +146,8 @@ interface AiModelPolicy {
 执行约束：
 
 - [ ] economy=`Qwen/Qwen3.5-4B`，standard=`Qwen/Qwen3-14B`，deep=`deepseek-ai/DeepSeek-V4-Flash`。
+- [ ] 增加可选 `expertQualityTarget=AgentRouter claude-opus-4-8`；只映射到高风险 deep 任务，禁止作为默认 `AI_TEXT_PROVIDER`。
+- [ ] AgentRouter adapter 注入固定 User-Agent，不发送未经文档确认的 reasoning 参数；专家调用使用 4096～8000 token，并校验空正文、`<think>` 污染、JSON 完整性和引用合法性。
 - [ ] SiliconFlow Qwen 的 `off` 映射为 `enable_thinking=false`。
 - [ ] 主模型出现结构/正文质量错误时只走 `qualityFallback`。
 - [ ] 主供应商出现 429、超时、网络错误、502/503/504 时只走 B.AI `providerFallback`。
@@ -452,10 +458,11 @@ interface RagPlan {
 
 你需要：
 
-1. 确认 `SILICONFLOW_API_KEY` 与 `BAI_API_KEY` 属于预期 Workspace；
+1. 确认 `SILICONFLOW_API_KEY`、`BAI_API_KEY` 与 `AR_API_KEY` 属于预期账户或 Workspace；
 2. 确认硅基流动允许 Qwen3.5-4B、Qwen3-14B、DeepSeek-V4-Flash；
 3. 确认 B.AI DeepSeek-V4-Flash 的 RPM/TPM 和当前活动额度；
-4. 如果 live smoke test 返回 401/403/配额错误，只提供错误码和 request ID，不发送 key。
+4. 确认 AgentRouter 可调用 `claude-opus-4-8`，并接受其专家链路较高延迟和 4096～8000 token 预算；
+5. 如果 live smoke test 返回 401/403/配额错误，只提供错误码和 request ID，不发送 key。
 
 代理负责：实现配置检查、发送最小 smoke test、解析结果和调整代码。不会反复请求模型来猜额度。
 

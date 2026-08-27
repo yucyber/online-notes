@@ -166,10 +166,10 @@ Add one concise note to relevant current index/current plan that older SenseNova
 Run:
 
 ```powershell
-rg -n -i "sensenova|SENSENOVA_" notes-backend/src notes-backend/test notes-backend/.env.example scripts/check-ai-config.mjs scripts/check-ai-config.test.mjs
+rg -n -i "sensenova|SENSENOVA_" notes-backend/src notes-backend/.env.example scripts/check-ai-config.mjs
 ```
 
-Expected: no matches.
+Expected: no matches。测试中允许保留拒绝已淘汰 Provider 的负向回归断言。
 
 - [ ] **Step 4: Run full verification**
 

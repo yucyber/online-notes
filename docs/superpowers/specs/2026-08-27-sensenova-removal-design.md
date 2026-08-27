@@ -61,4 +61,4 @@ AI_RERANKER_PROVIDER=siliconflow
 6. 配置检查不再出现 SenseNova/MiMo，并能检查 SiliconFlow、B.AI 与 AR。
 7. 后端全量单测、TypeScript build、配置 dry-run 和最小 live smoke test 全部通过。
 
-活动路径验收使用限定搜索：`notes-backend/src`、`notes-backend/test`、`notes-backend/.env.example`、`scripts/check-ai-config.mjs` 中不得再出现 `sensenova` 或 `SENSENOVA_`。历史文档命中允许保留，但当前总计划和当前模型路由设计必须明确标记 SenseNova 已淘汰。
+活动生产路径验收使用限定搜索：`notes-backend/src`、`notes-backend/.env.example`、`scripts/check-ai-config.mjs` 中不得再出现 `sensenova` 或 `SENSENOVA_`。测试允许保留“显式配置已淘汰 Provider 时必须拒绝”的负向用例；历史文档命中允许保留，但当前总计划和当前模型路由设计必须明确标记 SenseNova 已淘汰。
