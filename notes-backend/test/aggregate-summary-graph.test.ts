@@ -37,7 +37,7 @@ test('AiService delegates aggregate summaries to AggregateSummaryGraph while pre
     },
   }
   const gateway = {
-    describeChatRoute: () => ({ provider: 'mimo', model: 'mimo-v2.5-pro' }),
+    describeChatRoute: () => ({ provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' }),
   }
   const service = new AiService(gateway as any, {} as any, undefined, graph as any)
 

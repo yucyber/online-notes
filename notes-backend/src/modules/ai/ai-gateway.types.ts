@@ -1,6 +1,8 @@
 export type AiChatRoute = 'text' | 'reasoning'
+export type AiTask = 'note_summary'
 
 export interface AiChatOptions {
+  task?: AiTask
   route?: AiChatRoute
   system?: string
   prompt: string

@@ -74,6 +74,7 @@ export class AiService {
   // 单个 AI 摘要调用，失败时抛出由外层统一降级，这里不吞异常。
   private async summarizeChunk(text: string, targetChars: number): Promise<string> {
     return this.gateway.chat({
+      task: 'note_summary',
       route: 'text',
       system: 'You summarize notes for a knowledge management app. Return only the summary.',
       prompt: `Summarize the following note in Chinese within ${targetChars} Chinese characters. Keep the core facts and avoid prefaces.\n\n${text}`,

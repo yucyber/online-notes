@@ -49,16 +49,16 @@ test('AiRunService records started, succeeded, and failed AI runs', async () => 
     runId: 'run-fixed',
     graphName: 'MindmapGenerationGraph',
     userId,
-    provider: 'mimo',
-    model: 'mimo-v2.5-pro',
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
   })
 
   assert.equal(started.runId, 'run-fixed')
   assert.equal(started.status, 'running')
   assert.equal(created[0].graphName, 'MindmapGenerationGraph')
   assert.equal(created[0].userId.toString(), userId)
-  assert.equal(created[0].provider, 'mimo')
-  assert.equal(created[0].model, 'mimo-v2.5-pro')
+  assert.equal(created[0].provider, 'siliconflow')
+  assert.equal(created[0].model, 'deepseek-ai/DeepSeek-V4-Flash')
 
   const succeeded = await service.succeed('run-fixed')
 
@@ -80,7 +80,7 @@ test('AiService wraps audited workflow calls without changing the public respons
   const gateway = {
     describeChatRoute: (route: string) => {
       assert.equal(route, 'reasoning')
-      return { provider: 'mimo', model: 'mimo-v2.5-pro' }
+      return { provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' }
     },
     chat: async () => 'graph TD\nA-->B',
   }
@@ -102,8 +102,8 @@ test('AiService wraps audited workflow calls without changing the public respons
   assert.equal(result.content, 'graph TD\nA-->B')
   assert.equal(startCalls[0].graphName, 'MermaidGenerationGraph')
   assert.equal(startCalls[0].userId, '507f1f77bcf86cd799439012')
-  assert.equal(startCalls[0].provider, 'mimo')
-  assert.equal(startCalls[0].model, 'mimo-v2.5-pro')
+  assert.equal(startCalls[0].provider, 'siliconflow')
+  assert.equal(startCalls[0].model, 'deepseek-ai/DeepSeek-V4-Flash')
   assert.deepEqual(succeeded, ['run-1'])
   assert.deepEqual(failed, [])
 })

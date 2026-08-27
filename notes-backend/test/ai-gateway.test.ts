@@ -16,18 +16,17 @@ class FakeConfigService {
 function createConfig(overrides: Record<string, string | undefined> = {}) {
   return new FakeConfigService({
     AI_TEXT_PROVIDER: 'sensenova',
-    AI_REASONING_PROVIDER: 'mimo',
+    AI_REASONING_PROVIDER: 'sensenova',
     AI_EMBEDDING_PROVIDER: 'siliconflow',
     AI_RERANKER_PROVIDER: 'siliconflow',
-    MIMO_API_KEY: 'mimo-secret',
-    MIMO_BASE_URL: 'https://mimo.example/v1',
-    MIMO_MODEL: 'mimo-v2.5-pro',
+    AI_TASK_ROUTING_ENABLED: 'false',
     SENSENOVA_API_KEY: 'sensenova-secret',
     SENSENOVA_BASE_URL: 'https://sensenova.example/v1',
     SENSENOVA_TEXT_MODEL: 'sensenova-6.8-flash-lite',
     SENSENOVA_REASONING_MODEL: 'deepseek-v4-flash',
     SILICONFLOW_API_KEY: 'siliconflow-secret',
     SILICONFLOW_BASE_URL: 'https://api.siliconflow.cn/v1',
+    SILICONFLOW_STANDARD_TEXT_MODEL: 'Qwen/Qwen3-14B',
     SILICONFLOW_EMBEDDING_MODEL: 'Qwen/Qwen3-Embedding-8B',
     SILICONFLOW_RERANKER_MODEL: 'Qwen/Qwen3-Reranker-8B',
     SILICONFLOW_RERANKER_PATH: '/rerank',
@@ -76,17 +75,48 @@ test('AiGatewayClient routes reasoning chat to SenseNova by default', async () =
   assert.equal(calls[0].body.model, 'deepseek-v4-flash')
 })
 
-test('AiGatewayClient forwards explicit reasoning and JSON output options to supporting providers', async () => {
+test('AiGatewayClient routes note summaries to SiliconFlow standard model when task routing is enabled', async () => {
+  const calls: Array<{ url: string; body: any; headers: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body), headers: init.headers })
+    return jsonResponse({ choices: [{ message: { content: '摘要正文' } }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chat({
+    task: 'note_summary',
+    route: 'text',
+    prompt: 'summarize',
+    reasoningEffort: 'none',
+  })
+
+  assert.equal(result, '摘要正文')
+  assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'Qwen/Qwen3-14B')
+  assert.equal(calls[0].body.enable_thinking, false)
+  assert.equal(calls[0].body.reasoning_effort, undefined)
+  assert.equal(calls[0].headers.Authorization, 'Bearer siliconflow-secret')
+})
+
+test('AiGatewayClient rejects removed mimo provider configuration', async () => {
+  const client = new AiGatewayClient(
+    createConfig({ AI_TEXT_PROVIDER: 'mimo' }) as any,
+    (async () => jsonResponse({ choices: [{ message: { content: 'unused' } }] })) as any,
+  )
+
+  await assert.rejects(
+    () => client.chat({ route: 'text', prompt: 'hello' }),
+    /Unsupported text AI provider: mimo/,
+  )
+})
+
+test('AiGatewayClient forwards explicit reasoning and JSON output options to SenseNova', async () => {
   const calls: Array<{ body: any }> = []
   const fetchImpl = async (_url: any, init: any) => {
     calls.push({ body: JSON.parse(init.body) })
     return jsonResponse({ choices: [{ message: { content: '{"nodes":[]}' } }] })
   }
-  // mimo 视为声明支持 reasoning_effort 的 provider，应透传该参数。
-  const client = new AiGatewayClient(
-    createConfig({ AI_REASONING_PROVIDER: 'mimo' }) as any,
-    fetchImpl as any,
-  )
+  const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
 
   await client.chat({
     route: 'reasoning',
@@ -185,7 +215,7 @@ test('AiGatewayClient reports missing config without leaking existing secrets', 
     () => client.chat({ route: 'text', prompt: 'hello' }),
     (error: any) => {
       assert.match(error.message, /SENSENOVA_API_KEY/)
-      assert.doesNotMatch(error.message, /mimo-secret|siliconflow-secret|sensenova-secret/)
+      assert.doesNotMatch(error.message, /siliconflow-secret|sensenova-secret/)
       return true
     },
   )

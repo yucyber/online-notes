@@ -41,7 +41,7 @@ export class AiGatewayClient {
   }
 
   async chat(options: AiChatOptions): Promise<string> {
-    const provider = this.resolveChatProvider(options.route || 'text')
+    const provider = this.resolveChatProvider(options)
 
     // 推理型模型可能把小预算的 maxTokens 全部耗在思考过程上，导致 content 为空。
     // 当 content 为空且 finish_reason=length 时，用更高的预算有限重试一次，尽量让模型产出正文。
@@ -106,7 +106,7 @@ export class AiGatewayClient {
   }
 
   async streamChat(options: AiChatOptions): Promise<ReadableStream<Uint8Array>> {
-    const provider = this.resolveChatProvider(options.route || 'text')
+    const provider = this.resolveChatProvider(options)
     const response = await this.postJson(this.endpoint(provider.baseUrl, '/chat/completions'), provider.apiKey, this.chatBody(provider, options, {
       stream: true,
     }), `${provider.provider} stream chat`)
@@ -152,9 +152,22 @@ export class AiGatewayClient {
     }).filter((item: AiRerankResult) => Number.isInteger(item.index) && Number.isFinite(item.score))
   }
 
-  private resolveChatProvider(route: AiChatRoute): AiProviderConfig {
+  private resolveChatProvider(options: AiChatOptions): AiProviderConfig {
+    if (options.task === 'note_summary' && this.taskRoutingEnabled()) {
+      return this.readProviderConfig('siliconflow', {
+        apiKey: 'SILICONFLOW_API_KEY',
+        baseUrl: 'SILICONFLOW_BASE_URL',
+        model: 'SILICONFLOW_STANDARD_TEXT_MODEL',
+      })
+    }
+
+    const route = options.route || 'text'
     const provider = this.resolveChatProviderName(route)
     return this.readProviderConfig(provider, this.chatProviderKeys(route, provider))
+  }
+
+  private taskRoutingEnabled(): boolean {
+    return String(this.configService.get<string>('AI_TASK_ROUTING_ENABLED') || '').toLowerCase() === 'true'
   }
 
   // text 与 reasoning 默认共用 SenseNova，避免本地聊天依赖另一套失效凭据；仍保留显式切换 provider 的能力。
@@ -166,14 +179,6 @@ export class AiGatewayClient {
   }
 
   private chatProviderKeys(route: AiChatRoute, provider: string) {
-    if (provider === 'mimo') {
-      return {
-        apiKey: 'MIMO_API_KEY',
-        baseUrl: 'MIMO_BASE_URL',
-        model: 'MIMO_MODEL',
-      }
-    }
-
     if (provider === 'sensenova') {
       return {
         apiKey: 'SENSENOVA_API_KEY',
@@ -241,7 +246,11 @@ export class AiGatewayClient {
     }
     if (options.responseFormat) body.response_format = options.responseFormat
     if (options.reasoningEffort) {
-      body.reasoning_effort = options.reasoningEffort
+      if (provider.provider === 'siliconflow' && provider.model.startsWith('Qwen/')) {
+        if (options.reasoningEffort === 'none') body.enable_thinking = false
+      } else {
+        body.reasoning_effort = options.reasoningEffort
+      }
     }
     return body
   }
