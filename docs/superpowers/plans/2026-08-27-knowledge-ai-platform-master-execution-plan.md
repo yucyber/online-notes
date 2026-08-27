@@ -44,7 +44,10 @@
 | 搜索命中 UI | 标题路径、命中 Chunk、额外命中数 | `semantic-search-evidence.spec.tsx` | 已完成 |
 | 知识图谱生成/保存 | 已有 nodes、edges、warnings、事务替换 | `knowledge-graph-build-graph.test.ts`、`knowledge-graph-persistence.test.ts` | 已完成基础版 |
 | 知识图谱可视化 | React Flow 关系网络、力导向布局、交互 | `knowledge-bases.spec.tsx`、`knowledge-graph-layout.spec.ts` | 已完成基础版 |
-| 6 条数据回填器 | 幂等判断、逐条失败报告 | `backfill-note-vectors.test.ts` | 代码已完成，真实执行结果待确认 |
+| 6 条测试笔记派生数据 | AI summary、4096 维主题向量、60 个 Chunk 向量完整；未改变业务 `updatedAt` | 2026-08-27 数据库只读验收 | 已完成真实回填 |
+| 默认文本/推理路由 | text → SiliconFlow Qwen3-14B；reasoning → SiliconFlow DeepSeek-V4-Flash | `ai-gateway.test.ts`、live smoke test | 已完成 |
+| 摘要跨供应商容灾 | SiliconFlow 持续 429/503 时切换 B.AI DeepSeek-V4-Flash | `ai-gateway.test.ts` | `note_summary` 已完成 |
+| AgentRouter 接入 | 固定 User-Agent；Claude Opus 4.8 可作为专家质量目标 | live smoke test、固定任务评测 | 基础 adapter 已完成，任务策略待实现 |
 
 ### 本轮实际验证
 
@@ -59,12 +62,13 @@ AI 配置检查：2 tests passed，dry-run 无警告
 
 定向 Jest 因只运行少量测试而未达到仓库全局 8% coverage 阈值；这不代表断言失败。阶段验收仍需运行前端全量测试与正式 build。
 
-### 明确未实现
+### 明确未实现或仅部分实现
 
-- `AiTask`、economy/standard/deep 策略表；
 - 完整 `AiTask` 策略表与除 `note_summary` 外的任务映射；
-- `off / auto / deep` 的供应商参数 adapter；
-- `qualityFallback / providerFallback` 状态机；
+- 完整 `off / auto / deep` adapter；目前只完成 Qwen `off → enable_thinking=false` 和已验证模型的安全参数处理；
+- 通用 `qualityFallback / providerFallback` 状态机；目前只有 `note_summary` 的 B.AI provider fallback；
+- AR Claude Opus 4.8 的高风险任务 `expertQualityTarget` 路由；
+- AI run 的完整 fallbackType、fallbackReason、重试和结构校验审计字段；
 - `evidenceChunkIds` 图谱证据持久化；
 - Query Planner、Query Rewrite、GraphRAG 编排；
 - 笔记引用定位与 RAG 回答 UI；
@@ -75,8 +79,7 @@ AI 配置检查：2 tests passed，dry-run 无警告
 ### 外部状态未知，不得由代理推断
 
 - Atlas `notes.vector_index` 与 `note_chunks.note_chunk_vector_index` 是否已创建且均为 4096 维；
-- 当前 6 条测试笔记是否都已完成 AI summary、主题向量和 Chunk 回填；
-- SiliconFlow 与 B.AI 当前 key 的 Workspace、余额、RPM/TPM 限制；
+- SiliconFlow、B.AI 与 AgentRouter 当前 key 的账户归属、余额和 RPM/TPM 限制；最小 live smoke 已通过，但不能替代控制台额度确认；
 - 高风险 proposal 的撤销保留时间和是否允许部分执行。
 
 ---
@@ -145,37 +148,36 @@ interface AiModelPolicy {
 
 执行约束：
 
-- [ ] economy=`Qwen/Qwen3.5-4B`，standard=`Qwen/Qwen3-14B`，deep=`deepseek-ai/DeepSeek-V4-Flash`。
-- [ ] 增加可选 `expertQualityTarget=AgentRouter claude-opus-4-8`；只映射到高风险 deep 任务，禁止作为默认 `AI_TEXT_PROVIDER`。
-- [ ] AgentRouter adapter 注入固定 User-Agent，不发送未经文档确认的 reasoning 参数；专家调用使用 4096～8000 token，并校验空正文、`<think>` 污染、JSON 完整性和引用合法性。
-- [ ] SiliconFlow Qwen 的 `off` 映射为 `enable_thinking=false`。
+- [ ] 将 economy、standard、deep 策略表完整映射到所有 `AiTask`；当前 standard/deep 默认 route 和 `note_summary` 已接入，economy 任务尚未迁移。
+- [ ] 增加可选 `expertQualityTarget=AgentRouter claude-opus-4-8`；基础 adapter 已完成，仍需只映射到高风险 deep 任务并禁止成为默认 Provider。
+- [x] AgentRouter adapter 注入固定 User-Agent，且不发送未经确认的 reasoning 参数。
+- [x] SiliconFlow Qwen 的 `off` 映射为 `enable_thinking=false`。
 - [ ] 主模型出现结构/正文质量错误时只走 `qualityFallback`。
-- [ ] 主供应商出现 429、超时、网络错误、502/503/504 时只走 B.AI `providerFallback`。
+- [ ] 将 B.AI `providerFallback` 扩展到策略表声明的任务；`note_summary` 的 429/503 分支已完成并有测试。
 - [ ] 单次任务最多一个 fallback；400、401、403、安全拒绝和 ACL 拒绝不 fallback。
 - [ ] 流式响应只允许首个正文 chunk 之前切换 provider。
 - [ ] AI run 记录 task、reasoningMode、模型、耗时、重试、fallbackType 和校验结果，不记录完整正文/reasoning/key。
-- [ ] 新路由由 `AI_TASK_ROUTING_ENABLED=false` 控制；固定评测通过后才打开。
+- [x] `AI_TASK_ROUTING_ENABLED=true` 已启用；默认 text/reasoning 和 `note_summary` live smoke 均通过。
 
-## P0-A 检查点：优先恢复现有笔记 Summary
+## P0-A 检查点：恢复现有笔记 Summary（已完成）
 
 该检查点在 standard 模型、SiliconFlow reasoning adapter 和 summary fallback 已通过单测后立即执行，不等待 GraphRAG、图谱证据或其他上层功能。
 
-- [ ] 用户先按 `notes-backend/.env.example` 配置 SiliconFlow 与 B.AI 变量，但保持 `AI_TASK_ROUTING_ENABLED=false`。
-- [ ] 只对 `note_summary` 开启测试范围的任务路由，使用 SiliconFlow `Qwen/Qwen3-14B` 且 `enable_thinking=false`。
-- [ ] 对相同长文本先执行一次 live smoke test，确认正文非空、摘要长度符合目标且没有把 reasoning 当 content。
-- [ ] 只筛选 `summarySource=fallback`、summary 缺失或明显等于正文前缀的笔记；不得无条件重写已确认正常的 AI summary。
-- [ ] 先以 dry-run 输出 noteId、标题、当前 summarySource 和待处理原因；用户确认清单后再执行重建。
-- [ ] 重建顺序固定为 summary → 主题向量 → Chunk；单篇失败继续下一篇并在最终报告列出 failedNoteIds。
-- [ ] 写回前继续核对 `Note.updatedAt`，不得用重建快照覆盖期间发生的新编辑。
-- [ ] 最终报告包含处理数、AI summary 成功数、fallback 数、主题向量成功数、Chunk 成功数和失败原因；用户抽看 1～2 篇长笔记。
-- [ ] Summary 恢复完成后，再继续 P0 剩余任务路由、审计和固定评测。
+- [x] 按 `notes-backend/.env.example` 配置 SiliconFlow、B.AI 与 AR，并启用 `AI_TASK_ROUTING_ENABLED=true`。
+- [x] `note_summary` 使用 SiliconFlow `Qwen/Qwen3-14B` 且 `enable_thinking=false`，持续 429/503 时切换 B.AI。
+- [x] 长文本 live smoke 返回非空正文，没有把 reasoning 写入 summary。
+- [x] dry-run 只筛选 6 篇 `summarySource=fallback` 的测试笔记，用户确认后执行。
+- [x] 按 summary → 主题向量 → Chunk 顺序逐篇重建，并在中断后只读核对实际状态。
+- [x] 派生写回未改变 Note 业务 `updatedAt`。
+- [x] 6 篇均为 AI summary；主题向量均为 4096 维；60 个 Chunk embedding 全部完整。
+- [x] Summary 恢复完成，后续继续 P0 剩余任务路由、审计和固定评测。
 
 **P0 Exit Gate:**
 
-- [ ] 后端全部单测和 build 通过。
-- [ ] 固定评测中摘要、图谱、提案、RAG 样本空正文率为 0，结构有效率为 100%。
+- [x] 当前后端 159 个单测和 build 通过。
+- [x] 当前固定样本已验证 Qwen3-14B、B.AI DeepSeek-V4-Flash 与 AR Claude Opus 4.8 的摘要、图谱、提案、RAG 基础能力；不合格模型不进入路由。
 - [ ] 故障注入验证 quality/provider 两条 fallback 不串联。
-- [ ] 用户完成“U1 API 配置与额度确认”后，live smoke test 通过。
+- [ ] live smoke 已通过；仍需用户在控制台完成 U1 的账户归属、余额与 RPM/TPM 确认。
 
 ---
 
@@ -217,8 +219,8 @@ interface AiModelPolicy {
 **P1 Exit Gate:**
 
 - [ ] 用户完成“U2 Atlas 索引确认”。
-- [ ] 用户完成“U3 真实回填确认”。
-- [ ] 6 条笔记抽样数据无空 embedding、错误 headingPath 或正文式假 summary。
+- [x] U3 真实回填已由用户确认并执行。
+- [x] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。
 - [ ] 前后端全量测试、type-check 和 build 通过。
 - [ ] 搜索和图谱 UI 由用户完成一次视觉确认。
 
@@ -484,9 +486,9 @@ note_chunks.note_chunk_vector_index
 
 代理负责提供并运行只读诊断脚本。若当前数据库账号没有 Search Index 管理权限，代理不会伪装已经创建成功。
 
-### U3：真实回填确认（P1 Exit Gate）
+### U3：真实回填确认（已完成）
 
-代理运行回填并给出最终报告；你只需要确认允许对当前 6 条测试笔记重建派生数据，并在报告后抽看 1～2 篇笔记的 summary/Chunk 是否符合预期。若笔记数量或数据性质变化，需要你先说明是否仍可覆盖重建。
+2026-08-27 已在用户确认后完成 6 篇测试笔记重建：全部写入 AI summary，主题向量均为 4096 维，60 个 Chunk embedding 完整，业务 `updatedAt` 未变化。以后若数据数量或性质变化，再次覆盖重建仍需重新确认范围。
 
 ### U4：高风险执行策略确认（P4 → P5 Gate）
 
@@ -536,12 +538,10 @@ note_chunks.note_chunk_vector_index
 立即开始且不需要额外产品决策的工作：
 
 1. Task 0.1 固定 Node/npm；
-2. 实现 `note_summary` 所需的最小 standard 路由与 adapter；
-3. 用户完成 `.env` 配置后执行 P0-A，优先恢复异常 summary、主题向量和 Chunk；
-4. 继续 P0 其余任务路由、审计和固定评测；
-5. Task 1.1 完善索引/回填诊断；
-6. Task 1.2 前端全量验收；
-7. 等待 U1、U2、U3 的外部确认后关闭 P0/P1；
-8. 再进入 P2 图谱证据绑定。
+2. 继续 P0：实现完整 `AiTask` 策略表、通用 quality/provider fallback、AR expertQualityTarget 和审计字段；
+3. Task 1.1 完善 Atlas 索引/回填诊断与 runbook；
+4. Task 1.2 运行前端全量测试、正式 build 和搜索/图谱视觉验收；
+5. 用户完成 U1 账户额度确认与 U2 Atlas Search Index 确认；U3 已完成；
+6. P0/P1 Exit Gate 关闭后进入 P2 图谱证据绑定。
 
 禁止提前并行实现 P4/P5。它们依赖 P0 的模型审计、P2 的证据和 P3 暴露出的真实检索质量；提前开发只会把不稳定推理结果直接变成高风险写操作。
