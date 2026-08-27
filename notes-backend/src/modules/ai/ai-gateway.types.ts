@@ -1,8 +1,40 @@
 export type AiChatRoute = 'text' | 'reasoning'
-export type AiTask = 'note_summary'
+export type AiTask =
+  | 'note_summary'
+  | 'aggregate_summary'
+  | 'knowledge_graph'
+  | 'organizer_proposal'
+  | 'rag_answer'
+  | 'query_rewrite'
+  | 'query_plan'
+  | 'search_hit_explanation'
+  | 'writer'
+  | 'topic_name'
+  | 'pet_chat'
+  | 'mindmap'
+  | 'mermaid'
+  | 'destructive_reorganization'
+  | 'conflict_analysis'
+  | 'proposal_revision'
+
+export type AiReasoningMode = 'off' | 'auto' | 'deep'
+export type AiModelTier = 'economy' | 'standard' | 'deep'
+export type AiModelTarget =
+  | 'siliconflow_economy'
+  | 'siliconflow_standard'
+  | 'siliconflow_deep'
+  | 'bai_deepseek'
+  | 'ar_expert'
+export type AiLocalFallback =
+  | 'local_summary'
+  | 'safe_tool_plan'
+  | 'show_chunk'
+  | 'local_topic'
+  | 'insufficient_evidence'
 
 export interface AiChatOptions {
   task?: AiTask
+  reasoningMode?: AiReasoningMode
   route?: AiChatRoute
   system?: string
   prompt: string
