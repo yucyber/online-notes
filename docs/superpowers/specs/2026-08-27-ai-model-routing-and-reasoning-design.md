@@ -1,0 +1,209 @@
+# AI 模型路由与 Reasoning 分级设计
+
+## 目标
+
+为在线笔记的摘要、知识图谱、RAG、整理提案和普通聊天建立统一的模型路由。调用方只声明业务任务和推理等级，gateway 负责选择模型、转换供应商参数、执行有限重试与跨供应商降级。
+
+本设计解决三个问题：
+
+1. 避免推理模型把 `max_tokens` 消耗在 reasoning 后返回空正文；
+2. 避免所有链路无差别使用 DeepSeek-V4-Flash；
+3. 让主模型限流或临时不可用时可以安全切换 fallback，同时保留审计信息。
+
+## 已验证事实
+
+2026-08-27 使用当前项目密钥，以长摘要、图谱 JSON、提案 JSON和带笔记引用的问答进行相同输入实测：
+
+| 模型 | 长摘要 | 图谱 | 提案 | RAG 回答 | 结论 |
+| --- | --- | --- | --- | --- | --- |
+| 硅基流动 `Qwen/Qwen3-14B` | 通过 | 通过 | 通过 | 通过 | 第一阶段综合主模型 |
+| 硅基流动 `Qwen/Qwen3.5-4B` | 通过 | 通过 | 通过 | 引用格式不合格 | 仅承担低风险短任务 |
+| B.AI `deepseek-v4-flash` | 通过 | 通过 | 通过 | 通过 | 能力合格，但存在突发 429 |
+| B.AI `mimo-v2.5` | 空正文 | 空正文 | 空正文 | 通过 | reasoning 可能耗尽输出预算 |
+| B.AI `hy3` | 空正文 | 空正文 | 空正文 | 空正文 | 当前接口行为不适合作为主链路 |
+
+MiMo 和 Hy3 的失败响应为 HTTP 200、`finish_reason=length`、reasoning 非空而 content 为空。这不是限流；限流由 HTTP 429 表示。两者不进入本次生产路由，后续只有重新通过固定评测集后才能启用。
+
+## 路由模型
+
+### 业务任务
+
+```ts
+type AiTask =
+  | 'note_summary'
+  | 'aggregate_summary'
+  | 'knowledge_graph'
+  | 'organizer_proposal'
+  | 'rag_answer'
+  | 'query_rewrite'
+  | 'query_plan'
+  | 'search_hit_explanation'
+  | 'writer'
+  | 'topic_name'
+  | 'pet_chat'
+  | 'mindmap'
+  | 'mermaid'
+  | 'destructive_reorganization'
+  | 'conflict_analysis'
+  | 'proposal_revision'
+```
+
+### 推理等级
+
+```ts
+type AiReasoningMode = 'off' | 'auto' | 'deep'
+```
+
+- `off`：要求供应商关闭显式 thinking。用于提取、压缩、改写、普通问答和严格 JSON 输出。
+- `auto`：模型自行决定，但不依赖隐藏推理完成任务。第一版只保留接口，不作为默认路由。
+- `deep`：明确允许深度推理，并为 reasoning 和正文预留更高输出预算。
+
+关闭 reasoning 不等于模型不进行判断；它只是避免显式长思考占用输出 Token。普通 Transformer 生成仍会结合上下文完成语义判断。
+
+### 三个模型层级
+
+| 层级 | 主模型 | Reasoning | 适用范围 |
+| --- | --- | --- | --- |
+| `economy` | 硅基流动 `Qwen/Qwen3.5-4B` | `off` | query rewrite、主题命名、搜索命中说明、宠物聊天 |
+| `standard` | 硅基流动 `Qwen/Qwen3-14B` | `off` | 单篇/聚合摘要、图谱、普通 RAG、基础提案、写作、思维导图 |
+| `deep` | 硅基流动 `deepseek-ai/DeepSeek-V4-Flash` | `deep` | 冲突分析、拆分合并、复杂返工、复杂 Mermaid 生成与修复 |
+
+B.AI `deepseek-v4-flash` 作为跨供应商 fallback。由于当前观察到 B.AI 有突发 429，它不作为唯一生产通道。
+
+## AI 链路矩阵
+
+| AI 链路 | 层级 | 主模型 | Fallback | Reasoning | 原因 |
+| --- | --- | --- | --- | --- | --- |
+| 单篇及长笔记分段摘要 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 稳定覆盖信息，避免分段请求的推理成本 |
+| 多篇笔记聚合摘要 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | off；发现冲突才升级 deep | 日常是综合，冲突才需要复杂比较 |
+| 知识图谱抽取 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 核心是证据约束和稳定 JSON |
+| 基础标签、分类、归属提案 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 属于受约束语义匹配 |
+| 拆分、合并、内容修改提案 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 需要比较、去重、冲突处理和内容完整性检查 |
+| 用户反馈后的复杂返工 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 需要理解旧方案与修改意见的差异 |
+| 普通 RAG 最终回答 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 检索已提供证据，重点是忠实组织和引用 |
+| 检索证据冲突分析 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 需要识别冲突、版本和不确定性 |
+| Query rewrite | economy | Qwen3.5-4B | Qwen3-14B | off | 输出短、风险低 |
+| Query Planner | 本地规则优先 | Qwen3.5-4B | 固定安全工具组 | off | 明显问题不产生额外模型调用 |
+| 搜索命中说明 | economy | Qwen3.5-4B | 直接展示 Chunk | off | 失败不影响搜索证据本身 |
+| 主题名称 | economy | Qwen3.5-4B | 本地关键词兜底 | off | 只生成 2～6 个词 |
+| 宠物聊天 | economy | Qwen3.5-4B | B.AI DeepSeek-V4-Flash | off | 不检索用户笔记，低风险 |
+| 续写、润色 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 主要关注表达质量 |
+| 思维导图 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | off | 优先保证 JSON 合法；修复时可升级 |
+| Mermaid | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 图语法和失败修复需要多步骤检查 |
+| 主题/Chunk embedding | 专用模型 | Qwen3-Embedding-8B | 不自动切模型 | 不适用 | 必须保持向量维度和索引一致 |
+| Rerank | 专用模型 | Qwen3-Reranker-8B | 原始融合排序 | 不适用 | 失败可安全退回已有检索分数 |
+
+RAG 助手和宠物聊天必须保持为两条内部链路。RAG 会执行权限过滤、Chunk 检索、可选图谱扩展、rerank 和引用生成；宠物聊天默认不读取用户笔记。当宠物入口收到知识型问题时，由 Query Planner 转交 RAG，而不是让宠物模型凭自身知识回答用户经历。
+
+## 供应商参数适配
+
+业务调用不得直接传 `enable_thinking` 或任意供应商字段。统一由 adapter 转换：
+
+```text
+SiliconFlow Qwen:
+  off  -> enable_thinking=false
+  auto -> 不发送 enable_thinking
+  deep -> enable_thinking=true
+
+支持 reasoning_effort 的模型:
+  off  -> reasoning_effort=none（仅当该模型文档明确支持）
+  auto -> 不发送 reasoning_effort
+  deep -> reasoning_effort=high
+
+无法关闭 reasoning 的模型:
+  off  -> 不选择该模型
+  deep -> 使用该模型并提高输出预算
+```
+
+模型能力表由代码维护，不能根据 provider 名称猜测参数支持。未知参数不得发送到远端。
+
+## Fallback 与重试边界
+
+一次调用流程：
+
+```text
+任务策略解析
+→ 主模型最多执行网络/429退避重试
+→ 校验 HTTP、非空正文和任务输出结构
+→ 仅在允许降级的错误上切换 fallback
+→ 记录最终 provider、model、attempt 和 fallback reason
+```
+
+允许切换 fallback：
+
+- 429；
+- 502、503、504；
+- 网络超时；
+- HTTP 200 但正文为空；
+- `finish_reason=length` 且提高预算重试后仍无正文；
+- 图谱、提案、思维导图等任务的结构校验失败，且本地修复失败。
+
+不允许盲目 fallback：
+
+- 400 参数或 prompt 契约错误；
+- 401、403 凭据和权限错误；
+- 用户取消；
+- 权限过滤未通过；
+- 内容安全拒绝。
+
+流式响应在正文已经发送给客户端后不得静默换模型，否则可能拼接两个模型的回答。fallback 仅发生在收到第一个正文 chunk 之前；首 chunk 之后失败应明确结束并提示重试。
+
+## 输出预算
+
+`max_tokens` 是本地后端发送给远端模型的最大输出预算。关闭 reasoning 的链路按正文需要设置小预算；deep 链路同时为 reasoning 和正文留出空间。
+
+| 任务 | 初始最大输出 Token |
+| --- | ---: |
+| 主题名称、query rewrite | 64～256 |
+| 单段摘要 | 256 |
+| 普通 RAG、宠物聊天 | 600～1200 |
+| 图谱、提案、思维导图 | 1600～3000 |
+| deep 提案、Mermaid | 4000～8000 |
+
+只有 `finish_reason=length` 且任务允许时才扩大一次预算。不得把 reasoning 当作正文 fallback，也不得将 reasoning 写入 summary、图谱或用户回答。
+
+## 配置与密钥
+
+建议增加显式模型配置：
+
+```env
+SILICONFLOW_ECONOMY_TEXT_MODEL=Qwen/Qwen3.5-4B
+SILICONFLOW_STANDARD_TEXT_MODEL=Qwen/Qwen3-14B
+SILICONFLOW_DEEP_REASONING_MODEL=deepseek-ai/DeepSeek-V4-Flash
+
+BAI_API_KEY=
+BAI_BASE_URL=https://api.b.ai/v1
+BAI_FALLBACK_MODEL=deepseek-v4-flash
+```
+
+旧的 `SENSENOVA_TEXT_MODEL` 和 `SENSENOVA_REASONING_MODEL` 在迁移期间保留，但不再作为新链路默认值。配置检查只能输出 provider、model 和能力，不得输出密钥。
+
+## 可观测性
+
+每次 AI run 至少记录：
+
+- task；
+- reasoningMode；
+- provider 和 model；
+- durationMs；
+- HTTP status；
+- finishReason；
+- contentChars 和 reasoningChars；
+- retryCount；
+- fallbackUsed 和 fallbackReason；
+- 结构校验结果。
+
+不记录 API Key、完整用户笔记、完整 prompt、完整 reasoning。摘要异步任务仍记录 `ai / passthrough / fallback` 来源。
+
+## 验收标准
+
+- 每条现有 AI 链路都映射到明确 `AiTask`，调用点不再自行选择 provider 参数。
+- `off` 模式对硅基流动 Qwen 发送 `enable_thinking=false`，不再错误地只发送 `reasoning_effort=none`。
+- standard 链路默认使用 Qwen3-14B；economy 链路使用 Qwen3.5-4B；deep 链路才使用 DeepSeek-V4-Flash。
+- MiMo-V2.5 和 Hy3 不进入生产路由。
+- 429、临时 5xx、超时和空正文可以在边界内降级；400、401、403 不会掩盖配置问题。
+- 流式响应不会拼接两个模型的正文。
+- 结构化链路在返回业务层前完成 JSON schema 校验。
+- embedding 和 reranker 模型保持不变。
+- 固定评测集分别验证摘要信息覆盖、JSON 合法率、引用正确率、空正文率、P95 延迟和 fallback 成功率。
+
