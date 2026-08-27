@@ -3,10 +3,13 @@ import { InjectModel } from '@nestjs/mongoose'
 import { randomUUID } from 'crypto'
 import { Model, Types } from 'mongoose'
 import { AiRun, AiRunDocument, AiRunStatus } from './schemas/ai-run.schema'
+import { AiReasoningMode, AiTask, AiTaskAttempt } from './ai-gateway.types'
 
 export interface AiRunStartInput {
   runId?: string
   graphName: string
+  task?: AiTask
+  reasoningMode?: AiReasoningMode
   userId?: string
   provider?: string
   model?: string
@@ -15,9 +18,20 @@ export interface AiRunStartInput {
 export interface AiRunRecord {
   runId: string
   graphName: string
+  task?: AiTask
+  reasoningMode?: AiReasoningMode
   userId?: string
   provider?: string
   model?: string
+  durationMs?: number
+  retryCount?: number
+  fallbackUsed?: boolean
+  fallbackType?: 'quality' | 'provider'
+  fallbackReason?: string
+  finishReason?: string
+  contentChars?: number
+  reasoningChars?: number
+  validationResult?: 'valid' | 'invalid'
   status: AiRunStatus
   error?: string
   createdAt?: Date
@@ -33,6 +47,8 @@ export class AiRunService {
     const doc = await this.model.create({
       runId: input.runId || randomUUID(),
       graphName: input.graphName,
+      task: input.task,
+      reasoningMode: input.reasoningMode,
       userId: this.toObjectId(input.userId),
       provider: input.provider,
       model: input.model,
@@ -42,8 +58,8 @@ export class AiRunService {
     return this.toRecord(doc)
   }
 
-  async succeed(runId: string): Promise<AiRunRecord> {
-    return this.finish(runId, 'succeeded')
+  async succeed(runId: string, attempt?: AiTaskAttempt): Promise<AiRunRecord> {
+    return this.finish(runId, 'succeeded', undefined, attempt)
   }
 
   async fail(runId: string, error: unknown): Promise<AiRunRecord> {
@@ -54,12 +70,28 @@ export class AiRunService {
     runId: string,
     status: AiRunStatus,
     error?: string,
+    attempt?: AiTaskAttempt,
   ): Promise<AiRunRecord> {
     const $set: Record<string, unknown> = {
       status,
       finishedAt: new Date(),
     }
     if (error) $set.error = error
+    if (attempt) Object.assign($set, {
+      task: attempt.task,
+      reasoningMode: attempt.reasoningMode,
+      provider: attempt.provider,
+      model: attempt.model,
+      durationMs: attempt.durationMs,
+      retryCount: attempt.retryCount,
+      fallbackUsed: attempt.fallbackUsed,
+      fallbackType: attempt.fallbackType,
+      fallbackReason: attempt.fallbackReason,
+      finishReason: attempt.finishReason,
+      contentChars: attempt.contentChars,
+      reasoningChars: attempt.reasoningChars,
+      validationResult: attempt.validationResult,
+    })
 
     const doc = await this.model.findOneAndUpdate(
       { runId },
@@ -75,9 +107,20 @@ export class AiRunService {
     return {
       runId: value.runId,
       graphName: value.graphName,
+      task: value.task,
+      reasoningMode: value.reasoningMode,
       userId: value.userId ? String(value.userId) : undefined,
       provider: value.provider,
       model: value.model,
+      durationMs: value.durationMs,
+      retryCount: value.retryCount,
+      fallbackUsed: value.fallbackUsed,
+      fallbackType: value.fallbackType,
+      fallbackReason: value.fallbackReason,
+      finishReason: value.finishReason,
+      contentChars: value.contentChars,
+      reasoningChars: value.reasoningChars,
+      validationResult: value.validationResult,
       status: value.status,
       error: value.error,
       createdAt: value.createdAt,

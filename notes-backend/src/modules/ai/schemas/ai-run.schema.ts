@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, Types } from 'mongoose'
+import { AiReasoningMode, AiTask } from '../ai-gateway.types'
 
 export type AiRunDocument = AiRun & Document
 export type AiRunStatus = 'running' | 'succeeded' | 'failed'
@@ -12,6 +13,12 @@ export class AiRun {
   @Prop({ required: true, index: true })
   graphName: string
 
+  @Prop({ index: true })
+  task?: AiTask
+
+  @Prop({ enum: ['off', 'auto', 'deep'] })
+  reasoningMode?: AiReasoningMode
+
   @Prop({ type: Types.ObjectId, ref: 'User', index: true })
   userId?: Types.ObjectId
 
@@ -20,6 +27,33 @@ export class AiRun {
 
   @Prop()
   model?: string
+
+  @Prop()
+  durationMs?: number
+
+  @Prop()
+  retryCount?: number
+
+  @Prop()
+  fallbackUsed?: boolean
+
+  @Prop({ enum: ['quality', 'provider'] })
+  fallbackType?: 'quality' | 'provider'
+
+  @Prop()
+  fallbackReason?: string
+
+  @Prop()
+  finishReason?: string
+
+  @Prop()
+  contentChars?: number
+
+  @Prop()
+  reasoningChars?: number
+
+  @Prop({ enum: ['valid', 'invalid'] })
+  validationResult?: 'valid' | 'invalid'
 
   @Prop({ required: true, enum: ['running', 'succeeded', 'failed'], default: 'running', index: true })
   status: AiRunStatus

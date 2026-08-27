@@ -1,4 +1,5 @@
 import { AiTask } from './ai-gateway.types'
+import { normalizeMermaidCode, normalizeMindmapAnswer } from './ai-content'
 
 export type AiValidationFailureReason = 'empty_content' | 'invalid_output'
 
@@ -24,6 +25,12 @@ export function validateAiOutput(
 ): AiOutputValidation {
   if (!String(content || '').trim()) return { valid: false, reason: 'empty_content' }
   if (task === 'knowledge_graph') return validateKnowledgeGraph(content)
+  if (task === 'mindmap') {
+    return normalizeMindmapAnswer(content) ? { valid: true } : { valid: false, reason: 'invalid_output' }
+  }
+  if (task === 'mermaid') {
+    return normalizeMermaidCode(content) ? { valid: true } : { valid: false, reason: 'invalid_output' }
+  }
   if (task === 'organizer_proposal' || task === 'destructive_reorganization' || task === 'proposal_revision') {
     return validateOrganizerProposal(content, context.allowedNoteIds)
   }

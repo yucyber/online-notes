@@ -9,11 +9,11 @@ function answerContent(result: any): any {
 test('AiService repairs invalid Mermaid output once and strips markdown fences', async () => {
   const prompts: string[] = []
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       prompts.push(options.prompt)
-      return prompts.length === 1
+      return { content: prompts.length === 1
         ? 'Here is your chart:\nA connects to B'
-        : '```mermaid\nflowchart TD\n  A[开始] --> B[结束]\n```'
+        : '```mermaid\nflowchart TD\n  A[开始] --> B[结束]\n```', attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -28,11 +28,11 @@ test('AiService repairs invalid Mermaid output once and strips markdown fences',
 test('AiService repairs and normalizes mindmap JSON with stable root and child fields', async () => {
   const prompts: string[] = []
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       prompts.push(options.prompt)
-      return prompts.length === 1
+      return { content: prompts.length === 1
         ? '{"nodeData":{"topic":"","children":"bad"}}'
-        : '{"nodeData":{"topic":"项目规划","children":[{"topic":"需求分析"}]}}'
+        : '{"nodeData":{"topic":"项目规划","children":[{"topic":"需求分析"}]}}', attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)

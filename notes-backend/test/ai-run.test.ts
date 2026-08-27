@@ -73,26 +73,15 @@ test('AiRunService records started, succeeded, and failed AI runs', async () => 
   assert.equal(updates[1].update.$set.error, 'provider unavailable')
 })
 
-test('AiService wraps audited workflow calls without changing the public response', async () => {
-  const startCalls: any[] = []
-  const succeeded: string[] = []
-  const failed: any[] = []
+test('AiService passes workflow audit context without changing the public response', async () => {
+  const calls: any[] = []
   const gateway = {
-    describeChatRoute: (route: string) => {
-      assert.equal(route, 'reasoning')
-      return { provider: 'siliconflow', model: 'deepseek-ai/DeepSeek-V4-Flash' }
+    chatTask: async (options: any) => {
+      calls.push(options)
+      return { content: 'graph TD\nA-->B', attempt: {} }
     },
-    chat: async () => 'graph TD\nA-->B',
   }
-  const runs = {
-    start: async (payload: any) => {
-      startCalls.push(payload)
-      return { runId: 'run-1', status: 'running' }
-    },
-    succeed: async (runId: string) => succeeded.push(runId),
-    fail: async (runId: string, error: unknown) => failed.push({ runId, error }),
-  }
-  const service = new AiService(gateway as any, {} as any, runs as any)
+  const service = new AiService(gateway as any, {} as any)
 
   const result = await service.generateMermaid(
     { content: '画一个流程图' },
@@ -100,10 +89,9 @@ test('AiService wraps audited workflow calls without changing the public respons
   )
 
   assert.equal(result.content, 'graph TD\nA-->B')
-  assert.equal(startCalls[0].graphName, 'MermaidGenerationGraph')
-  assert.equal(startCalls[0].userId, '507f1f77bcf86cd799439012')
-  assert.equal(startCalls[0].provider, 'siliconflow')
-  assert.equal(startCalls[0].model, 'deepseek-ai/DeepSeek-V4-Flash')
-  assert.deepEqual(succeeded, ['run-1'])
-  assert.deepEqual(failed, [])
+  assert.equal(calls[0].task, 'mermaid')
+  assert.deepEqual(calls[0].audit, {
+    graphName: 'MermaidGenerationGraph',
+    userId: '507f1f77bcf86cd799439012',
+  })
 })

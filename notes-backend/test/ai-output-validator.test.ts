@@ -14,6 +14,13 @@ test('requires graph nodes and edges arrays', () => {
   assert.deepEqual(validateAiOutput('knowledge_graph', 'not json'), { valid: false, reason: 'invalid_output' })
 })
 
+test('validates mindmap JSON and Mermaid declarations before returning them', () => {
+  assert.deepEqual(validateAiOutput('mindmap', '{"topic":"Root","children":[]}'), { valid: true })
+  assert.deepEqual(validateAiOutput('mindmap', '{"children":[]}'), { valid: false, reason: 'invalid_output' })
+  assert.deepEqual(validateAiOutput('mermaid', 'flowchart TD\nA-->B'), { valid: true })
+  assert.deepEqual(validateAiOutput('mermaid', 'A connects to B'), { valid: false, reason: 'invalid_output' })
+})
+
 test('rejects organizer actions outside the contract or note scope', () => {
   assert.deepEqual(validateAiOutput(
     'organizer_proposal',

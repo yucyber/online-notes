@@ -1,4 +1,4 @@
-import { HttpException, HttpStatus, Inject, Injectable, Optional } from '@nestjs/common'
+import { HttpException, HttpStatus, Inject, Injectable, Logger, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import {
   AiChatOptions,
@@ -6,6 +6,7 @@ import {
   AiFailureReason,
   AiModelTarget,
   AiProviderConfig,
+  AiReasoningMode,
   AiRerankResult,
   AiTask,
   AiTaskResult,
@@ -13,6 +14,7 @@ import {
 import { resolveAiModelPolicy } from './ai-model-policy'
 import { buildProviderOptions } from './ai-provider-adapter'
 import { validateAiOutput } from './ai-output-validator'
+import { AiRunService } from './ai-run.service'
 
 type FetchLike = (url: string, init?: any) => Promise<any>
 
@@ -43,12 +45,15 @@ export class AiGatewayClient {
   private static readonly AR_USER_AGENT = 'claude-cli/2.1.75 (external, cli)'
 
   private readonly fetchImpl: FetchLike
+  private readonly logger = new Logger(AiGatewayClient.name)
 
   constructor(
     private readonly configService: ConfigService,
     @Optional()
     @Inject('AI_GATEWAY_FETCH')
     fetchImpl?: FetchLike,
+    @Optional()
+    private readonly aiRuns?: AiRunService,
   ) {
     this.fetchImpl = fetchImpl || ((globalThis.fetch as any).bind(globalThis))
   }
@@ -192,12 +197,73 @@ export class AiGatewayClient {
       reasoningMode: policy.reasoningMode,
       maxTokens: options.maxTokens ?? policy.maxTokens,
     }
+    const startedAt = Date.now()
+    const runId = await this.startTaskRun(options, policy.reasoningMode, policy.primary)
+    let stream: ReadableStream<Uint8Array>
+    let fallbackReason: AiFailureReason | undefined
     try {
-      return await this.openPrimedTaskStream(taskOptions, policy.primary)
+      stream = await this.openPrimedTaskStream(taskOptions, policy.primary)
     } catch (error) {
-      if (!policy.providerFallback || !this.isProviderFailure(this.classifyFailure(error))) throw error
-      return this.openPrimedTaskStream(taskOptions, policy.providerFallback)
+      fallbackReason = this.classifyFailure(error)
+      if (!policy.providerFallback || !this.isProviderFailure(fallbackReason)) {
+        await this.failTaskRun(runId, error)
+        throw error
+      }
+      try {
+        stream = await this.openPrimedTaskStream(taskOptions, policy.providerFallback)
+      } catch (fallbackError) {
+        await this.failTaskRun(runId, fallbackError)
+        throw fallbackError
+      }
     }
+    return this.auditTextStream(stream, runId, options.task, policy.reasoningMode, startedAt, fallbackReason)
+  }
+
+  private auditTextStream(
+    stream: ReadableStream<Uint8Array>,
+    runId: string | undefined,
+    task: AiTask,
+    reasoningMode: AiReasoningMode,
+    startedAt: number,
+    fallbackReason?: AiFailureReason,
+  ): ReadableStream<Uint8Array> {
+    if (!runId || !this.aiRuns) return stream
+    const reader = stream.getReader()
+    const provider = (stream as any).__aiProvider as AiProviderConfig
+    const retryCount = Number((stream as any).__aiRetryCount || 0)
+    let contentChars = 0
+    return new ReadableStream<Uint8Array>({
+      start: (controller) => {
+        const pump = async () => {
+          try {
+            while (true) {
+              const next = await reader.read()
+              if (next.done) break
+              if (next.value) {
+                contentChars += new TextDecoder().decode(next.value).length
+                controller.enqueue(next.value)
+              }
+            }
+            await this.succeedTaskRun(runId, {
+              content: '',
+              attempt: {
+                task, reasoningMode, provider: provider.provider, model: provider.model,
+                durationMs: Date.now() - startedAt, retryCount,
+                fallbackUsed: Boolean(fallbackReason),
+                fallbackType: fallbackReason ? 'provider' : undefined,
+                fallbackReason, contentChars, reasoningChars: 0, validationResult: 'valid',
+              },
+            })
+            controller.close()
+          } catch (error) {
+            await this.failTaskRun(runId, error)
+            controller.error(error)
+          }
+        }
+        void pump()
+      },
+      cancel(reason) { return reader.cancel(reason) },
+    })
   }
 
   private async openPrimedTaskStream(
@@ -224,7 +290,7 @@ export class AiGatewayClient {
     if (first.done || !first.value?.length) throw new AiTaskOutputError('empty_content')
 
     // 首个正文 chunk 是跨模型降级边界；交付后发生错误只透传，不能拼接第二个模型的输出。
-    return new ReadableStream<Uint8Array>({
+    const primed = new ReadableStream<Uint8Array>({
       start(controller) {
         controller.enqueue(first.value)
         const pump = async () => {
@@ -245,6 +311,11 @@ export class AiGatewayClient {
         return reader.cancel(reason)
       },
     })
+    Object.defineProperties(primed, {
+      __aiProvider: { value: provider },
+      __aiRetryCount: { value: Number((response as any).__aiRetryCount || 0) },
+    })
+    return primed
   }
 
   async embedding(text: string): Promise<number[]> {
@@ -378,20 +449,59 @@ export class AiGatewayClient {
       maxTokens: options.maxTokens ?? policy.maxTokens,
     }
     const startedAt = Date.now()
+    const runId = await this.startTaskRun(options, policy.reasoningMode, policy.primary)
 
     try {
-      return await this.executeTaskAttempt(taskOptions, policy.primary, startedAt)
+      let result: AiTaskResult
+      try {
+        result = await this.executeTaskAttempt(taskOptions, policy.primary, startedAt)
+      } catch (error) {
+        const reason = this.classifyFailure(error)
+        const qualityTarget = policy.qualityFallback
+        if (this.isQualityFailure(reason) && qualityTarget && this.isModelTarget(qualityTarget)) {
+          result = await this.executeTaskAttempt(taskOptions, qualityTarget, startedAt, 'quality', reason)
+        } else if (this.isProviderFailure(reason) && policy.providerFallback) {
+          result = await this.executeTaskAttempt(taskOptions, policy.providerFallback, startedAt, 'provider', reason)
+        } else {
+          throw error
+        }
+      }
+      await this.succeedTaskRun(runId, result)
+      return result
     } catch (error) {
-      const reason = this.classifyFailure(error)
-      const qualityTarget = policy.qualityFallback
-      if (this.isQualityFailure(reason) && qualityTarget && this.isModelTarget(qualityTarget)) {
-        return this.executeTaskAttempt(taskOptions, qualityTarget, startedAt, 'quality', reason)
-      }
-      if (this.isProviderFailure(reason) && policy.providerFallback) {
-        return this.executeTaskAttempt(taskOptions, policy.providerFallback, startedAt, 'provider', reason)
-      }
+      await this.failTaskRun(runId, error)
       throw error
     }
+  }
+
+  private async startTaskRun(options: AiChatOptions & { task: AiTask }, reasoningMode: AiReasoningMode, target: AiModelTarget) {
+    if (!this.aiRuns) return undefined
+    try {
+      const route = this.resolveModelTarget(target)
+      return (await this.aiRuns.start({
+        graphName: options.audit?.graphName || options.task,
+        task: options.task,
+        reasoningMode,
+        userId: options.audit?.userId,
+        provider: route.provider,
+        model: route.model,
+      })).runId
+    } catch (error: any) {
+      this.logger.warn(`AI run audit start failed for ${options.task}: ${error.message}`)
+      return undefined
+    }
+  }
+
+  private async succeedTaskRun(runId: string | undefined, result: AiTaskResult) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.succeed(runId, result.attempt) }
+    catch (error: any) { this.logger.warn(`AI run audit success update failed for ${runId}: ${error.message}`) }
+  }
+
+  private async failTaskRun(runId: string | undefined, error: unknown) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.fail(runId, error) }
+    catch (auditError: any) { this.logger.warn(`AI run audit failure update failed for ${runId}: ${auditError.message}`) }
   }
 
   private async executeTaskAttempt(

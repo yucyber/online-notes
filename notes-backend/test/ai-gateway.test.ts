@@ -406,8 +406,8 @@ test('AiGatewayClient does not retry empty content when finish_reason is not len
 test('AiService keeps Pet chat lightweight and disables reasoning', async () => {
   const calls: any[] = []
   const gateway = {
-    describeChatRoute: () => ({ provider: 'siliconflow', model: 'Qwen/Qwen3-14B' }),
-    streamChat: async (options: any) => {
+    describeTaskRoute: () => ({ provider: 'siliconflow', model: 'Qwen/Qwen3.5-4B' }),
+    streamTask: async (options: any) => {
       calls.push(options)
       return new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
     },
@@ -416,8 +416,7 @@ test('AiService keeps Pet chat lightweight and disables reasoning', async () => 
 
   await service.chatPet({ message: '你好' }, { userId: 'user-1' })
 
-  assert.equal(calls[0].route, 'text')
-  assert.equal(calls[0].reasoningEffort, 'none')
+  assert.equal(calls[0].task, 'pet_chat')
   assert.equal(calls[0].maxTokens, 400)
 })
 
@@ -563,7 +562,7 @@ test('AiGatewayClient reranks with SiliconFlow rerank endpoint', async () => {
 
 test('AiService falls back to truncated summary when gateway fails', async () => {
   const gateway = {
-    chat: async () => {
+    chatTask: async () => {
       throw new Error('provider unavailable')
     },
   }
@@ -580,14 +579,14 @@ test('AiService splits long notes into segments before summarizing', async () =>
   let inFlight = 0
   let maxInFlight = 0
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       calls.push(options.prompt)
       optionsSeen.push(options)
       inFlight += 1
       maxInFlight = Math.max(maxInFlight, inFlight)
       await new Promise(resolve => setTimeout(resolve, 5))
       inFlight -= 1
-      return `seg:${options.prompt.length}`
+      return { content: `seg:${options.prompt.length}`, attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -603,14 +602,14 @@ test('AiService splits long notes into segments before summarizing', async () =>
   assert.match(result, /^seg:/)
   // 每个分段的 prompt 长度都不超过 1600 字分段上限加文案长度。
   calls.forEach((prompt) => assert.ok(prompt.length < 1800))
-  optionsSeen.forEach((options) => assert.equal(options.reasoningEffort, 'none'))
+  optionsSeen.forEach((options) => assert.equal(options.task, 'note_summary'))
   assert.equal(maxInFlight, 1)
 })
 
 test('AiService returns empty summary for empty content without calling gateway', async () => {
   let called = false
   const gateway = {
-    chat: async () => { called = true; return 'unexpected' },
+    chatTask: async () => { called = true; return { content: 'unexpected', attempt: {} } },
   }
   const service = new AiService(gateway as any, {} as any)
 
@@ -623,7 +622,7 @@ test('AiService returns empty summary for empty content without calling gateway'
 test('AiService skips AI for short content and returns it directly', async () => {
   let called = false
   const gateway = {
-    chat: async () => { called = true; return 'AI summary' },
+    chatTask: async () => { called = true; return { content: 'AI summary', attempt: {} } },
   }
   const service = new AiService(gateway as any, {} as any)
 
@@ -637,10 +636,10 @@ test('AiService uses dynamic target length for medium content (40% of length)', 
   const calls: string[] = []
   const optionsSeen: any[] = []
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       calls.push(options.prompt)
       optionsSeen.push(options)
-      return 'AI summary'
+      return { content: 'AI summary', attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -655,7 +654,7 @@ test('AiService uses dynamic target length for medium content (40% of length)', 
   assert.match(calls[0], /within 62 Chinese characters/)
   assert.equal(optionsSeen[0].maxTokens, 256)
   assert.equal(optionsSeen[0].temperature, 0.2)
-  assert.equal(optionsSeen[0].reasoningEffort, 'none')
+  assert.equal(optionsSeen[0].task, 'note_summary')
 })
 
 test('AiGatewayClient 为外部请求设置超时并重试瞬时网络错误', async () => {
@@ -679,9 +678,9 @@ test('AiGatewayClient 为外部请求设置超时并重试瞬时网络错误', a
 test('AiService caps summary target at 120 for long content', async () => {
   const calls: string[] = []
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       calls.push(options.prompt)
-      return 'AI summary'
+      return { content: 'AI summary', attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -706,7 +705,7 @@ test('AiGatewayClient reads non-standard content fields from provider response',
 
 test('AiService returns cleaned topic names from the text provider', async () => {
   const gateway = {
-    chat: async () => '"Frontend Performance"',
+    chatTask: async () => ({ content: '"Frontend Performance"', attempt: {} }),
   }
   const service = new AiService(gateway as any, {} as any)
 

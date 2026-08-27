@@ -8,6 +8,7 @@ import {
   type KnowledgeGraphNodeType,
 } from '../../knowledge-bases/knowledge-graph-normalize'
 import { AiGatewayClient } from '../ai-gateway.client'
+import { AiWorkflowContext } from '../ai-gateway.types'
 import { parseJsonObject } from '../ai-output'
 
 export type { KnowledgeGraphNodeType }
@@ -74,7 +75,7 @@ export class KnowledgeGraphBuildGraph {
     this.maxEdges = options.maxEdges || 80
   }
 
-  async run(input: KnowledgeGraphBuildInput): Promise<KnowledgeGraphProposal> {
+  async run(input: KnowledgeGraphBuildInput, context?: AiWorkflowContext): Promise<KnowledgeGraphProposal> {
     const knowledgeBaseId = String(input?.knowledgeBaseId || '').trim()
     const notes = this.prepareNotes(input?.notes || [])
     if (!knowledgeBaseId) throw new Error('knowledgeBaseId is required.')
@@ -89,15 +90,15 @@ export class KnowledgeGraphBuildGraph {
       }
     }
 
-    const answer = await this.gateway.chat({
-      route: 'text',
+    const answer = (await this.gateway.chatTask({
+      task: 'knowledge_graph',
       system: 'You extract knowledge graph proposals for a notes knowledge base. Return JSON only.',
       prompt: this.buildPrompt(knowledgeBaseId, notes),
       maxTokens: 2400,
       temperature: 0.2,
-      reasoningEffort: 'none',
       responseFormat: { type: 'json_object' },
-    })
+      audit: { graphName: 'KnowledgeGraphBuildGraph', userId: context?.userId },
+    })).content
 
     return this.normalizeProposal(knowledgeBaseId, notes, parseJsonObject(answer))
   }
