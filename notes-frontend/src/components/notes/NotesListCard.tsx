@@ -42,7 +42,7 @@ export function NotesListCard({
   return (
     <div
       key={note.id || `${String(note.title || 'note')}-${String(note.updatedAt || '')}-${index}`}
-      className={`prototype-note-row notes-list-item group ${isSelectionMode ? 'grid-cols-[32px_minmax(0,1fr)] gap-1' : ''} ${isSelectionMode && selectedNoteIds.has(note.id) ? 'is-selected' : ''}`}
+      className={`prototype-note-row notes-list-item group ${isSelectionMode ? 'is-selection-mode grid-cols-[32px_minmax(0,1fr)] gap-1' : ''} ${isSelectionMode && selectedNoteIds.has(note.id) ? 'is-selected' : ''}`}
     >
       <div className="absolute inset-0 overflow-hidden pointer-events-none">
         {isSelectionMode && (
