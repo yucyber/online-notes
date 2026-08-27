@@ -1,6 +1,18 @@
 import { HttpException, HttpStatus, Inject, Injectable, Optional } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { AiChatOptions, AiChatRoute, AiProviderConfig, AiRerankResult } from './ai-gateway.types'
+import {
+  AiChatOptions,
+  AiChatRoute,
+  AiFailureReason,
+  AiModelTarget,
+  AiProviderConfig,
+  AiRerankResult,
+  AiTask,
+  AiTaskResult,
+} from './ai-gateway.types'
+import { resolveAiModelPolicy } from './ai-model-policy'
+import { buildProviderOptions } from './ai-provider-adapter'
+import { validateAiOutput } from './ai-output-validator'
 
 type FetchLike = (url: string, init?: any) => Promise<any>
 
@@ -15,6 +27,12 @@ export class AiProviderHttpError extends HttpException {
         ? 'AI provider is temporarily unavailable. Please try again shortly.'
         : 'AI provider rejected the request.'
     super(message, status)
+  }
+}
+
+class AiTaskOutputError extends Error {
+  constructor(readonly reason: AiFailureReason) {
+    super(reason === 'empty_content' ? 'AI chat returned no assistant content' : `AI task output failed validation: ${reason}`)
   }
 }
 
@@ -56,19 +74,41 @@ export class AiGatewayClient {
   }
 
   private async chatWithProvider(options: AiChatOptions, provider: AiProviderConfig): Promise<string> {
+    return (await this.chatWithProviderDetailed(options, provider)).content
+  }
+
+  private async chatWithProviderDetailed(options: AiChatOptions, provider: AiProviderConfig): Promise<{
+    content: string
+    retryCount: number
+    finishReason?: string
+    reasoningChars: number
+  }> {
     // 推理型模型可能把小预算的 maxTokens 全部耗在思考过程上，导致 content 为空。
     // 当 content 为空且 finish_reason=length 时，用更高的预算有限重试一次，尽量让模型产出正文。
-    const data = await this.chatOnce(options, provider)
-    const content = this.extractChatContent(data)
-    if (content) return String(content).trim()
+    const first = await this.chatOnce(options, provider)
+    const content = this.extractChatContent(first.data)
+    if (content) return this.chatExecution(first, String(content).trim())
 
-    if (options.retryOnLengthOverflow && this.isLengthOverflow(data)) {
+    if (options.retryOnLengthOverflow && this.isLengthOverflow(first.data)) {
       const retried = await this.chatOnce(options, provider, this.retryMaxTokens(options.maxTokens))
-      const retriedContent = this.extractChatContent(retried)
-      if (retriedContent) return String(retriedContent).trim()
+      const retriedContent = this.extractChatContent(retried.data)
+      if (retriedContent) {
+        retried.retryCount += first.retryCount + 1
+        return this.chatExecution(retried, String(retriedContent).trim())
+      }
+      throw new AiTaskOutputError('length_exhausted')
     }
 
-    throw new Error(`${provider.provider} chat returned no assistant content. body=${this.describeChatBody(data, provider)}`)
+    throw new AiTaskOutputError('empty_content')
+  }
+
+  private chatExecution(result: { data: any; retryCount: number }, content: string) {
+    return {
+      content,
+      retryCount: result.retryCount,
+      finishReason: result.data.choices?.[0]?.finish_reason,
+      reasoningChars: String(result.data.choices?.[0]?.message?.reasoning || '').length,
+    }
   }
 
   private shouldUseSummaryProviderFallback(options: AiChatOptions, provider: AiProviderConfig, error: any): boolean {
@@ -86,14 +126,17 @@ export class AiGatewayClient {
   }
 
   // 单次非流式 chat 请求，返回解析后的响应体。
-  private async chatOnce(options: AiChatOptions, provider: AiProviderConfig, maxTokensOverride?: number): Promise<any> {
+  private async chatOnce(options: AiChatOptions, provider: AiProviderConfig, maxTokensOverride?: number): Promise<{ data: any; retryCount: number }> {
     const response = await this.postJson(
       this.endpoint(provider.baseUrl, '/chat/completions'),
       provider.apiKey,
       this.chatBody(provider, { ...options, maxTokens: maxTokensOverride ?? options.maxTokens }, { stream: false }),
       `${provider.provider} chat`,
     )
-    return response.json().catch(() => ({}))
+    return {
+      data: await response.json().catch(() => ({})),
+      retryCount: Number((response as any).__aiRetryCount || 0),
+    }
   }
 
   // content 为空时是否由预算耗尽（finish_reason=length）导致，用于判断是否值得重试。
@@ -140,6 +183,68 @@ export class AiGatewayClient {
 
     if (!response.body) throw new Error(`${provider.provider} stream chat returned no body`)
     return this.openAiSseToTextStream(response.body)
+  }
+
+  async streamTask(options: AiChatOptions & { task: AiTask }): Promise<ReadableStream<Uint8Array>> {
+    const policy = resolveAiModelPolicy(options.task)
+    const taskOptions = {
+      ...options,
+      reasoningMode: policy.reasoningMode,
+      maxTokens: options.maxTokens ?? policy.maxTokens,
+    }
+    try {
+      return await this.openPrimedTaskStream(taskOptions, policy.primary)
+    } catch (error) {
+      if (!policy.providerFallback || !this.isProviderFailure(this.classifyFailure(error))) throw error
+      return this.openPrimedTaskStream(taskOptions, policy.providerFallback)
+    }
+  }
+
+  private async openPrimedTaskStream(
+    options: AiChatOptions & { task: AiTask },
+    target: AiModelTarget,
+  ): Promise<ReadableStream<Uint8Array>> {
+    const provider = this.resolveModelTarget(target)
+    const response = await this.postJson(
+      this.endpoint(provider.baseUrl, '/chat/completions'),
+      provider.apiKey,
+      this.chatBody(provider, options, { stream: true }),
+      `${provider.provider} stream task`,
+    )
+    if (!response.body) throw new Error(`${provider.provider} stream chat returned no body`)
+
+    const source = this.openAiSseToTextStream(response.body)
+    const reader = source.getReader()
+    let first: ReadableStreamReadResult<Uint8Array>
+    try {
+      first = await reader.read()
+    } catch (error: any) {
+      throw new HttpException(`stream failed before content: ${error?.message || 'upstream error'}`, HttpStatus.SERVICE_UNAVAILABLE)
+    }
+    if (first.done || !first.value?.length) throw new AiTaskOutputError('empty_content')
+
+    // 首个正文 chunk 是跨模型降级边界；交付后发生错误只透传，不能拼接第二个模型的输出。
+    return new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(first.value)
+        const pump = async () => {
+          try {
+            while (true) {
+              const next = await reader.read()
+              if (next.done) break
+              if (next.value) controller.enqueue(next.value)
+            }
+            controller.close()
+          } catch (error) {
+            controller.error(error)
+          }
+        }
+        void pump()
+      },
+      cancel(reason) {
+        return reader.cancel(reason)
+      },
+    })
   }
 
   async embedding(text: string): Promise<number[]> {
@@ -202,6 +307,122 @@ export class AiGatewayClient {
       this.configService.get<string>(route === 'reasoning' ? 'AI_REASONING_PROVIDER' : 'AI_TEXT_PROVIDER') ||
       'siliconflow',
     ).toLowerCase()
+  }
+
+  private resolveModelTarget(target: AiModelTarget): AiProviderConfig {
+    if (target === 'siliconflow_economy') {
+      return this.readProviderConfig('siliconflow', {
+        apiKey: 'SILICONFLOW_API_KEY', baseUrl: 'SILICONFLOW_BASE_URL', model: 'SILICONFLOW_ECONOMY_TEXT_MODEL',
+      })
+    }
+    if (target === 'siliconflow_standard') {
+      return this.readProviderConfig('siliconflow', {
+        apiKey: 'SILICONFLOW_API_KEY', baseUrl: 'SILICONFLOW_BASE_URL', model: 'SILICONFLOW_STANDARD_TEXT_MODEL',
+      })
+    }
+    if (target === 'siliconflow_deep') {
+      return this.readProviderConfig('siliconflow', {
+        apiKey: 'SILICONFLOW_API_KEY', baseUrl: 'SILICONFLOW_BASE_URL', model: 'SILICONFLOW_DEEP_REASONING_MODEL',
+      })
+    }
+    if (target === 'bai_deepseek') return this.resolveSummaryProviderFallback()
+    return this.readProviderConfig('ar', { apiKey: 'AR_API_KEY', baseUrl: 'AR_BASE_URL', model: 'AR_MODEL' })
+  }
+
+  private isModelTarget(value: string): value is AiModelTarget {
+    return ['siliconflow_economy', 'siliconflow_standard', 'siliconflow_deep', 'bai_deepseek', 'ar_expert'].includes(value)
+  }
+
+  private classifyFailure(error: any): AiFailureReason {
+    if (error instanceof AiTaskOutputError) return error.reason
+    const status = Number(error?.getStatus?.())
+    if (status === 429) return 'rate_limited'
+    if (status === 401) return 'unauthorized'
+    if (status === 403) return 'forbidden'
+    if (status >= 500) {
+      return /timeout|abort/i.test(String(error?.providerDetail || error?.message || ''))
+        ? 'timeout'
+        : 'upstream_unavailable'
+    }
+    if (status >= 400) return 'rejected'
+    if (error?.name === 'AbortError') return 'cancelled'
+    return 'rejected'
+  }
+
+  private isQualityFailure(reason: AiFailureReason): boolean {
+    return ['empty_content', 'length_exhausted', 'invalid_output'].includes(reason)
+  }
+
+  private isProviderFailure(reason: AiFailureReason): boolean {
+    return ['rate_limited', 'upstream_unavailable', 'timeout'].includes(reason)
+  }
+
+  describeTaskRoute(task: AiTask): Pick<AiProviderConfig, 'provider' | 'model'> {
+    const policy = resolveAiModelPolicy(task)
+    const { provider, model } = this.resolveModelTarget(policy.primary)
+    return { provider, model }
+  }
+
+  describeQualityFallbackRoute(task: AiTask): Pick<AiProviderConfig, 'provider' | 'model'> | undefined {
+    const target = resolveAiModelPolicy(task).qualityFallback
+    if (!target || !this.isModelTarget(target)) return undefined
+    const { provider, model } = this.resolveModelTarget(target)
+    return { provider, model }
+  }
+
+  async chatTask(options: AiChatOptions & { task: AiTask }): Promise<AiTaskResult> {
+    const policy = resolveAiModelPolicy(options.task)
+    const taskOptions = {
+      ...options,
+      reasoningMode: policy.reasoningMode,
+      maxTokens: options.maxTokens ?? policy.maxTokens,
+    }
+    const startedAt = Date.now()
+
+    try {
+      return await this.executeTaskAttempt(taskOptions, policy.primary, startedAt)
+    } catch (error) {
+      const reason = this.classifyFailure(error)
+      const qualityTarget = policy.qualityFallback
+      if (this.isQualityFailure(reason) && qualityTarget && this.isModelTarget(qualityTarget)) {
+        return this.executeTaskAttempt(taskOptions, qualityTarget, startedAt, 'quality', reason)
+      }
+      if (this.isProviderFailure(reason) && policy.providerFallback) {
+        return this.executeTaskAttempt(taskOptions, policy.providerFallback, startedAt, 'provider', reason)
+      }
+      throw error
+    }
+  }
+
+  private async executeTaskAttempt(
+    options: AiChatOptions & { task: AiTask },
+    target: AiModelTarget,
+    startedAt: number,
+    fallbackType?: 'quality' | 'provider',
+    fallbackReason?: AiFailureReason,
+  ): Promise<AiTaskResult> {
+    const provider = this.resolveModelTarget(target)
+    const execution = await this.chatWithProviderDetailed(options, provider)
+    const validation = validateAiOutput(options.task, execution.content, { allowedNoteIds: options.allowedNoteIds })
+    if (!validation.valid) throw new AiTaskOutputError(validation.reason || 'invalid_output')
+    return {
+      content: execution.content,
+      attempt: {
+        task: options.task,
+        reasoningMode: options.reasoningMode || 'off',
+        provider: provider.provider,
+        model: provider.model,
+        durationMs: Math.max(0, Date.now() - startedAt),
+        retryCount: execution.retryCount,
+        fallbackUsed: Boolean(fallbackType),
+        fallbackType,
+        fallbackReason,
+        finishReason: execution.finishReason,
+        contentChars: execution.content.length,
+        reasoningChars: execution.reasoningChars,
+        validationResult: 'valid',
+      },
+    }
   }
 
   private chatProviderKeys(route: AiChatRoute, provider: string) {
@@ -279,9 +500,8 @@ export class AiGatewayClient {
       stream: extra.stream || undefined,
     }
     if (options.responseFormat) body.response_format = options.responseFormat
-    if (options.reasoningEffort === 'none' && provider.provider === 'siliconflow' && provider.model.startsWith('Qwen/')) {
-      body.enable_thinking = false
-    }
+    const reasoningMode = options.reasoningMode || (options.reasoningEffort === 'none' ? 'off' : 'auto')
+    Object.assign(body, buildProviderOptions({ provider: provider.provider, model: provider.model, reasoningMode }))
     return body
   }
 
@@ -310,7 +530,10 @@ export class AiGatewayClient {
         throw new HttpException(`${label} request failed: ${error?.name || 'network error'}`, HttpStatus.SERVICE_UNAVAILABLE)
       }
 
-      if (response.ok) return response
+      if (response.ok) {
+        Object.defineProperty(response, '__aiRetryCount', { value: attempt, configurable: true })
+        return response
+      }
 
       const error = await this.readProviderError(response)
       if (retryableStatuses.has(response.status) && attempt < 2) {
