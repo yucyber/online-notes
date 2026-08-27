@@ -330,15 +330,23 @@ test('AiService falls back to truncated summary when gateway fails', async () =>
 
 test('AiService splits long notes into segments before summarizing', async () => {
   const calls: string[] = []
+  const optionsSeen: any[] = []
+  let inFlight = 0
+  let maxInFlight = 0
   const gateway = {
     chat: async (options: any) => {
       calls.push(options.prompt)
+      optionsSeen.push(options)
+      inFlight += 1
+      maxInFlight = Math.max(maxInFlight, inFlight)
+      await new Promise(resolve => setTimeout(resolve, 5))
+      inFlight -= 1
       return `seg:${options.prompt.length}`
     },
   }
   const service = new AiService(gateway as any, {} as any)
 
-  // 3000 字以上才触发分段；构造 7000 字内容验证确实拆成多段并做一次合并摘要。
+  // 构造 7000 字内容验证确实拆成多段并做一次合并摘要。
   const longContent = ('这是一个较长的笔记段落，用于验证分段摘要逻辑是否正常工作。'.repeat(200))
   assert.ok(longContent.length > 3000)
 
@@ -347,8 +355,10 @@ test('AiService splits long notes into segments before summarizing', async () =>
   // 分段调用 + 一次合并调用，共三段以上。
   assert.ok(calls.length >= 3)
   assert.match(result, /^seg:/)
-  // 每个分段的 prompt 长度都不超过分段上限加文案长度。
-  calls.forEach((prompt) => assert.ok(prompt.length < 3200))
+  // 每个分段的 prompt 长度都不超过 1600 字分段上限加文案长度。
+  calls.forEach((prompt) => assert.ok(prompt.length < 1800))
+  optionsSeen.forEach((options) => assert.equal(options.reasoningEffort, 'none'))
+  assert.equal(maxInFlight, 1)
 })
 
 test('AiService returns empty summary for empty content without calling gateway', async () => {
@@ -397,8 +407,9 @@ test('AiService uses dynamic target length for medium content (40% of length)', 
 
   assert.equal(calls.length, 1)
   assert.match(calls[0], /within 62 Chinese characters/)
-  assert.equal(optionsSeen[0].maxTokens, 8000)
+  assert.equal(optionsSeen[0].maxTokens, 256)
   assert.equal(optionsSeen[0].temperature, 0.2)
+  assert.equal(optionsSeen[0].reasoningEffort, 'none')
 })
 
 test('AiGatewayClient 为外部请求设置超时并重试瞬时网络错误', async () => {

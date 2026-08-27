@@ -25,7 +25,7 @@ export class AiService {
   ) {}
 
   // 单段摘要的上限字符数；超过则分段各自摘要再合并，保证长笔记后半部分也参与主题向量。
-  private readonly summarySegmentChars = 3000
+  private readonly summarySegmentChars = 1600
 
   // 低于该长度的正文视为"内容较少"：全文信息量少，直接作为 summary，不调用 AI。
   private readonly minSummaryChars = 120
@@ -56,7 +56,11 @@ export class AiService {
       }
 
       const segments = this.splitSegments(cleanContent, this.summarySegmentChars)
-      const summaries = await Promise.all(segments.map((segment) => this.summarizeChunk(segment, targetChars)))
+      const summaries: string[] = []
+      // Workspace 可能限制瞬时并发；顺序摘要避免同一篇长笔记的多个分段互相触发 429。
+      for (const segment of segments) {
+        summaries.push(await this.summarizeChunk(segment, targetChars))
+      }
       // 先合并各段摘要，再让 AI 提炼一份最终摘要，避免拼接文本语义割裂。
       const merged = summaries.filter(Boolean).join('\n')
       if (!merged) return { summary: '', source: 'fallback' }
@@ -68,15 +72,15 @@ export class AiService {
   }
 
   // 单个 AI 摘要调用，失败时抛出由外层统一降级，这里不吞异常。
-  // SenseNova text 路由当前模型仍会产生 reasoning；8000 初始预算加一次 16000 重试，
-  // 避免实测中 4000/8000 两档都被 reasoning 耗尽而没有 summary 正文。
   private async summarizeChunk(text: string, targetChars: number): Promise<string> {
     return this.gateway.chat({
       route: 'text',
       system: 'You summarize notes for a knowledge management app. Return only the summary.',
       prompt: `Summarize the following note in Chinese within ${targetChars} Chinese characters. Keep the core facts and avoid prefaces.\n\n${text}`,
-      maxTokens: 8000,
+      // 摘要目标最多 120 个汉字，限制声明预算可避免 provider 按过大的输出上限拒绝请求。
+      maxTokens: 256,
       temperature: 0.2,
+      reasoningEffort: 'none',
       retryOnLengthOverflow: true,
     })
   }
