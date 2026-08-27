@@ -30,6 +30,9 @@ function createConfig(overrides: Record<string, string | undefined> = {}) {
     SILICONFLOW_EMBEDDING_MODEL: 'Qwen/Qwen3-Embedding-8B',
     SILICONFLOW_RERANKER_MODEL: 'Qwen/Qwen3-Reranker-8B',
     SILICONFLOW_RERANKER_PATH: '/rerank',
+    BAI_API_KEY: 'bai-secret',
+    BAI_BASE_URL: 'https://api.b.ai/v1',
+    BAI_FALLBACK_MODEL: 'deepseek-v4-flash',
     ...overrides,
   })
 }
@@ -96,6 +99,34 @@ test('AiGatewayClient routes note summaries to SiliconFlow standard model when t
   assert.equal(calls[0].body.enable_thinking, false)
   assert.equal(calls[0].body.reasoning_effort, undefined)
   assert.equal(calls[0].headers.Authorization, 'Bearer siliconflow-secret')
+})
+
+test('AiGatewayClient falls back to B.AI when SiliconFlow summary route remains rate limited', async () => {
+  const calls: Array<{ url: string; body: any; headers: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    const call = { url: String(url), body: JSON.parse(init.body), headers: init.headers }
+    calls.push(call)
+    if (call.url.startsWith('https://api.siliconflow.cn/')) {
+      return jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '0' })
+    }
+    return jsonResponse({ choices: [{ message: { content: 'B.AI 摘要' }, finish_reason: 'stop' }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chat({
+    task: 'note_summary',
+    route: 'text',
+    prompt: 'summarize',
+    reasoningEffort: 'none',
+  })
+
+  assert.equal(result, 'B.AI 摘要')
+  assert.equal(calls.filter((call) => call.url.startsWith('https://api.siliconflow.cn/')).length, 3)
+  const fallback = calls.at(-1)!
+  assert.equal(fallback.url, 'https://api.b.ai/v1/chat/completions')
+  assert.equal(fallback.body.model, 'deepseek-v4-flash')
+  assert.equal(fallback.body.reasoning_effort, undefined)
+  assert.equal(fallback.headers.Authorization, 'Bearer bai-secret')
 })
 
 test('AiGatewayClient rejects removed mimo provider configuration', async () => {

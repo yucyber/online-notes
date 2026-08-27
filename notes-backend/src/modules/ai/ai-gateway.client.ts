@@ -43,6 +43,15 @@ export class AiGatewayClient {
   async chat(options: AiChatOptions): Promise<string> {
     const provider = this.resolveChatProvider(options)
 
+    try {
+      return await this.chatWithProvider(options, provider)
+    } catch (error) {
+      if (!this.shouldUseSummaryProviderFallback(options, provider, error)) throw error
+      return this.chatWithProvider(options, this.resolveSummaryProviderFallback())
+    }
+  }
+
+  private async chatWithProvider(options: AiChatOptions, provider: AiProviderConfig): Promise<string> {
     // 推理型模型可能把小预算的 maxTokens 全部耗在思考过程上，导致 content 为空。
     // 当 content 为空且 finish_reason=length 时，用更高的预算有限重试一次，尽量让模型产出正文。
     const data = await this.chatOnce(options, provider)
@@ -56,6 +65,20 @@ export class AiGatewayClient {
     }
 
     throw new Error(`${provider.provider} chat returned no assistant content. body=${this.describeChatBody(data, provider)}`)
+  }
+
+  private shouldUseSummaryProviderFallback(options: AiChatOptions, provider: AiProviderConfig, error: any): boolean {
+    if (options.task !== 'note_summary' || provider.provider !== 'siliconflow') return false
+    const status = Number(error?.getStatus?.())
+    return status === HttpStatus.TOO_MANY_REQUESTS || status === HttpStatus.SERVICE_UNAVAILABLE
+  }
+
+  private resolveSummaryProviderFallback(): AiProviderConfig {
+    return this.readProviderConfig('bai', {
+      apiKey: 'BAI_API_KEY',
+      baseUrl: 'BAI_BASE_URL',
+      model: 'BAI_FALLBACK_MODEL',
+    })
   }
 
   // 单次非流式 chat 请求，返回解析后的响应体。
@@ -248,7 +271,7 @@ export class AiGatewayClient {
     if (options.reasoningEffort) {
       if (provider.provider === 'siliconflow' && provider.model.startsWith('Qwen/')) {
         if (options.reasoningEffort === 'none') body.enable_thinking = false
-      } else {
+      } else if (provider.provider !== 'bai') {
         body.reasoning_effort = options.reasoningEffort
       }
     }
