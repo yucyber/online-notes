@@ -150,6 +150,20 @@ interface AiModelPolicy {
 - [ ] AI run 记录 task、reasoningMode、模型、耗时、重试、fallbackType 和校验结果，不记录完整正文/reasoning/key。
 - [ ] 新路由由 `AI_TASK_ROUTING_ENABLED=false` 控制；固定评测通过后才打开。
 
+## P0-A 检查点：优先恢复现有笔记 Summary
+
+该检查点在 standard 模型、SiliconFlow reasoning adapter 和 summary fallback 已通过单测后立即执行，不等待 GraphRAG、图谱证据或其他上层功能。
+
+- [ ] 用户先按 `notes-backend/.env.example` 配置 SiliconFlow 与 B.AI 变量，但保持 `AI_TASK_ROUTING_ENABLED=false`。
+- [ ] 只对 `note_summary` 开启测试范围的任务路由，使用 SiliconFlow `Qwen/Qwen3-14B` 且 `enable_thinking=false`。
+- [ ] 对相同长文本先执行一次 live smoke test，确认正文非空、摘要长度符合目标且没有把 reasoning 当 content。
+- [ ] 只筛选 `summarySource=fallback`、summary 缺失或明显等于正文前缀的笔记；不得无条件重写已确认正常的 AI summary。
+- [ ] 先以 dry-run 输出 noteId、标题、当前 summarySource 和待处理原因；用户确认清单后再执行重建。
+- [ ] 重建顺序固定为 summary → 主题向量 → Chunk；单篇失败继续下一篇并在最终报告列出 failedNoteIds。
+- [ ] 写回前继续核对 `Note.updatedAt`，不得用重建快照覆盖期间发生的新编辑。
+- [ ] 最终报告包含处理数、AI summary 成功数、fallback 数、主题向量成功数、Chunk 成功数和失败原因；用户抽看 1～2 篇长笔记。
+- [ ] Summary 恢复完成后，再继续 P0 剩余任务路由、审计和固定评测。
+
 **P0 Exit Gate:**
 
 - [ ] 后端全部单测和 build 通过。
@@ -515,10 +529,12 @@ note_chunks.note_chunk_vector_index
 立即开始且不需要额外产品决策的工作：
 
 1. Task 0.1 固定 Node/npm；
-2. P0 模型路由 Task 0.2～0.7；
-3. Task 1.1 完善索引/回填诊断；
-4. Task 1.2 前端全量验收；
-5. 等待 U1、U2、U3 的外部确认后关闭 P0/P1；
-6. 再进入 P2 图谱证据绑定。
+2. 实现 `note_summary` 所需的最小 standard 路由与 adapter；
+3. 用户完成 `.env` 配置后执行 P0-A，优先恢复异常 summary、主题向量和 Chunk；
+4. 继续 P0 其余任务路由、审计和固定评测；
+5. Task 1.1 完善索引/回填诊断；
+6. Task 1.2 前端全量验收；
+7. 等待 U1、U2、U3 的外部确认后关闭 P0/P1；
+8. 再进入 P2 图谱证据绑定。
 
 禁止提前并行实现 P4/P5。它们依赖 P0 的模型审计、P2 的证据和 P3 暴露出的真实检索质量；提前开发只会把不稳定推理结果直接变成高风险写操作。
