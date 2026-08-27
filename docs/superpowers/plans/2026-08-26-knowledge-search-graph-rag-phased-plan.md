@@ -1,5 +1,7 @@
 # 知识检索、知识图谱与 GraphRAG 分阶段实施计划
 
+> **执行状态说明（2026-08-27）：** 本文保留第一阶段原始设计和实现细节。当前代码进度、AI 模型路由、后续 GraphRAG 与整理提案的统一优先级，改由 [`2026-08-27-knowledge-ai-platform-master-execution-plan.md`](./2026-08-27-knowledge-ai-platform-master-execution-plan.md) 管理。执行时以新总计划为准，本文不再作为进度真相来源。
+
 > **面向执行代理：** 必须使用 `subagent-driven-development`（推荐）或 `executing-plans` 按任务逐项实施。本计划使用复选框跟踪进度。
 
 **目标：** 建立主题向量与 Chunk 向量两条稳定链路，在保留现有“关键词 / 向量 / 混合”搜索选项的前提下展示命中 Chunk，并在知识库中用 React Flow 可视化现有节点和关系；后续再扩展为带原文证据引用的 GraphRAG 与知识整理提案。
