@@ -15,18 +15,15 @@ class FakeConfigService {
 
 function createConfig(overrides: Record<string, string | undefined> = {}) {
   return new FakeConfigService({
-    AI_TEXT_PROVIDER: 'sensenova',
-    AI_REASONING_PROVIDER: 'sensenova',
+    AI_TEXT_PROVIDER: 'siliconflow',
+    AI_REASONING_PROVIDER: 'siliconflow',
     AI_EMBEDDING_PROVIDER: 'siliconflow',
     AI_RERANKER_PROVIDER: 'siliconflow',
     AI_TASK_ROUTING_ENABLED: 'false',
-    SENSENOVA_API_KEY: 'sensenova-secret',
-    SENSENOVA_BASE_URL: 'https://sensenova.example/v1',
-    SENSENOVA_TEXT_MODEL: 'sensenova-6.8-flash-lite',
-    SENSENOVA_REASONING_MODEL: 'deepseek-v4-flash',
     SILICONFLOW_API_KEY: 'siliconflow-secret',
     SILICONFLOW_BASE_URL: 'https://api.siliconflow.cn/v1',
     SILICONFLOW_STANDARD_TEXT_MODEL: 'Qwen/Qwen3-14B',
+    SILICONFLOW_DEEP_REASONING_MODEL: 'deepseek-ai/DeepSeek-V4-Flash',
     SILICONFLOW_EMBEDDING_MODEL: 'Qwen/Qwen3-Embedding-8B',
     SILICONFLOW_RERANKER_MODEL: 'Qwen/Qwen3-Reranker-8B',
     SILICONFLOW_RERANKER_PATH: '/rerank',
@@ -44,27 +41,27 @@ function jsonResponse(body: any, status = 200, headers: Record<string, string> =
   })
 }
 
-test('AiGatewayClient routes text chat to SenseNova by default', async () => {
+test('AiGatewayClient routes text chat to SiliconFlow standard model by default', async () => {
   const calls: Array<{ url: string; body: any; headers: any }> = []
   const fetchImpl = async (url: any, init: any) => {
     calls.push({ url: String(url), body: JSON.parse(init.body), headers: init.headers })
-    return jsonResponse({ choices: [{ message: { content: 'OK from SenseNova' } }] })
+    return jsonResponse({ choices: [{ message: { content: 'OK from SiliconFlow' } }] })
   }
   const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
 
   const result = await client.chat({ route: 'text', prompt: 'hello', maxTokens: 16 })
 
-  assert.equal(result, 'OK from SenseNova')
-  assert.equal(calls[0].url, 'https://sensenova.example/v1/chat/completions')
-  assert.equal(calls[0].body.model, 'sensenova-6.8-flash-lite')
-  assert.equal(calls[0].headers.Authorization, 'Bearer sensenova-secret')
+  assert.equal(result, 'OK from SiliconFlow')
+  assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'Qwen/Qwen3-14B')
+  assert.equal(calls[0].headers.Authorization, 'Bearer siliconflow-secret')
 })
 
-test('AiGatewayClient routes reasoning chat to SenseNova by default', async () => {
+test('AiGatewayClient routes reasoning chat to SiliconFlow deep model by default', async () => {
   const calls: Array<{ url: string; body: any }> = []
   const fetchImpl = async (url: any, init: any) => {
     calls.push({ url: String(url), body: JSON.parse(init.body) })
-    return jsonResponse({ choices: [{ message: { content: 'OK from SenseNova reasoning' } }] })
+    return jsonResponse({ choices: [{ message: { content: 'OK from SiliconFlow reasoning' } }] })
   }
   const client = new AiGatewayClient(
     createConfig({ AI_REASONING_PROVIDER: undefined }) as any,
@@ -73,9 +70,9 @@ test('AiGatewayClient routes reasoning chat to SenseNova by default', async () =
 
   const result = await client.chat({ route: 'reasoning', prompt: 'think', maxTokens: 16 })
 
-  assert.equal(result, 'OK from SenseNova reasoning')
-  assert.equal(calls[0].url, 'https://sensenova.example/v1/chat/completions')
-  assert.equal(calls[0].body.model, 'deepseek-v4-flash')
+  assert.equal(result, 'OK from SiliconFlow reasoning')
+  assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'deepseek-ai/DeepSeek-V4-Flash')
 })
 
 test('AiGatewayClient routes note summaries to SiliconFlow standard model when task routing is enabled', async () => {
@@ -141,7 +138,19 @@ test('AiGatewayClient rejects removed mimo provider configuration', async () => 
   )
 })
 
-test('AiGatewayClient forwards explicit reasoning and JSON output options to SenseNova', async () => {
+test('AiGatewayClient rejects removed SenseNova provider configuration', async () => {
+  const client = new AiGatewayClient(
+    createConfig({ AI_TEXT_PROVIDER: 'sensenova' }) as any,
+    (async () => jsonResponse({ choices: [{ message: { content: 'unused' } }] })) as any,
+  )
+
+  await assert.rejects(
+    () => client.chat({ route: 'text', prompt: 'hello' }),
+    /Unsupported text AI provider: sensenova/,
+  )
+})
+
+test('AiGatewayClient forwards JSON output options to SiliconFlow deep model', async () => {
   const calls: Array<{ body: any }> = []
   const fetchImpl = async (_url: any, init: any) => {
     calls.push({ body: JSON.parse(init.body) })
@@ -156,11 +165,11 @@ test('AiGatewayClient forwards explicit reasoning and JSON output options to Sen
     responseFormat: { type: 'json_object' },
   })
 
-  assert.equal(calls[0].body.reasoning_effort, 'low')
+  assert.equal(calls[0].body.reasoning_effort, undefined)
   assert.deepEqual(calls[0].body.response_format, { type: 'json_object' })
 })
 
-test('AiGatewayClient forwards explicit reasoning_effort to SenseNova', async () => {
+test('AiGatewayClient disables thinking for SiliconFlow Qwen text requests', async () => {
   const calls: Array<{ body: any }> = []
   const fetchImpl = async (_url: any, init: any) => {
     calls.push({ body: JSON.parse(init.body) })
@@ -174,7 +183,8 @@ test('AiGatewayClient forwards explicit reasoning_effort to SenseNova', async ()
     reasoningEffort: 'none',
   })
 
-  assert.equal(calls[0].body.reasoning_effort, 'none')
+  assert.equal(calls[0].body.enable_thinking, false)
+  assert.equal(calls[0].body.reasoning_effort, undefined)
 })
 
 test('AiGatewayClient retries once on length overflow with higher budget', async () => {
@@ -221,7 +231,7 @@ test('AiGatewayClient does not retry empty content when finish_reason is not len
 test('AiService keeps Pet chat lightweight and disables reasoning', async () => {
   const calls: any[] = []
   const gateway = {
-    describeChatRoute: () => ({ provider: 'sensenova', model: 'sensenova-6.8-flash-lite' }),
+    describeChatRoute: () => ({ provider: 'siliconflow', model: 'Qwen/Qwen3-14B' }),
     streamChat: async (options: any) => {
       calls.push(options)
       return new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
@@ -238,15 +248,15 @@ test('AiService keeps Pet chat lightweight and disables reasoning', async () => 
 
 test('AiGatewayClient reports missing config without leaking existing secrets', async () => {
   const client = new AiGatewayClient(
-    createConfig({ SENSENOVA_API_KEY: undefined }) as any,
+    createConfig({ SILICONFLOW_API_KEY: undefined }) as any,
     (async () => jsonResponse({})) as any,
   )
 
   await assert.rejects(
     () => client.chat({ route: 'text', prompt: 'hello' }),
     (error: any) => {
-      assert.match(error.message, /SENSENOVA_API_KEY/)
-      assert.doesNotMatch(error.message, /siliconflow-secret|sensenova-secret/)
+      assert.match(error.message, /SILICONFLOW_API_KEY/)
+      assert.doesNotMatch(error.message, /siliconflow-secret|bai-secret/)
       return true
     },
   )

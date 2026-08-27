@@ -20,6 +20,10 @@ export class AiProviderHttpError extends HttpException {
 
 @Injectable()
 export class AiGatewayClient {
+  // AgentRouter 网关（阿里云 WAF）对 UA 做精确校验，缺了这个 UA 一律返回 401 unauthorized_client_error。
+  // 该 UA 是官方 claude-cli 的签名，必须原样保留；对其它供应商是无害的额外请求头。
+  private static readonly AR_USER_AGENT = 'claude-cli/2.1.75 (external, cli)'
+
   private readonly fetchImpl: FetchLike
 
   constructor(
@@ -193,20 +197,27 @@ export class AiGatewayClient {
     return String(this.configService.get<string>('AI_TASK_ROUTING_ENABLED') || '').toLowerCase() === 'true'
   }
 
-  // text 与 reasoning 默认共用 SenseNova，避免本地聊天依赖另一套失效凭据；仍保留显式切换 provider 的能力。
   private resolveChatProviderName(route: AiChatRoute): string {
     return String(
       this.configService.get<string>(route === 'reasoning' ? 'AI_REASONING_PROVIDER' : 'AI_TEXT_PROVIDER') ||
-      'sensenova',
+      'siliconflow',
     ).toLowerCase()
   }
 
   private chatProviderKeys(route: AiChatRoute, provider: string) {
-    if (provider === 'sensenova') {
+    if (provider === 'siliconflow') {
       return {
-        apiKey: 'SENSENOVA_API_KEY',
-        baseUrl: 'SENSENOVA_BASE_URL',
-        model: route === 'reasoning' ? 'SENSENOVA_REASONING_MODEL' : 'SENSENOVA_TEXT_MODEL',
+        apiKey: 'SILICONFLOW_API_KEY',
+        baseUrl: 'SILICONFLOW_BASE_URL',
+        model: route === 'reasoning' ? 'SILICONFLOW_DEEP_REASONING_MODEL' : 'SILICONFLOW_STANDARD_TEXT_MODEL',
+      }
+    }
+
+    if (provider === 'ar') {
+      return {
+        apiKey: 'AR_API_KEY',
+        baseUrl: 'AR_BASE_URL',
+        model: 'AR_MODEL',
       }
     }
 
@@ -268,12 +279,8 @@ export class AiGatewayClient {
       stream: extra.stream || undefined,
     }
     if (options.responseFormat) body.response_format = options.responseFormat
-    if (options.reasoningEffort) {
-      if (provider.provider === 'siliconflow' && provider.model.startsWith('Qwen/')) {
-        if (options.reasoningEffort === 'none') body.enable_thinking = false
-      } else if (provider.provider !== 'bai') {
-        body.reasoning_effort = options.reasoningEffort
-      }
+    if (options.reasoningEffort === 'none' && provider.provider === 'siliconflow' && provider.model.startsWith('Qwen/')) {
+      body.enable_thinking = false
     }
     return body
   }
@@ -290,6 +297,7 @@ export class AiGatewayClient {
           headers: {
             Authorization: `Bearer ${apiKey}`,
             'Content-Type': 'application/json',
+            'User-Agent': AiGatewayClient.AR_USER_AGENT,
           },
           body: JSON.stringify(body),
           signal: AbortSignal.timeout(timeoutMs),

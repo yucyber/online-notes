@@ -51,7 +51,7 @@ test('AiService builds knowledge graph proposals from readable knowledge base no
   const gateway = {
     describeChatRoute: (route: string) => {
       describedRoutes.push(route)
-      return { provider: 'sensenova', model: 'sensenova-6.8-flash-lite' }
+      return { provider: 'siliconflow', model: 'Qwen/Qwen3-14B' }
     },
   }
   const runs = {
@@ -90,7 +90,7 @@ test('AiService builds knowledge graph proposals from readable knowledge base no
   assert.equal(runStarts[0].graphName, 'KnowledgeGraphBuildGraph')
   assert.equal(runStarts[0].userId, 'user-1')
   assert.deepEqual(describedRoutes, ['text'])
-  assert.equal(runStarts[0].model, 'sensenova-6.8-flash-lite')
+  assert.equal(runStarts[0].model, 'Qwen/Qwen3-14B')
 })
 
 test('AiService requires KnowledgeBasesService at module startup', () => {
