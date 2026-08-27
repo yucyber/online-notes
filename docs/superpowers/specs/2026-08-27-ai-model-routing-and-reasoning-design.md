@@ -68,30 +68,30 @@ type AiReasoningMode = 'off' | 'auto' | 'deep'
 | `standard` | 硅基流动 `Qwen/Qwen3-14B` | `off` | 单篇/聚合摘要、图谱、普通 RAG、基础提案、写作、思维导图 |
 | `deep` | 硅基流动 `deepseek-ai/DeepSeek-V4-Flash` | `deep` | 冲突分析、拆分合并、复杂返工、复杂 Mermaid 生成与修复 |
 
-B.AI `deepseek-v4-flash` 作为跨供应商 fallback。由于当前观察到 B.AI 有突发 429，它不作为唯一生产通道。
+B.AI `deepseek-v4-flash` 只承担跨供应商容灾。由于当前观察到 B.AI 有突发 429，它不作为唯一生产通道。同为 DeepSeek-V4-Flash 的硅基流动实例用于同供应商能力升级，两者名称相近，但触发原因不同。
 
 ## AI 链路矩阵
 
-| AI 链路 | 层级 | 主模型 | Fallback | Reasoning | 原因 |
-| --- | --- | --- | --- | --- | --- |
-| 单篇及长笔记分段摘要 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 稳定覆盖信息，避免分段请求的推理成本 |
-| 多篇笔记聚合摘要 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | off；发现冲突才升级 deep | 日常是综合，冲突才需要复杂比较 |
-| 知识图谱抽取 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 核心是证据约束和稳定 JSON |
-| 基础标签、分类、归属提案 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 属于受约束语义匹配 |
-| 拆分、合并、内容修改提案 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 需要比较、去重、冲突处理和内容完整性检查 |
-| 用户反馈后的复杂返工 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 需要理解旧方案与修改意见的差异 |
-| 普通 RAG 最终回答 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 检索已提供证据，重点是忠实组织和引用 |
-| 检索证据冲突分析 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 需要识别冲突、版本和不确定性 |
-| Query rewrite | economy | Qwen3.5-4B | Qwen3-14B | off | 输出短、风险低 |
-| Query Planner | 本地规则优先 | Qwen3.5-4B | 固定安全工具组 | off | 明显问题不产生额外模型调用 |
-| 搜索命中说明 | economy | Qwen3.5-4B | 直接展示 Chunk | off | 失败不影响搜索证据本身 |
-| 主题名称 | economy | Qwen3.5-4B | 本地关键词兜底 | off | 只生成 2～6 个词 |
-| 宠物聊天 | economy | Qwen3.5-4B | B.AI DeepSeek-V4-Flash | off | 不检索用户笔记，低风险 |
-| 续写、润色 | standard | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 主要关注表达质量 |
-| 思维导图 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | off | 优先保证 JSON 合法；修复时可升级 |
-| Mermaid | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | deep | 图语法和失败修复需要多步骤检查 |
-| 主题/Chunk embedding | 专用模型 | Qwen3-Embedding-8B | 不自动切模型 | 不适用 | 必须保持向量维度和索引一致 |
-| Rerank | 专用模型 | Qwen3-Reranker-8B | 原始融合排序 | 不适用 | 失败可安全退回已有检索分数 |
+| AI 链路 | 层级 | 主模型 | 质量 fallback | 供应商 fallback | Reasoning | 原因 |
+| --- | --- | --- | --- | --- | --- | --- |
+| 单篇及长笔记分段摘要 | standard | Qwen3-14B | 原文截断摘要 | B.AI DeepSeek-V4-Flash | off | 稳定覆盖信息；质量失败可本地安全降级 |
+| 多篇笔记聚合摘要 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off；发现冲突才升级 deep | 日常是综合，冲突才需要复杂比较 |
+| 知识图谱抽取 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off | JSON 或结构校验失败时升级能力 |
+| 基础标签、分类、归属提案 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off | 属于受约束语义匹配 |
+| 拆分、合并、内容修改提案 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 需要比较、去重、冲突处理和内容完整性检查 |
+| 用户反馈后的复杂返工 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 需要理解旧方案与修改意见的差异 |
+| 普通 RAG 最终回答 | standard | Qwen3-14B | 重新检索或明确证据不足 | B.AI DeepSeek-V4-Flash | off | 不用换强模型掩盖证据不足 |
+| 检索证据冲突分析 | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 需要识别冲突、版本和不确定性 |
+| Query rewrite | economy | Qwen3.5-4B | Qwen3-14B | B.AI DeepSeek-V4-Flash | off | 输出短、风险低 |
+| Query Planner | 本地规则优先 | Qwen3.5-4B | 固定安全工具组 | 无 | off | 明显问题不产生额外模型调用 |
+| 搜索命中说明 | economy | Qwen3.5-4B | 直接展示 Chunk | 无 | off | 失败不影响搜索证据本身 |
+| 主题名称 | economy | Qwen3.5-4B | 本地关键词兜底 | 无 | off | 只生成 2～6 个词 |
+| 宠物聊天 | economy | Qwen3.5-4B | 无 | B.AI DeepSeek-V4-Flash | off | 不检索用户笔记，低风险 |
+| 续写、润色 | standard | Qwen3-14B | 无 | B.AI DeepSeek-V4-Flash | off | 主要关注表达质量 |
+| 思维导图 | standard | Qwen3-14B | 硅基流动 DeepSeek-V4-Flash | B.AI DeepSeek-V4-Flash | off | 优先保证 JSON 合法；修复时可升级 |
+| Mermaid | deep | 硅基流动 DeepSeek-V4-Flash | Qwen3-14B | B.AI DeepSeek-V4-Flash | deep | 图语法和失败修复需要多步骤检查 |
+| 主题/Chunk embedding | 专用模型 | Qwen3-Embedding-8B | 不自动切模型 | 无 | 不适用 | 必须保持向量维度和索引一致 |
+| Rerank | 专用模型 | Qwen3-Reranker-8B | 原始融合排序 | 无 | 不适用 | 失败可安全退回已有检索分数 |
 
 RAG 助手和宠物聊天必须保持为两条内部链路。RAG 会执行权限过滤、Chunk 检索、可选图谱扩展、rerank 和引用生成；宠物聊天默认不读取用户笔记。当宠物入口收到知识型问题时，由 Query Planner 转交 RAG，而不是让宠物模型凭自身知识回答用户经历。
 
@@ -117,7 +117,32 @@ SiliconFlow Qwen:
 
 模型能力表由代码维护，不能根据 provider 名称猜测参数支持。未知参数不得发送到远端。
 
-## Fallback 与重试边界
+## 两类 Fallback 与重试边界
+
+fallback 必须按目的拆分，不能用一个模糊字段同时表示“模型能力不足”和“供应商不可用”：
+
+```ts
+interface AiModelPolicy {
+  primary: ModelTarget
+  qualityFallback?: ModelTarget | LocalFallback
+  providerFallback?: ModelTarget
+}
+```
+
+- `qualityFallback`：主请求已经成功返回，但正文为空、结构不合法或任务质量校验失败。它可以是同供应商更强模型，也可以是原文截断、原始检索结果等本地安全降级。
+- `providerFallback`：主供应商发生 429、超时、网络错误或临时 5xx。它必须使用另一供应商，当前固定为 B.AI DeepSeek-V4-Flash。
+
+知识图谱的典型策略是：
+
+```text
+SiliconFlow Qwen3-14B
+  ├─ JSON 或业务结构校验失败
+  │    → qualityFallback: SiliconFlow DeepSeek-V4-Flash
+  └─ SiliconFlow 429、超时或临时 5xx
+       → providerFallback: B.AI DeepSeek-V4-Flash
+```
+
+两种 fallback 都不是无条件的第二、第三次模型调用。单次任务最多使用一个 fallback；根据错误类型直接选择对应分支，禁止先执行质量 fallback、失败后再执行供应商 fallback，避免一次用户操作形成无界请求链。
 
 一次调用流程：
 
@@ -125,15 +150,20 @@ SiliconFlow Qwen:
 任务策略解析
 → 主模型最多执行网络/429退避重试
 → 校验 HTTP、非空正文和任务输出结构
-→ 仅在允许降级的错误上切换 fallback
-→ 记录最终 provider、model、attempt 和 fallback reason
+→ 质量错误选择 qualityFallback
+→ 供应商错误选择 providerFallback
+→ 单次任务最多执行一个 fallback
+→ 记录最终 provider、model、attempt、fallbackType 和 fallbackReason
 ```
 
-允许切换 fallback：
+允许选择 `providerFallback`：
 
 - 429；
 - 502、503、504；
 - 网络超时；
+
+允许选择 `qualityFallback`：
+
 - HTTP 200 但正文为空；
 - `finish_reason=length` 且提高预算重试后仍无正文；
 - 图谱、提案、思维导图等任务的结构校验失败，且本地修复失败。
@@ -190,7 +220,7 @@ BAI_FALLBACK_MODEL=deepseek-v4-flash
 - finishReason；
 - contentChars 和 reasoningChars；
 - retryCount；
-- fallbackUsed 和 fallbackReason；
+- fallbackUsed、fallbackType（`quality | provider`）和 fallbackReason；
 - 结构校验结果。
 
 不记录 API Key、完整用户笔记、完整 prompt、完整 reasoning。摘要异步任务仍记录 `ai / passthrough / fallback` 来源。
@@ -201,9 +231,10 @@ BAI_FALLBACK_MODEL=deepseek-v4-flash
 - `off` 模式对硅基流动 Qwen 发送 `enable_thinking=false`，不再错误地只发送 `reasoning_effort=none`。
 - standard 链路默认使用 Qwen3-14B；economy 链路使用 Qwen3.5-4B；deep 链路才使用 DeepSeek-V4-Flash。
 - MiMo-V2.5 和 Hy3 不进入生产路由。
-- 429、临时 5xx、超时和空正文可以在边界内降级；400、401、403 不会掩盖配置问题。
+- 质量错误只选择 quality fallback；429、临时 5xx 和超时只选择跨供应商 fallback。
+- 单次任务最多执行一个 fallback，不形成“主模型→质量 fallback→供应商 fallback”的连续调用链。
+- 400、401、403 不会通过 fallback 掩盖配置问题。
 - 流式响应不会拼接两个模型的正文。
 - 结构化链路在返回业务层前完成 JSON schema 校验。
 - embedding 和 reranker 模型保持不变。
 - 固定评测集分别验证摘要信息覆盖、JSON 合法率、引用正确率、空正文率、P95 延迟和 fallback 成功率。
-
