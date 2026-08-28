@@ -48,9 +48,12 @@ function GraphStage({ graph, links, sessionState, onSessionStateChange }: GraphS
 
   useEffect(() => {
     setNodes(initial.nodes); setEdges(initial.edges); setSelectedId('')
+    if (!sessionState?.viewport) requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 }))
+  }, [fitView, initial, setEdges, setNodes])
+
+  useEffect(() => {
     if (sessionState?.viewport) void setViewport(sessionState.viewport)
-    else requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 }))
-  }, [fitView, initial, sessionState?.viewport, setEdges, setNodes, setViewport])
+  }, [sessionState?.viewport, setViewport])
 
   const connectedIds = useMemo(() => {
     if (!selectedId) return new Set<string>()
@@ -71,14 +74,12 @@ function GraphStage({ graph, links, sessionState, onSessionStateChange }: GraphS
   }, [filteredGraph, fitView, setEdges, setNodes])
 
   const toggleType = useCallback((type: KnowledgeGraphNodeType) => {
-    setVisibleTypes((current) => {
-      const next = new Set(current)
-      if (next.has(type) && next.size > 1) next.delete(type)
-      else next.add(type)
-      onSessionStateChange?.({ visibleTypes: Array.from(next) })
-      return next
-    })
-  }, [onSessionStateChange])
+    const next = new Set(visibleTypes)
+    if (next.has(type) && next.size > 1) next.delete(type)
+    else next.add(type)
+    setVisibleTypes(next)
+    onSessionStateChange?.({ visibleTypes: Array.from(next) })
+  }, [onSessionStateChange, visibleTypes])
 
   return <div className="knowledge-graph-stage">
     <div className="knowledge-graph-canvas" data-testid="knowledge-graph-canvas">
