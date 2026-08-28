@@ -28,6 +28,9 @@ export class KnowledgeGraphEdge {
 
   @Prop({ type: [Types.ObjectId], ref: 'Note', default: [] })
   noteIds: Types.ObjectId[]
+
+  @Prop({ type: [Types.ObjectId], ref: 'NoteChunk', default: [] })
+  evidenceChunkIds: Types.ObjectId[]
 }
 
 export const KnowledgeGraphEdgeSchema = SchemaFactory.createForClass(KnowledgeGraphEdge)

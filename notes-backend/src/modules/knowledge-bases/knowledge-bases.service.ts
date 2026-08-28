@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { Note, NoteDocument } from '../notes/schemas/note.schema'
+import { NoteChunk, NoteChunkDocument } from '../notes/schemas/note-chunk.schema'
 import { NoteAccessService } from '../notes/note-access.service'
 import { AddKnowledgeBaseNoteDto, CreateKnowledgeBaseDto, SaveKnowledgeGraphDto } from './dto'
 import {
@@ -27,6 +28,7 @@ export class KnowledgeBasesService {
     @Optional() @InjectModel(KnowledgeGraphNode.name) private readonly graphNodeModel?: Model<KnowledgeGraphNodeDocument>,
     @Optional() @InjectModel(KnowledgeGraphEdge.name) private readonly graphEdgeModel?: Model<KnowledgeGraphEdgeDocument>,
     @Optional() private readonly injectedGraphService?: KnowledgeGraphService,
+    @Optional() @InjectModel(NoteChunk.name) private readonly noteChunkModel?: Model<NoteChunkDocument>,
   ) {
     this.graphService = injectedGraphService || new KnowledgeGraphService()
   }
@@ -90,6 +92,21 @@ export class KnowledgeBasesService {
 
   async listGraphNotes(id: string, userId: string) {
     const { links, noteById } = await this.listLinkedNotes(id, userId, { includeContent: true })
+    const readableNoteIds = [...noteById.keys()].map((noteId) => new Types.ObjectId(noteId))
+    const chunks = readableNoteIds.length > 0 && this.noteChunkModel
+      ? await this.noteChunkModel.find({ userId: this.objectId(userId, 'user id'), noteId: { $in: readableNoteIds } })
+        .sort({ noteId: 1, chunkIndex: 1 }).select('noteId headingPath content').exec()
+      : []
+    const chunksByNote = new Map<string, any[]>()
+    for (const chunk of chunks) {
+      const chunkValue = this.toObject(chunk)
+      const noteId = String(this.idOf(chunk, 'noteId'))
+      chunksByNote.set(noteId, [...(chunksByNote.get(noteId) || []), {
+        chunkId: String(this.idOf(chunk)),
+        headingPath: chunkValue.headingPath || [],
+        content: chunkValue.content || '',
+      }])
+    }
     return links
       .map((link) => {
         const note = noteById.get(String(this.idOf(link, 'noteId')))
@@ -99,7 +116,7 @@ export class KnowledgeBasesService {
           id: String(value._id),
           title: value.title || 'Untitled',
           summary: value.summary || '',
-          content: value.content || '',
+          chunks: chunksByNote.get(String(value._id)) || [],
           createdAt: value.createdAt,
           updatedAt: value.updatedAt,
         }
@@ -132,12 +149,17 @@ export class KnowledgeBasesService {
     const knowledgeBaseId = this.idOf(kb)
     const userObjectId = this.objectId(userId, 'user id')
     const scope = { knowledgeBaseId, userId: userObjectId }
-    const allowedNoteIds = await this.listKnowledgeBaseNoteIds(knowledgeBaseId, userObjectId)
+    const linkedNoteIds = await this.listKnowledgeBaseNoteIds(knowledgeBaseId, userObjectId)
+    const readableNotes = linkedNoteIds.length > 0
+      ? await this.noteModel.find(this.noteAccess.readableNotesQuery(linkedNoteIds, userId)).select('_id').exec()
+      : []
+    const allowedNoteIds = readableNotes.map((note) => this.idOf(note))
     const allowedNoteIdSet = new Set(allowedNoteIds.map(String))
-    const nodes = this.normalizeGraphNodes(input?.nodes || [], scope, allowedNoteIdSet)
+    const evidenceById = await this.loadValidEvidence(input, userObjectId, allowedNoteIds)
+    const nodes = this.normalizeGraphNodes(input?.nodes || [], scope, allowedNoteIdSet, evidenceById)
     const nodeIds = new Set(nodes.map((node) => node.nodeId))
     const nodeNoteIds = new Map(nodes.map((node) => [node.nodeId, node.noteIds.map(String)]))
-    const edges = this.normalizeGraphEdges(input?.edges || [], scope, allowedNoteIdSet, nodeIds, nodeNoteIds)
+    const edges = this.normalizeGraphEdges(input?.edges || [], scope, allowedNoteIdSet, nodeIds, nodeNoteIds, evidenceById)
 
     return this.graphService.replace({
       connectionOwner: this.kbModel,
@@ -199,7 +221,7 @@ export class KnowledgeBasesService {
     return links.map((link) => this.idOf(link, 'noteId'))
   }
 
-  private normalizeGraphNodes(nodes: SaveKnowledgeGraphDto['nodes'], scope: { knowledgeBaseId: Types.ObjectId; userId: Types.ObjectId }, allowedNoteIds: Set<string>) {
+  private normalizeGraphNodes(nodes: SaveKnowledgeGraphDto['nodes'], scope: { knowledgeBaseId: Types.ObjectId; userId: Types.ObjectId }, allowedNoteIds: Set<string>, evidenceById: Map<string, string>) {
     // 图谱节点只能引用当前知识库已关联的笔记，不能借保存图谱写入任意 noteId。
     const seen = new Set<string>()
     return (Array.isArray(nodes) ? nodes : []).flatMap((node) => {
@@ -215,6 +237,7 @@ export class KnowledgeBasesService {
         type: normalizeKnowledgeGraphNodeType(node?.type),
         confidence: clampUnitInterval(node?.confidence, 0.75),
         noteIds: noteIds.map((noteId) => new Types.ObjectId(noteId)),
+        evidenceChunkIds: this.filterEvidenceIds(node?.evidenceChunkIds, evidenceById, new Set(noteIds)).map((chunkId) => new Types.ObjectId(chunkId)),
       }]
     })
   }
@@ -225,6 +248,7 @@ export class KnowledgeBasesService {
     allowedNoteIds: Set<string>,
     nodeIds: Set<string>,
     nodeNoteIds: Map<string, string[]>,
+    evidenceById: Map<string, string>,
   ) {
     // 边必须连接本次提交中存在的节点；缺少 noteIds 时才继承两端节点的来源笔记。
     const seen = new Set<string>()
@@ -247,6 +271,8 @@ export class KnowledgeBasesService {
         relation,
         weight: clampUnitInterval(edge?.weight, 0.6),
         noteIds: noteIds.map((noteId) => new Types.ObjectId(noteId)),
+        // 边证据限定在两端节点的笔记并集，避免合法 Chunk ID 被借用到无关关系。
+        evidenceChunkIds: this.filterEvidenceIds(edge?.evidenceChunkIds, evidenceById, new Set(fallbackNoteIds)).map((chunkId) => new Types.ObjectId(chunkId)),
       }]
     })
   }
@@ -297,6 +323,7 @@ export class KnowledgeBasesService {
       type: normalizeKnowledgeGraphNodeType(value.type),
       confidence: clampUnitInterval(value.confidence, 0.75),
       noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
+      evidenceChunkIds: (Array.isArray(value.evidenceChunkIds) ? value.evidenceChunkIds : []).map(String),
     }
   }
 
@@ -309,7 +336,29 @@ export class KnowledgeBasesService {
       relation: value.relation || 'related to',
       weight: clampUnitInterval(value.weight, 0.6),
       noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
+      evidenceChunkIds: (Array.isArray(value.evidenceChunkIds) ? value.evidenceChunkIds : []).map(String),
     }
+  }
+
+  private async loadValidEvidence(input: SaveKnowledgeGraphDto, userId: Types.ObjectId, allowedNoteIds: Types.ObjectId[]) {
+    const candidateIds = uniqueStrings([...(input?.nodes || []), ...(input?.edges || [])]
+      .flatMap((item) => Array.isArray(item?.evidenceChunkIds) ? item.evidenceChunkIds : [])
+      .map(String)
+      .filter((id) => Types.ObjectId.isValid(id)))
+    if (candidateIds.length === 0) return new Map<string, string>()
+    const chunks = await this.requireNoteChunkModel().find({
+      _id: { $in: candidateIds.map((id) => new Types.ObjectId(id)) },
+      userId,
+      noteId: { $in: allowedNoteIds },
+    }).select('_id noteId userId').exec()
+    return new Map(chunks.map((chunk) => [String(this.idOf(chunk)), String(this.idOf(chunk, 'noteId'))]))
+  }
+
+  private filterEvidenceIds(value: unknown, evidenceById: Map<string, string>, allowedNoteIds: Set<string>) {
+    return uniqueStrings((Array.isArray(value) ? value : []).map(String).filter((id) => {
+      const noteId = evidenceById.get(id)
+      return Boolean(noteId && allowedNoteIds.has(noteId))
+    }))
   }
 
   private latestGraphTimestamp(nodes: any[], edges: any[]) {
@@ -359,6 +408,11 @@ export class KnowledgeBasesService {
   private requireGraphEdgeModel() {
     if (!this.graphEdgeModel) throw new Error('Knowledge graph edge model is not configured')
     return this.graphEdgeModel
+  }
+
+  private requireNoteChunkModel() {
+    if (!this.noteChunkModel) throw new Error('Note chunk model is not configured')
+    return this.noteChunkModel
   }
 
 }

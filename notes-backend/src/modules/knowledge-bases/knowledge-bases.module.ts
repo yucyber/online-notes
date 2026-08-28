@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { NotesModule } from '../notes/notes.module'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
+import { NoteChunk, NoteChunkSchema } from '../notes/schemas/note-chunk.schema'
 import { KnowledgeBasesController } from './knowledge-bases.controller'
 import { KnowledgeBasesService } from './knowledge-bases.service'
 import { KnowledgeGraphService } from './knowledge-graph.service'
@@ -19,6 +20,7 @@ import { KnowledgeGraphNode, KnowledgeGraphNodeSchema } from './schemas/knowledg
       { name: KnowledgeGraphNode.name, schema: KnowledgeGraphNodeSchema },
       { name: KnowledgeGraphEdge.name, schema: KnowledgeGraphEdgeSchema },
       { name: Note.name, schema: NoteSchema },
+      { name: NoteChunk.name, schema: NoteChunkSchema },
     ]),
   ],
   controllers: [KnowledgeBasesController],

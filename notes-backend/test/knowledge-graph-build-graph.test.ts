@@ -12,11 +12,11 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
       calls.push(options)
       return { content: JSON.stringify({
         nodes: [
-          { label: 'AI Gateway', type: 'concept', noteIds: ['note-1', 'outside-note'], confidence: 0.92 },
+          { label: 'AI Gateway', type: 'concept', noteIds: ['note-1', 'outside-note'], evidenceChunkIds: ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439099', 'bad-id', '507f1f77bcf86cd799439021'], confidence: 0.92 },
           { label: 'Run Audit', type: 'entity', noteIds: ['note-2'], confidence: 0.81 },
         ],
         edges: [
-          { source: 'AI Gateway', target: 'Run Audit', relation: 'records runs', noteIds: ['note-1', 'note-2'], weight: 0.7 },
+          { source: 'AI Gateway', target: 'Run Audit', relation: 'records runs', noteIds: ['note-1', 'note-2'], evidenceChunkIds: ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022', '507f1f77bcf86cd799439099'], weight: 0.7 },
         ],
       }), attempt: {} }
     },
@@ -25,19 +25,24 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
   const proposal = await graph.run({
     knowledgeBaseId: 'kb-1',
     notes: [
-      { id: 'note-1', title: 'Gateway', content: 'AI Gateway routes providers.', updatedAt: '2026-06-01T00:00:00.000Z' },
-      { id: 'note-2', title: 'Audit', summary: 'AI run records status.', content: 'Run audit records provider and model.' },
+      { id: 'note-1', title: 'Gateway', summary: 'Routes providers.', chunks: [{ chunkId: '507f1f77bcf86cd799439021', headingPath: ['Gateway', 'Routing'], content: 'AI Gateway routes providers.' }], updatedAt: '2026-06-01T00:00:00.000Z' },
+      { id: 'note-2', title: 'Audit', summary: 'AI run records status.', chunks: [{ chunkId: '507f1f77bcf86cd799439022', headingPath: ['Audit'], content: 'Run audit records provider and model.' }] },
     ],
   })
 
   assert.equal(proposal.knowledgeBaseId, 'kb-1')
   assert.equal(proposal.nodes.length, 2)
   assert.deepEqual(proposal.nodes[0].noteIds, ['note-1'])
+  assert.deepEqual(proposal.nodes[0].evidenceChunkIds, ['507f1f77bcf86cd799439021'])
   assert.deepEqual(proposal.edges[0].noteIds, ['note-1', 'note-2'])
+  assert.deepEqual(proposal.edges[0].evidenceChunkIds, ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022'])
   assert.doesNotMatch(JSON.stringify(proposal), /outside-note/)
+  assert.doesNotMatch(JSON.stringify(proposal), /507f1f77bcf86cd799439099/)
   assert.match(calls[0].prompt, /Knowledge base: kb-1/)
   assert.match(calls[0].prompt, /note-1/)
   assert.match(calls[0].prompt, /note-2/)
+  assert.match(calls[0].prompt, /507f1f77bcf86cd799439021/)
+  assert.doesNotMatch(calls[0].prompt, /Content:/)
   assert.equal(calls[0].task, 'knowledge_graph')
   assert.deepEqual(calls[0].responseFormat, { type: 'json_object' })
 })

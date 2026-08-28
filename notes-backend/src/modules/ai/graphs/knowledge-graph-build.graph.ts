@@ -19,7 +19,7 @@ export interface KnowledgeGraphBuildInput {
     id: string
     title?: string
     summary?: string
-    content?: string
+    chunks?: Array<{ chunkId: string; headingPath?: string[]; content?: string }>
     updatedAt?: string
   }>
 }
@@ -30,6 +30,7 @@ export interface KnowledgeGraphProposalNode {
   type: KnowledgeGraphNodeType
   confidence: number
   noteIds: string[]
+  evidenceChunkIds: string[]
 }
 
 export interface KnowledgeGraphProposalEdge {
@@ -39,6 +40,7 @@ export interface KnowledgeGraphProposalEdge {
   relation: string
   weight: number
   noteIds: string[]
+  evidenceChunkIds: string[]
 }
 
 export interface KnowledgeGraphProposal {
@@ -54,9 +56,11 @@ export interface KnowledgeGraphBuildGraphOptions {
   maxNoteChars?: number
   maxNodes?: number
   maxEdges?: number
+  maxChunks?: number
+  maxChunkChars?: number
 }
 
-type PreparedGraphNote = Required<Pick<KnowledgeGraphBuildInput['notes'][number], 'id' | 'title' | 'summary' | 'content' | 'updatedAt'>>
+type PreparedGraphNote = Required<Pick<KnowledgeGraphBuildInput['notes'][number], 'id' | 'title' | 'summary' | 'updatedAt'>> & { chunks: Array<{ chunkId: string; headingPath: string[]; content: string }> }
 
 @Injectable()
 export class KnowledgeGraphBuildGraph {
@@ -64,6 +68,8 @@ export class KnowledgeGraphBuildGraph {
   private readonly maxNoteChars: number
   private readonly maxNodes: number
   private readonly maxEdges: number
+  private readonly maxChunks: number
+  private readonly maxChunkChars: number
 
   constructor(
     private readonly gateway: AiGatewayClient,
@@ -73,6 +79,8 @@ export class KnowledgeGraphBuildGraph {
     this.maxNoteChars = options.maxNoteChars || 1600
     this.maxNodes = options.maxNodes || 40
     this.maxEdges = options.maxEdges || 80
+    this.maxChunks = options.maxChunks || 120
+    this.maxChunkChars = options.maxChunkChars || 800
   }
 
   async run(input: KnowledgeGraphBuildInput, context?: AiWorkflowContext): Promise<KnowledgeGraphProposal> {
@@ -104,17 +112,25 @@ export class KnowledgeGraphBuildGraph {
   }
 
   private prepareNotes(notes: KnowledgeGraphBuildInput['notes']): PreparedGraphNote[] {
+    let remainingChunks = this.maxChunks
     return (Array.isArray(notes) ? notes : [])
       .slice(0, this.maxNotes)
       .map((note, index) => {
         const id = String(note?.id || '').trim()
         const title = String(note?.title || `Note ${index + 1}`).trim()
         const summary = this.cleanText(note?.summary || '').slice(0, 800)
-        const content = this.cleanText(note?.content || '').slice(0, this.maxNoteChars)
+        const chunks = (Array.isArray(note?.chunks) ? note.chunks : []).flatMap((chunk) => {
+          if (remainingChunks <= 0) return []
+          const chunkId = String(chunk?.chunkId || '').trim()
+          const content = this.cleanText(chunk?.content || '').slice(0, Math.min(this.maxNoteChars, this.maxChunkChars))
+          if (!chunkId || !content) return []
+          remainingChunks -= 1
+          return [{ chunkId, headingPath: (Array.isArray(chunk?.headingPath) ? chunk.headingPath : []).map(String), content }]
+        })
         const updatedAt = note?.updatedAt ? this.safeDate(note.updatedAt) : 'unknown time'
-        return { id, title, summary, content, updatedAt }
+        return { id, title, summary, chunks, updatedAt }
       })
-      .filter((note) => note.id && (note.title || note.summary || note.content))
+      .filter((note) => note.id && (note.title || note.summary || note.chunks.length > 0))
   }
 
   private buildPrompt(knowledgeBaseId: string, notes: PreparedGraphNote[]) {
@@ -122,8 +138,8 @@ export class KnowledgeGraphBuildGraph {
       `Knowledge base: ${knowledgeBaseId}`,
       'Extract a knowledge graph proposal from ONLY the notes listed below.',
       'Return strict JSON with this shape:',
-      '{"nodes":[{"label":"string","type":"concept|entity|topic|claim","noteIds":["note id"],"confidence":0.0}],"edges":[{"source":"node label","target":"node label","relation":"string","noteIds":["note id"],"weight":0.0}],"warnings":["string"]}',
-      'Do not include noteIds that are not present in the input. Do not write or mutate any source data.',
+      '{"nodes":[{"label":"string","type":"concept|entity|topic|claim","noteIds":["note id"],"evidenceChunkIds":["chunk id"],"confidence":0.0}],"edges":[{"source":"node label","target":"node label","relation":"string","noteIds":["note id"],"evidenceChunkIds":["chunk id"],"weight":0.0}],"warnings":["string"]}',
+      'Only cite noteIds and chunkIds present in the input. If evidence is uncertain, return an empty evidenceChunkIds array. Never invent IDs.',
       'Prefer concise labels and explanatory relation names.',
       '',
       notes.map((note) => [
@@ -131,16 +147,24 @@ export class KnowledgeGraphBuildGraph {
         `Title: ${note.title}`,
         `Updated: ${note.updatedAt}`,
         note.summary ? `Summary: ${note.summary}` : '',
-        `Content: ${note.content}`,
+        note.chunks.map((chunk) => `Chunk ID: ${chunk.chunkId}\nHeading: ${chunk.headingPath.join(' > ')}\nExcerpt: ${chunk.content}`).join('\n\n'),
       ].filter(Boolean).join('\n')).join('\n\n---\n\n'),
     ].join('\n')
   }
 
   private normalizeProposal(knowledgeBaseId: string, notes: PreparedGraphNote[], raw: any): KnowledgeGraphProposal {
     const allowedNoteIds = new Set(notes.map((note) => note.id))
+    const allowedChunkIds = new Set(notes.flatMap((note) => note.chunks.map((chunk) => chunk.chunkId)))
     const nodeMap = new Map<string, KnowledgeGraphProposalNode>()
     const rawToNodeId = new Map<string, string>()
-    const warnings = Array.isArray(raw?.warnings) ? raw.warnings.map((value: unknown) => String(value || '').trim()).filter(Boolean) : []
+    const warnings: string[] = Array.isArray(raw?.warnings) && raw.warnings.length > 0 ? ['AI returned graph warnings.'] : []
+    let removedEvidence = false
+    const normalizeEvidence = (value: unknown) => {
+      const rawIds = Array.isArray(value) ? value.map(String) : []
+      const valid = uniqueStrings(rawIds.filter((id) => /^[a-f\d]{24}$/i.test(id) && allowedChunkIds.has(id)))
+      if (valid.length !== rawIds.length) removedEvidence = true
+      return valid
+    }
 
     for (const [index, item] of this.array(raw?.nodes).entries()) {
       const label = String(item?.label || item?.name || '').trim()
@@ -149,12 +173,14 @@ export class KnowledgeGraphBuildGraph {
       const id = this.nodeId(label, type)
       const noteIds = normalizeKnowledgeGraphNoteIds(item?.noteIds, allowedNoteIds)
       const confidence = clampUnitInterval(item?.confidence, 0.75)
+      const evidenceChunkIds = normalizeEvidence(item?.evidenceChunkIds)
       const existing = nodeMap.get(id)
       if (existing) {
         existing.noteIds = uniqueStrings([...existing.noteIds, ...noteIds])
         existing.confidence = Math.max(existing.confidence, confidence)
+        existing.evidenceChunkIds = uniqueStrings([...existing.evidenceChunkIds, ...evidenceChunkIds])
       } else if (nodeMap.size < this.maxNodes) {
-        nodeMap.set(id, { id, label, type, confidence, noteIds })
+        nodeMap.set(id, { id, label, type, confidence, noteIds, evidenceChunkIds })
       }
 
       const normalizedId = nodeMap.get(id)?.id || id
@@ -175,14 +201,18 @@ export class KnowledgeGraphBuildGraph {
       const fallbackNoteIds = uniqueStrings([...(sourceNode?.noteIds || []), ...(targetNode?.noteIds || [])])
       const normalizedNoteIds = resolveKnowledgeGraphEdgeNoteIds(item?.noteIds, allowedNoteIds, fallbackNoteIds)
       const weight = clampUnitInterval(item?.weight, 0.6)
+      const evidenceChunkIds = normalizeEvidence(item?.evidenceChunkIds)
       const existing = edgeMap.get(id)
       if (existing) {
         existing.noteIds = uniqueStrings([...existing.noteIds, ...normalizedNoteIds])
         existing.weight = Math.max(existing.weight, weight)
+        existing.evidenceChunkIds = uniqueStrings([...existing.evidenceChunkIds, ...evidenceChunkIds])
       } else if (edgeMap.size < this.maxEdges) {
-        edgeMap.set(id, { id, source, target, relation, weight, noteIds: normalizedNoteIds })
+        edgeMap.set(id, { id, source, target, relation, weight, noteIds: normalizedNoteIds, evidenceChunkIds })
       }
     }
+
+    if (removedEvidence) warnings.push('Some invalid graph evidence references were removed.')
 
     return {
       knowledgeBaseId,
