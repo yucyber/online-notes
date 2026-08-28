@@ -8,7 +8,7 @@ BullMQ 建议 Redis 6.2 或更高版本。当前 Redis 5.x 可触发兼容性警
 
 | provider | 最大并发 | RPM | TPM |
 | --- | ---: | ---: | ---: |
-| siliconflow | 2 | 30 | 60000 |
+| siliconflow | 2 | 30 | 40000 |
 | bai | 1 | 10 | 30000 |
 | ar | 1 | 5 | 20000 |
 
