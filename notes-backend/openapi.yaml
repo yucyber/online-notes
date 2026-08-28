@@ -912,6 +912,44 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/graph/nodes/{nodeId}/evidence:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - in: path
+        name: nodeId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [KnowledgeBases]
+      summary: 获取图谱节点的原文证据
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeGraphEvidenceEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/graph/edges/{edgeId}/evidence:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - in: path
+        name: edgeId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [KnowledgeBases]
+      summary: 获取图谱关系的原文证据
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeGraphEvidenceEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/knowledge-bases/{id}/notes/{noteId}:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1366,6 +1404,17 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/KnowledgeGraphProposal'
+    KnowledgeGraphEvidenceEnvelope:
+      description: 当前可读的图谱原文证据
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/KnowledgeGraphEvidenceResult'
     KnowledgeBaseEnvelope:
       description: 知识库
       content:
@@ -1688,6 +1737,9 @@ components:
         noteIds:
           type: array
           items: { type: string }
+        evidenceChunkIds:
+          type: array
+          items: { type: string }
     KnowledgeGraphProposalEdge:
       type: object
       properties:
@@ -1699,6 +1751,31 @@ components:
         noteIds:
           type: array
           items: { type: string }
+        evidenceChunkIds:
+          type: array
+          items: { type: string }
+    KnowledgeGraphEvidenceResult:
+      type: object
+      required: [compatibility, items]
+      properties:
+        compatibility:
+          type: string
+          enum: [evidence_available, evidence_unavailable, legacy_graph_without_evidence]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeGraphEvidence'
+    KnowledgeGraphEvidence:
+      type: object
+      required: [noteId, noteTitle, chunkId, headingPath, excerpt]
+      properties:
+        noteId: { type: string }
+        noteTitle: { type: string }
+        chunkId: { type: string }
+        headingPath:
+          type: array
+          items: { type: string }
+        excerpt: { type: string, maxLength: 320 }
     SavedFilter:
       type: object
       properties:

@@ -1,6 +1,19 @@
 import api from './client'
 import type { KnowledgeBase, KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
 
+export type KnowledgeGraphEvidence = {
+  noteId: string
+  noteTitle: string
+  chunkId: string
+  headingPath: string[]
+  excerpt: string
+}
+
+export type KnowledgeGraphEvidenceResult = {
+  compatibility: 'evidence_available' | 'evidence_unavailable' | 'legacy_graph_without_evidence'
+  items: KnowledgeGraphEvidence[]
+}
+
 export const knowledgeBasesAPI = {
   getAll: () =>
     api.get<KnowledgeBase[]>('/knowledge-bases').then(res => res as unknown as KnowledgeBase[]),
@@ -26,4 +39,12 @@ export const knowledgeBasesAPI = {
 
   saveGraph: (id: string, payload: Pick<KnowledgeGraphProposal, 'nodes' | 'edges'>) =>
     api.put<KnowledgeGraphProposal>(`/knowledge-bases/${id}/graph`, payload).then(res => res as unknown as KnowledgeGraphProposal),
+
+  getNodeEvidence: (id: string, nodeId: string) =>
+    api.get<KnowledgeGraphEvidenceResult>(`/knowledge-bases/${id}/graph/nodes/${encodeURIComponent(nodeId)}/evidence`)
+      .then(res => res as unknown as KnowledgeGraphEvidenceResult),
+
+  getEdgeEvidence: (id: string, edgeId: string) =>
+    api.get<KnowledgeGraphEvidenceResult>(`/knowledge-bases/${id}/graph/edges/${encodeURIComponent(edgeId)}/evidence`)
+      .then(res => res as unknown as KnowledgeGraphEvidenceResult),
 }

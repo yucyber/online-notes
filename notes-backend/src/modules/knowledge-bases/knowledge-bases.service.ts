@@ -340,6 +340,50 @@ export class KnowledgeBasesService {
     }
   }
 
+  async getGraphEvidence(id: string, kind: 'node' | 'edge', graphItemId: string, userId: string) {
+    const kb = await this.requireKnowledgeBase(id, userId)
+    const scope = { knowledgeBaseId: this.idOf(kb), userId: this.objectId(userId, 'user id') }
+    const model: { findOne: (query: Record<string, unknown>) => any } = kind === 'node'
+      ? this.requireGraphNodeModel()
+      : this.requireGraphEdgeModel()
+    const key = kind === 'node' ? 'nodeId' : 'edgeId'
+    const graphItem = await model.findOne({ ...scope, [key]: this.cleanGraphId(graphItemId, 200) }).exec()
+    if (!graphItem) throw new NotFoundException('Knowledge graph item not found')
+    const evidenceIds = uniqueStrings((this.toObject(graphItem).evidenceChunkIds || []).map(String).filter((value: string) => Types.ObjectId.isValid(value)))
+    if (evidenceIds.length === 0) return { compatibility: 'legacy_graph_without_evidence', items: [] }
+
+    const linkedNoteIds = await this.listKnowledgeBaseNoteIds(scope.knowledgeBaseId, scope.userId)
+    const readableNotes = linkedNoteIds.length > 0
+      ? await this.noteModel.find(this.noteAccess.readableNotesQuery(linkedNoteIds, userId)).select('_id title').exec()
+      : []
+    const noteTitleById = new Map(readableNotes.map((note) => [String(this.idOf(note)), this.toObject(note).title || 'Untitled']))
+    const readableNoteIds = readableNotes.map((note) => this.idOf(note))
+    if (readableNoteIds.length === 0) return { compatibility: 'evidence_unavailable', items: [] }
+
+    // 持久化 ID 只是候选；每次读取都重新收紧 user、knowledgeBase link 与 Note ACL。
+    const chunks = await this.requireNoteChunkModel().find({
+      _id: { $in: evidenceIds.map((value) => new Types.ObjectId(value)) },
+      userId: scope.userId,
+      noteId: { $in: readableNoteIds },
+    }).sort({ noteId: 1, chunkIndex: 1, _id: 1 }).select('_id noteId headingPath content chunkIndex').exec()
+    const seen = new Set<string>()
+    const items = chunks.flatMap((chunk) => {
+      const value = this.toObject(chunk)
+      const chunkId = String(this.idOf(chunk))
+      const noteId = String(this.idOf(chunk, 'noteId'))
+      if (seen.has(chunkId) || !noteTitleById.has(noteId)) return []
+      seen.add(chunkId)
+      return [{
+        noteId,
+        noteTitle: noteTitleById.get(noteId)!,
+        chunkId,
+        headingPath: (Array.isArray(value.headingPath) ? value.headingPath : []).map(String),
+        excerpt: this.graphEvidenceExcerpt(value.content),
+      }]
+    })
+    return { compatibility: items.length > 0 ? 'evidence_available' : 'evidence_unavailable', items }
+  }
+
   private async loadValidEvidence(input: SaveKnowledgeGraphDto, userId: Types.ObjectId, allowedNoteIds: Types.ObjectId[]) {
     const candidateIds = uniqueStrings([...(input?.nodes || []), ...(input?.edges || [])]
       .flatMap((item) => Array.isArray(item?.evidenceChunkIds) ? item.evidenceChunkIds : [])
@@ -408,6 +452,17 @@ export class KnowledgeBasesService {
   private requireGraphEdgeModel() {
     if (!this.graphEdgeModel) throw new Error('Knowledge graph edge model is not configured')
     return this.graphEdgeModel
+  }
+
+  private graphEvidenceExcerpt(value: unknown) {
+    return String(value || '')
+      .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
+      .replace(/<[^>]*>/g, ' ')
+      .replace(/&nbsp;/gi, ' ')
+      .replace(/&amp;/gi, '&')
+      .replace(/\s+/g, ' ')
+      .trim()
+      .slice(0, 320)
   }
 
   private requireNoteChunkModel() {

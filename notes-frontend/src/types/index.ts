@@ -97,6 +97,7 @@ export interface KnowledgeGraphNode {
   type: KnowledgeGraphNodeType
   confidence: number
   noteIds: string[]
+  evidenceChunkIds?: string[]
 }
 
 export interface KnowledgeGraphEdge {
@@ -106,6 +107,7 @@ export interface KnowledgeGraphEdge {
   relation: string
   weight: number
   noteIds: string[]
+  evidenceChunkIds?: string[]
 }
 
 export interface KnowledgeGraphProposal {
