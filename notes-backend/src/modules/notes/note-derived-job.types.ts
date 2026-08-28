@@ -10,6 +10,10 @@ export interface NoteDerivedJobData {
   changes: NoteDerivedChanges
   expectedUpdatedAt: string
   nextRunAt?: string
+  audit?: {
+    lastErrorCode?: 'capacity_delayed' | 'derived_failed'
+    lastDurationMs?: number
+  }
 }
 
 export const NOTE_DERIVED_QUEUE = 'note-derived'

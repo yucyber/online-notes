@@ -57,11 +57,15 @@ import { NOTE_DERIVED_QUEUE } from './note-derived-job.types';
     {
       provide: NoteDerivedQueueService,
       inject: [REDIS_CLIENT, ConfigService],
-      useFactory: (redis: Redis, config: ConfigService) => new NoteDerivedQueueService(
-        new Queue(NOTE_DERIVED_QUEUE, { connection: redis.duplicate({ maxRetriesPerRequest: null }) }),
-        Math.max(0, Number(config.get('NOTE_DERIVED_QUIET_MS') || 10_000)),
-        redis,
-      ),
+      useFactory: (redis: Redis, config: ConfigService) => {
+        const connection = redis.duplicate({ maxRetriesPerRequest: null })
+        return new NoteDerivedQueueService(
+          new Queue(NOTE_DERIVED_QUEUE, { connection }),
+          Math.max(0, Number(config.get('NOTE_DERIVED_QUIET_MS') || 10_000)),
+          redis,
+          connection,
+        )
+      },
     },
     NoteDerivedWorker,
   ],

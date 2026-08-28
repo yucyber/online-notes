@@ -1,6 +1,7 @@
 import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { NoteDerivedWorker } from '../src/modules/notes/note-derived.worker'
+import { AiCapacityDeferredError } from '../src/modules/ai/ai-provider-capacity.service'
 
 function modelReturning(note: any) {
   return {
@@ -41,9 +42,32 @@ test('worker 从数据库当前 Note 构造快照并保持单次派生入口', a
       noteId: 'note-1', userId: 'user-1', expectedUpdatedAt: updatedAt.toISOString(),
       changes: { titleChanged: false, contentChanged: true, taxonomyChanged: false },
     },
+    updateData: async () => undefined,
   } as any)
 
   assert.equal(snapshots.length, 1)
   assert.equal(snapshots[0].content, 'C')
   assert.equal(snapshots[0].expectedUpdatedAt.toISOString(), updatedAt.toISOString())
+})
+
+test('provider 容量不足时 job 转回 delayed 而不是 busy wait', async () => {
+  const updatedAt = new Date('2026-08-28T00:00:01.000Z')
+  const delayedAt: number[] = []
+  const worker = new NoteDerivedWorker(
+    modelReturning({ _id: 'note-1', userId: 'user-1', title: 'T', content: 'C', tags: [], updatedAt }) as any,
+    { refreshTopicArtifacts: async () => { throw new AiCapacityDeferredError('siliconflow', 5_000) } } as any,
+    { getJob: async () => undefined } as any,
+    {} as any,
+  )
+  await assert.rejects(() => worker.process({
+    data: {
+      noteId: 'note-1', userId: 'user-1', expectedUpdatedAt: updatedAt.toISOString(),
+      changes: { titleChanged: false, contentChanged: true, taxonomyChanged: false },
+    },
+    moveToDelayed: async (timestamp: number) => { delayedAt.push(timestamp) },
+    updateData: async () => undefined,
+  } as any, 'worker-token'))
+
+  assert.equal(delayedAt.length, 1)
+  assert.ok(delayedAt[0] >= Date.now() + 4_000)
 })

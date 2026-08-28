@@ -1,4 +1,0 @@
-feat(ai): 增加持久化派生队列与容量控制
-
-用 BullMQ 替换进程内静默计时器，持久化最小 Note 任务元数据并在 worker 侧重新读取和校验快照。
-为 siliconflow、bai、ar 增加 Redis 原子滚动预算与跨实例并发租约，并在 Gateway 的实际 provider 请求边界预约容量。

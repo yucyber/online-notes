@@ -13,6 +13,7 @@ import { Note, NoteDocument } from './schemas/note.schema'
 @Injectable()
 export class NoteDerivedWorker implements OnModuleInit, OnModuleDestroy {
   private worker?: Worker<NoteDerivedJobData>
+  private workerConnection?: Redis
 
   constructor(
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
@@ -23,6 +24,7 @@ export class NoteDerivedWorker implements OnModuleInit, OnModuleDestroy {
 
   onModuleInit() {
     const connection = this.redis.duplicate({ maxRetriesPerRequest: null })
+    this.workerConnection = connection
     this.worker = new Worker(NOTE_DERIVED_QUEUE, (job, token) => this.process(job, token), {
       connection,
       concurrency: 20,
@@ -30,6 +32,7 @@ export class NoteDerivedWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   async process(job: Job<NoteDerivedJobData>, token?: string) {
+    const startedAt = Date.now()
     if (job.data.nextRunAt && Date.parse(job.data.nextRunAt) > Date.now() && token) {
       await job.moveToDelayed(Date.parse(job.data.nextRunAt), token)
       throw new DelayedError()
@@ -58,17 +61,28 @@ export class NoteDerivedWorker implements OnModuleInit, OnModuleDestroy {
         await job.moveToDelayed(Date.parse(latest?.data.nextRunAt || new Date().toISOString()), token)
         throw new DelayedError()
       }
+      await job.updateData({ ...job.data, audit: { lastDurationMs: Date.now() - startedAt } })
       return { status: 'completed' }
     } catch (error) {
       if (error instanceof AiCapacityDeferredError && token) {
+        await job.updateData({
+          ...job.data,
+          nextRunAt: new Date(Date.now() + error.retryAfterMs).toISOString(),
+          audit: { lastErrorCode: 'capacity_delayed', lastDurationMs: Date.now() - startedAt },
+        })
         await job.moveToDelayed(Date.now() + error.retryAfterMs, token)
         throw new DelayedError()
       }
+      await job.updateData({
+        ...job.data,
+        audit: { lastErrorCode: 'derived_failed', lastDurationMs: Date.now() - startedAt },
+      })
       throw error
     }
   }
 
   async onModuleDestroy() {
     await this.worker?.close()
+    if (this.workerConnection) await this.workerConnection.quit().catch(() => this.workerConnection?.disconnect())
   }
 }

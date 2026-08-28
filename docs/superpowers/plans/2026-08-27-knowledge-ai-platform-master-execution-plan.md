@@ -194,20 +194,20 @@ interface AiModelPolicy {
 
 **Architecture:** 复用现有 Redis，使用 BullMQ 保存 Note 派生任务；job 只保存 noteId、userId、变化类型和 `expectedUpdatedAt`，worker 执行前重新读取 Note 并验证快照，不能把整篇正文复制到 Redis。使用稳定 `jobId=note-derived:<noteId>` 合并静默期内更新，不同进程共享同一去重与并发边界。AI Gateway 每次 provider 请求前通过 Redis 原子预算器预约请求数和估算 token；实际 usage 可得时回写差额，不可得时保留保守估算。
 
-- [ ] 先写失败测试，证明同一 note 连续自动保存只留下最后一个 delayed job，不同 note 不互相覆盖，进程重新创建 queue 后未完成 job 仍存在。
-- [ ] 引入 BullMQ，复用 `REDIS_URL`，为 queue、worker 和测试提供显式生命周期关闭，禁止测试进程悬挂。
-- [ ] 将 `NoteDerivedScheduler` 从进程内 `Map + setTimeout` 改为持久化 delayed job；保留 10 秒 quiet period，并把 title/content/taxonomy 变化做并集合并。
-- [ ] worker 处理前按 noteId/userId 重新读取当前 Note；若 `updatedAt` 已变化，丢弃陈旧 job 或用最新快照重新排队，禁止旧 summary、主题向量或 Chunk 覆盖新正文。
-- [ ] worker 内保持单篇笔记 `summary → topic embedding → Chunk embedding` 时序；长摘要分段继续串行，不新增同笔记分段并发。
-- [ ] provider 容量服务至少区分 `siliconflow`、`bai`、`ar`，配置 `*_AI_MAX_CONCURRENCY`、`*_AI_RPM`、`*_AI_TPM`；配置缺失时使用文档化的保守默认值，测试不得依赖真实供应商。
-- [ ] 使用 Redis Lua 或等价原子操作完成滚动分钟 RPM/TPM 预约；多个 Nest 实例不能各自独立计数。等待容量时 job 保持 delayed/waiting，不占用 worker 并发槽忙等。
-- [ ] token 预算基于消息输入估算加 `maxTokens` 预约；响应含 usage 时校正，供应商未返回 usage 时不伪造精确消耗。fallback 必须按实际目标 provider 重新预约预算。
-- [ ] 保留 Gateway 已有 `Retry-After` 与指数退避；容量服务负责请求前削峰，Gateway retry 负责请求后的瞬时故障，两者不能互相递归或无限重试。
-- [ ] 为 job 记录 status、attempts、nextRunAt、lastErrorCode 和耗时，不保存 API key、完整正文、prompt、reasoning 或模型完整响应；失败达到上限后进入 failed 集合并可按 noteId 安全重放。
-- [ ] 增加运行手册：查看 waiting/active/delayed/failed 数量、按 noteId 重放、暂停/恢复 worker、调整并发/RPM/TPM；不要求用户粘贴 key。
-- [ ] 故障测试覆盖 Redis 短暂不可用、worker 重启、429 Retry-After、容量等待、陈旧快照、任务重放和多实例竞争。
-- [ ] 验收：模拟 20 篇笔记同时更新，保存 API 不等待 AI；实际 active 数不超过配置；同 note 只执行最新派生任务；重启后任务继续；无旧派生字段覆盖；后端全量单测和 build 通过。
-- [ ] 提交：`feat(ai): 增加持久化派生队列与容量控制`。
+- [x] 先写失败测试，证明同一 note 连续自动保存只留下最后一个 delayed job，不同 note 不互相覆盖，进程重新创建 queue 后未完成 job 仍存在。
+- [x] 引入 BullMQ，复用 `REDIS_URL`，为 queue、worker 和测试提供显式生命周期关闭，禁止测试进程悬挂。
+- [x] 将 `NoteDerivedScheduler` 从进程内 `Map + setTimeout` 改为持久化 delayed job；保留 10 秒 quiet period，并把 title/content/taxonomy 变化做并集合并。
+- [x] worker 处理前按 noteId/userId 重新读取当前 Note；若 `updatedAt` 已变化，丢弃陈旧 job 或用最新快照重新排队，禁止旧 summary、主题向量或 Chunk 覆盖新正文。
+- [x] worker 内保持单篇笔记 `summary → topic embedding → Chunk embedding` 时序；长摘要分段继续串行，不新增同笔记分段并发。
+- [x] provider 容量服务至少区分 `siliconflow`、`bai`、`ar`，配置 `*_AI_MAX_CONCURRENCY`、`*_AI_RPM`、`*_AI_TPM`；配置缺失时使用文档化的保守默认值，测试不得依赖真实供应商。
+- [x] 使用 Redis Lua 或等价原子操作完成滚动分钟 RPM/TPM 预约；多个 Nest 实例不能各自独立计数。等待容量时 job 保持 delayed/waiting，不占用 worker 并发槽忙等。
+- [x] token 预算基于消息输入估算加 `maxTokens` 预约；响应含 usage 时校正，供应商未返回 usage 时不伪造精确消耗。fallback 必须按实际目标 provider 重新预约预算。
+- [x] 保留 Gateway 已有 `Retry-After` 与指数退避；容量服务负责请求前削峰，Gateway retry 负责请求后的瞬时故障，两者不能互相递归或无限重试。
+- [x] 为 job 记录 status、attempts、nextRunAt、lastErrorCode 和耗时，不保存 API key、完整正文、prompt、reasoning 或模型完整响应；失败达到上限后进入 failed 集合并可按 noteId 安全重放。
+- [x] 增加运行手册：查看 waiting/active/delayed/failed 数量、按 noteId 重放、暂停/恢复 worker、调整并发/RPM/TPM；不要求用户粘贴 key。
+- [x] 故障测试覆盖 Redis 短暂不可用、worker 重启、429 Retry-After、容量等待、陈旧快照、任务重放和多实例竞争。
+- [x] 验收：模拟 20 篇笔记同时更新，保存 API 不等待 AI；实际 active 数不超过配置；同 note 只执行最新派生任务；重启后任务继续；无旧派生字段覆盖；后端全量单测和 build 通过。
+- [x] 提交：`feat(ai): 增加持久化派生队列与容量控制`。
 
 **P0 Exit Gate:**
 
@@ -215,7 +215,7 @@ interface AiModelPolicy {
 - [x] 20 个固定 live 样例覆盖摘要、图谱、提案、RAG：有效率 100%、空正文率 0%；Qwen3-14B 四条链路 P95 均小于 1.3 秒。
 - [x] SiliconFlow standard/deep 与 AR expert live smoke 均为 HTTP 200；B.AI provider fallback 通过故障注入测试。
 - [x] 故障注入验证 quality/provider 两条 fallback 不串联，流式输出开始后不切换 provider。
-- [ ] Task 0.8 的持久化队列、跨实例并发、RPM/TPM 预约、重启恢复和 20 篇笔记突发验收通过。
+- [x] Task 0.8 的持久化队列、跨实例并发、RPM/TPM 预约、重启恢复和 20 篇笔记突发验收通过。
 - [ ] live smoke 已通过；仍需用户在控制台完成 U1 的账户归属、余额与 RPM/TPM 确认。
 
 ---

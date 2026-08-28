@@ -3,7 +3,7 @@ import { JobsOptions, Queue } from 'bullmq'
 import Redis from 'ioredis'
 import { NoteDerivedJobData, NOTE_DERIVED_QUEUE, noteDerivedJobId } from './note-derived-job.types'
 
-type DerivedQueue = Pick<Queue<NoteDerivedJobData>, 'add' | 'getJob' | 'close'>
+type DerivedQueue = Pick<Queue<NoteDerivedJobData>, 'add' | 'getJob' | 'close' | 'getJobCounts' | 'pause' | 'resume'>
 
 @Injectable()
 export class NoteDerivedQueueService implements OnModuleDestroy {
@@ -11,6 +11,7 @@ export class NoteDerivedQueueService implements OnModuleDestroy {
     private readonly queue: DerivedQueue,
     private readonly quietMs = 10_000,
     private readonly redis?: Redis,
+    private readonly ownedConnection?: Redis,
   ) {}
 
   async schedule(data: NoteDerivedJobData) {
@@ -26,6 +27,7 @@ export class NoteDerivedQueueService implements OnModuleDestroy {
       if (state === 'delayed' || state === 'waiting' || state === 'active') {
         await existing.updateData({
           ...scheduled,
+          ...(existing.data.audit ? { audit: existing.data.audit } : {}),
           changes: {
             titleChanged: existing.data.changes.titleChanged || data.changes.titleChanged,
             contentChanged: existing.data.changes.contentChanged || data.changes.contentChanged,
@@ -42,7 +44,7 @@ export class NoteDerivedQueueService implements OnModuleDestroy {
       delay: this.quietMs,
       attempts: 3,
       backoff: { type: 'exponential', delay: 1_000 },
-      removeOnComplete: true,
+      removeOnComplete: { age: 86_400, count: 1_000 },
       removeOnFail: false,
     }
     return this.queue.add(NOTE_DERIVED_QUEUE, scheduled, options)
@@ -79,7 +81,20 @@ export class NoteDerivedQueueService implements OnModuleDestroy {
     return job
   }
 
+  getCounts() {
+    return this.queue.getJobCounts('waiting', 'active', 'delayed', 'failed', 'completed')
+  }
+
+  pause() {
+    return this.queue.pause()
+  }
+
+  resume() {
+    return this.queue.resume()
+  }
+
   async onModuleDestroy() {
     await this.queue.close()
+    if (this.ownedConnection) await this.ownedConnection.quit().catch(() => this.ownedConnection?.disconnect())
   }
 }

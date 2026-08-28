@@ -24,6 +24,13 @@ class MemoryQueue {
     return job
   }
   async close() {}
+  async getJobCounts() {
+    const counts: Record<string, number> = { waiting: 0, active: 0, delayed: 0, failed: 0, completed: 0 }
+    for (const job of this.jobs.values()) counts[job.state] += 1
+    return counts
+  }
+  async pause() {}
+  async resume() {}
 }
 
 const payload = (noteId: string, changes: any, updatedAt: string) => ({
@@ -72,4 +79,20 @@ test('只允许按 noteId 重放 failed job', async () => {
   job.state = 'failed'
   await service.replayFailed('note-1')
   assert.equal(job.state, 'waiting')
+})
+
+test('20 篇笔记突发更新立即入队，同 note 仍只保留最新任务', async () => {
+  const queue = new MemoryQueue()
+  const service = new NoteDerivedQueueService(queue as any, 10_000)
+  await Promise.all(Array.from({ length: 20 }, (_, index) => service.schedule(payload(
+    `note-${index}`, { titleChanged: false, contentChanged: true, taxonomyChanged: false }, `2026-08-28T00:00:${String(index).padStart(2, '0')}.000Z`,
+  ))))
+  await service.schedule(payload('note-0', { titleChanged: true, contentChanged: false, taxonomyChanged: true }, '2026-08-28T00:01:00.000Z'))
+
+  const counts = await service.getCounts()
+  assert.equal(queue.jobs.size, 20)
+  assert.equal(counts.delayed, 20)
+  assert.deepEqual((await service.getJob('note-0'))?.data.changes, {
+    titleChanged: true, contentChanged: true, taxonomyChanged: true,
+  })
 })

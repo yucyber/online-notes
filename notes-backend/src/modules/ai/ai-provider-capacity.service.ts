@@ -58,6 +58,12 @@ redis.call('ZADD', KEYS[1], ARGV[3], ARGV[4] .. ':' .. ARGV[2])
 return 1
 `
 
+const RELEASE_SCRIPT = `
+local active = tonumber(redis.call('GET', KEYS[1]) or '0')
+if active <= 1 then return redis.call('DEL', KEYS[1]) end
+return redis.call('DECR', KEYS[1])
+`
+
 @Injectable()
 export class AiProviderCapacityService {
   constructor(
@@ -75,7 +81,8 @@ export class AiProviderCapacityService {
     const limits = this.limits(provider)
     const now = Date.now()
     const reservationId = `${process.pid}-${now}-${Math.random().toString(36).slice(2)}`
-    const prefix = `ai:capacity:${provider}`
+    const namespace = String(this.config.get('AI_CAPACITY_KEY_PREFIX') || 'ai:capacity')
+    const prefix = `${namespace}:${provider}`
     const activeKey = `${prefix}:active`
     const tpmKey = `${prefix}:tpm`
     const result = await (this.redis as any).eval(
@@ -90,7 +97,7 @@ export class AiProviderCapacityService {
 
   async release(lease: AiCapacityLease) {
     if (!lease.granted || !lease.activeKey || !this.redis) return
-    await (this.redis as any).decr(lease.activeKey)
+    await (this.redis as any).eval(RELEASE_SCRIPT, 1, lease.activeKey)
   }
 
   async reconcile(lease: AiCapacityLease, usage?: { promptTokens?: number; completionTokens?: number }) {
