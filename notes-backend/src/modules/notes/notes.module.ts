@@ -29,6 +29,8 @@ import { NoteDerivedQueueService } from './note-derived-queue.service';
 import { NoteDerivedWorker } from './note-derived.worker';
 import { NOTE_DERIVED_QUEUE } from './note-derived-job.types';
 
+export const NOTE_DERIVED_QUEUE_CONNECTION = Symbol('NOTE_DERIVED_QUEUE_CONNECTION')
+
 @Module({
   imports: [
     MongooseModule.forFeature([
@@ -55,20 +57,27 @@ import { NOTE_DERIVED_QUEUE } from './note-derived-job.types';
     NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService,
     NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService, NoteVectorBackfillRunner,
     {
+      provide: NOTE_DERIVED_QUEUE_CONNECTION,
+      inject: [REDIS_CLIENT],
+      useFactory: (redis: Redis) => redis.duplicate({ maxRetriesPerRequest: null }),
+    },
+    {
+      provide: NOTE_DERIVED_QUEUE,
+      inject: [NOTE_DERIVED_QUEUE_CONNECTION],
+      useFactory: (connection: Redis) => new Queue(NOTE_DERIVED_QUEUE, { connection }),
+    },
+    {
       provide: NoteDerivedQueueService,
-      inject: [REDIS_CLIENT, ConfigService],
-      useFactory: (redis: Redis, config: ConfigService) => {
-        const connection = redis.duplicate({ maxRetriesPerRequest: null })
-        return new NoteDerivedQueueService(
-          new Queue(NOTE_DERIVED_QUEUE, { connection }),
-          Math.max(0, Number(config.get('NOTE_DERIVED_QUIET_MS') || 10_000)),
-          redis,
-          connection,
-        )
-      },
+      inject: [NOTE_DERIVED_QUEUE, NOTE_DERIVED_QUEUE_CONNECTION, REDIS_CLIENT, ConfigService],
+      useFactory: (queue: Queue, connection: Redis, redis: Redis, config: ConfigService) => new NoteDerivedQueueService(
+        queue,
+        Math.max(0, Number(config.get('NOTE_DERIVED_QUIET_MS') || 10_000)),
+        redis,
+        connection,
+      ),
     },
     NoteDerivedWorker,
   ],
-  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteVectorBackfillRunner],
+  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteVectorBackfillRunner, NOTE_DERIVED_QUEUE],
 })
 export class NotesModule { }
