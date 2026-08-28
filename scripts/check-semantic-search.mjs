@@ -9,8 +9,99 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { createRequire } from 'node:module'
+import { pathToFileURL } from 'node:url'
+import dns from 'node:dns'
+
+// 与后端启动脚本保持一致，规避 Windows 下 c-ares 将 Atlas SRV 查询发往本地无效 DNS。
+dns.setDefaultResultOrder('ipv4first')
+dns.setServers(['8.8.8.8', '1.1.1.1'])
 
 const root = process.cwd()
+
+export const ATLAS_VECTOR_CONTRACTS = [
+  { collection: 'notes', name: 'vector_index', path: 'embedding', dimensions: 4096, similarity: 'cosine' },
+  { collection: 'note_chunks', name: 'note_chunk_vector_index', path: 'embedding', dimensions: 4096, similarity: 'cosine' },
+]
+
+function vectorFields(index) {
+  const definition = index?.latestDefinition || index?.definition || {}
+  const fields = Array.isArray(definition.fields) ? definition.fields.slice() : []
+  for (const [path, value] of Object.entries(definition.mappings?.fields || {})) {
+    for (const field of Array.isArray(value) ? value : [value]) fields.push({ ...field, path: field?.path || path })
+  }
+  return fields.filter((field) => field?.type === 'vector')
+}
+
+export function evaluateSearchIndexes({ regularIndexes, searchIndexes, contract }) {
+  const regularNameCollision = regularIndexes.some((index) => index.name === contract.name)
+  const index = searchIndexes.find((candidate) => candidate.name === contract.name)
+  if (!index) return { status: 'missing', regularNameCollision, mismatches: [] }
+  const vector = vectorFields(index).find((field) => field.path === contract.path)
+  const mismatches = []
+  if (!vector) mismatches.push(`path 期望 ${contract.path}，实际未找到 vector field`)
+  if (vector && vector.numDimensions !== contract.dimensions) mismatches.push(`dimensions 期望 ${contract.dimensions}，实际 ${vector.numDimensions}`)
+  if (vector && vector.similarity !== contract.similarity) mismatches.push(`similarity 期望 ${contract.similarity}，实际 ${vector.similarity}`)
+  return { status: mismatches.length ? 'mismatch' : 'confirmed', regularNameCollision, mismatches }
+}
+
+export function classifySearchIndexError(error) {
+  const message = String(error?.message || '')
+  if (error?.code === 13 || /not authorized|unauthorized|permission/i.test(message)) {
+    return { status: 'unconfirmed', reason: '权限不足/无法确认' }
+  }
+  return { status: 'unconfirmed', reason: '无法确认' }
+}
+
+function plainText(value) {
+  return String(value || '').replace(/<[^>]*>/g, ' ').replace(/\s+/g, ' ').trim()
+}
+
+function hasBalancedHtml(value) {
+  const stack = []
+  const voidTags = new Set(['area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', 'link', 'meta', 'param', 'source', 'track', 'wbr'])
+  for (const match of String(value || '').matchAll(/<\/?([a-zA-Z][\w-]*)\b[^>]*>/g)) {
+    const token = match[0]
+    const tag = match[1].toLowerCase()
+    if (voidTags.has(tag) || token.endsWith('/>')) continue
+    if (!token.startsWith('</')) stack.push(tag)
+    else if (stack.pop() !== tag) return false
+  }
+  return stack.length === 0
+}
+
+export function validateDerivedSamples(samples, dimensions = 4096) {
+  const failures = {
+    summarySource: [],
+    topicEmbedding: [],
+    chunkCoverage: [],
+    chunkEmbedding: [],
+    bodyHeadingPath: [],
+    htmlStructure: [],
+    metadata: [],
+  }
+  let sampledChunks = 0
+  for (const { note, chunks } of samples) {
+    const noteId = String(note?._id)
+    const summary = plainText(note?.summary)
+    const content = plainText(note?.content)
+    const validSource = ['ai', 'passthrough', 'fallback'].includes(String(note?.summarySource || ''))
+    const looksCopied = note?.summarySource === 'ai' && summary.length > 0 && content.startsWith(summary)
+    if (!validSource || looksCopied) failures.summarySource.push(noteId)
+    if (!Array.isArray(note?.embedding) || note.embedding.length !== dimensions) failures.topicEmbedding.push(noteId)
+    if (chunks.length === 0) failures.chunkCoverage.push(noteId)
+    for (let index = 0; index < chunks.length; index++) {
+      const chunk = chunks[index]
+      const chunkId = `${noteId}#${index}`
+      sampledChunks++
+      if (!Array.isArray(chunk?.embedding) || chunk.embedding.length !== dimensions) failures.chunkEmbedding.push(chunkId)
+      const path = Array.isArray(chunk?.headingPath) ? chunk.headingPath.map(String) : []
+      if (!path.some((heading) => heading && heading !== String(note?.title || ''))) failures.bodyHeadingPath.push(chunkId)
+      if (!hasBalancedHtml(chunk?.content)) failures.htmlStructure.push(chunkId)
+      if (!chunk?.contentHash || !chunk?.embeddingModel || !chunk?.chunkStrategyVersion) failures.metadata.push(chunkId)
+    }
+  }
+  return { sampledNotes: samples.length, sampledChunks, failures }
+}
 
 // ---------------- 参数解析 ----------------
 function readArgs(argv) {
@@ -173,7 +264,7 @@ async function resolveToken(args, env, baseUrl) {
 }
 
 // ---------------- 检查 3：语义搜索接口 ----------------
-async function searchMode(baseUrl, token, query, mode, timeoutMs) {
+export async function searchMode(baseUrl, token, query, mode, timeoutMs) {
   const params = new URLSearchParams({ q: query, mode, limit: '10', page: '1' })
   const res = await request(`${baseUrl}/v1/semantic/search?${params.toString()}`, {
     headers: { Authorization: `Bearer ${token}` },
@@ -186,7 +277,7 @@ async function searchMode(baseUrl, token, query, mode, timeoutMs) {
   }
   const page = envelope.data || {}
   const items = Array.isArray(page.data) ? page.data : []
-  return { mode, status, total: Number(page.total ?? 0), items }
+  return { mode, status: res.status, total: Number(page.total ?? 0), items }
 }
 
 function formatItem(item) {
@@ -201,9 +292,12 @@ async function checkDatabase(env) {
   if (!configured(uri)) return { skipped: 'MONGODB_URI 未配置' }
 
   let MongoClient
+  let ObjectId
   try {
     const requireFromBackend = createRequire(resolve(root, 'notes-backend/package.json'))
-    MongoClient = requireFromBackend('mongodb').MongoClient
+    const mongodb = requireFromBackend('mongodb')
+    MongoClient = mongodb.MongoClient
+    ObjectId = mongodb.ObjectId
   } catch (error) {
     return { skipped: `无法加载 mongodb 驱动: ${error.message}` }
   }
@@ -233,35 +327,48 @@ async function checkDatabase(env) {
         : (hello?.setName ? `专用集群副本集 ${hello.setName}` : 'unknown')
     } catch {}
 
-    // 普通索引里若出现名为 vector_index 的索引，说明在 "Indexes" 页建错了类型：
-    // 普通 B-tree 索引 ≠ Atlas Search 向量索引，$vectorSearch 不会使用它。
-    let regularIndexNames = []
-    try {
-      regularIndexNames = (await coll.listIndexes().toArray()).map((i) => i.name)
-    } catch {}
-
-    let indexSummary = []
-    try {
-      const indexes = await coll.listSearchIndexes().toArray()
-      indexSummary = indexes.map((idx) => {
-        // Atlas Search 索引定义有两种结构，都要兼容：
-        //   数组形式：{ fields: [ { type:'vector', path, numDimensions, similarity } ] }
-        //   映射形式：{ mappings: { fields: { path: [ {...} ] } } }
-        const def = idx.latestDefinition || {}
-        const list = Array.isArray(def.fields) ? def.fields.slice() : []
-        const mapped = def.mappings?.fields || {}
-        for (const [path, arr] of Object.entries(mapped)) {
-          const sub = Array.isArray(arr) ? arr : [arr]
-          for (const f of sub) list.push({ ...f, path: f.path || path })
-        }
-        const vectors = list
-          .filter((f) => f && f.type === 'vector')
-          .map((f) => ({ path: f.path, numDimensions: f.numDimensions, similarity: f.similarity }))
-        return { name: idx.name, status: idx.status, vectors }
-      })
-    } catch (error) {
-      indexSummary = `无法列出搜索索引（非 Atlas 或本地 MongoDB 不支持 listSearchIndexes）: ${error.message}`
+    const indexReports = []
+    for (const contract of ATLAS_VECTOR_CONTRACTS) {
+      const collection = db.collection(contract.collection)
+      let regularIndexes = []
+      try { regularIndexes = await collection.listIndexes().toArray() } catch {}
+      try {
+        const searchIndexes = await collection.listSearchIndexes().toArray()
+        indexReports.push({ contract, ...evaluateSearchIndexes({ regularIndexes, searchIndexes, contract }) })
+      } catch (error) {
+        indexReports.push({ contract, regularNameCollision: regularIndexes.some((index) => index.name === contract.name), ...classifySearchIndexError(error) })
+      }
     }
+
+    const chunkCollection = db.collection('note_chunks')
+    const sampledGroups = await chunkCollection.aggregate([
+      { $sort: { noteId: 1, chunkIndex: 1 } },
+      { $group: { _id: '$noteId' } },
+      { $limit: 6 },
+    ]).toArray()
+    const sampleChunkNoteIds = sampledGroups.map((group) => group._id)
+    const sampleNoteIds = sampleChunkNoteIds.map((noteId) => (
+      typeof noteId === 'string' && ObjectId.isValid(noteId) ? new ObjectId(noteId) : noteId
+    ))
+    const sampleNotes = sampleNoteIds.length
+      ? await coll.find({ _id: { $in: sampleNoteIds } }, {
+        projection: { title: 1, content: 1, summary: 1, summarySource: 1, embedding: 1 },
+      }).toArray()
+      : []
+    const sampleChunks = sampleChunkNoteIds.length
+      ? await chunkCollection.find({ noteId: { $in: sampleChunkNoteIds } }, {
+        projection: { noteId: 1, chunkIndex: 1, headingPath: 1, content: 1, embedding: 1, contentHash: 1, embeddingModel: 1, chunkStrategyVersion: 1 },
+      }).sort({ noteId: 1, chunkIndex: 1 }).toArray()
+      : []
+    const byNoteId = new Map()
+    for (const chunk of sampleChunks) {
+      const noteId = String(chunk.noteId)
+      if (!byNoteId.has(noteId)) byNoteId.set(noteId, [])
+      byNoteId.get(noteId).push(chunk)
+    }
+    const sampleValidation = validateDerivedSamples(
+      sampleNotes.map((note) => ({ note, chunks: byNoteId.get(String(note._id)) || [] })),
+    )
 
     return {
       skipped: false,
@@ -270,8 +377,8 @@ async function checkDatabase(env) {
       withEmbedding,
       missingEmbedding: total - withEmbedding,
       tier,
-      regularIndexNames,
-      indexSummary,
+      indexReports,
+      sampleValidation,
     }
   } catch (error) {
     return { skipped: false, error: `连接 MongoDB 失败: ${error.message}` }
@@ -384,25 +491,19 @@ async function main() {
     } else {
       console.log(`  数据库=${db.dbName}  笔记总数=${db.total}  有 embedding=${db.withEmbedding}  缺 embedding=${db.missingEmbedding}`)
       console.log(`  集群类型：${db.tier || 'unknown'}`)
-      if (db.regularIndexNames && db.regularIndexNames.includes('vector_index')) {
-        console.log('  ⚠️ 检测到普通索引里存在名为 vector_index 的索引 —— 这是普通索引，不是 Atlas Search 向量索引，$vectorSearch 不会使用它。')
+      for (const report of db.indexReports) {
+        const contract = `${report.contract.collection}.${report.contract.name} / path=${report.contract.path} / dimensions=${report.contract.dimensions} / similarity=${report.contract.similarity}`
+        console.log(`  Atlas 契约：${contract}`)
+        if (report.regularNameCollision) console.log('    ⚠️ 存在同名普通 MongoDB B-tree index；它不属于 Atlas Vector Search，不能满足此契约。')
+        if (report.status === 'confirmed') console.log('    ✅ Atlas Vector Search index 已确认且契约匹配。')
+        else if (report.status === 'missing') console.log('    ❌ Atlas Vector Search index 未找到。')
+        else if (report.status === 'mismatch') console.log(`    ❌ Atlas Vector Search index 契约不匹配：${report.mismatches.join('；')}`)
+        else console.log(`    ⚠️ ${report.reason}。未猜测索引状态；请按运行手册在 Atlas 控制台确认。`)
       }
-      if (Array.isArray(db.indexSummary)) {
-        if (db.indexSummary.length === 0) console.log('  向量索引（Atlas Search）：无（未创建 vector_index）')
-        let hasVectorNamedVectorIndex = false
-        for (const idx of db.indexSummary) {
-          const vectors = idx.vectors.map((v) => `path=${v.path} dims=${v.numDimensions} sim=${v.similarity}`).join(', ')
-          console.log(`  向量索引（Atlas Search）：name=${idx.name} status=${idx.status} ${vectors || '(非向量索引)'}`)
-          if (idx.name === 'vector_index' && idx.vectors.length > 0) hasVectorNamedVectorIndex = true
-        }
-        // 代码写死索引名为 vector_index；存在向量索引但名字不符时直接点出根因
-        const anyVector = db.indexSummary.some((idx) => idx.vectors.length > 0)
-        if (anyVector && !hasVectorNamedVectorIndex) {
-          console.log('  ❌ 已存在向量索引，但名字不是 vector_index —— 代码里写死 index: "vector_index"，所以 $vectorSearch 找不到它。')
-          console.log('     修复：把该索引重建成 vector_index，或修改 semantic.service.ts / note-recommendation.service.ts 里的索引名。')
-        }
-      } else {
-        console.log(`  向量索引：${db.indexSummary}`)
+      const validation = db.sampleValidation
+      console.log(`  派生数据抽样：notes=${validation.sampledNotes} chunks=${validation.sampledChunks}`)
+      for (const [name, ids] of Object.entries(validation.failures)) {
+        console.log(`    ${ids.length === 0 ? '✅' : '❌'} ${name}: ${ids.length === 0 ? '通过' : `${ids.length} 项失败（仅列 ID：${ids.join(', ')}）`}`)
       }
     }
     console.log('')
@@ -422,7 +523,9 @@ async function main() {
   if (infraFailed) process.exitCode = 1
 }
 
-main().catch((error) => {
-  console.error(`语义搜索检查脚本异常: ${error.message}`)
-  process.exitCode = 1
-})
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  main().catch((error) => {
+    console.error(`语义搜索检查脚本异常: ${error.message}`)
+    process.exitCode = 1
+  })
+}

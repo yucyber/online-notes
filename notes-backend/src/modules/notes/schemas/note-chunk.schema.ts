@@ -25,6 +25,12 @@ export class NoteChunk {
 
   @Prop({ type: [Number], required: true })
   embedding: number[]
+
+  @Prop({ required: true })
+  embeddingModel: string
+
+  @Prop({ required: true })
+  chunkStrategyVersion: string
 }
 
 export const NoteChunkSchema = SchemaFactory.createForClass(NoteChunk)

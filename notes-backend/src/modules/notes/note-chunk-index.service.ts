@@ -6,6 +6,9 @@ import { NoteChunkerService } from './note-chunker.service'
 import { Note, NoteDocument } from './schemas/note.schema'
 import { NoteChunk, NoteChunkDocument } from './schemas/note-chunk.schema'
 
+const CHUNK_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-8B'
+const CHUNK_STRATEGY_VERSION = 'heading-aware-v1'
+
 export interface NoteChunkSourceSnapshot {
   noteId: string
   userId: string
@@ -77,6 +80,8 @@ export class NoteChunkIndexService {
       const unchangedAtPosition = chunk.previous
         && Number(chunk.previous.chunkIndex) === chunk.chunkIndex
         && String(chunk.previous.contentHash) === chunk.contentHash
+        && chunk.previous.embeddingModel === CHUNK_EMBEDDING_MODEL
+        && chunk.previous.chunkStrategyVersion === CHUNK_STRATEGY_VERSION
       if (unchangedAtPosition) continue
       operations.push({
         replaceOne: {
@@ -89,6 +94,8 @@ export class NoteChunkIndexService {
             content: chunk.content,
             contentHash: chunk.contentHash,
             embedding: chunk.embedding,
+            embeddingModel: CHUNK_EMBEDDING_MODEL,
+            chunkStrategyVersion: CHUNK_STRATEGY_VERSION,
           },
           upsert: true,
         },

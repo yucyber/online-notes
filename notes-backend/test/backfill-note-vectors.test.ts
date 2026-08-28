@@ -21,7 +21,7 @@ test('回填器跳过摘要、主题向量和 chunks 均为最新的笔记', asy
   const derivedCalls: any[] = []
   const runner = new NoteVectorBackfillRunner(
     { find: () => queryResult([note]) } as any,
-    { find: () => queryResult(built.map((chunk) => ({ ...chunk, embedding: [0.1] }))) } as any,
+    { find: () => queryResult(built.map((chunk) => ({ ...chunk, embedding: [0.1], embeddingModel: 'model', chunkStrategyVersion: 'v1' }))) } as any,
     { refreshTopicArtifacts: async (...args: any[]) => derivedCalls.push(args) } as any,
     chunker,
     vectorSource,
@@ -34,7 +34,49 @@ test('回填器跳过摘要、主题向量和 chunks 均为最新的笔记', asy
   assert.equal(report.total, 1)
   assert.equal(report.skipped, 1)
   assert.equal(report.failed, 0)
+  assert.equal(report.summaryAi, 1)
+  assert.equal(report.summaryPassthrough, 0)
+  assert.equal(report.summaryFallback, 0)
   assert.equal(derivedCalls.length, 0)
+})
+
+test('回填报告按实际 summarySource 分别计数', async () => {
+  const chunker = new NoteChunkerService()
+  const vectorSource = new NoteVectorSourceService()
+  const notes = ['ai', 'passthrough', 'fallback'].map((summarySource, index) => {
+    const note: any = {
+      _id: `note-${index}`,
+      userId: 'user-1',
+      title: `笔记 ${index}`,
+      content: '<h2>章节</h2><p>正文</p>',
+      summary: `摘要 ${index}`,
+      summarySource,
+      summaryUpdatedAt: new Date(),
+      updatedAt: new Date(),
+    }
+    const source = vectorSource.buildTopicVectorSource({ title: note.title, summary: note.summary, tagNames: [] })
+    note.embeddingSourceHash = vectorSource.hashTopicVectorSource(source)
+    return note
+  })
+  const chunks = new Map(notes.map((note) => [
+    note._id,
+    chunker.buildChunks(note).map((chunk) => ({ ...chunk, embedding: [0.1], embeddingModel: 'model', chunkStrategyVersion: 'v1' })),
+  ]))
+  const runner = new NoteVectorBackfillRunner(
+    { find: () => queryResult(notes) } as any,
+    { find: ({ noteId }: { noteId: string }) => queryResult(chunks.get(noteId) || []) } as any,
+    { refreshTopicArtifacts: async () => undefined } as any,
+    chunker,
+    vectorSource,
+    { findOwnedName: async () => undefined } as any,
+    { findOwnedNames: async () => [] } as any,
+  )
+
+  const report = await runner.run()
+
+  assert.equal(report.summaryAi, 1)
+  assert.equal(report.summaryPassthrough, 1)
+  assert.equal(report.summaryFallback, 1)
 })
 
 test('已明确写回 fallback 且向量和 chunks 完整时保持幂等', async () => {
@@ -50,7 +92,7 @@ test('已明确写回 fallback 且向量和 chunks 完整时保持幂等', async
   let derivedCalls = 0
   const runner = new NoteVectorBackfillRunner(
     { find: () => queryResult([note]) } as any,
-    { find: () => queryResult(built.map((chunk) => ({ ...chunk, embedding: [0.1] }))) } as any,
+    { find: () => queryResult(built.map((chunk) => ({ ...chunk, embedding: [0.1], embeddingModel: 'model', chunkStrategyVersion: 'v1' }))) } as any,
     { refreshTopicArtifacts: async () => { derivedCalls++ } } as any,
     chunker,
     vectorSource,
@@ -106,4 +148,52 @@ test('派生后缺少预期 Chunk 时将该笔记计为失败', async () => {
   assert.equal(report.failed, 1)
   assert.deepEqual(report.failedNoteIds, ['note-1'])
   assert.equal(report.notes[0].status, 'failed')
+})
+
+test('dry-run 只报告重建范围和模型请求估算且不写数据', async () => {
+  const note = { _id: 'note-1', userId: 'user-1', title: '正文', content: '<h2>章节</h2><p>需要索引</p>', summary: '', updatedAt: new Date() }
+  let derivedCalls = 0
+  const runner = new NoteVectorBackfillRunner(
+    { find: () => queryResult([note]) } as any,
+    { find: () => queryResult([]) } as any,
+    { refreshTopicArtifacts: async () => { derivedCalls++ } } as any,
+    new NoteChunkerService(),
+    new NoteVectorSourceService(),
+    { findOwnedName: async () => undefined } as any,
+    { findOwnedNames: async () => [] } as any,
+  )
+
+  const preview = await runner.preview()
+
+  assert.equal(preview.noteCount, 1)
+  assert.equal(preview.notesToRebuild, 1)
+  assert.deepEqual(preview.updatedFields, ['summary', 'summarySource', 'summaryUpdatedAt', 'embedding', 'embeddingSourceHash', 'note_chunks'])
+  assert.equal(preview.changesBusinessUpdatedAt, false)
+  assert.equal(preview.estimatedModelRequests, 3)
+  assert.equal(derivedCalls, 0)
+})
+
+test('Chunk 缺少模型或切分版本时不能误判为已完成', async () => {
+  const chunker = new NoteChunkerService()
+  const vectorSource = new NoteVectorSourceService()
+  const note: any = {
+    _id: 'note-1', userId: 'user-1', title: '正文', content: '<h2>章节</h2><p>内容</p>',
+    summary: '摘要', summarySource: 'ai', updatedAt: new Date(),
+  }
+  const source = vectorSource.buildTopicVectorSource({ title: note.title, summary: note.summary, tagNames: [] })
+  note.embeddingSourceHash = vectorSource.hashTopicVectorSource(source)
+  const chunks = chunker.buildChunks(note).map((chunk) => ({ ...chunk, embedding: [0.1] }))
+  const runner = new NoteVectorBackfillRunner(
+    { find: () => queryResult([note]) } as any,
+    { find: () => queryResult(chunks) } as any,
+    { refreshTopicArtifacts: async () => undefined } as any,
+    chunker,
+    vectorSource,
+    { findOwnedName: async () => undefined } as any,
+    { findOwnedNames: async () => [] } as any,
+  )
+
+  const preview = await runner.preview()
+
+  assert.equal(preview.notesToRebuild, 1)
 })

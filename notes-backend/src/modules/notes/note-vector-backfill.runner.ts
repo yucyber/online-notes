@@ -16,9 +16,19 @@ export interface NoteVectorBackfillReport {
   chunksCreated: number
   skipped: number
   failed: number
+  summaryAi: number
+  summaryPassthrough: number
   summaryFallback: number
   failedNoteIds: string[]
   notes: Array<{ noteId: string; title: string; summarySource: string; chunks: number; status: 'rebuilt' | 'skipped' | 'failed' }>
+}
+
+export interface NoteVectorBackfillPreview {
+  noteCount: number
+  notesToRebuild: number
+  updatedFields: string[]
+  changesBusinessUpdatedAt: false
+  estimatedModelRequests: number
 }
 
 @Injectable()
@@ -33,6 +43,27 @@ export class NoteVectorBackfillRunner {
     private readonly tags: TagsService,
   ) {}
 
+  async preview(): Promise<NoteVectorBackfillPreview> {
+    const notes: any[] = await this.noteModel.find({}).lean().exec()
+    let notesToRebuild = 0
+    let estimatedModelRequests = 0
+    for (const note of notes) {
+      const expectedChunks = this.chunker.buildChunks({ title: String(note.title || ''), content: String(note.content || '') })
+      const existingChunks: any[] = await this.chunkModel.find({ noteId: String(note._id) }).lean().exec()
+      if (await this.isUpToDate(note, expectedChunks, existingChunks)) continue
+      notesToRebuild++
+      // 每篇最多包含 summary、主题 embedding，以及每个 Chunk 各一次模型请求。
+      estimatedModelRequests += 2 + expectedChunks.length
+    }
+    return {
+      noteCount: notes.length,
+      notesToRebuild,
+      updatedFields: ['summary', 'summarySource', 'summaryUpdatedAt', 'embedding', 'embeddingSourceHash', 'note_chunks'],
+      changesBusinessUpdatedAt: false,
+      estimatedModelRequests,
+    }
+  }
+
   async run(onProgress?: (message: string) => void): Promise<NoteVectorBackfillReport> {
     const notes: any[] = await this.noteModel.find({}).lean().exec()
     const report: NoteVectorBackfillReport = {
@@ -42,6 +73,8 @@ export class NoteVectorBackfillRunner {
       chunksCreated: 0,
       skipped: 0,
       failed: 0,
+      summaryAi: 0,
+      summaryPassthrough: 0,
       summaryFallback: 0,
       failedNoteIds: [],
       notes: [],
@@ -57,7 +90,7 @@ export class NoteVectorBackfillRunner {
         const existingChunks: any[] = await this.chunkModel.find({ noteId }).lean().exec()
         if (await this.isUpToDate(note, expectedChunks, existingChunks)) {
           report.skipped++
-          if (note.summarySource === 'fallback') report.summaryFallback++
+          this.countSummarySource(report, note.summarySource)
           report.notes.push({ noteId, title, summarySource: String(note.summarySource), chunks: existingChunks.length, status: 'skipped' })
           continue
         }
@@ -79,7 +112,7 @@ export class NoteVectorBackfillRunner {
         const chunksOk = chunkCount === expectedChunks.length
         if (topicOk) report.topicSucceeded++
         if (chunksOk) report.chunkSucceeded++
-        if (fresh?.summarySource === 'fallback') report.summaryFallback++
+        this.countSummarySource(report, fresh?.summarySource)
         report.chunksCreated += Math.max(0, chunkCount - existingChunks.length)
         const status = topicOk && chunksOk ? 'rebuilt' : 'failed'
         if (status === 'failed') {
@@ -103,6 +136,12 @@ export class NoteVectorBackfillRunner {
     return report
   }
 
+  private countSummarySource(report: NoteVectorBackfillReport, summarySource: unknown) {
+    if (summarySource === 'ai') report.summaryAi++
+    else if (summarySource === 'passthrough') report.summaryPassthrough++
+    else report.summaryFallback++
+  }
+
   private async isUpToDate(note: any, expectedChunks: Array<{ chunkIndex: number; contentHash: string }>, existingChunks: any[]) {
     const summaryComplete = ['ai', 'passthrough'].includes(String(note.summarySource || ''))
       || (note.summarySource === 'fallback' && note.summaryUpdatedAt)
@@ -117,7 +156,11 @@ export class NoteVectorBackfillRunner {
     const byIndex = new Map(existingChunks.map((chunk) => [Number(chunk.chunkIndex), chunk]))
     return expectedChunks.every((chunk) => {
       const current = byIndex.get(chunk.chunkIndex)
-      return current?.contentHash === chunk.contentHash && Array.isArray(current.embedding) && current.embedding.length > 0
+      return current?.contentHash === chunk.contentHash
+        && Array.isArray(current.embedding)
+        && current.embedding.length > 0
+        && Boolean(current.embeddingModel)
+        && Boolean(current.chunkStrategyVersion)
     })
   }
 }
