@@ -3,6 +3,7 @@ import {
   clampUnitInterval,
   normalizeKnowledgeGraphNodeType,
   normalizeKnowledgeGraphNoteIds,
+  normalizeKnowledgeGraphRelation,
   resolveKnowledgeGraphEdgeNoteIds,
   uniqueStrings,
   type KnowledgeGraphNodeType,
@@ -78,8 +79,8 @@ export class KnowledgeGraphBuildGraph {
   ) {
     this.maxNotes = options.maxNotes || 40
     this.maxNoteChars = options.maxNoteChars || 1600
-    this.maxNodes = options.maxNodes || 40
-    this.maxEdges = options.maxEdges || 80
+    this.maxNodes = options.maxNodes || 24
+    this.maxEdges = options.maxEdges || 36
     this.maxChunks = options.maxChunks || 120
     this.maxChunkChars = options.maxChunkChars || 800
   }
@@ -103,7 +104,7 @@ export class KnowledgeGraphBuildGraph {
       task: 'knowledge_graph',
       system: 'You extract knowledge graph proposals for a notes knowledge base. Return JSON only.',
       prompt: this.buildPrompt(knowledgeBaseId, notes),
-      maxTokens: 2400,
+      maxTokens: 1400,
       temperature: 0.2,
       responseFormat: { type: 'json_object' },
       audit: { graphName: 'KnowledgeGraphBuildGraph', userId: context?.userId },
@@ -141,7 +142,10 @@ export class KnowledgeGraphBuildGraph {
       'Return strict JSON with this shape:',
       '{"nodes":[{"label":"string","type":"concept|entity|topic|claim","noteIds":["note id"],"evidenceChunkIds":["chunk id"],"confidence":0.0}],"edges":[{"source":"node label","target":"node label","relation":"string","noteIds":["note id"],"evidenceChunkIds":["chunk id"],"weight":0.0}],"warnings":["string"]}',
       'Only cite noteIds and chunkIds present in the input. If evidence is uncertain, return an empty evidenceChunkIds array. Never invent IDs.',
-      'Prefer concise labels and explanatory relation names.',
+      '优先发现不同 Note ID 之间有证据的关系，并比较不同笔记中的概念、实体、主题和主张。',
+      '关系使用简洁中文。没有可靠证据时不要连线，保持节点断开。',
+      '合并表达相同或近义概念的节点，避免重复。',
+      `最多返回 ${this.maxNodes} 个 nodes 和 ${this.maxEdges} 个 edges，优先保留跨笔记边和高价值内部边。`,
       '',
       notes.map((note) => [
         `Note ID: ${note.id}`,
@@ -195,7 +199,7 @@ export class KnowledgeGraphBuildGraph {
       const source = rawToNodeId.get(String(item?.source || '').trim())
       const target = rawToNodeId.get(String(item?.target || '').trim())
       if (!source || !target || source === target) continue
-      const relation = String(item?.relation || item?.label || 'related to').trim().slice(0, 120) || 'related to'
+      const relation = normalizeKnowledgeGraphRelation(item?.relation || item?.label)
       const id = this.edgeId(source, target, relation)
       const sourceNode = nodeMap.get(source)
       const targetNode = nodeMap.get(target)

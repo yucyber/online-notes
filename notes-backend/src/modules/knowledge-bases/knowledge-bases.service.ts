@@ -9,6 +9,7 @@ import {
   clampUnitInterval,
   normalizeKnowledgeGraphNodeType,
   normalizeKnowledgeGraphNoteIds,
+  normalizeKnowledgeGraphRelation,
   resolveKnowledgeGraphEdgeNoteIds,
   uniqueStrings,
 } from './knowledge-graph-normalize'
@@ -256,7 +257,7 @@ export class KnowledgeBasesService {
       const source = this.cleanGraphId(edge?.source, 160)
       const target = this.cleanGraphId(edge?.target, 160)
       if (!source || !target || source === target || !nodeIds.has(source) || !nodeIds.has(target)) return []
-      const relation = this.cleanText(edge?.relation, 120) || 'related to'
+      const relation = normalizeKnowledgeGraphRelation(edge?.relation)
       const edgeId = this.cleanGraphId(edge?.id, 200) || `${source}:${target}:${relation}`
       if (seen.has(edgeId)) return []
       const fallbackNoteIds = uniqueStrings([...(nodeNoteIds.get(source) || []), ...(nodeNoteIds.get(target) || [])])
@@ -333,7 +334,7 @@ export class KnowledgeBasesService {
       id: String(value.edgeId),
       source: String(value.source),
       target: String(value.target),
-      relation: value.relation || 'related to',
+      relation: normalizeKnowledgeGraphRelation(value.relation),
       weight: clampUnitInterval(value.weight, 0.6),
       noteIds: (Array.isArray(value.noteIds) ? value.noteIds : []).map(String),
       evidenceChunkIds: (Array.isArray(value.evidenceChunkIds) ? value.evidenceChunkIds : []).map(String),

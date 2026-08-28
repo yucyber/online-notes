@@ -101,7 +101,7 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
       { id: 'node-outside', label: 'Outside', type: 'entity', confidence: 0.7, noteIds: [outsideNoteId] },
     ],
     edges: [
-      { id: 'edge-a', source: 'node-a', target: 'node-b', relation: 'supports', weight: 0.6, noteIds: [noteOneId, outsideNoteId], evidenceChunkIds: [noteOneChunkId, noteTwoChunkId, outsideChunkId] },
+      { id: 'edge-a', source: 'node-a', target: 'node-b', relation: '', weight: 0.6, noteIds: [noteOneId, outsideNoteId], evidenceChunkIds: [noteOneChunkId, noteTwoChunkId, outsideChunkId] },
       { id: 'edge-outside', source: 'node-a', target: 'node-outside', relation: 'leaks', weight: 0.6, noteIds: [outsideNoteId] },
     ],
   }, userId)
@@ -120,6 +120,7 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
   assert.equal(inserts[1].rows.length, 1)
   assert.deepEqual(inserts[1].rows[0].noteIds.map(String), [noteOneId])
   assert.deepEqual(inserts[1].rows[0].evidenceChunkIds.map(String), [noteOneChunkId, noteTwoChunkId])
+  assert.equal(inserts[1].rows[0].relation, '相关')
   assert.equal(saved.nodes.length, 2)
   assert.equal(saved.edges.length, 1)
 })

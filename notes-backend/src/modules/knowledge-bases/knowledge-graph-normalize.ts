@@ -7,6 +7,10 @@ export function normalizeKnowledgeGraphNodeType(value: unknown): KnowledgeGraphN
   return type === 'entity' || type === 'topic' || type === 'claim' ? type : 'concept'
 }
 
+export function normalizeKnowledgeGraphRelation(value: unknown): string {
+  return String(value || '').trim().replace(/\s+/g, ' ').slice(0, 120) || '相关'
+}
+
 export function uniqueStrings(values: string[]): string[] {
   return Array.from(new Set(values.filter(Boolean)))
 }

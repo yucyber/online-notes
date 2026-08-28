@@ -16,7 +16,7 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
           { label: 'Run Audit', type: 'entity', noteIds: ['note-2'], confidence: 0.81 },
         ],
         edges: [
-          { source: 'AI Gateway', target: 'Run Audit', relation: 'records runs', noteIds: ['note-1', 'note-2'], evidenceChunkIds: ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022', '507f1f77bcf86cd799439099'], weight: 0.7 },
+          { source: 'AI Gateway', target: 'Run Audit', relation: '记录运行', noteIds: ['note-1', 'note-2'], evidenceChunkIds: ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022', '507f1f77bcf86cd799439099'], weight: 0.7 },
         ],
       }), attempt: {} }
     },
@@ -36,15 +36,71 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
   assert.deepEqual(proposal.nodes[0].evidenceChunkIds, ['507f1f77bcf86cd799439021'])
   assert.deepEqual(proposal.edges[0].noteIds, ['note-1', 'note-2'])
   assert.deepEqual(proposal.edges[0].evidenceChunkIds, ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022'])
+  assert.equal(proposal.edges[0].relation, '记录运行')
   assert.doesNotMatch(JSON.stringify(proposal), /outside-note/)
   assert.doesNotMatch(JSON.stringify(proposal), /507f1f77bcf86cd799439099/)
   assert.match(calls[0].prompt, /Knowledge base: kb-1/)
   assert.match(calls[0].prompt, /note-1/)
   assert.match(calls[0].prompt, /note-2/)
   assert.match(calls[0].prompt, /507f1f77bcf86cd799439021/)
+  assert.match(calls[0].prompt, /优先发现不同 Note ID 之间有证据的关系/)
+  assert.match(calls[0].prompt, /关系使用简洁中文/)
+  assert.match(calls[0].prompt, /没有可靠证据时不要连线/)
   assert.doesNotMatch(calls[0].prompt, /Content:/)
   assert.equal(calls[0].task, 'knowledge_graph')
+  assert.equal(calls[0].maxTokens, 1400)
   assert.deepEqual(calls[0].responseFormat, { type: 'json_object' })
+})
+
+test('KnowledgeGraphBuildGraph uses a Chinese fallback for a missing relation', async () => {
+  const gateway = {
+    chatTask: async () => ({
+      content: JSON.stringify({
+        nodes: [
+          { label: '检索', noteIds: ['note-1'] },
+          { label: '排序', noteIds: ['note-2'] },
+        ],
+        edges: [{ source: '检索', target: '排序', noteIds: ['note-1', 'note-2'] }],
+      }),
+      attempt: {},
+    }),
+  }
+  const graph = new KnowledgeGraphBuildGraph(gateway as any)
+
+  const proposal = await graph.run({
+    knowledgeBaseId: 'kb-1',
+    notes: [
+      { id: 'note-1', title: '检索' },
+      { id: 'note-2', title: '排序' },
+    ],
+  })
+
+  assert.equal(proposal.edges[0].relation, '相关')
+})
+
+test('KnowledgeGraphBuildGraph limits the default proposal size', async () => {
+  const nodes = Array.from({ length: 30 }, (_, index) => ({
+    label: `Node ${index + 1}`,
+    noteIds: ['note-1'],
+  }))
+  const edges = Array.from({ length: 50 }, (_, index) => ({
+    source: `Node ${(index % 23) + 1}`,
+    target: `Node ${((index + 1) % 23) + 1}`,
+    relation: `关系 ${index + 1}`,
+    noteIds: ['note-1'],
+  }))
+  const gateway = {
+    chatTask: async () => ({ content: JSON.stringify({ nodes, edges }), attempt: {} }),
+  }
+  const graph = new KnowledgeGraphBuildGraph(gateway as any)
+
+  const proposal = await graph.run({
+    knowledgeBaseId: 'kb-1',
+    notes: [{ id: 'note-1', title: 'Limits' }],
+  })
+
+  assert.equal(proposal.nodes.length, 24)
+  assert.equal(proposal.edges.length, 36)
 })
 
 test('AiService builds knowledge graph proposals from readable knowledge base notes', async () => {
