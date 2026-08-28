@@ -259,7 +259,7 @@ interface AiModelPolicy {
 
 - [x] 用户完成“U2 Atlas 索引确认”。2026-08-28 用户确认创建完成，代理只读脚本复验两套 index 均为 READY 且契约匹配。
 - [x] U3 真实回填已由用户确认并执行。
-- [x] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。2026-08-28 复核确认唯一标题级 headingPath 对应正文原本没有小标题，不属于数据错误；旧 Chunk 缺版本元数据另行报告，不影响本项数据质量结论。
+- [x] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。2026-08-28 复核确认唯一标题级 headingPath 对应正文原本没有小标题，不属于数据错误；经用户授权后以 0 次模型请求补齐 63 个旧 Chunk 的 `embeddingModel` 与 `chunkStrategyVersion`，复验无遗漏。
 - [x] 前后端全量测试、type-check 和 build 通过。
 - [x] 搜索和图谱 UI 由用户完成一次视觉确认。2026-08-28 用户确认，并反馈节点较多时画布偏小、知识库列表可考虑收缩。
 

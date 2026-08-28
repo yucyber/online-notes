@@ -197,3 +197,59 @@ test('Chunk 缺少模型或切分版本时不能误判为已完成', async () =>
 
   assert.equal(preview.notesToRebuild, 1)
 })
+
+test('Chunk 元数据迁移 dry-run 只报告缺失元数据且不写数据', async () => {
+  let updateCalls = 0
+  const runner = new NoteVectorBackfillRunner(
+    {} as any,
+    {
+      countDocuments: () => ({ exec: async () => 63 }),
+      updateMany: async () => { updateCalls++; return { matchedCount: 0, modifiedCount: 0 } },
+    } as any,
+    {} as any,
+    new NoteChunkerService(),
+    new NoteVectorSourceService(),
+    {} as any,
+    {} as any,
+  )
+
+  const preview = await runner.previewChunkMetadataMigration()
+
+  assert.equal(preview.targetChunks, 63)
+  assert.deepEqual(preview.updatedFields, ['embeddingModel', 'chunkStrategyVersion'])
+  assert.equal(preview.estimatedModelRequests, 0)
+  assert.equal(preview.changesBusinessUpdatedAt, false)
+  assert.equal(updateCalls, 0)
+})
+
+test('Chunk 元数据迁移只补空字段并保留已有非空来源信息', async () => {
+  const updates: Array<{ filter: any; update: any }> = []
+  const runner = new NoteVectorBackfillRunner(
+    {} as any,
+    {
+      countDocuments: () => ({ exec: async () => 63 }),
+      updateMany: async (filter: any, update: any) => {
+        updates.push({ filter, update })
+        return updates.length === 1
+          ? { matchedCount: 63, modifiedCount: 63 }
+          : { matchedCount: 63, modifiedCount: 63 }
+      },
+    } as any,
+    {} as any,
+    new NoteChunkerService(),
+    new NoteVectorSourceService(),
+    {} as any,
+    {} as any,
+  )
+
+  const report = await runner.migrateChunkMetadata()
+
+  assert.equal(report.targetChunks, 63)
+  assert.equal(report.embeddingModelModified, 63)
+  assert.equal(report.chunkStrategyVersionModified, 63)
+  assert.equal(report.estimatedModelRequests, 0)
+  assert.equal(report.changesBusinessUpdatedAt, false)
+  assert.equal(updates.length, 2)
+  assert.deepEqual(updates[0].filter, { $or: [{ embeddingModel: { $exists: false } }, { embeddingModel: '' }] })
+  assert.deepEqual(updates[1].filter, { $or: [{ chunkStrategyVersion: { $exists: false } }, { chunkStrategyVersion: '' }] })
+})

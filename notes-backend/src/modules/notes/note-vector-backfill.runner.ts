@@ -4,6 +4,7 @@ import { Model } from 'mongoose'
 import { CategoriesService } from '../categories/categories.service'
 import { TagsService } from '../tags/tags.service'
 import { NoteChunkerService } from './note-chunker.service'
+import { CHUNK_EMBEDDING_MODEL, CHUNK_STRATEGY_VERSION } from './note-chunk-index.service'
 import { NoteDerivedService } from './note-derived.service'
 import { NoteVectorSourceService } from './note-vector-source.service'
 import { NoteChunk, NoteChunkDocument } from './schemas/note-chunk.schema'
@@ -29,6 +30,15 @@ export interface NoteVectorBackfillPreview {
   updatedFields: string[]
   changesBusinessUpdatedAt: false
   estimatedModelRequests: number
+}
+
+export interface ChunkMetadataMigrationReport {
+  targetChunks: number
+  updatedFields: ['embeddingModel', 'chunkStrategyVersion']
+  estimatedModelRequests: 0
+  changesBusinessUpdatedAt: false
+  embeddingModelModified?: number
+  chunkStrategyVersionModified?: number
 }
 
 @Injectable()
@@ -61,6 +71,34 @@ export class NoteVectorBackfillRunner {
       updatedFields: ['summary', 'summarySource', 'summaryUpdatedAt', 'embedding', 'embeddingSourceHash', 'note_chunks'],
       changesBusinessUpdatedAt: false,
       estimatedModelRequests,
+    }
+  }
+
+  async previewChunkMetadataMigration(): Promise<ChunkMetadataMigrationReport> {
+    const targetChunks = await this.chunkModel.countDocuments(this.missingChunkMetadataFilter()).exec()
+    return {
+      targetChunks,
+      updatedFields: ['embeddingModel', 'chunkStrategyVersion'],
+      estimatedModelRequests: 0,
+      changesBusinessUpdatedAt: false,
+    }
+  }
+
+  async migrateChunkMetadata(): Promise<ChunkMetadataMigrationReport> {
+    const preview = await this.previewChunkMetadataMigration()
+    // 分字段更新可保留已有非空 provenance，迁移不会调用模型或写 Note。
+    const embeddingResult = await this.chunkModel.updateMany(
+      this.missingFieldFilter('embeddingModel'),
+      { $set: { embeddingModel: CHUNK_EMBEDDING_MODEL } },
+    )
+    const strategyResult = await this.chunkModel.updateMany(
+      this.missingFieldFilter('chunkStrategyVersion'),
+      { $set: { chunkStrategyVersion: CHUNK_STRATEGY_VERSION } },
+    )
+    return {
+      ...preview,
+      embeddingModelModified: embeddingResult.modifiedCount,
+      chunkStrategyVersionModified: strategyResult.modifiedCount,
     }
   }
 
@@ -140,6 +178,21 @@ export class NoteVectorBackfillRunner {
     if (summarySource === 'ai') report.summaryAi++
     else if (summarySource === 'passthrough') report.summaryPassthrough++
     else report.summaryFallback++
+  }
+
+  private missingChunkMetadataFilter() {
+    return {
+      $or: [
+        { embeddingModel: { $exists: false } },
+        { embeddingModel: '' },
+        { chunkStrategyVersion: { $exists: false } },
+        { chunkStrategyVersion: '' },
+      ],
+    }
+  }
+
+  private missingFieldFilter(field: 'embeddingModel' | 'chunkStrategyVersion') {
+    return { $or: [{ [field]: { $exists: false } }, { [field]: '' }] }
   }
 
   private async isUpToDate(note: any, expectedChunks: Array<{ chunkIndex: number; contentHash: string }>, existingChunks: any[]) {

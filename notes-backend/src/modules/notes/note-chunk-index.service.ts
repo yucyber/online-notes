@@ -6,8 +6,8 @@ import { NoteChunkerService } from './note-chunker.service'
 import { Note, NoteDocument } from './schemas/note.schema'
 import { NoteChunk, NoteChunkDocument } from './schemas/note-chunk.schema'
 
-const CHUNK_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-8B'
-const CHUNK_STRATEGY_VERSION = 'heading-aware-v1'
+export const CHUNK_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-8B'
+export const CHUNK_STRATEGY_VERSION = 'heading-aware-v1'
 
 export interface NoteChunkSourceSnapshot {
   noteId: string

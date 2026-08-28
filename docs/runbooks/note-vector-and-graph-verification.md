@@ -21,6 +21,15 @@ npm run backfill:note-vectors
 
 dry-run 会列出笔记数量、预计重建数量、预计更新字段、是否改变业务 `updatedAt` 和预计模型请求数。没有用户明确确认时，不要添加 `--execute`。
 
+如果 embedding 已完整、仅缺少 Chunk provenance 元数据，可先运行：
+
+```powershell
+Set-Location notes-backend
+npm run backfill:note-vectors -- --metadata-only
+```
+
+获得用户对报告范围的明确确认后，才可追加 `--execute`。该模式只补空缺的 `embeddingModel` 和 `chunkStrategyVersion`，保留已有非空值，复用现有 embedding，模型请求数为 0，且不写 Note 或改变业务 `updatedAt`。
+
 ## U2：在 Atlas 控制台确认 Vector Search index
 
 如果脚本报告“权限不足/无法确认”，只需在你已有权限的 Atlas 控制台完成以下操作；无需向代理提供任何秘密：
