@@ -1,6 +1,6 @@
 'use client'
 
-import { FormEvent, useEffect, useMemo, useState } from 'react'
+import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { knowledgeBasesAPI } from '@/lib/api'
 import type { KnowledgeBase, KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
 
@@ -33,6 +33,8 @@ export function useKnowledgeBasePage() {
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [savingGraph, setSavingGraph] = useState(false)
   const [error, setError] = useState('')
+  const linksRequestRef = useRef(0)
+  const graphRequestRef = useRef(0)
 
   const selectedKnowledgeBase = useMemo(
     () => knowledgeBases.find((item) => item.id === selectedId) || null,
@@ -63,6 +65,7 @@ export function useKnowledgeBasePage() {
   }
 
   const loadLinks = async (knowledgeBaseId: string) => {
+    const requestId = ++linksRequestRef.current
     if (!knowledgeBaseId) {
       setLinks([])
       return
@@ -72,16 +75,19 @@ export function useKnowledgeBasePage() {
       setLoadingLinks(true)
       setError('')
       const data = await knowledgeBasesAPI.getNotes(knowledgeBaseId)
-      setLinks(data)
+      if (requestId === linksRequestRef.current) setLinks(data)
     } catch (err) {
-      console.error('Failed to load knowledge base notes', err)
-      setError(getKnowledgeBaseErrorMessage(err, '知识库笔记加载失败，请稍后重试'))
+      if (requestId === linksRequestRef.current) {
+        console.error('Failed to load knowledge base notes', err)
+        setError(getKnowledgeBaseErrorMessage(err, '知识库笔记加载失败，请稍后重试'))
+      }
     } finally {
-      setLoadingLinks(false)
+      if (requestId === linksRequestRef.current) setLoadingLinks(false)
     }
   }
 
   const loadGraph = async (knowledgeBaseId: string) => {
+    const requestId = ++graphRequestRef.current
     if (!knowledgeBaseId) {
       setSavedGraph(null)
       return
@@ -90,12 +96,15 @@ export function useKnowledgeBasePage() {
     try {
       setLoadingGraph(true)
       const graph = await knowledgeBasesAPI.getGraph(knowledgeBaseId)
-      setSavedGraph(graph)
+      if (requestId === graphRequestRef.current) setSavedGraph(graph)
     } catch (err) {
-      console.error('Failed to load knowledge base graph', err)
-      setSavedGraph(null)
+      if (requestId === graphRequestRef.current) {
+        console.error('Failed to load knowledge base graph', err)
+        setSavedGraph(null)
+        setError(getKnowledgeBaseErrorMessage(err, '知识图谱加载失败，请重试'))
+      }
     } finally {
-      setLoadingGraph(false)
+      if (requestId === graphRequestRef.current) setLoadingGraph(false)
     }
   }
 
@@ -182,6 +191,11 @@ export function useKnowledgeBasePage() {
     }
   }
 
+  const retrySelectedKnowledgeBase = async () => {
+    if (!selectedId) return
+    await Promise.all([loadLinks(selectedId), loadGraph(selectedId)])
+  }
+
   return {
     knowledgeBases,
     selectedId,
@@ -206,5 +220,6 @@ export function useKnowledgeBasePage() {
     handleRemoveNote,
     handleBuildGraphProposal,
     handleSaveGraph,
+    retrySelectedKnowledgeBase,
   }
 }

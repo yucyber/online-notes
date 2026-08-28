@@ -38,6 +38,19 @@ const kb = {
   updatedAt: '2026-06-01T00:00:00.000Z',
 }
 
+const kb2 = {
+  ...kb,
+  id: 'kb-2',
+  name: '第二知识库',
+  description: 'Second graph',
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
+}
+
 const linkedNote = {
   id: 'link-1',
   knowledgeBaseId: 'kb-1',
@@ -202,5 +215,29 @@ describe('knowledge base frontend entry', () => {
     expect(await screen.findByText('还没有知识库。先创建一个，再从笔记列表加入内容。')).toBeInTheDocument()
     expect(await screen.findByText('暂无知识库')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /加入知识库/ })).toBeDisabled()
+  })
+
+  test('快速切换知识库时旧图谱请求不能覆盖当前选择', async () => {
+    const oldGraph = deferred<typeof graphProposal>()
+    mockKnowledgeBasesAPI.getAll.mockResolvedValue([kb, kb2])
+    mockKnowledgeBasesAPI.getNotes.mockResolvedValue([])
+    mockKnowledgeBasesAPI.getGraph
+      .mockImplementationOnce(() => oldGraph.promise)
+      .mockResolvedValueOnce({
+        ...graphProposal,
+        knowledgeBaseId: 'kb-2',
+        nodes: [{ ...graphProposal.nodes[0], id: 'kb2-node', label: 'KB2 Node' }],
+        edges: [],
+      })
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /第二知识库/ }))
+    expect(await screen.findByText('KB2 Node')).toBeInTheDocument()
+
+    oldGraph.resolve(graphProposal)
+
+    await waitFor(() => expect(screen.queryByText('Attention')).not.toBeInTheDocument())
+    expect(screen.getByText('KB2 Node')).toBeInTheDocument()
   })
 })
