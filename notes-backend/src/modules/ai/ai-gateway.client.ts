@@ -15,6 +15,7 @@ import { resolveAiModelPolicy } from './ai-model-policy'
 import { buildProviderOptions } from './ai-provider-adapter'
 import { validateAiOutput } from './ai-output-validator'
 import { AiRunService } from './ai-run.service'
+import { AiCapacityDeferredError, AiCapacityProvider, AiProviderCapacityService } from './ai-provider-capacity.service'
 
 type FetchLike = (url: string, init?: any) => Promise<any>
 
@@ -54,6 +55,8 @@ export class AiGatewayClient {
     fetchImpl?: FetchLike,
     @Optional()
     private readonly aiRuns?: AiRunService,
+    @Optional()
+    private readonly capacity?: AiProviderCapacityService,
   ) {
     this.fetchImpl = fetchImpl || ((globalThis.fetch as any).bind(globalThis))
   }
@@ -137,6 +140,7 @@ export class AiGatewayClient {
       provider.apiKey,
       this.chatBody(provider, { ...options, maxTokens: maxTokensOverride ?? options.maxTokens }, { stream: false }),
       `${provider.provider} chat`,
+      provider.provider as AiCapacityProvider,
     )
     return {
       data: await response.json().catch(() => ({})),
@@ -184,7 +188,7 @@ export class AiGatewayClient {
     const provider = this.resolveChatProvider(options)
     const response = await this.postJson(this.endpoint(provider.baseUrl, '/chat/completions'), provider.apiKey, this.chatBody(provider, options, {
       stream: true,
-    }), `${provider.provider} stream chat`)
+    }), `${provider.provider} stream chat`, provider.provider as AiCapacityProvider)
 
     if (!response.body) throw new Error(`${provider.provider} stream chat returned no body`)
     return this.openAiSseToTextStream(response.body)
@@ -276,6 +280,7 @@ export class AiGatewayClient {
       provider.apiKey,
       this.chatBody(provider, options, { stream: true }),
       `${provider.provider} stream task`,
+      provider.provider as AiCapacityProvider,
     )
     if (!response.body) throw new Error(`${provider.provider} stream chat returned no body`)
 
@@ -324,7 +329,7 @@ export class AiGatewayClient {
     const response = await this.postJson(this.endpoint(provider.baseUrl, '/embeddings'), provider.apiKey, {
       model: provider.model,
       input: text,
-    }, `${provider.provider} embedding`)
+    }, `${provider.provider} embedding`, provider.provider as AiCapacityProvider)
 
     const data = await response.json().catch(() => ({}))
     const embedding = data.data?.[0]?.embedding
@@ -340,7 +345,7 @@ export class AiGatewayClient {
       model: provider.model,
       query,
       documents,
-    }, `${provider.provider} rerank`)
+    }, `${provider.provider} rerank`, provider.provider as AiCapacityProvider)
 
     const data = await response.json().catch(() => ({}))
     const results = Array.isArray(data.results) ? data.results : []
@@ -638,12 +643,18 @@ export class AiGatewayClient {
     return body
   }
 
-  private async postJson(url: string, apiKey: string, body: any, label: string) {
+  private async postJson(url: string, apiKey: string, body: any, label: string, provider: AiCapacityProvider) {
     const retryableStatuses = new Set([429, 502, 503, 504])
     const timeoutMs = Math.max(1000, Number(this.configService.get<string>('AI_REQUEST_TIMEOUT_MS') || 120_000))
 
     for (let attempt = 0; attempt <= 2; attempt += 1) {
       let response: any
+      const estimatedTokens = this.capacity?.estimateTokens(
+        Array.isArray(body.messages) ? body.messages : [{ content: String(body.input || body.query || JSON.stringify(body.documents || [])) }],
+        Number(body.max_tokens || 0),
+      ) || 0
+      const lease = this.capacity ? await this.capacity.reserve(provider, estimatedTokens) : undefined
+      if (lease && !lease.granted) throw new AiCapacityDeferredError(provider, lease.retryAfterMs)
       try {
         response = await this.fetchImpl(url, {
           method: 'POST',
@@ -656,6 +667,7 @@ export class AiGatewayClient {
           signal: AbortSignal.timeout(timeoutMs),
         })
       } catch (error: any) {
+        if (lease) await this.capacity?.release(lease)
         if (attempt < 2) {
           await this.sleep(500 * (2 ** attempt))
           continue
@@ -664,11 +676,20 @@ export class AiGatewayClient {
       }
 
       if (response.ok) {
+        if (lease) {
+          const usage = await response.clone?.().json?.().then((data: any) => data?.usage).catch(() => undefined)
+          await this.capacity?.reconcile(lease, usage ? {
+            promptTokens: usage.prompt_tokens,
+            completionTokens: usage.completion_tokens,
+          } : undefined)
+          await this.capacity?.release(lease)
+        }
         Object.defineProperty(response, '__aiRetryCount', { value: attempt, configurable: true })
         return response
       }
 
       const error = await this.readProviderError(response)
+      if (lease) await this.capacity?.release(lease)
       if (retryableStatuses.has(response.status) && attempt < 2) {
         // Token Plan 明确建议对 429 退避；Retry-After 优先，避免多个请求同时再次撞限流。
         await this.sleep(this.retryDelayMs(response, attempt))

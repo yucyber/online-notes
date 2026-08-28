@@ -22,6 +22,12 @@ import { AiModule } from '../ai/ai.module';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
+import { Queue } from 'bullmq';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../common/redis/redis.constants';
+import { NoteDerivedQueueService } from './note-derived-queue.service';
+import { NoteDerivedWorker } from './note-derived.worker';
+import { NOTE_DERIVED_QUEUE } from './note-derived-job.types';
 
 @Module({
   imports: [
@@ -45,7 +51,20 @@ import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
     }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService, NoteVectorBackfillRunner],
+  providers: [
+    NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService,
+    NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService, NoteVectorBackfillRunner,
+    {
+      provide: NoteDerivedQueueService,
+      inject: [REDIS_CLIENT, ConfigService],
+      useFactory: (redis: Redis, config: ConfigService) => new NoteDerivedQueueService(
+        new Queue(NOTE_DERIVED_QUEUE, { connection: redis.duplicate({ maxRetriesPerRequest: null }) }),
+        Math.max(0, Number(config.get('NOTE_DERIVED_QUIET_MS') || 10_000)),
+        redis,
+      ),
+    },
+    NoteDerivedWorker,
+  ],
   exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteVectorBackfillRunner],
 })
 export class NotesModule { }

@@ -1,25 +1,12 @@
+import { Injectable } from '@nestjs/common'
+import { NoteDerivedJobData } from './note-derived-job.types'
+import { NoteDerivedQueueService } from './note-derived-queue.service'
+
+@Injectable()
 export class NoteDerivedScheduler {
-  private readonly timers = new Map<string, ReturnType<typeof setTimeout>>()
+  constructor(private readonly queue: NoteDerivedQueueService) {}
 
-  constructor(private readonly quietMs = 10_000) {}
-
-  schedule(noteId: string, task: () => Promise<void>): void {
-    const pending = this.timers.get(noteId)
-    if (pending) clearTimeout(pending)
-
-    // 自动保存会高频写入；按 note 合并任务，避免每个 400ms 保存都调用 AI 和 embedding。
-    const timer = setTimeout(() => {
-      this.timers.delete(noteId)
-      void task()
-    }, this.quietMs)
-    timer.unref?.()
-    this.timers.set(noteId, timer)
-  }
-
-  cancel(noteId: string): void {
-    const pending = this.timers.get(noteId)
-    if (!pending) return
-    clearTimeout(pending)
-    this.timers.delete(noteId)
+  schedule(data: NoteDerivedJobData): Promise<unknown> {
+    return this.queue.schedule(data)
   }
 }

@@ -6,18 +6,15 @@ import { AiService } from '../ai/ai.service'
 import { NoteCacheService } from './note-cache.service'
 import { Note, NoteDocument } from './schemas/note.schema'
 import { NoteVectorSourceService } from './note-vector-source.service'
-import { NoteDerivedScheduler } from './note-derived-scheduler'
+import { NoteDerivedQueueService } from './note-derived-queue.service'
 import { CategoriesService } from '../categories/categories.service'
 import { TagsService } from '../tags/tags.service'
 import { NoteChunkIndexService } from './note-chunk-index.service'
 
 const TOPIC_EMBEDDING_MODEL = 'Qwen/Qwen3-Embedding-8B'
 
-export interface NoteDerivedChanges {
-  titleChanged: boolean
-  contentChanged: boolean
-  taxonomyChanged: boolean
-}
+import { NoteDerivedChanges } from './note-derived-job.types'
+export { NoteDerivedChanges } from './note-derived-job.types'
 
 export interface NoteDerivedSnapshot {
   noteId: string
@@ -32,8 +29,6 @@ export interface NoteDerivedSnapshot {
 
 @Injectable()
 export class NoteDerivedService {
-  private readonly scheduler = new NoteDerivedScheduler()
-
   constructor(
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     private readonly embeddingService: EmbeddingService,
@@ -43,6 +38,7 @@ export class NoteDerivedService {
     @Optional() private readonly categoriesService?: CategoriesService,
     @Optional() private readonly tagsService?: TagsService,
     @Optional() private readonly chunkIndex?: NoteChunkIndexService,
+    @Optional() private readonly derivedQueue?: NoteDerivedQueueService,
   ) {}
 
   buildFallbackSummary(content: string) {
@@ -107,24 +103,14 @@ export class NoteDerivedService {
   schedule(note: NoteDocument, changes: NoteDerivedChanges): void {
     const noteId = String(note._id)
     const expectedUpdatedAt = new Date((note as any).updatedAt)
-    const snapshot: NoteDerivedSnapshot = {
+    if (!this.derivedQueue) return
+    // Redis 只保存定位和版本元数据；worker 执行时重新读取正文，避免正文副本与敏感 prompt 进入队列。
+    void this.derivedQueue.schedule({
       noteId,
       userId: String(note.userId || ''),
-      title: String(note.title || ''),
-      content: String(note.content || ''),
-      summary: String(note.summary || ''),
-      categoryId: note.categoryId ? String(note.categoryId) : undefined,
-      tagIds: (note.tags || []).map((tag) => String(tag)),
-      expectedUpdatedAt,
-    }
-
-    this.scheduler.schedule(noteId, async () => {
-      try {
-        await this.refreshTopicArtifacts(snapshot, changes)
-      } catch (error) {
-        console.error(`Failed to refresh derived fields for note ${noteId}`, error)
-      }
-    })
+      changes,
+      expectedUpdatedAt: expectedUpdatedAt.toISOString(),
+    }).catch((error) => console.error(`Failed to enqueue derived fields for note ${noteId}`, error))
   }
 
   async refreshTopicArtifacts(snapshot: NoteDerivedSnapshot, changes: NoteDerivedChanges): Promise<void> {

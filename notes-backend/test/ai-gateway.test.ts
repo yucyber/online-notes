@@ -95,6 +95,32 @@ test('AiGatewayClient uses provider fallback only for transient provider failure
   assert.equal(calls.filter(call => call.url.startsWith('https://api.b.ai/')).length, 1)
 })
 
+test('provider fallback 按实际目标 provider 重新预约容量', async () => {
+  const reserved: string[] = []
+  const capacity = {
+    estimateTokens: () => 100,
+    reserve: async (provider: string) => {
+      reserved.push(provider)
+      return { provider, granted: true, retryAfterMs: 0, reservedTokens: 100, activeKey: provider }
+    },
+    reconcile: async () => undefined,
+    release: async () => undefined,
+  }
+  const fetchImpl = async (url: any) => String(url).startsWith('https://api.siliconflow.cn/')
+    ? jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '0' })
+    : jsonResponse({ choices: [{ message: { content: 'fallback answer' } }] })
+  const client = new AiGatewayClient(
+    createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any,
+    fetchImpl as any,
+    undefined,
+    capacity as any,
+  )
+
+  await client.chatTask({ task: 'writer', prompt: 'write' })
+
+  assert.deepEqual(reserved, ['siliconflow', 'siliconflow', 'siliconflow', 'bai'])
+})
+
 test('AiGatewayClient uses quality fallback for invalid structured output without chaining provider fallback', async () => {
   const calls: Array<{ url: string; body: any }> = []
   const fetchImpl = async (url: any, init: any) => {
