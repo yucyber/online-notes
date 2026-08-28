@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 const mockKnowledgeBasesAPI = {
@@ -239,5 +239,51 @@ describe('knowledge base frontend entry', () => {
 
     await waitFor(() => expect(screen.queryByText('Attention')).not.toBeInTheDocument())
     expect(screen.getByText('KB2 Node')).toBeInTheDocument()
+  })
+
+  test('专注模式内通过抽屉切换知识库且保持全屏图谱', async () => {
+    mockKnowledgeBasesAPI.getAll.mockResolvedValue([kb, kb2])
+    mockKnowledgeBasesAPI.getNotes.mockResolvedValue([linkedNote])
+    mockKnowledgeBasesAPI.getGraph.mockImplementation(async (id: string) => ({
+      ...graphProposal,
+      knowledgeBaseId: id,
+      nodes: [{ ...graphProposal.nodes[0], id: `${id}-node`, label: id === 'kb-2' ? 'KB2 Node' : 'Attention' }],
+      edges: [],
+      warnings: [],
+    }))
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: '进入图谱专注模式' }))
+    const focus = screen.getByRole('dialog', { name: '知识图谱专注模式' })
+    expect(within(focus).getByText('已保存图谱')).toBeInTheDocument()
+
+    fireEvent.click(within(focus).getByRole('button', { name: '选择知识库' }))
+    fireEvent.click(within(focus).getByRole('button', { name: /第二知识库/ }))
+
+    expect(screen.getByRole('dialog', { name: '知识图谱专注模式' })).toBeInTheDocument()
+    expect(await within(focus).findByText('KB2 Node')).toBeInTheDocument()
+    expect(within(focus).getByRole('heading', { name: '第二知识库' })).toBeInTheDocument()
+  })
+
+  test('专注模式依次关闭抽屉和全屏并恢复焦点与页面滚动', async () => {
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+    render(<KnowledgeBasesPage />)
+    const trigger = await screen.findByRole('button', { name: '进入图谱专注模式' })
+
+    fireEvent.click(trigger)
+    const focus = screen.getByRole('dialog', { name: '知识图谱专注模式' })
+    expect(document.body.style.overflow).toBe('hidden')
+    fireEvent.click(within(focus).getByRole('button', { name: '选择知识库' }))
+    expect(within(focus).getByRole('searchbox', { name: '搜索知识库' })).toHaveFocus()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(within(focus).queryByRole('searchbox', { name: '搜索知识库' })).not.toBeInTheDocument()
+    expect(focus).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '知识图谱专注模式' })).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(document.body.style.overflow).toBe('')
   })
 })
