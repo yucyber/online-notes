@@ -70,14 +70,14 @@ function findAnchorTarget(root: HTMLElement, anchorText: string) {
 function findHeadingTarget(root: HTMLElement, headingPath: string[]) {
   const headings = Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'))
   const expectedPath = headingPath.map(normalizeLocationText).filter(Boolean)
+  const editorPaths = expectedPath.length > 1 ? [expectedPath, expectedPath.slice(1)] : [expectedPath]
   const stack: Array<{ level: number; text: string }> = []
   for (const heading of headings) {
     const level = Number(heading.tagName.slice(1))
     while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop()
     stack.push({ level, text: normalizeLocationText(heading.textContent || '') })
-    if (stack.length > expectedPath.length) continue
-    const expectedSuffix = expectedPath.slice(-stack.length)
-    if (stack.every((item, index) => item.text === expectedSuffix[index])) return heading
+    if (editorPaths.some((path) => path.length === stack.length
+      && stack.every((item, index) => item.text === path[index]))) return heading
   }
   return null
 }

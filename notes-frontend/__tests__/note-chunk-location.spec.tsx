@@ -129,6 +129,21 @@ test('重复标题按完整 headingPath 定位到正确章节', async () => {
   expect(screen.getByTestId('wrong-child')).not.toHaveClass('evidence-location-target')
 })
 
+test('完整 headingPath 不会被更浅的同名 leaf 抢先命中', async () => {
+  mockEditorMarkup = [
+    '<h1 data-testid="shallow-child">Child</h1>',
+    '<h1>第二部分</h1><h2 data-testid="nested-child">Child</h2>',
+  ].join('')
+  mockNotesAPI.getChunkLocation.mockRejectedValue(new Error('404'))
+  mockQuery.set('heading', '证据笔记 > 第二部分 > Child')
+
+  render(<NoteEditorShell id="note-1" initialData={note as any} initialContent={note.content} />)
+
+  await waitFor(() => expect(scrollIntoView).toHaveBeenCalledTimes(1))
+  expect(screen.getByTestId('shallow-child')).not.toHaveClass('evidence-location-target')
+  expect(screen.getByTestId('nested-child')).toHaveClass('evidence-location-target')
+})
+
 test('无关 DOM mutation 不重复回顶且协同正文晚到后仍能成功定位', async () => {
   mockEditorMarkup = '<p>其他正文</p>'
   mockNotesAPI.getChunkLocation.mockResolvedValue({
