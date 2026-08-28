@@ -32,3 +32,12 @@ test('生产环境缺少凭据时拒绝启动', () => {
   const { service } = makeService({ NODE_ENV: 'production' })
   assert.throws(() => service.onModuleInit(), /Bull Board credentials are required in production/)
 })
+
+test('standalone application context 没有 HTTP adapter 时跳过挂载', () => {
+  const config = new ConfigService({
+    NODE_ENV: 'production', BULL_BOARD_USERNAME: 'operator', BULL_BOARD_PASSWORD: 'secret',
+  })
+  const service = new QueueMonitorService(config, { httpAdapter: null } as any, { name: 'note-derived' } as any)
+
+  assert.doesNotThrow(() => service.onModuleInit())
+})

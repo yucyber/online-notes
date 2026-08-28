@@ -29,6 +29,11 @@ export class QueueMonitorService implements OnModuleInit {
       this.logger.warn('Bull Board is disabled because credentials are not configured')
       return
     }
+    // CLI 使用 standalone application context，没有 HTTP server 可供 Bull Board 挂载。
+    if (!this.httpAdapterHost.httpAdapter) {
+      this.logger.warn('Bull Board is disabled because no HTTP adapter is available')
+      return
+    }
 
     const basePath = '/admin/queues'
     const serverAdapter = new ExpressAdapter()
