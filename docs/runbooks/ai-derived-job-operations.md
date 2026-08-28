@@ -4,7 +4,7 @@
 
 队列复用 `REDIS_URL`。`NOTE_DERIVED_QUIET_MS` 默认 10000。provider 容量默认值只是保守启动值，不代表供应商真实套餐：
 
-BullMQ 建议 Redis 6.2 或更高版本。当前 Redis 5.x 可触发兼容性警告，生产发布前应安排升级并重新运行队列恢复测试。
+BullMQ 建议 Redis 6.2 或更高版本。本机当前使用兼容 Redis 7.2.5 的 Memurai；升级或迁移 Redis 后需重新运行队列恢复测试。
 
 | provider | 最大并发 | RPM | TPM |
 | --- | ---: | ---: | ---: |
@@ -16,7 +16,13 @@ BullMQ 建议 Redis 6.2 或更高版本。当前 Redis 5.x 可触发兼容性警
 
 ## 查看和控制队列
 
-在 Nest application context 中获取 `NoteDerivedQueueService`：
+配置独立监控凭据后访问 `http://localhost:3001/admin/queues`。生产环境必须同时设置 `BULL_BOARD_USERNAME` 和 `BULL_BOARD_PASSWORD`，否则后端拒绝启动；非生产环境缺少凭据时不启用监控页面。浏览器会显示 Basic Auth 登录框，凭据不得与普通用户账号或 API key 复用。
+
+Bull Board 展示 `note-derived` 的 waiting、delayed、active、completed 和 failed 任务。排查 failed job 时优先查看 `failedReason`、`attemptsMade`、`processedOn` 和 `finishedOn`，确认 Note 当前 `updatedAt` 后再重试单个任务。worker 重试时仍校验 `expectedUpdatedAt`，不会绕过陈旧快照保护。
+
+页面允许操作单个任务，但不要批量清空队列。不得把完整正文、prompt、reasoning、模型响应、API key 或监控密码复制到截图、日志或工单。轮换监控密码后应滚动重启后端实例，并确认旧凭据返回 `401`。
+
+命令行应急操作仍可在 Nest application context 中获取 `NoteDerivedQueueService`：
 
 ```ts
 const queue = app.get(NoteDerivedQueueService)
