@@ -296,6 +296,35 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+  /api/notes/{noteId}/chunks/{chunkId}/location:
+    parameters:
+      - in: path
+        name: noteId
+        required: true
+        schema: { type: string }
+      - in: path
+        name: chunkId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Notes]
+      summary: 读取笔记 Chunk 的原文定位信息
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Chunk 定位信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/NoteChunkLocation'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/notes/{id}/acl:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1553,6 +1582,17 @@ components:
           type: integer
           description: 有效期，单位为秒
           example: 300
+    NoteChunkLocation:
+      type: object
+      required: [chunkId, headingPath, anchorText]
+      properties:
+        chunkId: { type: string }
+        headingPath:
+          type: array
+          items: { type: string }
+        anchorText:
+          type: string
+          maxLength: 160
     PaginatedNotes:
       type: object
       properties:

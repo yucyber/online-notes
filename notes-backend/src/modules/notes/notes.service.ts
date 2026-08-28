@@ -17,6 +17,7 @@ import { AuditService } from '../audit/audit.service';
 import { UsersService } from '../users/users.service';
 import { Mindmap } from '../mindmaps/schemas/mindmap.schema';
 import { NoteChunk } from './schemas/note-chunk.schema';
+import { parseFragment } from 'parse5';
 
 @Injectable()
 export class NotesService {
@@ -210,6 +211,38 @@ export class NotesService {
     // 统一输出 string 引用：categoryId/tags 由 ObjectId 派生为字符串 id
     const [enriched] = await this.enrichTaxonomyRefs([this.serializeNote(note)])
     return enriched;
+  }
+
+  async getChunkLocation(noteId: string, chunkId: string, userId: string): Promise<{
+    chunkId: string
+    headingPath: string[]
+    anchorText: string
+  }> {
+    // 先收窄到 NoteAccess，再查询 route Note 下的 Chunk，避免跨 Note 枚举暴露正文存在性。
+    const readableNote = await this.noteModel
+      .findOne(this.noteAccess.readScope(noteId, userId))
+      .select('_id')
+      .lean()
+      .exec()
+    if (!readableNote) throw new NotFoundException('笔记不存在')
+
+    if (!this.noteChunkModel) throw new NotFoundException('证据位置不存在')
+    const chunk = await this.noteChunkModel
+      .findOne({
+        _id: this.noteAccess.objectId(chunkId, 'chunk id'),
+        noteId: this.noteAccess.objectId(noteId, 'note id'),
+      })
+      .select('_id headingPath content')
+      .lean()
+      .exec()
+    if (!chunk) throw new NotFoundException('证据位置不存在')
+
+    const anchorText = this.chunkAnchorText(chunk.content).slice(0, 160)
+    return {
+      chunkId: String(chunk._id),
+      headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [],
+      anchorText,
+    }
   }
 
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
@@ -444,6 +477,20 @@ export class NotesService {
       category: note.categoryId ? categoryMap.get(note.categoryId) || null : null,
       tags: (note.tags || []).map((tag: string) => tagMap.get(String(tag)) || String(tag)),
     }))
+  }
+
+  private chunkAnchorText(value: unknown) {
+    const fragment: any = parseFragment(String(value || ''))
+    const blockTags = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'pre', 'blockquote', 'li', 'table', 'td', 'th', 'div'])
+    const textOf = (node: any): string => {
+      const tag = String(node.tagName || '').toLowerCase()
+      if (tag === 'script' || tag === 'style') return ''
+      if (node.nodeName === '#text') return String(node.value || '')
+      const text = (node.childNodes || []).map(textOf).join('')
+      return blockTags.has(tag) ? `${text} ` : text
+    }
+    // parse5 与浏览器 DOM 一样解码 entity，且 <br> 本身不产生 text node。
+    return textOf(fragment).replace(/\s+/g, ' ').trim()
   }
 
   async generateRoomTicket(noteId: string, userId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> {

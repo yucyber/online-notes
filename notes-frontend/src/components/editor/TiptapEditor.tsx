@@ -31,6 +31,7 @@ type Props = {
   style?: React.CSSProperties
   updatedAt?: string
   localOnly?: boolean
+  onReady?: (root: HTMLElement | null) => void
 }
 
 const CONTENT_NORMALIZATION_VERSION = 1
@@ -53,7 +54,7 @@ export function isLegacyRawMarkdownDocument(
   }
 }
 
-export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onFormatChange, onContentChange, onParticipantsChange, versionKey, className, style, updatedAt, localOnly = false }: Props) {
+export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOnly = false, onSelectionChange, onFormatChange, onContentChange, onParticipantsChange, versionKey, className, style, updatedAt, localOnly = false, onReady }: Props) {
   const documentKey = `${noteId}:${versionKey || ''}`
   const initialSeedRef = useRef<{
     key: string
@@ -151,6 +152,12 @@ export default function TiptapEditor({ noteId, initialHTML, onSave, user, readOn
     editable: !effectiveReadOnly,
     immediatelyRender: false,
   }, [provider, collabEnabled, documentKey])
+
+  useEffect(() => {
+    if (!editor) return
+    onReady?.(editor.view.dom)
+    return () => onReady?.(null)
+  }, [editor, onReady])
 
   useEffect(() => {
     if (!editor) return

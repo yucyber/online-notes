@@ -115,6 +115,11 @@ export const notesAPI = {
   getById: (id: string) =>
     getTyped<Note>(`/notes/${id}`),
 
+  getChunkLocation: (noteId: string, chunkId: string) =>
+    getTyped<{ chunkId: string; headingPath: string[]; anchorText: string }>(
+      `/notes/${encodeURIComponent(noteId)}/chunks/${encodeURIComponent(chunkId)}/location`,
+    ),
+
   create: (note: CreateNoteDto) =>
     postTyped<Note>('/notes', note).then((created) => {
       clearNotesCache()
