@@ -5,6 +5,7 @@ import Link from 'next/link'
 import { Background, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, type NodeProps } from '@xyflow/react'
 import type { KnowledgeBaseNoteLink, KnowledgeGraphNodeType, KnowledgeGraphProposal } from '@/types'
 import { buildKnowledgeGraphFlow, filterKnowledgeGraph, toNodeTypeLabel, type KnowledgeFlowNodeData } from './knowledge-graph-layout'
+import type { KnowledgeGraphSessionState } from './knowledge-graph-session'
 
 function KnowledgeNode({ data, selected }: NodeProps) {
   const value = data as KnowledgeFlowNodeData
@@ -19,21 +20,32 @@ function KnowledgeNode({ data, selected }: NodeProps) {
 const nodeTypes = { knowledge: KnowledgeNode }
 const graphNodeTypes: KnowledgeGraphNodeType[] = ['concept', 'entity', 'topic', 'claim']
 
-function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: KnowledgeBaseNoteLink[] }) {
-  const [query, setQuery] = useState('')
-  const [visibleTypes, setVisibleTypes] = useState<Set<KnowledgeGraphNodeType>>(() => new Set(graphNodeTypes))
+type GraphStageProps = {
+  graph: KnowledgeGraphProposal
+  links: KnowledgeBaseNoteLink[]
+  sessionState?: KnowledgeGraphSessionState
+  onSessionStateChange?: (patch: Partial<KnowledgeGraphSessionState>) => void
+}
+
+function GraphStage({ graph, links, sessionState, onSessionStateChange }: GraphStageProps) {
+  const [query, setQuery] = useState(sessionState?.query || '')
+  const [visibleTypes, setVisibleTypes] = useState<Set<KnowledgeGraphNodeType>>(() => new Set(sessionState?.visibleTypes || graphNodeTypes))
   const filteredGraph = useMemo(() => filterKnowledgeGraph(graph, query, visibleTypes), [graph, query, visibleTypes])
-  const initial = useMemo(() => buildKnowledgeGraphFlow(filteredGraph), [filteredGraph])
+  const initial = useMemo(() => {
+    const flow = buildKnowledgeGraphFlow(filteredGraph)
+    return { ...flow, nodes: flow.nodes.map((node) => ({ ...node, position: sessionState?.positions[node.id] || node.position })) }
+  }, [filteredGraph, sessionState?.positions])
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges)
   const [selectedId, setSelectedId] = useState('')
   const [zoom, setZoom] = useState(1)
-  const { fitView, zoomIn, zoomOut } = useReactFlow()
+  const { fitView, setViewport, zoomIn, zoomOut } = useReactFlow()
 
   useEffect(() => {
     setNodes(initial.nodes); setEdges(initial.edges); setSelectedId('')
-    requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 }))
-  }, [fitView, initial, setEdges, setNodes])
+    if (sessionState?.viewport) void setViewport(sessionState.viewport)
+    else requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 }))
+  }, [fitView, initial, sessionState?.viewport, setEdges, setNodes, setViewport])
 
   const connectedIds = useMemo(() => {
     if (!selectedId) return new Set<string>()
@@ -58,18 +70,19 @@ function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: Kn
       const next = new Set(current)
       if (next.has(type) && next.size > 1) next.delete(type)
       else next.add(type)
+      onSessionStateChange?.({ visibleTypes: Array.from(next) })
       return next
     })
-  }, [])
+  }, [onSessionStateChange])
 
   return <div className="knowledge-graph-stage">
     <div className="knowledge-graph-canvas" data-testid="knowledge-graph-canvas">
-      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={(_, node) => setSelectedId((current) => current === node.id ? '' : node.id)} onPaneClick={() => setSelectedId('')} onMove={(_, viewport) => setZoom(viewport.zoom)} minZoom={0.25} maxZoom={1.75} fitView fitViewOptions={{ padding: 0.12, minZoom: 0.82, maxZoom: 1.05 }} nodesConnectable={false} proOptions={{ hideAttribution: true }}>
+      <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={(_, node) => setSelectedId((current) => current === node.id ? '' : node.id)} onPaneClick={() => setSelectedId('')} onMove={(_, viewport) => setZoom(viewport.zoom)} onMoveEnd={(_, viewport) => onSessionStateChange?.({ viewport })} onNodeDragStop={(_, moved) => onSessionStateChange?.({ positions: Object.fromEntries(nodes.map((node) => [node.id, node.id === moved.id ? moved.position : node.position])) })} minZoom={0.25} maxZoom={1.75} fitView fitViewOptions={{ padding: 0.12, minZoom: 0.82, maxZoom: 1.05 }} nodesConnectable={false} proOptions={{ hideAttribution: true }}>
         <Background gap={22} size={1} />
         {filteredGraph.nodes.length > 20 ? <MiniMap pannable zoomable /> : null}
       </ReactFlow>
       <div className="knowledge-graph-filters" aria-label="节点筛选">
-        <input aria-label="按节点名称筛选" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选节点" />
+        <input aria-label="按节点名称筛选" value={query} onChange={(event) => { setQuery(event.target.value); onSessionStateChange?.({ query: event.target.value }) }} placeholder="筛选节点" />
         <div>{graphNodeTypes.map((type) => <button key={type} type="button" aria-pressed={visibleTypes.has(type)} onClick={() => toggleType(type)}>{toNodeTypeLabel(type)}</button>)}</div>
         {filteredGraph.nodes.length === 0 ? <span>没有匹配节点</span> : null}
       </div>
@@ -90,7 +103,7 @@ function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: Kn
   </div>
 }
 
-export function KnowledgeGraphCanvas(props: { graph: KnowledgeGraphProposal; links: KnowledgeBaseNoteLink[] }) {
+export function KnowledgeGraphCanvas(props: GraphStageProps) {
   if (props.graph.nodes.length === 0) return <div className="knowledge-graph-empty">图谱中暂时没有节点。</div>
   return <ReactFlowProvider><GraphStage {...props} /></ReactFlowProvider>
 }

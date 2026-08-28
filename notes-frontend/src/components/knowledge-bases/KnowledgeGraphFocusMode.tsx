@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ComponentProps, type KeyboardEvent } from 'react'
 import type { KnowledgeBase } from '@/types'
 import { KnowledgeGraphPanel } from './KnowledgeGraphPanel'
+import { createKnowledgeGraphSession, updateKnowledgeGraphSession, type KnowledgeGraphSessions } from './knowledge-graph-session'
 
 export interface KnowledgeGraphFocusModeProps {
   knowledgeBases: KnowledgeBase[]
@@ -20,6 +21,7 @@ export function KnowledgeGraphFocusMode(props: KnowledgeGraphFocusModeProps) {
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
+  const [sessions, setSessions] = useState<KnowledgeGraphSessions>({})
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     if (!needle) return props.knowledgeBases
@@ -63,7 +65,7 @@ export function KnowledgeGraphFocusMode(props: KnowledgeGraphFocusModeProps) {
     </header>
     <main className="knowledge-focus__canvas">
       {props.error ? <div className="knowledge-focus__error" role="alert"><span>{props.error}</span><button type="button" onClick={props.onRetry}>重试</button></div> : null}
-      <KnowledgeGraphPanel {...props.graphPanelProps} preserveGraphWhileLoading />
+      <KnowledgeGraphPanel {...props.graphPanelProps} preserveGraphWhileLoading sessionState={sessions[props.selectedId] || createKnowledgeGraphSession()} onSessionStateChange={(patch) => setSessions((current) => updateKnowledgeGraphSession(current, props.selectedId, patch))} />
     </main>
     {drawerOpen ? <>
       <button type="button" className="knowledge-focus__drawer-backdrop" aria-label="关闭知识库列表" onClick={() => setDrawerOpen(false)} />
