@@ -7,6 +7,7 @@ import dynamic from 'next/dynamic'
 import { useAI } from '@/context/AIContext'
 import { getAIMindMapData } from '@/lib/ai-client'
 import { appToast } from '@/lib/app-toast'
+import { useBreadcrumb } from '@/hooks/useBreadcrumb'
 
 const MindElixirMap = dynamic(() => import('@/components/mindmap/MindElixirMap'), { ssr: false })
 
@@ -64,22 +65,15 @@ export default function MindmapDetailPage() {
     }
   }, [id])
 
-  useEffect(() => {
-    if (!map?.noteId) return
-    // DashboardHeader 位于当前页面外层，通过事件同步业务面包屑，卸载时恢复 URL 默认面包屑。
-    const detail = {
-      items: [
-        { label: '我的笔记', href: '/dashboard/notes' },
-        { label: map.noteTitle, href: `/dashboard/notes/${map.noteId}` },
-        { label: map.title },
-      ],
-      onRename: handleRename,
-    }
-    document.dispatchEvent(new CustomEvent('dashboard:breadcrumbs', { detail }))
-    return () => {
-      document.dispatchEvent(new CustomEvent('dashboard:breadcrumbs', { detail: null }))
-    }
-  }, [handleRename, map?.noteId, map?.noteTitle, map?.title])
+  // 复用通用面包屑 hook，标题变化或卸载时自动同步/恢复默认面包屑。
+  useBreadcrumb(map ? {
+    items: [
+      { label: '我的笔记', href: '/dashboard/notes' },
+      { label: map.noteTitle, href: `/dashboard/notes/${map.noteId}` },
+      { label: map.title },
+    ],
+    onRename: handleRename,
+  } : null)
 
   const handleBack = () => {
     if (window.opener) {

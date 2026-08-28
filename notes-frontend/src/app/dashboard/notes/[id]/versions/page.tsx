@@ -5,6 +5,7 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import { PrototypeGlyph } from '@/components/ui/prototype-glyph'
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
+import { useBreadcrumb } from '@/hooks/useBreadcrumb'
 
 export default function VersionsPage() {
   const params = useParams()
@@ -22,6 +23,15 @@ export default function VersionsPage() {
     setNote(n)
   }, [noteId])
   useEffect(() => { load() }, [noteId, load])
+  // 笔记加载完成后推送业务面包屑，把 URL 中的笔记 ID 替换成标题，卸载时恢复默认。
+  useBreadcrumb(note ? {
+    items: [
+      { label: '工作台', href: '/dashboard' },
+      { label: '我的笔记', href: '/dashboard/notes' },
+      { label: note.title || '无标题笔记', href: `/dashboard/notes/${noteId}` },
+      { label: '版本记录' },
+    ],
+  } : null)
   const snapshot = async () => {
     await snapshotVersion(noteId, snapshotName.trim() || undefined)
     setSnapshotName('')
