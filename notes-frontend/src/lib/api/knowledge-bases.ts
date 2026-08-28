@@ -6,7 +6,8 @@ export type KnowledgeGraphEvidence = {
   noteTitle: string
   chunkId: string
   headingPath: string[]
-  excerpt: string
+  preview: string
+  content: string
 }
 
 export type KnowledgeGraphEvidenceResult = {

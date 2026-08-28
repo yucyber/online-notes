@@ -373,12 +373,14 @@ export class KnowledgeBasesService {
       const noteId = String(this.idOf(chunk, 'noteId'))
       if (seen.has(chunkId) || !noteTitleById.has(noteId)) return []
       seen.add(chunkId)
+      const content = this.graphEvidenceContent(value.content)
       return [{
         noteId,
         noteTitle: noteTitleById.get(noteId)!,
         chunkId,
         headingPath: (Array.isArray(value.headingPath) ? value.headingPath : []).map(String),
-        excerpt: this.graphEvidenceExcerpt(value.content),
+        preview: content.slice(0, 320),
+        content,
       }]
     })
     return { compatibility: items.length > 0 ? 'evidence_available' : 'evidence_unavailable', items }
@@ -454,7 +456,7 @@ export class KnowledgeBasesService {
     return this.graphEdgeModel
   }
 
-  private graphEvidenceExcerpt(value: unknown) {
+  private graphEvidenceContent(value: unknown) {
     return String(value || '')
       .replace(/<(script|style)\b[^>]*>[\s\S]*?<\/\1>/gi, ' ')
       .replace(/<[^>]*>/g, ' ')
@@ -462,7 +464,6 @@ export class KnowledgeBasesService {
       .replace(/&amp;/gi, '&')
       .replace(/\s+/g, ' ')
       .trim()
-      .slice(0, 320)
   }
 
   private requireNoteChunkModel() {

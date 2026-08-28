@@ -1767,7 +1767,7 @@ components:
             $ref: '#/components/schemas/KnowledgeGraphEvidence'
     KnowledgeGraphEvidence:
       type: object
-      required: [noteId, noteTitle, chunkId, headingPath, excerpt]
+      required: [noteId, noteTitle, chunkId, headingPath, preview, content]
       properties:
         noteId: { type: string }
         noteTitle: { type: string }
@@ -1775,7 +1775,8 @@ components:
         headingPath:
           type: array
           items: { type: string }
-        excerpt: { type: string, maxLength: 320 }
+        preview: { type: string, maxLength: 320 }
+        content: { type: string }
     SavedFilter:
       type: object
       properties:
