@@ -1,7 +1,8 @@
 import assert = require('node:assert/strict')
 import { test } from 'node:test'
-import { Types } from 'mongoose'
+import { model, Types } from 'mongoose'
 import { KnowledgeBasesService } from '../src/modules/knowledge-bases/knowledge-bases.service'
+import { KnowledgeGraphEdgeSchema } from '../src/modules/knowledge-bases/schemas/knowledge-graph-edge.schema'
 
 const userId = '507f1f77bcf86cd799439012'
 const kbId = '507f1f77bcf86cd799439013'
@@ -11,6 +12,7 @@ const outsideNoteId = '507f1f77bcf86cd799439016'
 const noteOneChunkId = '507f1f77bcf86cd799439021'
 const noteTwoChunkId = '507f1f77bcf86cd799439022'
 const outsideChunkId = '507f1f77bcf86cd799439023'
+const KnowledgeGraphEdgeHydrationModel = model('KnowledgeGraphEdgeHydrationTest', KnowledgeGraphEdgeSchema)
 
 function execResult<T>(value: T) {
   return { exec: async () => value }
@@ -22,6 +24,23 @@ function doc(value: any) {
     toObject: () => value,
   }
 }
+
+test('KnowledgeGraphEdgeSchema hydrates a missing relation with the Chinese fallback', () => {
+  const base = {
+    knowledgeBaseId: new Types.ObjectId(kbId),
+    userId: new Types.ObjectId(userId),
+    edgeId: 'edge-a',
+    source: 'node-a',
+    target: 'node-b',
+    noteIds: [new Types.ObjectId(noteOneId)],
+  }
+
+  const missingRelation = KnowledgeGraphEdgeHydrationModel.hydrate(base)
+  const existingEnglishRelation = KnowledgeGraphEdgeHydrationModel.hydrate({ ...base, edgeId: 'edge-b', relation: 'supports' })
+
+  assert.equal(missingRelation.relation, '相关')
+  assert.equal(existingEnglishRelation.relation, 'supports')
+})
 
 test('KnowledgeBasesService replaces a graph inside one user-owned knowledge base boundary', async () => {
   const deletes: any[] = []
