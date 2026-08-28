@@ -274,6 +274,7 @@ describe('knowledge base frontend entry', () => {
     fireEvent.click(trigger)
     const focus = screen.getByRole('dialog', { name: '知识图谱专注模式' })
     expect(document.body.style.overflow).toBe('hidden')
+    expect(within(focus).getByRole('button', { name: '选择知识库' })).toHaveFocus()
     fireEvent.click(within(focus).getByRole('button', { name: '选择知识库' }))
     expect(within(focus).getByRole('searchbox', { name: '搜索知识库' })).toHaveFocus()
 

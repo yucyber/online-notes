@@ -21,12 +21,18 @@ export function KnowledgeGraphFocusMode(props: KnowledgeGraphFocusModeProps) {
   const [query, setQuery] = useState('')
   const searchRef = useRef<HTMLInputElement>(null)
   const drawerRef = useRef<HTMLElement>(null)
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const chooseBaseRef = useRef<HTMLButtonElement>(null)
   const [sessions, setSessions] = useState<KnowledgeGraphSessions>({})
   const filtered = useMemo(() => {
     const needle = query.trim().toLocaleLowerCase()
     if (!needle) return props.knowledgeBases
     return props.knowledgeBases.filter((item) => `${item.name} ${item.description || ''}`.toLocaleLowerCase().includes(needle))
   }, [props.knowledgeBases, query])
+
+  useEffect(() => {
+    chooseBaseRef.current?.focus()
+  }, [])
 
   useEffect(() => {
     const previousOverflow = document.body.style.overflow
@@ -57,9 +63,19 @@ export function KnowledgeGraphFocusMode(props: KnowledgeGraphFocusModeProps) {
     else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
   }
 
-  return <div className="knowledge-focus" role="dialog" aria-modal="true" aria-label="知识图谱专注模式">
+  const trapDialogFocus = (event: KeyboardEvent<HTMLDivElement>) => {
+    if (drawerOpen || event.key !== 'Tab') return
+    const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>('input,button:not([disabled]),a[href]') || [])
+    if (!focusable.length) return
+    const first = focusable[0]
+    const last = focusable[focusable.length - 1]
+    if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus() }
+    else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus() }
+  }
+
+  return <div ref={dialogRef} className="knowledge-focus" role="dialog" aria-modal="true" aria-label="知识图谱专注模式" onKeyDown={trapDialogFocus}>
     <header className="knowledge-focus__header">
-      <button type="button" className="prototype-button" aria-label="选择知识库" onClick={() => setDrawerOpen(true)}>知识库</button>
+      <button ref={chooseBaseRef} type="button" className="prototype-button" aria-label="选择知识库" onClick={() => setDrawerOpen(true)}>知识库</button>
       <div><small>{props.graphPanelProps.graphProposal ? '待保存提案' : props.graphPanelProps.visibleGraph ? '已保存图谱' : '尚无图谱'}</small><h2>{props.selectedKnowledgeBase?.name || '知识图谱'}</h2></div>
       <button type="button" className="prototype-button" onClick={props.onClose}>退出专注模式</button>
     </header>

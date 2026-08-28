@@ -42,6 +42,11 @@ function GraphStage({ graph, links, sessionState, onSessionStateChange }: GraphS
   const { fitView, setViewport, zoomIn, zoomOut } = useReactFlow()
 
   useEffect(() => {
+    setQuery(sessionState?.query || '')
+    setVisibleTypes(new Set(sessionState?.visibleTypes || graphNodeTypes))
+  }, [graph.knowledgeBaseId, sessionState?.query, sessionState?.visibleTypes])
+
+  useEffect(() => {
     setNodes(initial.nodes); setEdges(initial.edges); setSelectedId('')
     if (sessionState?.viewport) void setViewport(sessionState.viewport)
     else requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 250 }))
