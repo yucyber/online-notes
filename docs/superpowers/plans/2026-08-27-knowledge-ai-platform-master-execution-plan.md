@@ -257,11 +257,11 @@ interface AiModelPolicy {
 
 **P1 Exit Gate:**
 
-- [ ] 用户完成“U2 Atlas 索引确认”。
+- [x] 用户完成“U2 Atlas 索引确认”。2026-08-28 用户确认创建完成，代理只读脚本复验两套 index 均为 READY 且契约匹配。
 - [x] U3 真实回填已由用户确认并执行。
 - [ ] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。2026-08-28 只读抽样发现 1 个 Chunk 的 headingPath 只有笔记标题，且旧 Chunk 尚缺版本元数据，需用户确认重建范围后复验。
 - [x] 前后端全量测试、type-check 和 build 通过。
-- [ ] 搜索和图谱 UI 由用户完成一次视觉确认。
+- [x] 搜索和图谱 UI 由用户完成一次视觉确认。2026-08-28 用户确认，并反馈节点较多时画布偏小、知识库列表可考虑收缩。
 
 ---
 
@@ -524,6 +524,8 @@ note_chunks.note_chunk_vector_index
 ```
 
 代理负责提供并运行只读诊断脚本。若当前数据库账号没有 Search Index 管理权限，代理不会伪装已经创建成功。
+
+2026-08-28 已完成：用户确认 `note_chunks.note_chunk_vector_index` 创建并进入 READY，代理随后通过只读脚本复验两套 index 的 path、dimensions 与 similarity 均匹配。
 
 ### U3：真实回填确认（已完成）
 
