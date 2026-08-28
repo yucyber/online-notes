@@ -134,3 +134,51 @@ test('legacy table cell 在 Tiptap 补齐段落后仍能匹配 anchorText', asyn
 
   assert.equal(result.anchorText, 'A B')
 })
+
+test('Markdown Chunk 的 anchorText 与编辑器渲染后的可见文本一致', async () => {
+  const { service } = createService({
+    readable: true,
+    chunk: {
+      _id: new Types.ObjectId(chunkId),
+      noteId: new Types.ObjectId(noteId),
+      headingPath: [],
+      content: '- **粗体** 与 [链接](https://example.com)\n- 第二项',
+    },
+  })
+
+  const result = await (service as any).getChunkLocation(noteId, chunkId, ownerId)
+
+  assert.equal(result.anchorText, '粗体 与 链接 第二项')
+})
+
+test('plain Chunk 的换行与编辑器转换出的 br 可见文本一致', async () => {
+  const { service } = createService({
+    readable: true,
+    chunk: {
+      _id: new Types.ObjectId(chunkId),
+      noteId: new Types.ObjectId(noteId),
+      headingPath: [],
+      content: '第一行\n第二行 < 3 & 4 > 1',
+    },
+  })
+
+  const result = await (service as any).getChunkLocation(noteId, chunkId, ownerId)
+
+  assert.equal(result.anchorText, '第一行第二行 < 3 & 4 > 1')
+})
+
+for (const [label, malformedNoteId, malformedChunkId] of [
+  ['malformed noteId', 'not-a-note-id', chunkId],
+  ['malformed chunkId', noteId, 'not-a-chunk-id'],
+] as const) {
+  test(`${label} 沿用 NotFound 安全语义且不查询 Note 或 Chunk`, async () => {
+    const { service, noteQueries, chunkQueries } = createService({ readable: true })
+
+    await assert.rejects(
+      () => (service as any).getChunkLocation(malformedNoteId, malformedChunkId, ownerId),
+      NotFoundException,
+    )
+    assert.equal(noteQueries.length, 0)
+    assert.equal(chunkQueries.length, 0)
+  })
+}

@@ -18,6 +18,13 @@ import { UsersService } from '../users/users.service';
 import { Mindmap } from '../mindmaps/schemas/mindmap.schema';
 import { NoteChunk } from './schemas/note-chunk.schema';
 import { parseFragment } from 'parse5';
+import { marked } from 'marked';
+
+const HTML_ELEMENT_PATTERN = /<(?:!--[\s\S]*?--|\/?(?:html|head|body|p|div|span|h[1-6]|ul|ol|li|blockquote|pre|code|table|thead|tbody|tfoot|tr|th|td|a|img|br|hr|strong|em|b|i|s|u|resource-embed)(?:\s[^<>]*|\s*\/?)>)/i
+const MARKDOWN_BLOCK_PATTERN = /^\s{0,3}(?:#{1,6}\s+|[-+*]\s+|\d+[.)]\s+|>\s?|```|~~~)/m
+const MARKDOWN_LINK_PATTERN = /!?\[[^\]\n]+\]\([^\n)]+\)/
+const MARKDOWN_EMPHASIS_PATTERN = /(?:\*\*[^*\n]+\*\*|__[^_\n]+__|~~[^~\n]+~~)/
+const MARKDOWN_TABLE_PATTERN = /^\s*\|?.+\|.+\r?\n\s*\|?\s*:?-{3,}:?\s*\|/m
 
 @Injectable()
 export class NotesService {
@@ -218,6 +225,9 @@ export class NotesService {
     headingPath: string[]
     anchorText: string
   }> {
+    if (!Types.ObjectId.isValid(noteId) || !Types.ObjectId.isValid(chunkId)) {
+      throw new NotFoundException('证据位置不存在')
+    }
     // 先收窄到 NoteAccess，再查询 route Note 下的 Chunk，避免跨 Note 枚举暴露正文存在性。
     const readableNote = await this.noteModel
       .findOne(this.noteAccess.readScope(noteId, userId))
@@ -480,7 +490,24 @@ export class NotesService {
   }
 
   private chunkAnchorText(value: unknown) {
-    const fragment: any = parseFragment(String(value || ''))
+    const original = String(value || '')
+    const isMarkdown = MARKDOWN_BLOCK_PATTERN.test(original)
+      || MARKDOWN_LINK_PATTERN.test(original)
+      || MARKDOWN_EMPHASIS_PATTERN.test(original)
+      || MARKDOWN_TABLE_PATTERN.test(original)
+    let html = original
+    if (isMarkdown) {
+      try {
+        const converted = marked.parse(original, { async: false })
+        html = typeof converted === 'string' ? converted : this.plainChunkHtml(original)
+      } catch {
+        html = this.plainChunkHtml(original)
+      }
+    } else if (!HTML_ELEMENT_PATTERN.test(original)) {
+      html = this.plainChunkHtml(original)
+    }
+
+    const fragment: any = parseFragment(html)
     const blockTags = new Set(['h1', 'h2', 'h3', 'h4', 'h5', 'h6', 'p', 'pre', 'blockquote', 'li', 'table', 'td', 'th', 'div'])
     const textOf = (node: any): string => {
       const tag = String(node.tagName || '').toLowerCase()
@@ -491,6 +518,14 @@ export class NotesService {
     }
     // parse5 与浏览器 DOM 一样解码 entity，且 <br> 本身不产生 text node。
     return textOf(fragment).replace(/\s+/g, ' ').trim()
+  }
+
+  private plainChunkHtml(value: string) {
+    const escaped = value
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+    return `<p>${escaped.replace(/\r?\n/g, '<br>')}</p>`
   }
 
   async generateRoomTicket(noteId: string, userId: string): Promise<{ ticket: string; role: 'writer' | 'reader'; expiresIn: number }> {

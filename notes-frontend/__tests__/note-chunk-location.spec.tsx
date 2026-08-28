@@ -114,3 +114,41 @@ test('协同正文晚于 editor view 到达时自动重试定位', async () => {
   await waitFor(() => expect(screen.getByTestId('late-anchor')).toHaveClass('evidence-location-target'))
   expect(mockNotesAPI.getChunkLocation).toHaveBeenCalledTimes(1)
 })
+
+test('重复标题按完整 headingPath 定位到正确章节', async () => {
+  mockEditorMarkup = [
+    '<h1>第一部分</h1><h2 data-testid="wrong-child">Child</h2>',
+    '<h1>第二部分</h1><h2 data-testid="right-child">Child</h2>',
+  ].join('')
+  mockNotesAPI.getChunkLocation.mockRejectedValue(new Error('404'))
+  mockQuery.set('heading', '证据笔记 > 第二部分 > Child')
+
+  render(<NoteEditorShell id="note-1" initialData={note as any} initialContent={note.content} />)
+
+  await waitFor(() => expect(screen.getByTestId('right-child')).toHaveClass('evidence-location-target'))
+  expect(screen.getByTestId('wrong-child')).not.toHaveClass('evidence-location-target')
+})
+
+test('无关 DOM mutation 不重复回顶且协同正文晚到后仍能成功定位', async () => {
+  mockEditorMarkup = '<p>其他正文</p>'
+  mockNotesAPI.getChunkLocation.mockResolvedValue({
+    chunkId: 'chunk-1', headingPath: ['Root', 'Child'], anchorText: '异步到达的证据',
+  })
+
+  render(<NoteEditorShell id="note-1" initialData={note as any} initialContent={note.content} />)
+  expect(await screen.findByText('未找到原证据位置')).toBeInTheDocument()
+  expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+  await act(async () => {
+    mockPublishEditorMarkup('<p>其他正文发生普通变化</p>')
+  })
+  await waitFor(() => expect(screen.getByText('其他正文发生普通变化')).toBeInTheDocument())
+  expect(scrollIntoView).toHaveBeenCalledTimes(1)
+
+  await act(async () => {
+    mockPublishEditorMarkup('<p data-testid="eventual-anchor">异步到达的证据</p>')
+  })
+  await waitFor(() => expect(screen.getByTestId('eventual-anchor')).toHaveClass('evidence-location-target'))
+  expect(scrollIntoView).toHaveBeenCalledTimes(2)
+  expect(mockNotesAPI.getChunkLocation).toHaveBeenCalledTimes(1)
+})

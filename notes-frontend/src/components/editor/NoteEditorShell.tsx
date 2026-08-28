@@ -69,10 +69,15 @@ function findAnchorTarget(root: HTMLElement, anchorText: string) {
 
 function findHeadingTarget(root: HTMLElement, headingPath: string[]) {
   const headings = Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'))
-  for (let index = headingPath.length - 1; index >= 0; index -= 1) {
-    const expected = normalizeLocationText(headingPath[index] || '')
-    const match = headings.find((heading) => normalizeLocationText(heading.textContent || '') === expected)
-    if (match) return match
+  const expectedPath = headingPath.map(normalizeLocationText).filter(Boolean)
+  const stack: Array<{ level: number; text: string }> = []
+  for (const heading of headings) {
+    const level = Number(heading.tagName.slice(1))
+    while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop()
+    stack.push({ level, text: normalizeLocationText(heading.textContent || '') })
+    if (stack.length > expectedPath.length) continue
+    const expectedSuffix = expectedPath.slice(-stack.length)
+    if (stack.every((item, index) => item.text === expectedSuffix[index])) return heading
   }
   return null
 }
@@ -136,10 +141,14 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   } | null>(null)
   const [evidenceLocationError, setEvidenceLocationError] = useState('')
   const locatedEvidenceKeyRef = useRef('')
+  const failedEvidenceKeyRef = useRef('')
   const chunkId = searchParams?.get('chunkId') || ''
   const headingQuery = searchParams?.get('heading') || ''
   const handleEditorReady = useCallback((root: HTMLElement | null) => {
-    if (root) locatedEvidenceKeyRef.current = ''
+    if (root) {
+      locatedEvidenceKeyRef.current = ''
+      failedEvidenceKeyRef.current = ''
+    }
     setEditorRoot(root)
     if (root) setEditorContentRevision((revision) => revision + 1)
   }, [])
@@ -392,6 +401,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     const evidenceKey = `${id}:${chunkId}`
     let active = true
     locatedEvidenceKeyRef.current = ''
+    failedEvidenceKeyRef.current = ''
     setEvidenceLocation(null)
     setEvidenceLocationError('')
     if (!chunkId) return
@@ -428,8 +438,11 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
       }
     }
     // 定位失败只回到可见顶部并提示，不通过 editor command 或 Y.Doc 改写正文。
-    editorRoot.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    setEvidenceLocationError('未找到原证据位置')
+    if (failedEvidenceKeyRef.current !== evidenceKey) {
+      failedEvidenceKeyRef.current = evidenceKey
+      editorRoot.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setEvidenceLocationError('未找到原证据位置')
+    }
   }, [chunkId, editorContentRevision, editorRoot, evidenceLocation, id, loading])
 
   useEffect(() => {
