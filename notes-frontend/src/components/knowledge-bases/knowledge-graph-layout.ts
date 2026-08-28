@@ -38,6 +38,23 @@ export function toNodeTypeLabel(type: KnowledgeGraphNodeType): string {
   return nodeTypeLabels[type] || type
 }
 
+export function filterKnowledgeGraph(
+  graph: KnowledgeGraphProposal,
+  query: string,
+  types: ReadonlySet<KnowledgeGraphNodeType>,
+): KnowledgeGraphProposal {
+  const term = query.trim().toLocaleLowerCase()
+  const nodes = graph.nodes.filter((node) => (
+    types.has(node.type) && (!term || node.label.toLocaleLowerCase().includes(term))
+  ))
+  const visibleIds = new Set(nodes.map((node) => node.id))
+  return {
+    ...graph,
+    nodes,
+    edges: graph.edges.filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target)),
+  }
+}
+
 export function buildKnowledgeGraphFlow(graph: KnowledgeGraphProposal): {
   nodes: Node<KnowledgeFlowNodeData>[]
   edges: Edge[]

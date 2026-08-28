@@ -3,8 +3,8 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Background, Handle, MiniMap, Position, ReactFlow, ReactFlowProvider, useEdgesState, useNodesState, useReactFlow, type NodeProps } from '@xyflow/react'
-import type { KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
-import { buildKnowledgeGraphFlow, type KnowledgeFlowNodeData } from './knowledge-graph-layout'
+import type { KnowledgeBaseNoteLink, KnowledgeGraphNodeType, KnowledgeGraphProposal } from '@/types'
+import { buildKnowledgeGraphFlow, filterKnowledgeGraph, toNodeTypeLabel, type KnowledgeFlowNodeData } from './knowledge-graph-layout'
 
 function KnowledgeNode({ data, selected }: NodeProps) {
   const value = data as KnowledgeFlowNodeData
@@ -17,9 +17,13 @@ function KnowledgeNode({ data, selected }: NodeProps) {
 }
 
 const nodeTypes = { knowledge: KnowledgeNode }
+const graphNodeTypes: KnowledgeGraphNodeType[] = ['concept', 'entity', 'topic', 'claim']
 
 function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: KnowledgeBaseNoteLink[] }) {
-  const initial = useMemo(() => buildKnowledgeGraphFlow(graph), [graph])
+  const [query, setQuery] = useState('')
+  const [visibleTypes, setVisibleTypes] = useState<Set<KnowledgeGraphNodeType>>(() => new Set(graphNodeTypes))
+  const filteredGraph = useMemo(() => filterKnowledgeGraph(graph, query, visibleTypes), [graph, query, visibleTypes])
+  const initial = useMemo(() => buildKnowledgeGraphFlow(filteredGraph), [filteredGraph])
   const [nodes, setNodes, onNodesChange] = useNodesState(initial.nodes)
   const [edges, setEdges, onEdgesChange] = useEdgesState(initial.edges)
   const [selectedId, setSelectedId] = useState('')
@@ -34,27 +38,41 @@ function GraphStage({ graph, links }: { graph: KnowledgeGraphProposal; links: Kn
   const connectedIds = useMemo(() => {
     if (!selectedId) return new Set<string>()
     const ids = new Set([selectedId])
-    graph.edges.forEach((edge) => {
+    filteredGraph.edges.forEach((edge) => {
       if (edge.source === selectedId) ids.add(edge.target)
       if (edge.target === selectedId) ids.add(edge.source)
     })
     return ids
-  }, [graph.edges, selectedId])
+  }, [filteredGraph.edges, selectedId])
   const visibleNodes = useMemo(() => nodes.map((node) => ({ ...node, className: selectedId && !connectedIds.has(node.id) ? 'is-dimmed' : undefined })), [connectedIds, nodes, selectedId])
   const visibleEdges = useMemo(() => edges.map((edge) => ({ ...edge, label: zoom < 0.6 ? undefined : edge.label, className: !selectedId || edge.source === selectedId || edge.target === selectedId ? 'knowledge-flow-edge' : 'knowledge-flow-edge is-dimmed' })), [edges, selectedId, zoom])
-  const selected = graph.nodes.find((node) => node.id === selectedId)
+  const selected = filteredGraph.nodes.find((node) => node.id === selectedId)
   const linkedNotes = selected ? links.filter((link) => selected.noteIds.includes(link.noteId)) : []
   const relayout = useCallback(() => {
-    const next = buildKnowledgeGraphFlow(graph); setNodes(next.nodes); setEdges(next.edges)
+    const next = buildKnowledgeGraphFlow(filteredGraph); setNodes(next.nodes); setEdges(next.edges)
     requestAnimationFrame(() => void fitView({ padding: 0.12, minZoom: 0.82, maxZoom: 1.05, duration: 300 }))
-  }, [fitView, graph, setEdges, setNodes])
+  }, [filteredGraph, fitView, setEdges, setNodes])
+
+  const toggleType = useCallback((type: KnowledgeGraphNodeType) => {
+    setVisibleTypes((current) => {
+      const next = new Set(current)
+      if (next.has(type) && next.size > 1) next.delete(type)
+      else next.add(type)
+      return next
+    })
+  }, [])
 
   return <div className="knowledge-graph-stage">
     <div className="knowledge-graph-canvas" data-testid="knowledge-graph-canvas">
       <ReactFlow nodes={visibleNodes} edges={visibleEdges} nodeTypes={nodeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onNodeClick={(_, node) => setSelectedId((current) => current === node.id ? '' : node.id)} onPaneClick={() => setSelectedId('')} onMove={(_, viewport) => setZoom(viewport.zoom)} minZoom={0.25} maxZoom={1.75} fitView fitViewOptions={{ padding: 0.12, minZoom: 0.82, maxZoom: 1.05 }} nodesConnectable={false} proOptions={{ hideAttribution: true }}>
         <Background gap={22} size={1} />
-        {graph.nodes.length > 20 ? <MiniMap pannable zoomable /> : null}
+        {filteredGraph.nodes.length > 20 ? <MiniMap pannable zoomable /> : null}
       </ReactFlow>
+      <div className="knowledge-graph-filters" aria-label="节点筛选">
+        <input aria-label="按节点名称筛选" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="筛选节点" />
+        <div>{graphNodeTypes.map((type) => <button key={type} type="button" aria-pressed={visibleTypes.has(type)} onClick={() => toggleType(type)}>{toNodeTypeLabel(type)}</button>)}</div>
+        {filteredGraph.nodes.length === 0 ? <span>没有匹配节点</span> : null}
+      </div>
       <div className="knowledge-graph-controls" aria-label="图谱控制">
         <button type="button" aria-label="缩小" onClick={() => void zoomOut()}>−</button>
         <button type="button" aria-label="放大" onClick={() => void zoomIn()}>＋</button>

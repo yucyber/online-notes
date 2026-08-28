@@ -1,4 +1,4 @@
-import { buildKnowledgeGraphFlow, toNodeTypeLabel, toRelationLabel } from '@/components/knowledge-bases/knowledge-graph-layout'
+import { buildKnowledgeGraphFlow, filterKnowledgeGraph, toNodeTypeLabel, toRelationLabel } from '@/components/knowledge-bases/knowledge-graph-layout'
 
 const graph = {
   knowledgeBaseId: 'kb-1',
@@ -61,4 +61,21 @@ test('关系网络布局稳定地分散在二维空间且节点不重叠', () =>
   }
   expect(first.edges.every((edge) => edge.type !== 'smoothstep')).toBe(true)
   expect(first.edges.every((edge) => first.nodes.some((node) => node.id === edge.source) && first.nodes.some((node) => node.id === edge.target))).toBe(true)
+})
+
+test('节点筛选保留匹配节点以及两端仍可见的关系', () => {
+  const filtered = filterKnowledgeGraph({
+    ...graph,
+    nodes: [
+      ...graph.nodes,
+      { id: 'c', label: '服务端缓存', type: 'topic' as const, confidence: 0.7, noteIds: ['note-2'] },
+    ],
+    edges: [
+      ...graph.edges,
+      { id: 'edge-2', source: 'b', target: 'c', relation: 'relates_to', weight: 0.6, noteIds: ['note-2'] },
+    ],
+  }, 'react', new Set(['concept', 'entity']))
+
+  expect(filtered.nodes.map((node) => node.id)).toEqual(['a'])
+  expect(filtered.edges).toEqual([])
 })
