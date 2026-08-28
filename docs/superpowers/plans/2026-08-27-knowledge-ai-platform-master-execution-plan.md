@@ -232,13 +232,13 @@ interface AiModelPolicy {
 
 **Produces:** 一条不泄密的检查命令和一份用户可操作 runbook。
 
-- [ ] 检查脚本分别报告普通 MongoDB index 与 Atlas Vector Search index，不能把同名 B-tree index 误判为 Vector Search。
-- [ ] 报告期望契约：`notes.vector_index / embedding / 4096` 和 `note_chunks.note_chunk_vector_index / embedding / 4096`。
-- [ ] 回填报告补充 `summaryAi / summaryPassthrough / summaryFallback / topicSucceeded / chunkSucceeded / failedNoteIds`。
-- [ ] 回填后抽样校验 headingPath 不只包含笔记标题、HTML 标签闭合、embedding 长度为 4096。
-- [ ] runbook 只要求用户执行控制台权限内的动作，不要求用户粘贴密钥或数据库连接串到聊天。
-- [ ] 运行回填单测、语义搜索单测和后端 build。
-- [ ] 提交：`chore(search): 固化向量与回填验收流程`。
+- [x] 检查脚本分别报告普通 MongoDB index 与 Atlas Vector Search index，不能把同名 B-tree index 误判为 Vector Search。
+- [x] 报告期望契约：`notes.vector_index / embedding / 4096` 和 `note_chunks.note_chunk_vector_index / embedding / 4096`。
+- [x] 回填报告补充 `summaryAi / summaryPassthrough / summaryFallback / topicSucceeded / chunkSucceeded / failedNoteIds`。
+- [x] 回填后抽样校验 headingPath 不只包含笔记标题、HTML 标签闭合、embedding 长度为 4096。
+- [x] runbook 只要求用户执行控制台权限内的动作，不要求用户粘贴密钥或数据库连接串到聊天。
+- [x] 运行回填单测、语义搜索单测和后端 build。
+- [x] 提交：`chore(search): 固化向量与回填验收流程`（`4fa3c6d`）。
 
 ## Task 1.2：完成搜索与图谱 UI 发布验收
 
@@ -248,19 +248,19 @@ interface AiModelPolicy {
 - Test: `notes-frontend/__tests__/knowledge-graph-layout.spec.ts`
 - Modify only if a verified defect exists: `notes-frontend/src/components/notes/*`、`notes-frontend/src/components/knowledge-bases/*`、对应样式文件。
 
-- [ ] 先处理当前工作区未提交前端变更的归属：用户改动继续保留；本任务不得自动提交它们。
-- [ ] 运行前端全量 Jest、`npm run type-check` 和 `npm run build`，不能只依赖定向测试。
+- [x] 先处理当前工作区未提交前端变更的归属：用户改动继续保留；本任务不得自动提交它们。
+- [x] 运行前端全量 Jest、`npm run type-check` 和 `npm run build`，不能只依赖定向测试。
 - [ ] 使用真实 6 条笔记验证 keyword/vector/hybrid 三种模式；结果按笔记去重，命中 Chunk 可展开且 preview 是纯文本。
 - [ ] 知识库图谱验证空态、saved/proposal、warnings、长节点名、缩放、拖拽、节点筛选和窄屏。
-- [ ] 只有复现的 UI 缺陷才进入修复；不得因计划文本与现状不同而重写已通过界面。
-- [ ] 提交：`test(frontend): 收口搜索与图谱发布验收`，若没有代码变化则不制造空提交。
+- [x] 只有复现的 UI 缺陷才进入修复；不得因计划文本与现状不同而重写已通过界面。
+- [x] 提交：`test(frontend): 收口搜索与图谱发布验收`（`94e6f11`）。
 
 **P1 Exit Gate:**
 
 - [ ] 用户完成“U2 Atlas 索引确认”。
 - [x] U3 真实回填已由用户确认并执行。
-- [x] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。
-- [ ] 前后端全量测试、type-check 和 build 通过。
+- [ ] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。2026-08-28 只读抽样发现 1 个 Chunk 的 headingPath 只有笔记标题，且旧 Chunk 尚缺版本元数据，需用户确认重建范围后复验。
+- [x] 前后端全量测试、type-check 和 build 通过。
 - [ ] 搜索和图谱 UI 由用户完成一次视觉确认。
 
 ---
