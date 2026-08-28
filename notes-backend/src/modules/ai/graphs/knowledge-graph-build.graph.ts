@@ -19,6 +19,7 @@ export interface KnowledgeGraphBuildInput {
     id: string
     title?: string
     summary?: string
+    content?: string
     chunks?: Array<{ chunkId: string; headingPath?: string[]; content?: string }>
     updatedAt?: string
   }>

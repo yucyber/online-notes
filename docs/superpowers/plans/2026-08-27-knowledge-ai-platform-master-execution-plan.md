@@ -280,12 +280,12 @@ interface AiModelPolicy {
 
 **Produces:** node/edge 的 `evidenceChunkIds: ObjectId[]`；保存时重新验证 user、knowledgeBase、note 三层边界。
 
-- [ ] 先写失败测试：模型返回知识库外、其他用户或不属于 node.noteIds 的 Chunk ID 时必须被剔除。
-- [ ] 图谱构建输入改为标题、summary 与有界 Chunk 证据；模型只能返回输入中出现的 Chunk ID。
-- [ ] 保存时查询 `NoteChunk` 再校验，不能信任模型或客户端 ID。
-- [ ] 保留旧 `noteIds` 兼容导航；旧图谱无 evidence 时仍可读取。
-- [ ] 删除/移出知识库的笔记必须清理失效证据引用，不能删除其他笔记共享节点。
-- [ ] 运行知识图谱和权限测试并提交：`feat(graph): 绑定图谱与原文证据`。
+- [x] 先写失败测试：模型返回知识库外、其他用户或不属于 node.noteIds 的 Chunk ID 时必须被剔除。
+- [x] 图谱构建输入改为标题、summary 与有界 Chunk 证据；模型只能返回输入中出现的 Chunk ID。
+- [x] 保存时查询 `NoteChunk` 再校验，不能信任模型或客户端 ID。
+- [x] 保留旧 `noteIds` 兼容导航；旧图谱无 evidence 时仍可读取。
+- [x] 删除/移出知识库的笔记必须清理失效证据引用，不能删除其他笔记共享节点。
+- [x] 运行知识图谱和权限测试并提交：`feat(graph): 绑定图谱与原文证据`（`d926e9e`）。
 
 ## Task 2.2：提供只读证据查询接口
 
@@ -298,16 +298,18 @@ interface AiModelPolicy {
 
 **Produces:** 点击 node/edge 时返回 `{ noteId, noteTitle, chunkId, headingPath, excerpt }[]`。
 
-- [ ] 接口始终重新应用 NoteAccess；图谱中残留 ID 不得扩大读权限。
-- [ ] excerpt 服务端截断并转纯文本，完整正文仍从现有笔记接口按权限读取。
-- [ ] 无证据的旧图谱返回空数组和兼容提示，不返回 500。
-- [ ] 更新 OpenAPI、API client、权限测试并提交：`feat(graph): 查询节点原文证据`。
+- [x] 接口始终重新应用 NoteAccess；图谱中残留 ID 不得扩大读权限。
+- [x] excerpt 服务端截断并转纯文本，完整正文仍从现有笔记接口按权限读取。
+- [x] 无证据的旧图谱返回空数组和兼容提示，不返回 500。
+- [x] 更新 OpenAPI、API client、权限测试并提交：`feat(graph): 查询节点原文证据`（`c8de74d`）。
 
 **P2 Exit Gate:**
 
 - [ ] 新生成图谱的节点与主要边具有可点击的真实 Chunk 证据。
-- [ ] 伪造 Chunk ID、跨用户和移出知识库场景全部被测试拒绝。
-- [ ] 旧图谱仍可展示。
+- [x] 伪造 Chunk ID、跨用户和移出知识库场景全部被测试拒绝。
+- [x] 旧图谱仍可展示。
+
+2026-08-28：P2 代码与自动化验收完成；真实图谱尚未在本轮重新生成，因此第一项保留未勾选，等待用户确认覆盖范围后再执行真实数据验收。
 
 ---
 
