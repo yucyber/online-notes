@@ -85,6 +85,21 @@ test('有 embedding 的笔记没有关联 Chunk 时不能以零样本误报通�
   assert.deepEqual(result.failures.chunkCoverage, ['n1'])
 })
 
+test('正文没有小标题时允许 headingPath 只包含笔记标题', () => {
+  const result = validateDerivedSamples([{
+    note: {
+      _id: 'n1', title: '标题', content: '<p>没有小标题的正文</p>', summary: '独立摘要',
+      summarySource: 'ai', embedding: Array(4096).fill(0.1),
+    },
+    chunks: [{
+      headingPath: ['标题'], content: '<p>没有小标题的正文</p>', embedding: Array(4096).fill(0.1),
+      contentHash: 'hash', embeddingModel: 'model', chunkStrategyVersion: 'v1',
+    }],
+  }])
+
+  assert.deepEqual(result.failures.bodyHeadingPath, [])
+})
+
 test('搜索接口成功时保留真实 HTTP status 并返回结果', async () => {
   const server = createServer((_request, response) => {
     response.writeHead(200, { 'Content-Type': 'application/json' })

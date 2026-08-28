@@ -89,13 +89,18 @@ export function validateDerivedSamples(samples, dimensions = 4096) {
     if (!validSource || looksCopied) failures.summarySource.push(noteId)
     if (!Array.isArray(note?.embedding) || note.embedding.length !== dimensions) failures.topicEmbedding.push(noteId)
     if (chunks.length === 0) failures.chunkCoverage.push(noteId)
+    const rawContent = String(note?.content || '')
+    const hasBodyHeading = /<h[1-6]\b/i.test(rawContent) || /(^|\n)#{1,6}\s+\S/.test(rawContent)
+    const hasBodyHeadingPath = chunks.some((chunk) => {
+      const path = Array.isArray(chunk?.headingPath) ? chunk.headingPath.map(String) : []
+      return path.some((heading) => heading && heading !== String(note?.title || ''))
+    })
+    if (hasBodyHeading && !hasBodyHeadingPath) failures.bodyHeadingPath.push(`${noteId}#0`)
     for (let index = 0; index < chunks.length; index++) {
       const chunk = chunks[index]
       const chunkId = `${noteId}#${index}`
       sampledChunks++
       if (!Array.isArray(chunk?.embedding) || chunk.embedding.length !== dimensions) failures.chunkEmbedding.push(chunkId)
-      const path = Array.isArray(chunk?.headingPath) ? chunk.headingPath.map(String) : []
-      if (!path.some((heading) => heading && heading !== String(note?.title || ''))) failures.bodyHeadingPath.push(chunkId)
       if (!hasBalancedHtml(chunk?.content)) failures.htmlStructure.push(chunkId)
       if (!chunk?.contentHash || !chunk?.embeddingModel || !chunk?.chunkStrategyVersion) failures.metadata.push(chunkId)
     }
