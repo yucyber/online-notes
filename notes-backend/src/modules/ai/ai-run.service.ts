@@ -275,9 +275,29 @@ export class AiRunService {
     const { userId: _userId, error: _error, ...publicRecord } = record
     return {
       ...publicRecord,
-      stages: Array.isArray(record.stages) ? record.stages.map(sanitizeAiRunStage) : [],
+      stages: this.sanitizeHistoricalStages(record.stages),
       metrics: sanitizeAiRunMetrics(record.metrics || {}),
     }
+  }
+
+  private sanitizeHistoricalStages(stages: unknown): AiRunStage[] {
+    if (!Array.isArray(stages)) return []
+    const sanitized: AiRunStage[] = []
+
+    // 写入期 sanitizer 会 fail-fast；读取历史记录时必须跳过脏项，避免单条旧数据拖垮整次查询。
+    for (const value of stages) {
+      if (!value || typeof value !== 'object') continue
+      const stage = value as AiRunStage
+      if (!this.isDuration(stage.durationMs)) continue
+      if (stage.status !== 'succeeded' && stage.status !== 'failed' && stage.status !== 'skipped') continue
+      try {
+        sanitized.push(sanitizeAiRunStage(stage))
+      } catch {
+        continue
+      }
+    }
+
+    return sanitized
   }
 
   private byTask(records: AiRunPublicRecord[]): AiRunTaskPerformance[] {

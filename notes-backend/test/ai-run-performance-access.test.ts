@@ -192,6 +192,58 @@ test('run detail is user-scoped, returns sanitized observability fields, and hid
   await assert.rejects(() => (controller as any).getRun('forged', requestFor(USER_A)), NotFoundException)
 })
 
+test('performance summary filters dirty historical stages without losing total duration', async () => {
+  const controller = createController([
+    run({
+      runId: 'dirty-list',
+      durationMs: 640,
+      stages: [
+        { name: 'provider', durationMs: 120, status: 'succeeded' },
+        null,
+        'legacy-stage',
+        { name: 'validation', durationMs: 20, status: 'unknown' },
+        { name: 'response', durationMs: -10, status: 'succeeded' },
+      ],
+    }),
+  ])
+
+  const result = await (controller as any).getRunPerformance(
+    { from: '2026-08-19T00:00:00.000Z', to: '2026-08-21T00:00:00.000Z' },
+    requestFor(USER_A),
+  )
+
+  assert.equal(result.requestCount, 1)
+  assert.equal(result.p50Ms, 640)
+  assert.equal(result.p95Ms, 640)
+  assert.deepEqual(result.recentRuns.items[0].stages, [
+    { name: 'provider', durationMs: 120, status: 'succeeded' },
+  ])
+  assert.deepEqual(result.byTask[0].stages, [
+    { name: 'provider', requestCount: 1, p50Ms: 120, p95Ms: 120 },
+  ])
+})
+
+test('run detail filters unknown historical stage names and keeps valid stages', async () => {
+  const controller = createController([
+    run({
+      runId: 'dirty-detail',
+      durationMs: 700,
+      stages: [
+        { name: 'provider', durationMs: 300, status: 'succeeded' },
+        { name: 'legacy_provider_call', durationMs: 200, status: 'failed' },
+        { name: 'validation', durationMs: '50', status: 'succeeded' },
+      ],
+    }),
+  ])
+
+  const result = await (controller as any).getRun('dirty-detail', requestFor(USER_A))
+
+  assert.equal(result.durationMs, 700)
+  assert.deepEqual(result.stages, [
+    { name: 'provider', durationMs: 300, status: 'succeeded' },
+  ])
+})
+
 test('performance query rejects invalid dates, windows over 90 days, and invalid pagination', async () => {
   const controller = createController([])
   const req = requestFor(USER_A)

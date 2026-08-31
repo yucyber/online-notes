@@ -782,7 +782,7 @@ test('AiController forwards mindmap requests to AiService', async () => {
       return expected
     },
   }
-  const controller = new AiController(service as any)
+  const controller = new AiController(service as any, {} as any)
 
   const result = await controller.generateMindmap({ content: 'AI Gateway', scenario: 'generate' })
 
