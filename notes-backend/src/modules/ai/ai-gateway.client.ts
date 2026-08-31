@@ -15,9 +15,25 @@ import { resolveAiModelPolicy } from './ai-model-policy'
 import { buildProviderOptions } from './ai-provider-adapter'
 import { validateAiOutput } from './ai-output-validator'
 import { AiRunService } from './ai-run.service'
+import { AiRunMetrics, AiRunStage, AiRunTiming } from './ai-run-timing'
 import { AiCapacityDeferredError, AiCapacityProvider, AiProviderCapacityService } from './ai-provider-capacity.service'
 
 type FetchLike = (url: string, init?: any) => Promise<any>
+
+type AiTaskAuditContext = {
+  runId?: string
+  timing: AiRunTiming
+  attempt: number
+  currentAttempt?: number
+}
+
+type AiProviderAttemptAudit = {
+  task: AiTaskAuditContext
+  provider: string
+  model: string
+  fallbackType?: 'quality' | 'provider'
+  parseJson?: boolean
+}
 
 export class AiProviderHttpError extends HttpException {
   constructor(
@@ -85,7 +101,11 @@ export class AiGatewayClient {
     return (await this.chatWithProviderDetailed(options, provider)).content
   }
 
-  private async chatWithProviderDetailed(options: AiChatOptions, provider: AiProviderConfig): Promise<{
+  private async chatWithProviderDetailed(
+    options: AiChatOptions,
+    provider: AiProviderConfig,
+    audit?: AiProviderAttemptAudit,
+  ): Promise<{
     content: string
     retryCount: number
     finishReason?: string
@@ -93,12 +113,12 @@ export class AiGatewayClient {
   }> {
     // 推理型模型可能把小预算的 maxTokens 全部耗在思考过程上，导致 content 为空。
     // 当 content 为空且 finish_reason=length 时，用更高的预算有限重试一次，尽量让模型产出正文。
-    const first = await this.chatOnce(options, provider)
+    const first = await this.chatOnce(options, provider, undefined, audit)
     const content = this.extractChatContent(first.data)
     if (content) return this.chatExecution(first, String(content).trim())
 
     if (options.retryOnLengthOverflow && this.isLengthOverflow(first.data)) {
-      const retried = await this.chatOnce(options, provider, this.retryMaxTokens(options.maxTokens))
+      const retried = await this.chatOnce(options, provider, this.retryMaxTokens(options.maxTokens), audit)
       const retriedContent = this.extractChatContent(retried.data)
       if (retriedContent) {
         retried.retryCount += first.retryCount + 1
@@ -134,16 +154,22 @@ export class AiGatewayClient {
   }
 
   // 单次非流式 chat 请求，返回解析后的响应体。
-  private async chatOnce(options: AiChatOptions, provider: AiProviderConfig, maxTokensOverride?: number): Promise<{ data: any; retryCount: number }> {
+  private async chatOnce(
+    options: AiChatOptions,
+    provider: AiProviderConfig,
+    maxTokensOverride?: number,
+    audit?: AiProviderAttemptAudit,
+  ): Promise<{ data: any; retryCount: number }> {
     const response = await this.postJson(
       this.endpoint(provider.baseUrl, '/chat/completions'),
       provider.apiKey,
       this.chatBody(provider, { ...options, maxTokens: maxTokensOverride ?? options.maxTokens }, { stream: false }),
       `${provider.provider} chat`,
       provider.provider as AiCapacityProvider,
+      audit ? { ...audit, parseJson: true } : undefined,
     )
     return {
-      data: await response.json().catch(() => ({})),
+      data: (response as any).__aiParsedBody ?? await response.json().catch(() => ({})),
       retryCount: Number((response as any).__aiRetryCount || 0),
     }
   }
@@ -203,10 +229,14 @@ export class AiGatewayClient {
     }
     const startedAt = Date.now()
     const runId = await this.startTaskRun(options, policy.reasoningMode, policy.primary)
+    const audit = this.createTaskAudit(runId)
+    await this.mergeTaskMetrics(runId, {
+      inputChars: String(options.system || '').length + String(options.prompt || '').length,
+    })
     let stream: ReadableStream<Uint8Array>
     let fallbackReason: AiFailureReason | undefined
     try {
-      stream = await this.openPrimedTaskStream(taskOptions, policy.primary)
+      stream = await this.openPrimedTaskStream(taskOptions, policy.primary, audit)
     } catch (error) {
       fallbackReason = this.classifyFailure(error)
       if (!policy.providerFallback || !this.isProviderFailure(fallbackReason)) {
@@ -214,7 +244,7 @@ export class AiGatewayClient {
         throw error
       }
       try {
-        stream = await this.openPrimedTaskStream(taskOptions, policy.providerFallback)
+        stream = await this.openPrimedTaskStream(taskOptions, policy.providerFallback, audit, 'provider')
       } catch (fallbackError) {
         await this.failTaskRun(runId, fallbackError)
         throw fallbackError
@@ -248,6 +278,7 @@ export class AiGatewayClient {
                 controller.enqueue(next.value)
               }
             }
+            await this.mergeTaskMetrics(runId, { outputChars: contentChars })
             await this.succeedTaskRun(runId, {
               content: '',
               attempt: {
@@ -273,6 +304,8 @@ export class AiGatewayClient {
   private async openPrimedTaskStream(
     options: AiChatOptions & { task: AiTask },
     target: AiModelTarget,
+    audit: AiTaskAuditContext,
+    fallbackType?: 'provider',
   ): Promise<ReadableStream<Uint8Array>> {
     const provider = this.resolveModelTarget(target)
     const response = await this.postJson(
@@ -281,18 +314,27 @@ export class AiGatewayClient {
       this.chatBody(provider, options, { stream: true }),
       `${provider.provider} stream task`,
       provider.provider as AiCapacityProvider,
+      { task: audit, provider: provider.provider, model: provider.model, fallbackType },
     )
     if (!response.body) throw new Error(`${provider.provider} stream chat returned no body`)
 
     const source = this.openAiSseToTextStream(response.body)
     const reader = source.getReader()
-    let first: ReadableStreamReadResult<Uint8Array>
-    try {
-      first = await reader.read()
-    } catch (error: any) {
-      throw new HttpException(`stream failed before content: ${error?.message || 'upstream error'}`, HttpStatus.SERVICE_UNAVAILABLE)
-    }
-    if (first.done || !first.value?.length) throw new AiTaskOutputError('empty_content')
+    const first = await audit.timing.measure('validation', async () => {
+      let result: ReadableStreamReadResult<Uint8Array>
+      try {
+        result = await reader.read()
+      } catch (error: any) {
+        throw new HttpException(`stream failed before content: ${error?.message || 'upstream error'}`, HttpStatus.SERVICE_UNAVAILABLE)
+      }
+      if (result.done || !result.value?.length) throw new AiTaskOutputError('empty_content')
+      return result
+    }, {
+      attempt: audit.currentAttempt,
+      provider: provider.provider,
+      model: provider.model,
+      fallbackType,
+    })
 
     // 首个正文 chunk 是跨模型降级边界；交付后发生错误只透传，不能拼接第二个模型的输出。
     const primed = new ReadableStream<Uint8Array>({
@@ -478,18 +520,22 @@ export class AiGatewayClient {
     }
     const startedAt = Date.now()
     const runId = await this.startTaskRun(options, policy.reasoningMode, policy.primary)
+    const audit = this.createTaskAudit(runId)
+    await this.mergeTaskMetrics(runId, {
+      inputChars: String(options.system || '').length + String(options.prompt || '').length,
+    })
 
     try {
       let result: AiTaskResult
       try {
-        result = await this.executeTaskAttempt(taskOptions, policy.primary, startedAt)
+        result = await this.executeTaskAttempt(taskOptions, policy.primary, startedAt, audit)
       } catch (error) {
         const reason = this.classifyFailure(error)
         const qualityTarget = policy.qualityFallback
         if (this.isQualityFailure(reason) && qualityTarget && this.isModelTarget(qualityTarget)) {
-          result = await this.executeTaskAttempt(taskOptions, qualityTarget, startedAt, 'quality', reason)
+          result = await this.executeTaskAttempt(taskOptions, qualityTarget, startedAt, audit, 'quality', reason)
         } else if (this.isProviderFailure(reason) && policy.providerFallback) {
-          result = await this.executeTaskAttempt(taskOptions, policy.providerFallback, startedAt, 'provider', reason)
+          result = await this.executeTaskAttempt(taskOptions, policy.providerFallback, startedAt, audit, 'provider', reason)
         } else {
           throw error
         }
@@ -504,6 +550,7 @@ export class AiGatewayClient {
 
   private async startTaskRun(options: AiChatOptions & { task: AiTask }, reasoningMode: AiReasoningMode, target: AiModelTarget) {
     if (!this.aiRuns) return undefined
+    if (options.audit?.runId) return options.audit.runId
     try {
       const route = this.resolveModelTarget(target)
       return (await this.aiRuns.start({
@@ -514,34 +561,72 @@ export class AiGatewayClient {
         provider: route.provider,
         model: route.model,
       })).runId
-    } catch (error: any) {
-      this.logger.warn(`AI run audit start failed for ${options.task}: ${error.message}`)
+    } catch {
+      this.logger.warn(`AI run audit start failed for ${options.task}`)
       return undefined
     }
+  }
+
+  private createTaskAudit(runId?: string): AiTaskAuditContext {
+    let audit: AiTaskAuditContext
+    audit = {
+      runId,
+      attempt: 0,
+      timing: new AiRunTiming((stage) => this.addTaskStage(runId, stage)),
+    }
+    return audit
+  }
+
+  private async addTaskStage(runId: string | undefined, stage: AiRunStage) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.addStage(runId, stage) }
+    catch { this.logger.warn(`AI run stage audit update failed for ${stage.name}`) }
+  }
+
+  private async mergeTaskMetrics(runId: string | undefined, metrics: AiRunMetrics) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.mergeMetrics(runId, metrics) }
+    catch { this.logger.warn('AI run metrics audit update failed') }
   }
 
   private async succeedTaskRun(runId: string | undefined, result: AiTaskResult) {
     if (!runId || !this.aiRuns) return
     try { await this.aiRuns.succeed(runId, result.attempt) }
-    catch (error: any) { this.logger.warn(`AI run audit success update failed for ${runId}: ${error.message}`) }
+    catch { this.logger.warn('AI run audit success update failed') }
   }
 
   private async failTaskRun(runId: string | undefined, error: unknown) {
     if (!runId || !this.aiRuns) return
     try { await this.aiRuns.fail(runId, error) }
-    catch (auditError: any) { this.logger.warn(`AI run audit failure update failed for ${runId}: ${auditError.message}`) }
+    catch { this.logger.warn('AI run audit failure update failed') }
   }
 
   private async executeTaskAttempt(
     options: AiChatOptions & { task: AiTask },
     target: AiModelTarget,
     startedAt: number,
+    audit: AiTaskAuditContext,
     fallbackType?: 'quality' | 'provider',
     fallbackReason?: AiFailureReason,
   ): Promise<AiTaskResult> {
     const provider = this.resolveModelTarget(target)
-    const execution = await this.chatWithProviderDetailed(options, provider)
-    const validation = validateAiOutput(options.task, execution.content, { allowedNoteIds: options.allowedNoteIds })
+    const execution = await this.chatWithProviderDetailed(options, provider, {
+      task: audit,
+      provider: provider.provider,
+      model: provider.model,
+      fallbackType,
+    })
+    await this.mergeTaskMetrics(audit.runId, { outputChars: execution.content.length })
+    const validation = await audit.timing.measure('validation', async () => {
+      const result = validateAiOutput(options.task, execution.content, { allowedNoteIds: options.allowedNoteIds })
+      if (!result.valid) throw new AiTaskOutputError(result.reason || 'invalid_output')
+      return result
+    }, {
+      attempt: audit.currentAttempt,
+      provider: provider.provider,
+      model: provider.model,
+      fallbackType,
+    })
     if (!validation.valid) throw new AiTaskOutputError(validation.reason || 'invalid_output')
     return {
       content: execution.content,
@@ -643,69 +728,119 @@ export class AiGatewayClient {
     return body
   }
 
-  private async postJson(url: string, apiKey: string, body: any, label: string, provider: AiCapacityProvider) {
-    const retryableStatuses = new Set([429, 502, 503, 504])
+  private async postJson(
+    url: string,
+    apiKey: string,
+    body: any,
+    label: string,
+    provider: AiCapacityProvider,
+    audit?: AiProviderAttemptAudit,
+  ) {
     const timeoutMs = Math.max(1000, Number(this.configService.get<string>('AI_REQUEST_TIMEOUT_MS') || 120_000))
 
     for (let attempt = 0; attempt <= 2; attempt += 1) {
-      let response: any
       const estimatedTokens = this.capacity?.estimateTokens(
         Array.isArray(body.messages) ? body.messages : [{ content: String(body.input || body.query || JSON.stringify(body.documents || [])) }],
         Number(body.max_tokens || 0),
       ) || 0
-      const lease = this.capacity ? await this.capacity.reserve(provider, estimatedTokens) : undefined
-      if (lease && !lease.granted) throw new AiCapacityDeferredError(provider, lease.retryAfterMs)
-      try {
-        response = await this.fetchImpl(url, {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${apiKey}`,
-            'Content-Type': 'application/json',
-            'User-Agent': AiGatewayClient.AR_USER_AGENT,
-          },
-          body: JSON.stringify(body),
-          signal: AbortSignal.timeout(timeoutMs),
-        })
-      } catch (error: any) {
-        if (lease) await this.capacity?.release(lease)
-        if (attempt < 2) {
-          await this.sleep(500 * (2 ** attempt))
-          continue
-        }
-        throw new HttpException(`${label} request failed: ${error?.name || 'network error'}`, HttpStatus.SERVICE_UNAVAILABLE)
+      const attemptNumber = audit ? audit.task.attempt + 1 : undefined
+      if (audit && attemptNumber !== undefined) {
+        audit.task.attempt = attemptNumber
+        audit.task.currentAttempt = attemptNumber
       }
-
-      if (response.ok) {
-        if (lease) {
-          const usage = await response.clone?.().json?.().then((data: any) => data?.usage).catch(() => undefined)
-          await this.capacity?.reconcile(lease, usage ? {
-            promptTokens: usage.prompt_tokens,
-            completionTokens: usage.completion_tokens,
-          } : undefined)
-          await this.capacity?.release(lease)
-        }
+      const metadata = audit ? {
+        attempt: attemptNumber,
+        provider: audit.provider,
+        model: audit.model,
+        fallbackType: audit.fallbackType,
+      } : undefined
+      const reserve = async () => {
+        const reserved = this.capacity ? await this.capacity.reserve(provider, estimatedTokens) : undefined
+        if (reserved && !reserved.granted) throw new AiCapacityDeferredError(provider, reserved.retryAfterMs)
+        return reserved
+      }
+      const lease = audit
+        ? await audit.task.timing.measure('capacity_wait', reserve, metadata)
+        : await reserve()
+      try {
+        const request = () => this.requestProviderAttempt(url, apiKey, body, label, provider, timeoutMs, lease, attempt, audit)
+        const response = audit
+          ? await audit.task.timing.measure('provider', request, metadata)
+          : await request()
         Object.defineProperty(response, '__aiRetryCount', { value: attempt, configurable: true })
         return response
+      } catch (error: any) {
+        if (Boolean(error?.aiRetryable) && attempt < 2) {
+          // Token Plan 明确建议对 429 退避；Retry-After 优先，避免多个请求同时再次撞限流。
+          await this.sleep(Number(error?.aiRetryDelayMs ?? (500 * (2 ** attempt))))
+          continue
+        }
+        throw error
       }
-
-      const error = await this.readProviderError(response)
-      if (lease) await this.capacity?.release(lease)
-      if (retryableStatuses.has(response.status) && attempt < 2) {
-        // Token Plan 明确建议对 429 退避；Retry-After 优先，避免多个请求同时再次撞限流。
-        await this.sleep(this.retryDelayMs(response, attempt))
-        continue
-      }
-
-      const status = retryableStatuses.has(response.status) && response.status !== 429
-        ? HttpStatus.SERVICE_UNAVAILABLE
-        : response.status
-      throw new AiProviderHttpError(
-        status,
-        `${label} request failed: HTTP ${response.status}${error ? ` ${error}` : ''}`,
-      )
     }
 
     throw new HttpException(`${label} request failed`, HttpStatus.SERVICE_UNAVAILABLE)
+  }
+
+  private async requestProviderAttempt(
+    url: string,
+    apiKey: string,
+    body: any,
+    label: string,
+    provider: AiCapacityProvider,
+    timeoutMs: number,
+    lease: any,
+    retryAttempt: number,
+    audit?: AiProviderAttemptAudit,
+  ) {
+    let response: any
+    try {
+      response = await this.fetchImpl(url, {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          'Content-Type': 'application/json',
+          'User-Agent': AiGatewayClient.AR_USER_AGENT,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(timeoutMs),
+      })
+    } catch (error: any) {
+      if (lease) await this.capacity?.release(lease)
+      const requestError: any = new HttpException(`${label} request failed: ${error?.name || 'network error'}`, HttpStatus.SERVICE_UNAVAILABLE)
+      requestError.aiRetryable = true
+      throw requestError
+    }
+
+    if (!response.ok) {
+      const detail = await this.readProviderError(response)
+      if (lease) await this.capacity?.release(lease)
+      const retryableStatuses = new Set([429, 502, 503, 504])
+      const status = retryableStatuses.has(response.status) && response.status !== 429
+        ? HttpStatus.SERVICE_UNAVAILABLE
+        : response.status
+      const providerError: any = new AiProviderHttpError(
+        status,
+        `${label} request failed: HTTP ${response.status}${detail ? ` ${detail}` : ''}`,
+      )
+      providerError.aiRetryable = retryableStatuses.has(response.status)
+      providerError.aiRetryDelayMs = this.retryDelayMs(response, retryAttempt)
+      throw providerError
+    }
+
+    const parsedBody = audit?.parseJson
+      ? await response.clone?.().json?.().catch(() => ({}))
+      : undefined
+    if (audit?.parseJson) Object.defineProperty(response, '__aiParsedBody', { value: parsedBody ?? {}, configurable: true })
+    if (lease) {
+      const usage = parsedBody?.usage ?? await response.clone?.().json?.().then((data: any) => data?.usage).catch(() => undefined)
+      await this.capacity?.reconcile(lease, usage ? {
+        promptTokens: usage.prompt_tokens,
+        completionTokens: usage.completion_tokens,
+      } : undefined)
+      await this.capacity?.release(lease)
+    }
+    return response
   }
 
   private retryDelayMs(response: any, attempt: number): number {

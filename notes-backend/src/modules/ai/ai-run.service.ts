@@ -4,6 +4,7 @@ import { randomUUID } from 'crypto'
 import { Model, Types } from 'mongoose'
 import { AiRun, AiRunDocument, AiRunStatus } from './schemas/ai-run.schema'
 import { AiReasoningMode, AiTask, AiTaskAttempt } from './ai-gateway.types'
+import { AiRunMetrics, AiRunStage, sanitizeAiRunMetrics, sanitizeAiRunStage } from './ai-run-timing'
 
 export interface AiRunStartInput {
   runId?: string
@@ -32,6 +33,8 @@ export interface AiRunRecord {
   contentChars?: number
   reasoningChars?: number
   validationResult?: 'valid' | 'invalid'
+  stages?: AiRunStage[]
+  metrics?: AiRunMetrics
   status: AiRunStatus
   error?: string
   createdAt?: Date
@@ -52,6 +55,8 @@ export class AiRunService {
       userId: this.toObjectId(input.userId),
       provider: input.provider,
       model: input.model,
+      stages: [],
+      metrics: {},
       status: 'running',
     })
 
@@ -64,6 +69,28 @@ export class AiRunService {
 
   async fail(runId: string, error: unknown): Promise<AiRunRecord> {
     return this.finish(runId, 'failed', this.errorMessage(error))
+  }
+
+  async addStage(runId: string, stage: AiRunStage): Promise<AiRunRecord> {
+    const doc = await this.model.findOneAndUpdate(
+      { runId },
+      { $push: { stages: sanitizeAiRunStage(stage) } },
+      { new: true },
+    ).exec()
+    return this.toRecord(doc)
+  }
+
+  async mergeMetrics(runId: string, metrics: AiRunMetrics): Promise<AiRunRecord> {
+    const sanitized = sanitizeAiRunMetrics(metrics)
+    const $set = Object.fromEntries(
+      Object.entries(sanitized).map(([key, value]) => [`metrics.${key}`, value]),
+    )
+    const doc = await this.model.findOneAndUpdate(
+      { runId },
+      { $set },
+      { new: true },
+    ).exec()
+    return this.toRecord(doc)
   }
 
   private async finish(
@@ -121,6 +148,8 @@ export class AiRunService {
       contentChars: value.contentChars,
       reasoningChars: value.reasoningChars,
       validationResult: value.validationResult,
+      stages: value.stages,
+      metrics: value.metrics,
       status: value.status,
       error: value.error,
       createdAt: value.createdAt,

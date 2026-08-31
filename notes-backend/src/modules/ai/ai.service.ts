@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/commo
 import { AiGatewayClient } from './ai-gateway.client'
 import { AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
 import { AiRunService } from './ai-run.service'
+import { AiRunMetrics, AiRunStage, AiRunTiming } from './ai-run-timing'
 import { AggregateSummaryGraph } from './graphs/aggregate-summary.graph'
 import { KnowledgeGraphBuildGraph } from './graphs/knowledge-graph-build.graph'
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service'
@@ -112,8 +113,74 @@ export class AiService {
     if (!userId) throw new BadRequestException('Authenticated user is required.')
     if (!this.knowledgeBases) throw new Error('Knowledge base service is not available.')
     const graph = this.knowledgeGraphBuildGraph || new KnowledgeGraphBuildGraph(this.gateway)
-    const notes = await this.knowledgeBases.listGraphNotes(id, userId)
-    return graph.run({ knowledgeBaseId: id, notes }, context)
+    const runId = context?.runId || await this.startKnowledgeGraphRun(userId)
+    const timing = new AiRunTiming((stage) => this.addRunStage(runId, stage))
+
+    let prepared
+    try {
+      prepared = await timing.measure('context_prepare', async () => {
+        const notes = await this.knowledgeBases.listGraphNotes(id, userId)
+        return graph.prepare({ knowledgeBaseId: id, notes })
+      })
+      await this.mergeRunMetrics(runId, {
+        candidateNotes: prepared.notes.length,
+        candidateChunks: prepared.notes.reduce((total, note) => total + note.chunks.length, 0),
+      })
+    } catch (error) {
+      await this.failRun(runId, error)
+      throw error
+    }
+
+    if (prepared.notes.length === 0) {
+      const proposal = await graph.runPrepared(prepared, { ...context, userId, runId })
+      await this.succeedRun(runId)
+      return proposal
+    }
+
+    return graph.runPrepared(prepared, { ...context, userId, runId })
+  }
+
+  private async startKnowledgeGraphRun(userId: string) {
+    if (!this.aiRuns) return undefined
+    try {
+      const route = typeof this.gateway.describeTaskRoute === 'function'
+        ? this.gateway.describeTaskRoute('knowledge_graph')
+        : undefined
+      return (await this.aiRuns.start({
+        graphName: 'KnowledgeGraphBuildGraph',
+        task: 'knowledge_graph',
+        userId,
+        provider: route?.provider,
+        model: route?.model,
+      })).runId
+    } catch {
+      this.logger.warn('AI run audit start failed for knowledge_graph')
+      return undefined
+    }
+  }
+
+  private async addRunStage(runId: string | undefined, stage: AiRunStage) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.addStage(runId, stage) }
+    catch { this.logger.warn(`AI run stage audit update failed for ${stage.name}`) }
+  }
+
+  private async mergeRunMetrics(runId: string | undefined, metrics: AiRunMetrics) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.mergeMetrics(runId, metrics) }
+    catch { this.logger.warn('AI run metrics audit update failed') }
+  }
+
+  private async succeedRun(runId: string | undefined) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.succeed(runId) }
+    catch { this.logger.warn('AI run audit success update failed') }
+  }
+
+  private async failRun(runId: string | undefined, error: unknown) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.fail(runId, error) }
+    catch { this.logger.warn('AI run audit failure update failed') }
   }
 
   async streamWriter(input: AiWriterInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {

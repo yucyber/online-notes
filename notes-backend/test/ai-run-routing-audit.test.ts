@@ -59,4 +59,14 @@ test('AiRunService records routing and fallback metadata without request content
   assert.equal(updates[0].update.$set.model, 'deepseek-ai/DeepSeek-V4-Flash')
   const stored = JSON.stringify({ created, updates })
   assert.doesNotMatch(stored, /apiKey|prompt|完整正文|hidden reasoning/)
+
+  const forbidden = new Set(['prompt', 'content', 'reasoning', 'apiKey'])
+  const visit = (value: any) => {
+    if (!value || typeof value !== 'object') return
+    for (const [key, child] of Object.entries(value)) {
+      assert.equal(forbidden.has(key), false, `stored audit data contains forbidden field: ${key}`)
+      visit(child)
+    }
+  }
+  visit({ created, updates })
 })

@@ -537,6 +537,26 @@ test('AiGatewayClient preserves 429 after transient retries are exhausted', asyn
   assert.equal(attempts, 3)
 })
 
+test('AiGatewayClient increases retry backoff for each provider attempt', async () => {
+  const delays: number[] = []
+  const fetchImpl = async () => jsonResponse(
+    { error: { message: 'temporarily unavailable' } },
+    503,
+  )
+  const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
+  const originalRandom = Math.random
+  Math.random = () => 0
+  ;(client as any).sleep = async (delayMs: number) => { delays.push(delayMs) }
+
+  try {
+    await assert.rejects(() => client.chat({ route: 'text', prompt: 'hello' }))
+  } finally {
+    Math.random = originalRandom
+  }
+
+  assert.deepEqual(delays, [500, 1000])
+})
+
 test('AiGatewayClient maps exhausted provider outages to a safe 503', async () => {
   let attempts = 0
   const fetchImpl = async () => {

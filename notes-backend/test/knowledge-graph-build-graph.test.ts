@@ -28,7 +28,7 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
       { id: 'note-1', title: 'Gateway', summary: 'Routes providers.', chunks: [{ chunkId: '507f1f77bcf86cd799439021', headingPath: ['Gateway', 'Routing'], content: 'AI Gateway routes providers.' }], updatedAt: '2026-06-01T00:00:00.000Z' },
       { id: 'note-2', title: 'Audit', summary: 'AI run records status.', chunks: [{ chunkId: '507f1f77bcf86cd799439022', headingPath: ['Audit'], content: 'Run audit records provider and model.' }] },
     ],
-  })
+  }, { userId: 'user-1', runId: 'run-1' })
 
   assert.equal(proposal.knowledgeBaseId, 'kb-1')
   assert.equal(proposal.nodes.length, 2)
@@ -50,6 +50,11 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
   assert.equal(calls[0].task, 'knowledge_graph')
   assert.equal(calls[0].maxTokens, 1400)
   assert.deepEqual(calls[0].responseFormat, { type: 'json_object' })
+  assert.deepEqual(calls[0].audit, {
+    graphName: 'KnowledgeGraphBuildGraph',
+    userId: 'user-1',
+    runId: 'run-1',
+  })
 })
 
 test('KnowledgeGraphBuildGraph uses a Chinese fallback for a missing relation', async () => {
@@ -104,26 +109,48 @@ test('KnowledgeGraphBuildGraph limits the default proposal size', async () => {
 })
 
 test('AiService builds knowledge graph proposals from readable knowledge base notes', async () => {
+  const order: string[] = []
   const graphCalls: any[] = []
   const graph = {
-    run: async (input: any, context: any) => {
+    prepare: (input: any) => {
+      order.push('prepare')
+      return { knowledgeBaseId: input.knowledgeBaseId, notes: input.notes, prompt: 'prepared prompt' }
+    },
+    runPrepared: async (input: any, context: any) => {
+      order.push('run')
       graphCalls.push({ input, context })
       return { knowledgeBaseId: input.knowledgeBaseId, generatedAt: '2026-06-05T00:00:00.000Z', nodes: [], edges: [], warnings: [] }
     },
   }
   const knowledgeBases = {
     listGraphNotes: async (knowledgeBaseId: string, userId: string) => {
+      order.push('list')
       assert.equal(knowledgeBaseId, 'kb-1')
       assert.equal(userId, 'user-1')
-      return [{ id: 'note-1', title: 'Only readable', content: 'Scoped note' }]
+      return [{ id: 'note-1', title: 'Only readable', chunks: [{ chunkId: 'chunk-1', content: 'Scoped note' }] }]
     },
   }
-  const service = new AiService({} as any, knowledgeBases as any, undefined, undefined, graph as any)
+  const audit = {
+    start: async (input: any) => ({ ...input, runId: 'run-1', status: 'running' }),
+    addStage: async (_runId: string, stage: any) => {
+      order.push('stage')
+      assert.equal(stage.name, 'context_prepare')
+      assert.equal(stage.status, 'succeeded')
+      assert.ok(stage.durationMs >= 0)
+    },
+    mergeMetrics: async (_runId: string, metrics: any) => {
+      assert.deepEqual(metrics, { candidateNotes: 1, candidateChunks: 1 })
+    },
+    succeed: async () => { throw new Error('gateway owns finalization when provider execution starts') },
+    fail: async () => { throw new Error('unexpected failure finalization') },
+  }
+  const service = new AiService({} as any, knowledgeBases as any, audit as any, undefined, graph as any)
   const proposal = await service.buildKnowledgeGraphProposal('kb-1', { userId: 'user-1' })
 
   assert.equal(proposal.knowledgeBaseId, 'kb-1')
-  assert.deepEqual(graphCalls[0].input.notes, [{ id: 'note-1', title: 'Only readable', content: 'Scoped note' }])
-  assert.deepEqual(graphCalls[0].context, { userId: 'user-1' })
+  assert.deepEqual(order, ['list', 'prepare', 'stage', 'run'])
+  assert.deepEqual(graphCalls[0].input.notes, [{ id: 'note-1', title: 'Only readable', chunks: [{ chunkId: 'chunk-1', content: 'Scoped note' }] }])
+  assert.deepEqual(graphCalls[0].context, { userId: 'user-1', runId: 'run-1' })
 })
 
 test('AiService requires KnowledgeBasesService at module startup', () => {

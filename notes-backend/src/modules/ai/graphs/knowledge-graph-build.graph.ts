@@ -64,6 +64,12 @@ export interface KnowledgeGraphBuildGraphOptions {
 
 type PreparedGraphNote = Required<Pick<KnowledgeGraphBuildInput['notes'][number], 'id' | 'title' | 'summary' | 'updatedAt'>> & { chunks: Array<{ chunkId: string; headingPath: string[]; content: string }> }
 
+export interface PreparedKnowledgeGraphBuildInput {
+  knowledgeBaseId: string
+  notes: PreparedGraphNote[]
+  prompt: string
+}
+
 @Injectable()
 export class KnowledgeGraphBuildGraph {
   private readonly maxNotes: number
@@ -86,9 +92,23 @@ export class KnowledgeGraphBuildGraph {
   }
 
   async run(input: KnowledgeGraphBuildInput, context?: AiWorkflowContext): Promise<KnowledgeGraphProposal> {
+    return this.runPrepared(this.prepare(input), context)
+  }
+
+  prepare(input: KnowledgeGraphBuildInput): PreparedKnowledgeGraphBuildInput {
     const knowledgeBaseId = String(input?.knowledgeBaseId || '').trim()
     const notes = this.prepareNotes(input?.notes || [])
     if (!knowledgeBaseId) throw new Error('knowledgeBaseId is required.')
+
+    return {
+      knowledgeBaseId,
+      notes,
+      prompt: notes.length > 0 ? this.buildPrompt(knowledgeBaseId, notes) : '',
+    }
+  }
+
+  async runPrepared(input: PreparedKnowledgeGraphBuildInput, context?: AiWorkflowContext): Promise<KnowledgeGraphProposal> {
+    const { knowledgeBaseId, notes } = input
 
     if (notes.length === 0) {
       return {
@@ -103,11 +123,11 @@ export class KnowledgeGraphBuildGraph {
     const answer = (await this.gateway.chatTask({
       task: 'knowledge_graph',
       system: 'You extract knowledge graph proposals for a notes knowledge base. Return JSON only.',
-      prompt: this.buildPrompt(knowledgeBaseId, notes),
+      prompt: input.prompt,
       maxTokens: 1400,
       temperature: 0.2,
       responseFormat: { type: 'json_object' },
-      audit: { graphName: 'KnowledgeGraphBuildGraph', userId: context?.userId },
+      audit: { graphName: 'KnowledgeGraphBuildGraph', userId: context?.userId, runId: context?.runId },
     })).content
 
     return this.normalizeProposal(knowledgeBaseId, notes, parseJsonObject(answer))

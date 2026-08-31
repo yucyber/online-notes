@@ -59,18 +59,56 @@ test('AiRunService records started, succeeded, and failed AI runs', async () => 
   assert.equal(created[0].userId.toString(), userId)
   assert.equal(created[0].provider, 'siliconflow')
   assert.equal(created[0].model, 'deepseek-ai/DeepSeek-V4-Flash')
+  assert.deepEqual(created[0].stages, [])
+  assert.deepEqual(created[0].metrics, {})
+
+  await service.addStage('run-fixed', {
+    name: 'provider',
+    durationMs: -12.8,
+    status: 'succeeded',
+    attempt: 1.9,
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+    prompt: 'must not be stored',
+  } as any)
+  await service.mergeMetrics('run-fixed', {
+    inputChars: 12.9,
+    candidateNotes: -3,
+    candidateChunks: '4',
+    outputChars: Number.NaN,
+    content: 'must not be stored',
+  } as any)
+
+  assert.deepEqual(updates[0].update, {
+    $push: {
+      stages: {
+        name: 'provider',
+        durationMs: 0,
+        status: 'succeeded',
+        attempt: 1,
+        provider: 'siliconflow',
+        model: 'deepseek-ai/DeepSeek-V4-Flash',
+      },
+    },
+  })
+  assert.deepEqual(updates[1].update, {
+    $set: {
+      'metrics.inputChars': 12,
+      'metrics.candidateNotes': 0,
+    },
+  })
 
   const succeeded = await service.succeed('run-fixed')
 
   assert.equal(succeeded.status, 'succeeded')
-  assert.equal(updates[0].filter.runId, 'run-fixed')
-  assert.equal(updates[0].update.$set.status, 'succeeded')
-  assert.ok(updates[0].update.$set.finishedAt instanceof Date)
+  assert.equal(updates[2].filter.runId, 'run-fixed')
+  assert.equal(updates[2].update.$set.status, 'succeeded')
+  assert.ok(updates[2].update.$set.finishedAt instanceof Date)
 
   const failed = await service.fail('run-fixed', new Error('provider unavailable'))
 
   assert.equal(failed.status, 'failed')
-  assert.equal(updates[1].update.$set.error, 'provider unavailable')
+  assert.equal(updates[3].update.$set.error, 'provider unavailable')
 })
 
 test('AiService passes workflow audit context without changing the public response', async () => {
