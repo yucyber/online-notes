@@ -58,3 +58,31 @@
 - **后续状态**：上述 `AI_TEXT_PROVIDER=ar` 仅用于接入期验证，已被后续模型路由方案取代。当前 text/reasoning 默认走 SiliconFlow，AR 只作为指定复杂任务的专家质量升级目标。
 
 - **经验教训**：遇到第三方网关 `unauthorized_client_error` 时，除了排查 key/IP/模型，一定要检查 **User-Agent 是否被网关精确校验**；用"缺参/错参/正参"的对照请求快速定位拦截层。另外教程给出的模型名可能过期，应以控制台"可用模型列表"为准。
+
+
+---
+
+## 知识图谱证据绑定为空 + 真实 proposal 返回 503
+
+- **日期**：2026-08-31
+- **现象**：对"项目测试库2"发起真实 knowledge graph proposal 时，生成的 node/edge 全部没有证据（证据 0%）；带证据重试后连续被 `JSON.parse` 失败 + fallback 到 DeepSeek 在 120s 超时返回 503。
+
+- **根因**（两个独立问题叠加）：
+  1. **Chunk 存储类型与读取方不一致**：`refreshNoteChunks` 经 `bulkWrite` 写库时没有 cast，`noteId`/`userId` 被存成**字符串**，而图谱证据、语义检索等读取方均按 **ObjectId** 查询，导致已生成的 Chunk 永远匹配不到，`candidateChunks` 为空、证据无法绑定。
+  2. **图谱输出被 maxTokens 截断**：带证据后 Qwen 输出过大，被 `maxTokens=1400` 截断导致 `JSON.parse` 失败 → 校验失败 → quality fallback 到 DeepSeek，但本地 `AI_REQUEST_TIMEOUT_MS` 仍是旧的 120s，DeepSeek 长任务超时返回 503。
+
+- **相关文件**：
+  - `notes-backend/src/modules/notes/note-chunk-index.service.ts`（写入 cast）
+  - `notes-backend/src/modules/ai/graphs/knowledge-graph-build.graph.ts`（maxTokens/规模）
+  - `notes-backend/.env`（`AI_REQUEST_TIMEOUT_MS`，gitignore 不入库）
+
+- **修复方案**：
+  1. 写入方统一按 schema 存 ObjectId，并迁移既有 63 条字符串 chunk 为 ObjectId（commit `9b8d868`，新增回归测试断言写入类型）。
+  2. `knowledge_graph` 构图 `maxTokens` 1400 → 4096，为带证据输出留足预算；收紧默认规模 `maxNodes` 24 → 14、`maxEdges` 36 → 20，并限制每节点/边最多 2 条证据（commit `2e7de27`）。
+  3. 本地 `.env` 调高 `AI_REQUEST_TIMEOUT_MS=240000`（配合 4096 token 的长输出）。
+
+- **验收结果**（真实 proposal `21ad50e5`）：HTTP 201，112652ms，Qwen/Qwen3-14B，`validationResult=valid`，retry=0 无 fallback；14 nodes/15 edges，节点与边证据绑定 100%（14/14、15/15），9 个唯一 Chunk ID 全部命中真实 `note_chunks`。
+
+- **经验教训**：
+  - `bulkWrite` 不会像 `save()`/`create()` 那样自动 cast schema 字段，写库前必须显式 `new Types.ObjectId(...)`；写入与读取两侧的 ObjectId/字符串形态必须一致。
+  - 带证据的图谱输出体积会显著增长，`maxTokens` 必须覆盖完整 JSON 输出，否则截断导致 `JSON.parse` 失败后容易被误判为 provider 问题；同时 `AI_REQUEST_TIMEOUT_MS` 要与 token 预算匹配，避免 fallback 在长任务上超时。
