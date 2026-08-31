@@ -131,12 +131,15 @@ export function NotesListCard({
 
       {note.searchEvidence?.bestChunk ? <SearchHitEvidence noteId={note.id} hit={note.searchEvidence.bestChunk} additionalCount={note.searchEvidence.additionalChunkHits} additionalHits={note.searchEvidence.additionalChunks} query={searchQuery} /> : null}
 
-      <NoteHoverPreview
-        note={note}
-        categoryLabel={categoryLabel}
-        resolveTagId={resolveTagId}
-        resolveTagLabel={resolveTagLabel}
-      />
+      {/* 语义搜索命中项已内联展示命中 Chunk 概要，hover 浮卡会遮挡下一列表项，不再渲染 */}
+      {!note.searchEvidence?.bestChunk ? (
+        <NoteHoverPreview
+          note={note}
+          categoryLabel={categoryLabel}
+          resolveTagId={resolveTagId}
+          resolveTagLabel={resolveTagLabel}
+        />
+      ) : null}
     </div>
   )
 }
