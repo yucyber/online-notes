@@ -86,3 +86,34 @@
 - **经验教训**：
   - `bulkWrite` 不会像 `save()`/`create()` 那样自动 cast schema 字段，写库前必须显式 `new Types.ObjectId(...)`；写入与读取两侧的 ObjectId/字符串形态必须一致。
   - 带证据的图谱输出体积会显著增长，`maxTokens` 必须覆盖完整 JSON 输出，否则截断导致 `JSON.parse` 失败后容易被误判为 provider 问题；同时 `AI_REQUEST_TIMEOUT_MS` 要与 token 预算匹配，避免 fallback 在长任务上超时。
+
+
+---
+
+## 语义搜索 hybrid 返回 0：Atlas 向量索引未配置 filter 字段
+
+- **日期**：2026-08-31
+- **现象**：`GET /api/v1/semantic/search?mode=hybrid` 对中文查询（如"我想学计算机"）始终返回 `total: 0`，而 `note_chunks` 里已有 63 条带 embedding 的数据、Atlas 向量索引状态为 READY。
+
+- **根因**：`ChunkRetrievalService.searchChunks` 的 `$vectorSearch` 使用了 `filter: { noteId: { $in: allowedIds } }` 做 ACL 限制，但 Atlas 的 `note_chunk_vector_index` 只定义了 `embedding` 字段，没有把 `noteId` 配置为 **filter 字段**。Atlas 对 `$vectorSearch` 的 `filter` 里用到的每个字段都要求先在索引里声明为 `filter` 类型，否则聚合直接抛错：
+  ```
+  PlanExecutor error during aggregation :: caused by :: Path 'noteId' needs to be indexed as filter
+  ```
+  `searchHybrid` 内部 Promise.all 失败后被 controller 的 catch 吞掉，静默 fallback 到 keyword 搜索；keyword 对 CJK 用正则匹配、无命中，于是返回 200 + total 0，掩盖了真正的向量检索错误。
+
+- **相关文件**：
+  - `notes-backend/src/modules/semantic/chunk-retrieval.service.ts`（`searchChunks` 里 `$vectorSearch.filter` 用 `noteId`）
+  - `notes-backend/src/modules/semantic/semantic.controller.ts`（hybrid 抛错时静默 fallback 到 keyword，掩盖根因）
+  - Atlas 控制台：`note_chunks` 集合的 `note_chunk_vector_index`
+
+- **修复方案**：通过 MongoDB driver 的 `updateSearchIndex` 更新 Atlas 索引定义，把 `noteId`（及 `userId`）加为 `filter` 字段，等索引 reindex 到 READY 后恢复：
+  ```json
+  { "fields": [
+    { "type": "vector", "path": "embedding", "numDimensions": 4096, "similarity": "cosine" },
+    { "type": "filter", "path": "noteId" },
+    { "type": "filter", "path": "userId" }
+  ] }
+  ```
+  验证：同一请求由 `total: 0` 变为 `total: 7`，返回各笔记的 `bestChunk`（semantic 命中）与 `additionalChunks`。
+
+- **经验教训**：`$vectorSearch` 的 `filter` 字段必须在 Atlas 向量索引里显式声明为 `filter` 类型，光有向量 `path` 不够。此外 controller 对向量检索异常直接 fallback 到 keyword 会掩盖索引/配置类错误，排查时应先看后端日志里的 `Vector search failed` 输出，再通过 `db.collection.listSearchIndexes()` 核对索引定义是否覆盖了 `filter` 用到的字段。
