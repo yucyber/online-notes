@@ -20,7 +20,7 @@ export class KnowledgeGraphEdge {
   @Prop({ required: true })
   target: string
 
-  @Prop({ required: true, default: 'related to' })
+  @Prop({ required: true, default: '相关' })
   relation: string
 
   @Prop({ required: true, min: 0, max: 1, default: 0.6 })
@@ -28,6 +28,9 @@ export class KnowledgeGraphEdge {
 
   @Prop({ type: [Types.ObjectId], ref: 'Note', default: [] })
   noteIds: Types.ObjectId[]
+
+  @Prop({ type: [Types.ObjectId], ref: 'NoteChunk', default: [] })
+  evidenceChunkIds: Types.ObjectId[]
 }
 
 export const KnowledgeGraphEdgeSchema = SchemaFactory.createForClass(KnowledgeGraphEdge)

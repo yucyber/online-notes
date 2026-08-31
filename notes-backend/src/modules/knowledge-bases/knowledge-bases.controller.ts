@@ -33,6 +33,16 @@ export class KnowledgeBasesController {
     return this.service.getGraph(id, req.user.id)
   }
 
+  @Get(':id/graph/nodes/:nodeId/evidence')
+  getNodeEvidence(@Param('id') id: string, @Param('nodeId') nodeId: string, @Request() req) {
+    return this.service.getGraphEvidence(id, 'node', nodeId, req.user.id)
+  }
+
+  @Get(':id/graph/edges/:edgeId/evidence')
+  getEdgeEvidence(@Param('id') id: string, @Param('edgeId') edgeId: string, @Request() req) {
+    return this.service.getGraphEvidence(id, 'edge', edgeId, req.user.id)
+  }
+
   @Put(':id/graph')
   replaceGraph(@Param('id') id: string, @Body() body: SaveKnowledgeGraphDto, @Request() req) {
     return this.service.replaceGraph(id, body, req.user.id)

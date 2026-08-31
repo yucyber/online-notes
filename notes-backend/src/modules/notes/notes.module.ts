@@ -22,6 +22,14 @@ import { AiModule } from '../ai/ai.module';
 import { AuditModule } from '../audit/audit.module';
 import { UsersModule } from '../users/users.module';
 import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
+import { Queue } from 'bullmq';
+import Redis from 'ioredis';
+import { REDIS_CLIENT } from '../../common/redis/redis.constants';
+import { NoteDerivedQueueService } from './note-derived-queue.service';
+import { NoteDerivedWorker } from './note-derived.worker';
+import { NOTE_DERIVED_QUEUE } from './note-derived-job.types';
+
+export const NOTE_DERIVED_QUEUE_CONNECTION = Symbol('NOTE_DERIVED_QUEUE_CONNECTION')
 
 @Module({
   imports: [
@@ -45,7 +53,31 @@ import { Mindmap, MindmapSchema } from '../mindmaps/schemas/mindmap.schema';
     }),
   ],
   controllers: [NotesController],
-  providers: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService, NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService, NoteVectorBackfillRunner],
-  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteVectorBackfillRunner],
+  providers: [
+    NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteRecommendationService,
+    NoteDerivedService, NoteVectorSourceService, NoteChunkerService, NoteChunkIndexService, NoteVectorBackfillRunner,
+    {
+      provide: NOTE_DERIVED_QUEUE_CONNECTION,
+      inject: [REDIS_CLIENT],
+      useFactory: (redis: Redis) => redis.duplicate({ maxRetriesPerRequest: null }),
+    },
+    {
+      provide: NOTE_DERIVED_QUEUE,
+      inject: [NOTE_DERIVED_QUEUE_CONNECTION],
+      useFactory: (connection: Redis) => new Queue(NOTE_DERIVED_QUEUE, { connection }),
+    },
+    {
+      provide: NoteDerivedQueueService,
+      inject: [NOTE_DERIVED_QUEUE, NOTE_DERIVED_QUEUE_CONNECTION, REDIS_CLIENT, ConfigService],
+      useFactory: (queue: Queue, connection: Redis, redis: Redis, config: ConfigService) => new NoteDerivedQueueService(
+        queue,
+        Math.max(0, Number(config.get('NOTE_DERIVED_QUIET_MS') || 10_000)),
+        redis,
+        connection,
+      ),
+    },
+    NoteDerivedWorker,
+  ],
+  exports: [NotesService, NoteAccessService, NoteCounterService, NoteCacheService, NoteVectorBackfillRunner, NOTE_DERIVED_QUEUE],
 })
 export class NotesModule { }

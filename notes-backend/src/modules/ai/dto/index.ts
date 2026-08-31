@@ -1,4 +1,7 @@
-import { IsString, IsOptional, IsEnum, IsArray, MaxLength } from 'class-validator'
+import { Transform } from 'class-transformer'
+import { IsString, IsOptional, IsEnum, IsArray, MaxLength, IsBoolean, IsDateString, IsInt, Min, Max } from 'class-validator'
+
+import { AiRunStatus } from '../schemas/ai-run.schema'
 
 export class AiWriterDto {
   @IsOptional()
@@ -17,4 +20,51 @@ export class AiWriterDto {
 export class AiSummaryDto {
   @IsArray()
   notes: any[]
+}
+
+export class AiRunPerformanceQueryDto {
+  @IsOptional()
+  @IsDateString()
+  from?: string
+
+  @IsOptional()
+  @IsDateString()
+  to?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(80)
+  task?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(120)
+  provider?: string
+
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  model?: string
+
+  @IsOptional()
+  @IsEnum(['running', 'succeeded', 'failed'])
+  status?: AiRunStatus
+
+  @IsOptional()
+  @Transform(({ value }) => value === true || value === 'true' ? true : value === false || value === 'false' ? false : value)
+  @IsBoolean()
+  fallbackUsed?: boolean
+
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? 1 : Number(value))
+  @IsInt()
+  @Min(1)
+  page = 1
+
+  @IsOptional()
+  @Transform(({ value }) => value === undefined ? 20 : Number(value))
+  @IsInt()
+  @Min(1)
+  @Max(100)
+  size = 20
 }

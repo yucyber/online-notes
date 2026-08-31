@@ -49,50 +49,77 @@ test('AiRunService records started, succeeded, and failed AI runs', async () => 
     runId: 'run-fixed',
     graphName: 'MindmapGenerationGraph',
     userId,
-    provider: 'mimo',
-    model: 'mimo-v2.5-pro',
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
   })
 
   assert.equal(started.runId, 'run-fixed')
   assert.equal(started.status, 'running')
   assert.equal(created[0].graphName, 'MindmapGenerationGraph')
   assert.equal(created[0].userId.toString(), userId)
-  assert.equal(created[0].provider, 'mimo')
-  assert.equal(created[0].model, 'mimo-v2.5-pro')
+  assert.equal(created[0].provider, 'siliconflow')
+  assert.equal(created[0].model, 'deepseek-ai/DeepSeek-V4-Flash')
+  assert.deepEqual(created[0].stages, [])
+  assert.deepEqual(created[0].metrics, {})
+
+  await service.addStage('run-fixed', {
+    name: 'provider',
+    durationMs: -12.8,
+    status: 'succeeded',
+    attempt: 1.9,
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+    prompt: 'must not be stored',
+  } as any)
+  await service.mergeMetrics('run-fixed', {
+    inputChars: 12.9,
+    candidateNotes: -3,
+    candidateChunks: '4',
+    outputChars: Number.NaN,
+    content: 'must not be stored',
+  } as any)
+
+  assert.deepEqual(updates[0].update, {
+    $push: {
+      stages: {
+        name: 'provider',
+        durationMs: 0,
+        status: 'succeeded',
+        attempt: 1,
+        provider: 'siliconflow',
+        model: 'deepseek-ai/DeepSeek-V4-Flash',
+      },
+    },
+  })
+  assert.deepEqual(updates[1].update, {
+    $set: {
+      'metrics.inputChars': 12,
+      'metrics.candidateNotes': 0,
+    },
+  })
 
   const succeeded = await service.succeed('run-fixed')
 
   assert.equal(succeeded.status, 'succeeded')
-  assert.equal(updates[0].filter.runId, 'run-fixed')
-  assert.equal(updates[0].update.$set.status, 'succeeded')
-  assert.ok(updates[0].update.$set.finishedAt instanceof Date)
+  assert.equal(updates[2].filter.runId, 'run-fixed')
+  assert.equal(updates[2].update.$set.status, 'succeeded')
+  assert.ok(updates[2].update.$set.finishedAt instanceof Date)
 
   const failed = await service.fail('run-fixed', new Error('provider unavailable'))
 
   assert.equal(failed.status, 'failed')
-  assert.equal(updates[1].update.$set.error, 'provider unavailable')
+  assert.equal(updates[3].update.$set.error, 'provider unavailable')
 })
 
-test('AiService wraps audited workflow calls without changing the public response', async () => {
-  const startCalls: any[] = []
-  const succeeded: string[] = []
-  const failed: any[] = []
+test('AiService passes workflow audit context without changing the public response', async () => {
+  const calls: any[] = []
   const gateway = {
-    describeChatRoute: (route: string) => {
-      assert.equal(route, 'reasoning')
-      return { provider: 'mimo', model: 'mimo-v2.5-pro' }
+    chatTask: async (options: any) => {
+      calls.push(options)
+      return { content: 'graph TD\nA-->B', attempt: {} }
     },
-    chat: async () => 'graph TD\nA-->B',
   }
-  const runs = {
-    start: async (payload: any) => {
-      startCalls.push(payload)
-      return { runId: 'run-1', status: 'running' }
-    },
-    succeed: async (runId: string) => succeeded.push(runId),
-    fail: async (runId: string, error: unknown) => failed.push({ runId, error }),
-  }
-  const service = new AiService(gateway as any, {} as any, runs as any)
+  const service = new AiService(gateway as any, {} as any)
 
   const result = await service.generateMermaid(
     { content: '画一个流程图' },
@@ -100,10 +127,9 @@ test('AiService wraps audited workflow calls without changing the public respons
   )
 
   assert.equal(result.content, 'graph TD\nA-->B')
-  assert.equal(startCalls[0].graphName, 'MermaidGenerationGraph')
-  assert.equal(startCalls[0].userId, '507f1f77bcf86cd799439012')
-  assert.equal(startCalls[0].provider, 'mimo')
-  assert.equal(startCalls[0].model, 'mimo-v2.5-pro')
-  assert.deepEqual(succeeded, ['run-1'])
-  assert.deepEqual(failed, [])
+  assert.equal(calls[0].task, 'mermaid')
+  assert.deepEqual(calls[0].audit, {
+    graphName: 'MermaidGenerationGraph',
+    userId: '507f1f77bcf86cd799439012',
+  })
 })

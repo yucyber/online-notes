@@ -52,6 +52,10 @@ export class KnowledgeGraphNodeDto {
   @IsArray()
   @IsMongoId({ each: true })
   noteIds: string[]
+
+  @IsOptional()
+  @IsArray()
+  evidenceChunkIds?: string[]
 }
 
 export class KnowledgeGraphEdgeDto {
@@ -80,6 +84,10 @@ export class KnowledgeGraphEdgeDto {
   @IsArray()
   @IsMongoId({ each: true })
   noteIds: string[]
+
+  @IsOptional()
+  @IsArray()
+  evidenceChunkIds?: string[]
 }
 
 export class SaveKnowledgeGraphDto {

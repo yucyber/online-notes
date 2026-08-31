@@ -1,5 +1,30 @@
 import api from './client'
 import type { KnowledgeBase, KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
+import type { AiRunStage } from './ai-runs'
+
+export type KnowledgeGraphBuildResponse = KnowledgeGraphProposal & {
+  runId?: string
+  durationMs?: number
+  stages?: AiRunStage[]
+  timing?: {
+    durationMs?: number
+    stages?: AiRunStage[]
+  }
+}
+
+export type KnowledgeGraphEvidence = {
+  noteId: string
+  noteTitle: string
+  chunkId: string
+  headingPath: string[]
+  preview: string
+  content: string
+}
+
+export type KnowledgeGraphEvidenceResult = {
+  compatibility: 'evidence_available' | 'evidence_unavailable' | 'legacy_graph_without_evidence'
+  items: KnowledgeGraphEvidence[]
+}
 
 export const knowledgeBasesAPI = {
   getAll: () =>
@@ -18,12 +43,20 @@ export const knowledgeBasesAPI = {
     api.delete(`/knowledge-bases/${id}/notes/${noteId}`).then(res => res as unknown as { ok: boolean }),
 
   buildGraphProposal: (id: string) =>
-    api.post<KnowledgeGraphProposal>('/ai/knowledge-graph/proposal', { knowledgeBaseId: id }, { timeout: 60000 })
-      .then(res => res as unknown as KnowledgeGraphProposal),
+    api.post<KnowledgeGraphBuildResponse>('/ai/knowledge-graph/proposal', { knowledgeBaseId: id }, { timeout: 60000 })
+      .then(res => res as unknown as KnowledgeGraphBuildResponse),
 
   getGraph: (id: string) =>
     api.get<KnowledgeGraphProposal>(`/knowledge-bases/${id}/graph`).then(res => res as unknown as KnowledgeGraphProposal),
 
   saveGraph: (id: string, payload: Pick<KnowledgeGraphProposal, 'nodes' | 'edges'>) =>
     api.put<KnowledgeGraphProposal>(`/knowledge-bases/${id}/graph`, payload).then(res => res as unknown as KnowledgeGraphProposal),
+
+  getNodeEvidence: (id: string, nodeId: string) =>
+    api.get<KnowledgeGraphEvidenceResult>(`/knowledge-bases/${id}/graph/nodes/${encodeURIComponent(nodeId)}/evidence`)
+      .then(res => res as unknown as KnowledgeGraphEvidenceResult),
+
+  getEdgeEvidence: (id: string, edgeId: string) =>
+    api.get<KnowledgeGraphEvidenceResult>(`/knowledge-bases/${id}/graph/edges/${encodeURIComponent(edgeId)}/evidence`)
+      .then(res => res as unknown as KnowledgeGraphEvidenceResult),
 }

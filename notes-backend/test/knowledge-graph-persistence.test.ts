@@ -1,13 +1,18 @@
 import assert = require('node:assert/strict')
 import { test } from 'node:test'
-import { Types } from 'mongoose'
+import { model, Types } from 'mongoose'
 import { KnowledgeBasesService } from '../src/modules/knowledge-bases/knowledge-bases.service'
+import { KnowledgeGraphEdgeSchema } from '../src/modules/knowledge-bases/schemas/knowledge-graph-edge.schema'
 
 const userId = '507f1f77bcf86cd799439012'
 const kbId = '507f1f77bcf86cd799439013'
 const noteOneId = '507f1f77bcf86cd799439014'
 const noteTwoId = '507f1f77bcf86cd799439015'
 const outsideNoteId = '507f1f77bcf86cd799439016'
+const noteOneChunkId = '507f1f77bcf86cd799439021'
+const noteTwoChunkId = '507f1f77bcf86cd799439022'
+const outsideChunkId = '507f1f77bcf86cd799439023'
+const KnowledgeGraphEdgeHydrationModel = model('KnowledgeGraphEdgeHydrationTest', KnowledgeGraphEdgeSchema)
 
 function execResult<T>(value: T) {
   return { exec: async () => value }
@@ -19,6 +24,23 @@ function doc(value: any) {
     toObject: () => value,
   }
 }
+
+test('KnowledgeGraphEdgeSchema hydrates a missing relation with the Chinese fallback', () => {
+  const base = {
+    knowledgeBaseId: new Types.ObjectId(kbId),
+    userId: new Types.ObjectId(userId),
+    edgeId: 'edge-a',
+    source: 'node-a',
+    target: 'node-b',
+    noteIds: [new Types.ObjectId(noteOneId)],
+  }
+
+  const missingRelation = KnowledgeGraphEdgeHydrationModel.hydrate(base)
+  const existingEnglishRelation = KnowledgeGraphEdgeHydrationModel.hydrate({ ...base, edgeId: 'edge-b', relation: 'supports' })
+
+  assert.equal(missingRelation.relation, '相关')
+  assert.equal(existingEnglishRelation.relation, 'supports')
+})
 
 test('KnowledgeBasesService replaces a graph inside one user-owned knowledge base boundary', async () => {
   const deletes: any[] = []
@@ -44,9 +66,15 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
       }
     },
   }
-  const noteModel = {}
+  const noteModel = {
+    find: () => ({ select: () => execResult([
+      doc({ _id: new Types.ObjectId(noteOneId) }),
+      doc({ _id: new Types.ObjectId(noteTwoId) }),
+    ]) }),
+  }
   const noteAccess = {
     objectId: (id: string) => new Types.ObjectId(id),
+    readableNotesQuery: (noteIds: Types.ObjectId[]) => ({ _id: { $in: noteIds } }),
   }
   const graphNodeModel = {
     deleteMany: (query: any) => {
@@ -68,6 +96,12 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
       return rows.map((row) => doc({ _id: new Types.ObjectId(), ...row }))
     },
   }
+  const noteChunkModel = {
+    find: () => ({ select: () => execResult([
+      doc({ _id: new Types.ObjectId(noteOneChunkId), noteId: new Types.ObjectId(noteOneId), userId: new Types.ObjectId(userId) }),
+      doc({ _id: new Types.ObjectId(noteTwoChunkId), noteId: new Types.ObjectId(noteTwoId), userId: new Types.ObjectId(userId) }),
+    ]) }),
+  }
   const service = new KnowledgeBasesService(
     kbModel as any,
     linkModel as any,
@@ -75,16 +109,18 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
     noteAccess as any,
     graphNodeModel as any,
     graphEdgeModel as any,
+    undefined,
+    noteChunkModel as any,
   )
 
   const saved = await service.replaceGraph(kbId, {
     nodes: [
-      { id: 'node-a', label: 'Attention', type: 'concept', confidence: 0.9, noteIds: [noteOneId, outsideNoteId] },
-      { id: 'node-b', label: 'Graphs', type: 'topic', confidence: 0.8, noteIds: [noteTwoId] },
+      { id: 'node-a', label: 'Attention', type: 'concept', confidence: 0.9, noteIds: [noteOneId, outsideNoteId], evidenceChunkIds: [noteOneChunkId, noteTwoChunkId, outsideChunkId, 'bad-id', noteOneChunkId] },
+      { id: 'node-b', label: 'Graphs', type: 'topic', confidence: 0.8, noteIds: [noteTwoId], evidenceChunkIds: [noteTwoChunkId] },
       { id: 'node-outside', label: 'Outside', type: 'entity', confidence: 0.7, noteIds: [outsideNoteId] },
     ],
     edges: [
-      { id: 'edge-a', source: 'node-a', target: 'node-b', relation: 'supports', weight: 0.6, noteIds: [noteOneId, outsideNoteId] },
+      { id: 'edge-a', source: 'node-a', target: 'node-b', relation: '', weight: 0.6, noteIds: [noteOneId, outsideNoteId], evidenceChunkIds: [noteOneChunkId, noteTwoChunkId, outsideChunkId] },
       { id: 'edge-outside', source: 'node-a', target: 'node-outside', relation: 'leaks', weight: 0.6, noteIds: [outsideNoteId] },
     ],
   }, userId)
@@ -98,9 +134,12 @@ test('KnowledgeBasesService replaces a graph inside one user-owned knowledge bas
   assert.equal(inserts[0].collection, 'nodes')
   assert.equal(inserts[0].rows.length, 2)
   assert.deepEqual(inserts[0].rows[0].noteIds.map(String), [noteOneId])
+  assert.deepEqual(inserts[0].rows[0].evidenceChunkIds.map(String), [noteOneChunkId])
   assert.equal(inserts[1].collection, 'edges')
   assert.equal(inserts[1].rows.length, 1)
   assert.deepEqual(inserts[1].rows[0].noteIds.map(String), [noteOneId])
+  assert.deepEqual(inserts[1].rows[0].evidenceChunkIds.map(String), [noteOneChunkId, noteTwoChunkId])
+  assert.equal(inserts[1].rows[0].relation, '相关')
   assert.equal(saved.nodes.length, 2)
   assert.equal(saved.edges.length, 1)
 })
@@ -170,6 +209,7 @@ test('KnowledgeBasesService reads a graph scoped by knowledge base and user', as
   assert.equal(graph.nodes[0].id, 'node-a')
   assert.equal(graph.edges[0].source, 'node-a')
   assert.deepEqual(graph.edges[0].noteIds, [noteOneId])
+  assert.deepEqual(graph.nodes[0].evidenceChunkIds, [])
 })
 
 test('KnowledgeBasesService.replaceGraph preserves the old graph when the transaction fails', async () => {
@@ -211,8 +251,8 @@ test('KnowledgeBasesService.replaceGraph preserves the old graph when the transa
   const service = new KnowledgeBasesService(
     kbModel as any,
     linkModel as any,
-    {} as any,
-    { objectId: (id: string) => new Types.ObjectId(id) } as any,
+    { find: () => ({ select: () => execResult([doc({ _id: new Types.ObjectId(noteOneId) })]) }) } as any,
+    { objectId: (id: string) => new Types.ObjectId(id), readableNotesQuery: (noteIds: Types.ObjectId[]) => ({ _id: { $in: noteIds } }) } as any,
     graphNodeModel as any,
     graphEdgeModel as any,
   )

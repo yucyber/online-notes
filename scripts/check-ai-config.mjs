@@ -15,29 +15,32 @@ const envFiles = [
 ]
 
 const required = [
-  { key: 'SENSENOVA_API_KEY', purpose: 'SenseNova gateway key for DeepSeek model' },
-  { key: 'SENSENOVA_BASE_URL', purpose: 'SenseNova OpenAI-compatible base URL' },
-  { key: 'SENSENOVA_TEXT_MODEL', purpose: 'SenseNova text model, e.g. deepseek-v4-flash' },
   { key: 'SILICONFLOW_API_KEY', purpose: 'SiliconFlow key for Qwen embedding/reranker' },
   { key: 'SILICONFLOW_BASE_URL', purpose: 'SiliconFlow OpenAI-compatible base URL' },
+  { key: 'SILICONFLOW_ECONOMY_TEXT_MODEL', purpose: 'Economy task model' },
+  { key: 'SILICONFLOW_STANDARD_TEXT_MODEL', purpose: 'Standard task model' },
+  { key: 'SILICONFLOW_DEEP_REASONING_MODEL', purpose: 'Deep reasoning task model' },
   { key: 'SILICONFLOW_EMBEDDING_MODEL', purpose: 'SiliconFlow embedding model, e.g. Qwen/Qwen3-Embedding-8B' },
   { key: 'SILICONFLOW_RERANKER_MODEL', purpose: 'SiliconFlow reranker model, e.g. Qwen/Qwen3-Reranker-8B' },
+  { key: 'BAI_API_KEY', purpose: 'B.AI cross-provider fallback key' },
+  { key: 'BAI_BASE_URL', purpose: 'B.AI OpenAI-compatible base URL' },
+  { key: 'BAI_FALLBACK_MODEL', purpose: 'B.AI provider fallback model' },
   { key: 'AI_TEXT_PROVIDER', purpose: 'Default fast text provider route' },
   { key: 'AI_REASONING_PROVIDER', purpose: 'Default reasoning/long-context provider route' },
   { key: 'AI_EMBEDDING_PROVIDER', purpose: 'Default embedding provider route' },
 ]
 
 const optional = [
-  { key: 'MIMO_API_KEY', purpose: 'Optional MiMo provider key' },
-  { key: 'MIMO_BASE_URL', purpose: 'Optional MiMo OpenAI-compatible base URL' },
-  { key: 'MIMO_MODEL', purpose: 'Optional MiMo model' },
+  { key: 'AR_API_KEY', purpose: 'Optional AgentRouter expert quality model key' },
+  { key: 'AR_BASE_URL', purpose: 'Optional AgentRouter OpenAI-compatible base URL' },
+  { key: 'AR_MODEL', purpose: 'Optional expert quality model; currently claude-opus-4-8' },
   { key: 'SILICONFLOW_RERANKER_PATH', purpose: 'Optional SiliconFlow reranker endpoint path; defaults to /rerank' },
   { key: 'AI_RERANKER_PROVIDER', purpose: 'Default reranker provider route' },
 ]
 
 const frontendSecretPrefixes = [
-  'MIMO_',
-  'SENSENOVA_',
+  'AR_',
+  'BAI_',
   'SILICONFLOW_',
   'MODELARK_',
   'COZE_',
@@ -146,15 +149,15 @@ function validateLocalConfig(merged, byFile) {
     })
   }
 
-  for (const key of ['MIMO_BASE_URL', 'SENSENOVA_BASE_URL', 'SILICONFLOW_BASE_URL']) {
+  for (const key of ['AR_BASE_URL', 'BAI_BASE_URL', 'SILICONFLOW_BASE_URL']) {
     if (merged[key] && !isPlaceholder(merged[key]) && !isHttpUrl(merged[key])) {
       warnings.push(`${key} should be an http(s) base URL.`)
     }
   }
 
   const providerExpectations = {
-    AI_TEXT_PROVIDER: ['sensenova', 'mimo'],
-    AI_REASONING_PROVIDER: ['mimo', 'sensenova'],
+    AI_TEXT_PROVIDER: ['siliconflow'],
+    AI_REASONING_PROVIDER: ['siliconflow'],
     AI_EMBEDDING_PROVIDER: ['siliconflow'],
     AI_RERANKER_PROVIDER: ['siliconflow'],
   }
@@ -186,7 +189,7 @@ async function readProviderError(response) {
   }
 }
 
-async function postJson(url, apiKey, body) {
+async function postJson(url, apiKey, body, extraHeaders = {}) {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), 30000)
   try {
@@ -195,6 +198,7 @@ async function postJson(url, apiKey, body) {
       headers: {
         Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
+        ...extraHeaders,
       },
       body: JSON.stringify(body),
       signal: controller.signal,
@@ -272,7 +276,7 @@ async function checkModelCatalog({ name, baseUrl, apiKey, models }) {
   }
 }
 
-async function checkOpenAiChat({ name, baseUrl, apiKey, model }) {
+async function checkOpenAiChat({ name, baseUrl, apiKey, model, headers }) {
   if (!configured(baseUrl) || !configured(apiKey) || !configured(model)) {
     return { name, skipped: true, reason: 'base URL, API key, or model is missing' }
   }
@@ -282,7 +286,7 @@ async function checkOpenAiChat({ name, baseUrl, apiKey, model }) {
     messages: [{ role: 'user', content: 'Hello. Reply with OK.' }],
     max_tokens: 64,
     temperature: 0,
-  })
+  }, headers)
 
   if (!response.ok) {
     return { name, ok: false, status: response.status, error: await readProviderError(response) }
@@ -373,10 +377,23 @@ async function main() {
 
   const checks = [
     await checkOpenAiChat({
-      name: 'SenseNova DeepSeek chat',
-      baseUrl: merged.SENSENOVA_BASE_URL,
-      apiKey: merged.SENSENOVA_API_KEY,
-      model: merged.SENSENOVA_TEXT_MODEL,
+      name: 'SiliconFlow standard text chat',
+      baseUrl: merged.SILICONFLOW_BASE_URL,
+      apiKey: merged.SILICONFLOW_API_KEY,
+      model: merged.SILICONFLOW_STANDARD_TEXT_MODEL,
+    }),
+    await checkOpenAiChat({
+      name: 'SiliconFlow deep reasoning chat',
+      baseUrl: merged.SILICONFLOW_BASE_URL,
+      apiKey: merged.SILICONFLOW_API_KEY,
+      model: merged.SILICONFLOW_DEEP_REASONING_MODEL,
+    }),
+    await checkOpenAiChat({
+      name: 'AgentRouter Claude Opus expert quality target',
+      baseUrl: merged.AR_BASE_URL,
+      apiKey: merged.AR_API_KEY,
+      model: merged.AR_MODEL,
+      headers: { 'User-Agent': 'claude-cli/2.1.75 (external, cli)' },
     }),
     await checkModelCatalog({
       name: 'SiliconFlow model catalog',

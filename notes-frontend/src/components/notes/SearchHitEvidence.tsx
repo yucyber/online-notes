@@ -40,7 +40,7 @@ export function SearchHitEvidence({
           <strong>{path}</strong>
           <span>{hit.matchType === 'semantic' ? '语义相关' : '关键词命中'}</span>
         </div>
-        <p title={hit.content}>
+        <p>
           {hit.matchType === 'keyword'
             ? <HighlightedText text={hit.content} query={query} />
             : hit.content}

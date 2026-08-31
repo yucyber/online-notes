@@ -2,6 +2,7 @@ import assert = require('node:assert/strict')
 import { test } from 'node:test'
 import {
   clampUnitInterval,
+  normalizeKnowledgeGraphRelation,
   normalizeKnowledgeGraphNodeType,
   normalizeKnowledgeGraphNoteIds,
   resolveKnowledgeGraphEdgeNoteIds,
@@ -14,6 +15,11 @@ test('normalizeKnowledgeGraphNodeType maps unknown values to concept', () => {
   assert.equal(normalizeKnowledgeGraphNodeType('claim'), 'claim')
   assert.equal(normalizeKnowledgeGraphNodeType('other'), 'concept')
   assert.equal(normalizeKnowledgeGraphNodeType(null), 'concept')
+})
+
+test('normalizeKnowledgeGraphRelation uses the Chinese fallback for missing values', () => {
+  assert.equal(normalizeKnowledgeGraphRelation(undefined), '相关')
+  assert.equal(normalizeKnowledgeGraphRelation('  支持  '), '支持')
 })
 
 test('normalizeKnowledgeGraphNoteIds keeps only allowed unique ids', () => {

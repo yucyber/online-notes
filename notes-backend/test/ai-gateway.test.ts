@@ -15,25 +15,224 @@ class FakeConfigService {
 
 function createConfig(overrides: Record<string, string | undefined> = {}) {
   return new FakeConfigService({
-    AI_TEXT_PROVIDER: 'sensenova',
-    AI_REASONING_PROVIDER: 'mimo',
+    AI_TEXT_PROVIDER: 'siliconflow',
+    AI_REASONING_PROVIDER: 'siliconflow',
     AI_EMBEDDING_PROVIDER: 'siliconflow',
     AI_RERANKER_PROVIDER: 'siliconflow',
-    MIMO_API_KEY: 'mimo-secret',
-    MIMO_BASE_URL: 'https://mimo.example/v1',
-    MIMO_MODEL: 'mimo-v2.5-pro',
-    SENSENOVA_API_KEY: 'sensenova-secret',
-    SENSENOVA_BASE_URL: 'https://sensenova.example/v1',
-    SENSENOVA_TEXT_MODEL: 'sensenova-6.8-flash-lite',
-    SENSENOVA_REASONING_MODEL: 'deepseek-v4-flash',
+    AI_TASK_ROUTING_ENABLED: 'false',
     SILICONFLOW_API_KEY: 'siliconflow-secret',
     SILICONFLOW_BASE_URL: 'https://api.siliconflow.cn/v1',
+    SILICONFLOW_ECONOMY_TEXT_MODEL: 'Qwen/Qwen3.5-4B',
+    SILICONFLOW_STANDARD_TEXT_MODEL: 'Qwen/Qwen3-14B',
+    SILICONFLOW_DEEP_REASONING_MODEL: 'deepseek-ai/DeepSeek-V4-Flash',
     SILICONFLOW_EMBEDDING_MODEL: 'Qwen/Qwen3-Embedding-8B',
     SILICONFLOW_RERANKER_MODEL: 'Qwen/Qwen3-Reranker-8B',
     SILICONFLOW_RERANKER_PATH: '/rerank',
+    BAI_API_KEY: 'bai-secret',
+    BAI_BASE_URL: 'https://api.b.ai/v1',
+    BAI_FALLBACK_MODEL: 'deepseek-v4-flash',
+    AR_API_KEY: 'ar-secret',
+    AR_BASE_URL: 'https://ps.air-outer.com/v1',
+    AR_MODEL: 'claude-opus-4-8',
     ...overrides,
   })
 }
+
+test('AiGatewayClient describes task routes from the explicit model policy', () => {
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, (async () => jsonResponse({})) as any)
+
+  assert.deepEqual(client.describeTaskRoute('topic_name'), {
+    provider: 'siliconflow',
+    model: 'Qwen/Qwen3.5-4B',
+  })
+  assert.deepEqual(client.describeTaskRoute('knowledge_graph'), {
+    provider: 'siliconflow',
+    model: 'Qwen/Qwen3-14B',
+  })
+  assert.deepEqual(client.describeTaskRoute('conflict_analysis'), {
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+  })
+  assert.deepEqual(client.describeQualityFallbackRoute('conflict_analysis'), {
+    provider: 'ar',
+    model: 'claude-opus-4-8',
+  })
+})
+
+test('AiGatewayClient falls back to legacy text and reasoning routes when task routing is disabled', () => {
+  const client = new AiGatewayClient(createConfig() as any, (async () => jsonResponse({})) as any)
+
+  assert.deepEqual(client.describeTaskRoute('topic_name'), {
+    provider: 'siliconflow',
+    model: 'Qwen/Qwen3-14B',
+  })
+  assert.deepEqual(client.describeTaskRoute('mermaid'), {
+    provider: 'siliconflow',
+    model: 'deepseek-ai/DeepSeek-V4-Flash',
+  })
+  assert.equal(client.describeQualityFallbackRoute('conflict_analysis'), undefined)
+})
+
+test('AiGatewayClient uses provider fallback only for transient provider failure', async () => {
+  const calls: Array<{ url: string; body: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    const call = { url: String(url), body: JSON.parse(init.body) }
+    calls.push(call)
+    if (call.url.startsWith('https://api.siliconflow.cn/')) {
+      return jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '0' })
+    }
+    return jsonResponse({ choices: [{ message: { content: 'fallback answer' }, finish_reason: 'stop' }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chatTask({ task: 'writer', prompt: 'write' })
+
+  assert.equal(result.content, 'fallback answer')
+  assert.equal(result.attempt.fallbackUsed, true)
+  assert.equal(result.attempt.fallbackType, 'provider')
+  assert.equal(result.attempt.fallbackReason, 'rate_limited')
+  assert.equal(result.attempt.provider, 'bai')
+  assert.equal(calls.filter(call => call.url.startsWith('https://api.b.ai/')).length, 1)
+})
+
+test('provider fallback 按实际目标 provider 重新预约容量', async () => {
+  const reserved: string[] = []
+  const capacity = {
+    estimateTokens: () => 100,
+    reserve: async (provider: string) => {
+      reserved.push(provider)
+      return { provider, granted: true, retryAfterMs: 0, reservedTokens: 100, activeKey: provider }
+    },
+    reconcile: async () => undefined,
+    release: async () => undefined,
+  }
+  const fetchImpl = async (url: any) => String(url).startsWith('https://api.siliconflow.cn/')
+    ? jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '0' })
+    : jsonResponse({ choices: [{ message: { content: 'fallback answer' } }] })
+  const client = new AiGatewayClient(
+    createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any,
+    fetchImpl as any,
+    undefined,
+    capacity as any,
+  )
+
+  await client.chatTask({ task: 'writer', prompt: 'write' })
+
+  assert.deepEqual(reserved, ['siliconflow', 'siliconflow', 'siliconflow', 'bai'])
+})
+
+test('AiGatewayClient uses quality fallback for invalid structured output without chaining provider fallback', async () => {
+  const calls: Array<{ url: string; body: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    const call = { url: String(url), body: JSON.parse(init.body) }
+    calls.push(call)
+    if (call.body.model === 'Qwen/Qwen3-14B') {
+      return jsonResponse({ choices: [{ message: { content: '{"nodes":{}}' } }] })
+    }
+    if (call.body.model === 'deepseek-ai/DeepSeek-V4-Flash') {
+      return jsonResponse({ choices: [{ message: { content: '{"nodes":[],"edges":[]}' } }] })
+    }
+    throw new Error('provider fallback must not be reached')
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chatTask({ task: 'knowledge_graph', prompt: 'extract' })
+
+  assert.equal(result.content, '{"nodes":[],"edges":[]}')
+  assert.equal(result.attempt.fallbackType, 'quality')
+  assert.equal(result.attempt.fallbackReason, 'invalid_output')
+  assert.equal(result.attempt.provider, 'siliconflow')
+  assert.equal(calls.some(call => call.url.startsWith('https://api.b.ai/')), false)
+})
+
+test('AiGatewayClient never starts a second fallback after quality fallback fails', async () => {
+  const calls: Array<{ url: string; body: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    const call = { url: String(url), body: JSON.parse(init.body) }
+    calls.push(call)
+    if (call.body.model === 'Qwen/Qwen3-14B') {
+      return jsonResponse({ choices: [{ message: { content: '{"nodes":{}}' } }] })
+    }
+    return jsonResponse({ error: { message: 'deep unavailable' } }, 503, { 'Retry-After': '0' })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  await assert.rejects(() => client.chatTask({ task: 'knowledge_graph', prompt: 'extract' }))
+
+  assert.equal(calls.some(call => call.url.startsWith('https://api.b.ai/')), false)
+})
+
+test('AiGatewayClient routes expert quality fallback to AgentRouter with a safe budget', async () => {
+  const calls: Array<{ url: string; body: any; headers: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    const call = { url: String(url), body: JSON.parse(init.body), headers: init.headers }
+    calls.push(call)
+    if (call.url.startsWith('https://api.siliconflow.cn/')) {
+      return jsonResponse({ choices: [{ message: { content: '{"actions":[{"type":"unknown"}]}' } }] })
+    }
+    return jsonResponse({ choices: [{ message: { content: '{"actions":[]}' } }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chatTask({ task: 'destructive_reorganization', prompt: 'organize' })
+
+  assert.equal(result.attempt.provider, 'ar')
+  const expert = calls.at(-1)!
+  assert.equal(expert.body.model, 'claude-opus-4-8')
+  assert.ok(expert.body.max_tokens >= 4096)
+  assert.equal(expert.headers['User-Agent'], 'claude-cli/2.1.75 (external, cli)')
+  assert.equal(expert.body.enable_thinking, undefined)
+  assert.equal(expert.body.reasoning_effort, undefined)
+})
+
+test('AiGatewayClient may use provider fallback before the first stream content chunk', async () => {
+  let calls = 0
+  const encoder = new TextEncoder()
+  const fetchImpl = async () => {
+    calls += 1
+    if (calls === 1) {
+      return streamResponse(new ReadableStream({ start(controller) { controller.error(new Error('upstream reset')) } }))
+    }
+    return streamResponse(new ReadableStream({
+      start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"fallback"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    }))
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const stream = await client.streamTask({ task: 'pet_chat', prompt: 'hello' })
+
+  assert.equal(await readTextStream(stream), 'fallback')
+  assert.equal(calls, 2)
+})
+
+test('AiGatewayClient never appends fallback output after stream content starts', async () => {
+  let calls = 0
+  const encoder = new TextEncoder()
+  const fetchImpl = async () => {
+    calls += 1
+    let pulled = false
+    return streamResponse(new ReadableStream({
+      pull(controller) {
+        if (!pulled) {
+          pulled = true
+          controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"partial"}}]}\n\n'))
+          return
+        }
+        controller.error(new Error('upstream reset'))
+      },
+    }))
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const stream = await client.streamTask({ task: 'pet_chat', prompt: 'hello' })
+
+  await assert.rejects(() => readTextStream(stream), /upstream reset/)
+  assert.equal(calls, 1)
+})
 
 function jsonResponse(body: any, status = 200, headers: Record<string, string> = {}) {
   return new Response(JSON.stringify(body), {
@@ -42,27 +241,42 @@ function jsonResponse(body: any, status = 200, headers: Record<string, string> =
   })
 }
 
-test('AiGatewayClient routes text chat to SenseNova by default', async () => {
+function streamResponse(body: ReadableStream<Uint8Array>) {
+  return new Response(body, { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
+}
+
+async function readTextStream(stream: ReadableStream<Uint8Array>): Promise<string> {
+  const reader = stream.getReader()
+  const decoder = new TextDecoder()
+  let text = ''
+  while (true) {
+    const { value, done } = await reader.read()
+    if (done) return text
+    text += decoder.decode(value, { stream: true })
+  }
+}
+
+test('AiGatewayClient routes text chat to SiliconFlow standard model by default', async () => {
   const calls: Array<{ url: string; body: any; headers: any }> = []
   const fetchImpl = async (url: any, init: any) => {
     calls.push({ url: String(url), body: JSON.parse(init.body), headers: init.headers })
-    return jsonResponse({ choices: [{ message: { content: 'OK from SenseNova' } }] })
+    return jsonResponse({ choices: [{ message: { content: 'OK from SiliconFlow' } }] })
   }
   const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
 
   const result = await client.chat({ route: 'text', prompt: 'hello', maxTokens: 16 })
 
-  assert.equal(result, 'OK from SenseNova')
-  assert.equal(calls[0].url, 'https://sensenova.example/v1/chat/completions')
-  assert.equal(calls[0].body.model, 'sensenova-6.8-flash-lite')
-  assert.equal(calls[0].headers.Authorization, 'Bearer sensenova-secret')
+  assert.equal(result, 'OK from SiliconFlow')
+  assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'Qwen/Qwen3-14B')
+  assert.equal(calls[0].headers.Authorization, 'Bearer siliconflow-secret')
 })
 
-test('AiGatewayClient routes reasoning chat to SenseNova by default', async () => {
+test('AiGatewayClient routes reasoning chat to SiliconFlow deep model by default', async () => {
   const calls: Array<{ url: string; body: any }> = []
   const fetchImpl = async (url: any, init: any) => {
     calls.push({ url: String(url), body: JSON.parse(init.body) })
-    return jsonResponse({ choices: [{ message: { content: 'OK from SenseNova reasoning' } }] })
+    return jsonResponse({ choices: [{ message: { content: 'OK from SiliconFlow reasoning' } }] })
   }
   const client = new AiGatewayClient(
     createConfig({ AI_REASONING_PROVIDER: undefined }) as any,
@@ -71,22 +285,93 @@ test('AiGatewayClient routes reasoning chat to SenseNova by default', async () =
 
   const result = await client.chat({ route: 'reasoning', prompt: 'think', maxTokens: 16 })
 
-  assert.equal(result, 'OK from SenseNova reasoning')
-  assert.equal(calls[0].url, 'https://sensenova.example/v1/chat/completions')
-  assert.equal(calls[0].body.model, 'deepseek-v4-flash')
+  assert.equal(result, 'OK from SiliconFlow reasoning')
+  assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'deepseek-ai/DeepSeek-V4-Flash')
 })
 
-test('AiGatewayClient forwards explicit reasoning and JSON output options to supporting providers', async () => {
+test('AiGatewayClient routes note summaries to SiliconFlow standard model when task routing is enabled', async () => {
+  const calls: Array<{ url: string; body: any; headers: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    calls.push({ url: String(url), body: JSON.parse(init.body), headers: init.headers })
+    return jsonResponse({ choices: [{ message: { content: '摘要正文' } }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chat({
+    task: 'note_summary',
+    route: 'text',
+    prompt: 'summarize',
+    reasoningEffort: 'none',
+  })
+
+  assert.equal(result, '摘要正文')
+  assert.equal(calls[0].url, 'https://api.siliconflow.cn/v1/chat/completions')
+  assert.equal(calls[0].body.model, 'Qwen/Qwen3-14B')
+  assert.equal(calls[0].body.enable_thinking, false)
+  assert.equal(calls[0].body.reasoning_effort, undefined)
+  assert.equal(calls[0].headers.Authorization, 'Bearer siliconflow-secret')
+})
+
+test('AiGatewayClient falls back to B.AI when SiliconFlow summary route remains rate limited', async () => {
+  const calls: Array<{ url: string; body: any; headers: any }> = []
+  const fetchImpl = async (url: any, init: any) => {
+    const call = { url: String(url), body: JSON.parse(init.body), headers: init.headers }
+    calls.push(call)
+    if (call.url.startsWith('https://api.siliconflow.cn/')) {
+      return jsonResponse({ error: { message: 'rate limited' } }, 429, { 'Retry-After': '0' })
+    }
+    return jsonResponse({ choices: [{ message: { content: 'B.AI 摘要' }, finish_reason: 'stop' }] })
+  }
+  const client = new AiGatewayClient(createConfig({ AI_TASK_ROUTING_ENABLED: 'true' }) as any, fetchImpl as any)
+
+  const result = await client.chat({
+    task: 'note_summary',
+    route: 'text',
+    prompt: 'summarize',
+    reasoningEffort: 'none',
+  })
+
+  assert.equal(result, 'B.AI 摘要')
+  assert.equal(calls.filter((call) => call.url.startsWith('https://api.siliconflow.cn/')).length, 3)
+  const fallback = calls.at(-1)!
+  assert.equal(fallback.url, 'https://api.b.ai/v1/chat/completions')
+  assert.equal(fallback.body.model, 'deepseek-v4-flash')
+  assert.equal(fallback.body.reasoning_effort, undefined)
+  assert.equal(fallback.headers.Authorization, 'Bearer bai-secret')
+})
+
+test('AiGatewayClient rejects removed mimo provider configuration', async () => {
+  const client = new AiGatewayClient(
+    createConfig({ AI_TEXT_PROVIDER: 'mimo' }) as any,
+    (async () => jsonResponse({ choices: [{ message: { content: 'unused' } }] })) as any,
+  )
+
+  await assert.rejects(
+    () => client.chat({ route: 'text', prompt: 'hello' }),
+    /Unsupported text AI provider: mimo/,
+  )
+})
+
+test('AiGatewayClient rejects removed SenseNova provider configuration', async () => {
+  const client = new AiGatewayClient(
+    createConfig({ AI_TEXT_PROVIDER: 'sensenova' }) as any,
+    (async () => jsonResponse({ choices: [{ message: { content: 'unused' } }] })) as any,
+  )
+
+  await assert.rejects(
+    () => client.chat({ route: 'text', prompt: 'hello' }),
+    /Unsupported text AI provider: sensenova/,
+  )
+})
+
+test('AiGatewayClient forwards JSON output options to SiliconFlow deep model', async () => {
   const calls: Array<{ body: any }> = []
   const fetchImpl = async (_url: any, init: any) => {
     calls.push({ body: JSON.parse(init.body) })
     return jsonResponse({ choices: [{ message: { content: '{"nodes":[]}' } }] })
   }
-  // mimo 视为声明支持 reasoning_effort 的 provider，应透传该参数。
-  const client = new AiGatewayClient(
-    createConfig({ AI_REASONING_PROVIDER: 'mimo' }) as any,
-    fetchImpl as any,
-  )
+  const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
 
   await client.chat({
     route: 'reasoning',
@@ -95,11 +380,11 @@ test('AiGatewayClient forwards explicit reasoning and JSON output options to sup
     responseFormat: { type: 'json_object' },
   })
 
-  assert.equal(calls[0].body.reasoning_effort, 'low')
+  assert.equal(calls[0].body.reasoning_effort, undefined)
   assert.deepEqual(calls[0].body.response_format, { type: 'json_object' })
 })
 
-test('AiGatewayClient forwards explicit reasoning_effort to SenseNova', async () => {
+test('AiGatewayClient disables thinking for SiliconFlow Qwen text requests', async () => {
   const calls: Array<{ body: any }> = []
   const fetchImpl = async (_url: any, init: any) => {
     calls.push({ body: JSON.parse(init.body) })
@@ -113,7 +398,8 @@ test('AiGatewayClient forwards explicit reasoning_effort to SenseNova', async ()
     reasoningEffort: 'none',
   })
 
-  assert.equal(calls[0].body.reasoning_effort, 'none')
+  assert.equal(calls[0].body.enable_thinking, false)
+  assert.equal(calls[0].body.reasoning_effort, undefined)
 })
 
 test('AiGatewayClient retries once on length overflow with higher budget', async () => {
@@ -160,8 +446,8 @@ test('AiGatewayClient does not retry empty content when finish_reason is not len
 test('AiService keeps Pet chat lightweight and disables reasoning', async () => {
   const calls: any[] = []
   const gateway = {
-    describeChatRoute: () => ({ provider: 'sensenova', model: 'sensenova-6.8-flash-lite' }),
-    streamChat: async (options: any) => {
+    describeTaskRoute: () => ({ provider: 'siliconflow', model: 'Qwen/Qwen3.5-4B' }),
+    streamTask: async (options: any) => {
       calls.push(options)
       return new ReadableStream<Uint8Array>({ start(controller) { controller.close() } })
     },
@@ -170,22 +456,21 @@ test('AiService keeps Pet chat lightweight and disables reasoning', async () => 
 
   await service.chatPet({ message: '你好' }, { userId: 'user-1' })
 
-  assert.equal(calls[0].route, 'text')
-  assert.equal(calls[0].reasoningEffort, 'none')
+  assert.equal(calls[0].task, 'pet_chat')
   assert.equal(calls[0].maxTokens, 400)
 })
 
 test('AiGatewayClient reports missing config without leaking existing secrets', async () => {
   const client = new AiGatewayClient(
-    createConfig({ SENSENOVA_API_KEY: undefined }) as any,
+    createConfig({ SILICONFLOW_API_KEY: undefined }) as any,
     (async () => jsonResponse({})) as any,
   )
 
   await assert.rejects(
     () => client.chat({ route: 'text', prompt: 'hello' }),
     (error: any) => {
-      assert.match(error.message, /SENSENOVA_API_KEY/)
-      assert.doesNotMatch(error.message, /mimo-secret|siliconflow-secret|sensenova-secret/)
+      assert.match(error.message, /SILICONFLOW_API_KEY/)
+      assert.doesNotMatch(error.message, /siliconflow-secret|bai-secret/)
       return true
     },
   )
@@ -250,6 +535,26 @@ test('AiGatewayClient preserves 429 after transient retries are exhausted', asyn
     },
   )
   assert.equal(attempts, 3)
+})
+
+test('AiGatewayClient increases retry backoff for each provider attempt', async () => {
+  const delays: number[] = []
+  const fetchImpl = async () => jsonResponse(
+    { error: { message: 'temporarily unavailable' } },
+    503,
+  )
+  const client = new AiGatewayClient(createConfig() as any, fetchImpl as any)
+  const originalRandom = Math.random
+  Math.random = () => 0
+  ;(client as any).sleep = async (delayMs: number) => { delays.push(delayMs) }
+
+  try {
+    await assert.rejects(() => client.chat({ route: 'text', prompt: 'hello' }))
+  } finally {
+    Math.random = originalRandom
+  }
+
+  assert.deepEqual(delays, [500, 1000])
 })
 
 test('AiGatewayClient maps exhausted provider outages to a safe 503', async () => {
@@ -317,7 +622,7 @@ test('AiGatewayClient reranks with SiliconFlow rerank endpoint', async () => {
 
 test('AiService falls back to truncated summary when gateway fails', async () => {
   const gateway = {
-    chat: async () => {
+    chatTask: async () => {
       throw new Error('provider unavailable')
     },
   }
@@ -334,14 +639,14 @@ test('AiService splits long notes into segments before summarizing', async () =>
   let inFlight = 0
   let maxInFlight = 0
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       calls.push(options.prompt)
       optionsSeen.push(options)
       inFlight += 1
       maxInFlight = Math.max(maxInFlight, inFlight)
       await new Promise(resolve => setTimeout(resolve, 5))
       inFlight -= 1
-      return `seg:${options.prompt.length}`
+      return { content: `seg:${options.prompt.length}`, attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -357,14 +662,14 @@ test('AiService splits long notes into segments before summarizing', async () =>
   assert.match(result, /^seg:/)
   // 每个分段的 prompt 长度都不超过 1600 字分段上限加文案长度。
   calls.forEach((prompt) => assert.ok(prompt.length < 1800))
-  optionsSeen.forEach((options) => assert.equal(options.reasoningEffort, 'none'))
+  optionsSeen.forEach((options) => assert.equal(options.task, 'note_summary'))
   assert.equal(maxInFlight, 1)
 })
 
 test('AiService returns empty summary for empty content without calling gateway', async () => {
   let called = false
   const gateway = {
-    chat: async () => { called = true; return 'unexpected' },
+    chatTask: async () => { called = true; return { content: 'unexpected', attempt: {} } },
   }
   const service = new AiService(gateway as any, {} as any)
 
@@ -377,7 +682,7 @@ test('AiService returns empty summary for empty content without calling gateway'
 test('AiService skips AI for short content and returns it directly', async () => {
   let called = false
   const gateway = {
-    chat: async () => { called = true; return 'AI summary' },
+    chatTask: async () => { called = true; return { content: 'AI summary', attempt: {} } },
   }
   const service = new AiService(gateway as any, {} as any)
 
@@ -391,10 +696,10 @@ test('AiService uses dynamic target length for medium content (40% of length)', 
   const calls: string[] = []
   const optionsSeen: any[] = []
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       calls.push(options.prompt)
       optionsSeen.push(options)
-      return 'AI summary'
+      return { content: 'AI summary', attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -409,7 +714,7 @@ test('AiService uses dynamic target length for medium content (40% of length)', 
   assert.match(calls[0], /within 62 Chinese characters/)
   assert.equal(optionsSeen[0].maxTokens, 256)
   assert.equal(optionsSeen[0].temperature, 0.2)
-  assert.equal(optionsSeen[0].reasoningEffort, 'none')
+  assert.equal(optionsSeen[0].task, 'note_summary')
 })
 
 test('AiGatewayClient 为外部请求设置超时并重试瞬时网络错误', async () => {
@@ -433,9 +738,9 @@ test('AiGatewayClient 为外部请求设置超时并重试瞬时网络错误', a
 test('AiService caps summary target at 120 for long content', async () => {
   const calls: string[] = []
   const gateway = {
-    chat: async (options: any) => {
+    chatTask: async (options: any) => {
       calls.push(options.prompt)
-      return 'AI summary'
+      return { content: 'AI summary', attempt: {} }
     },
   }
   const service = new AiService(gateway as any, {} as any)
@@ -460,7 +765,7 @@ test('AiGatewayClient reads non-standard content fields from provider response',
 
 test('AiService returns cleaned topic names from the text provider', async () => {
   const gateway = {
-    chat: async () => '"Frontend Performance"',
+    chatTask: async () => ({ content: '"Frontend Performance"', attempt: {} }),
   }
   const service = new AiService(gateway as any, {} as any)
 
@@ -477,7 +782,7 @@ test('AiController forwards mindmap requests to AiService', async () => {
       return expected
     },
   }
-  const controller = new AiController(service as any)
+  const controller = new AiController(service as any, {} as any)
 
   const result = await controller.generateMindmap({ content: 'AI Gateway', scenario: 'generate' })
 

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { AiGatewayClient } from '../ai-gateway.client'
+import { AiWorkflowContext } from '../ai-gateway.types'
 
 export interface AggregateSummaryGraphOptions {
   maxChunkChars?: number
@@ -29,21 +30,21 @@ export class AggregateSummaryGraph {
     this.maxNoteChars = options.maxNoteChars || 2000
   }
 
-  async run(notes: any[]): Promise<string> {
+  async run(notes: any[], context?: AiWorkflowContext): Promise<string> {
     const prepared = this.prepareNotes(notes)
     if (prepared.length === 0) return ''
 
     const chunks = this.chunkNotes(prepared)
     if (chunks.length === 1) {
-      return this.normalizeSummary(await this.synthesizeNotes(chunks[0], prepared.length))
+      return this.normalizeSummary(await this.synthesizeNotes(chunks[0], prepared.length, context))
     }
 
     const partials: string[] = []
     for (let index = 0; index < chunks.length; index += 1) {
-      partials.push(this.normalizeSummary(await this.summarizeChunk(chunks[index], index, chunks.length)))
+      partials.push(this.normalizeSummary(await this.summarizeChunk(chunks[index], index, chunks.length, context)))
     }
 
-    return this.normalizeSummary(await this.synthesizePartials(partials, prepared.length))
+    return this.normalizeSummary(await this.synthesizePartials(partials, prepared.length, context))
   }
 
   private prepareNotes(notes: any[]): PreparedNote[] {
@@ -84,9 +85,9 @@ export class AggregateSummaryGraph {
     return chunks
   }
 
-  private summarizeChunk(chunk: PreparedNote[], index: number, total: number): Promise<string> {
-    return this.gateway.chat({
-      route: 'reasoning',
+  private summarizeChunk(chunk: PreparedNote[], index: number, total: number, context?: AiWorkflowContext): Promise<string> {
+    return this.gateway.chatTask({
+      task: 'aggregate_summary',
       system: 'You summarize subsets of selected notes for a later synthesis step.',
       prompt: [
         `Summarize this subset of selected notes (${index + 1}/${total}).`,
@@ -97,12 +98,13 @@ export class AggregateSummaryGraph {
       ].join('\n'),
       maxTokens: 1000,
       temperature: 0.25,
-    })
+      audit: { graphName: 'AggregateSummaryGraph', userId: context?.userId },
+    }).then(result => result.content)
   }
 
-  private synthesizeNotes(chunk: PreparedNote[], totalNotes: number): Promise<string> {
-    return this.gateway.chat({
-      route: 'reasoning',
+  private synthesizeNotes(chunk: PreparedNote[], totalNotes: number, context?: AiWorkflowContext): Promise<string> {
+    return this.gateway.chatTask({
+      task: 'aggregate_summary',
       system: 'You write concise synthesis summaries for selected notes.',
       prompt: [
         `Create a structured Chinese summary for these ${totalNotes} selected notes.`,
@@ -113,12 +115,13 @@ export class AggregateSummaryGraph {
       ].join('\n'),
       maxTokens: 1600,
       temperature: 0.3,
-    })
+      audit: { graphName: 'AggregateSummaryGraph', userId: context?.userId },
+    }).then(result => result.content)
   }
 
-  private synthesizePartials(partials: string[], totalNotes: number): Promise<string> {
-    return this.gateway.chat({
-      route: 'reasoning',
+  private synthesizePartials(partials: string[], totalNotes: number, context?: AiWorkflowContext): Promise<string> {
+    return this.gateway.chatTask({
+      task: 'aggregate_summary',
       system: 'You synthesize partial summaries into one final note summary.',
       prompt: [
         `Create one structured Chinese summary for ${totalNotes} selected notes based on these partial summaries.`,
@@ -130,7 +133,8 @@ export class AggregateSummaryGraph {
       ].join('\n'),
       maxTokens: 1800,
       temperature: 0.25,
-    })
+      audit: { graphName: 'AggregateSummaryGraph', userId: context?.userId },
+    }).then(result => result.content)
   }
 
   private formatChunk(chunk: PreparedNote[]): string {

@@ -1,7 +1,8 @@
 import { BadRequestException, Injectable, Logger, Optional } from '@nestjs/common'
 import { AiGatewayClient } from './ai-gateway.client'
-import { AiChatRoute, AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
+import { AiMermaidInput, AiMindmapInput, AiPetInput, AiWorkflowContext, AiWriterInput } from './ai-gateway.types'
 import { AiRunService } from './ai-run.service'
+import { AiRunMetrics, AiRunStage, AiRunTiming } from './ai-run-timing'
 import { AggregateSummaryGraph } from './graphs/aggregate-summary.graph'
 import { KnowledgeGraphBuildGraph } from './graphs/knowledge-graph-build.graph'
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service'
@@ -73,16 +74,15 @@ export class AiService {
 
   // 单个 AI 摘要调用，失败时抛出由外层统一降级，这里不吞异常。
   private async summarizeChunk(text: string, targetChars: number): Promise<string> {
-    return this.gateway.chat({
-      route: 'text',
+    return (await this.gateway.chatTask({
+      task: 'note_summary',
       system: 'You summarize notes for a knowledge management app. Return only the summary.',
       prompt: `Summarize the following note in Chinese within ${targetChars} Chinese characters. Keep the core facts and avoid prefaces.\n\n${text}`,
       // 摘要目标最多 120 个汉字，限制声明预算可避免 provider 按过大的输出上限拒绝请求。
       maxTokens: 256,
       temperature: 0.2,
-      reasoningEffort: 'none',
       retryOnLengthOverflow: true,
-    })
+    })).content
   }
 
   // 按句子边界尽量切成长度接近但不超过 limit 的分段；避免从句子中间硬切导致摘要信息丢失。
@@ -103,7 +103,7 @@ export class AiService {
   async generateAggregateSummary(notes: any[], context?: AiWorkflowContext): Promise<{ summary: string }> {
     if (!Array.isArray(notes) || notes.length === 0) return { summary: '' }
     const graph = this.aggregateSummaryGraph || new AggregateSummaryGraph(this.gateway)
-    return { summary: await this.withAiRun({ graphName: 'AggregateSummaryGraph', route: 'reasoning', context }, () => graph.run(notes)) }
+    return { summary: await graph.run(notes, context) }
   }
 
   async buildKnowledgeGraphProposal(knowledgeBaseId: string, context?: AiWorkflowContext) {
@@ -113,41 +113,108 @@ export class AiService {
     if (!userId) throw new BadRequestException('Authenticated user is required.')
     if (!this.knowledgeBases) throw new Error('Knowledge base service is not available.')
     const graph = this.knowledgeGraphBuildGraph || new KnowledgeGraphBuildGraph(this.gateway)
-    const notes = await this.knowledgeBases.listGraphNotes(id, userId)
-    return this.withAiRun({ graphName: 'KnowledgeGraphBuildGraph', route: 'text', context }, () => graph.run({ knowledgeBaseId: id, notes }))
+    const runId = context?.runId || await this.startKnowledgeGraphRun(userId)
+    const timing = new AiRunTiming((stage) => this.addRunStage(runId, stage))
+
+    let prepared
+    try {
+      prepared = await timing.measure('context_prepare', async () => {
+        const notes = await this.knowledgeBases.listGraphNotes(id, userId)
+        return graph.prepare({ knowledgeBaseId: id, notes })
+      })
+      await this.mergeRunMetrics(runId, {
+        candidateNotes: prepared.notes.length,
+        candidateChunks: prepared.notes.reduce((total, note) => total + note.chunks.length, 0),
+      })
+    } catch (error) {
+      await this.failRun(runId, error)
+      throw error
+    }
+
+    if (prepared.notes.length === 0) {
+      const proposal = await graph.runPrepared(prepared, { ...context, userId, runId })
+      await this.succeedRun(runId)
+      return { ...proposal, runId }
+    }
+
+    const proposal = await graph.runPrepared(prepared, { ...context, userId, runId })
+    return { ...proposal, runId }
+  }
+
+  private async startKnowledgeGraphRun(userId: string) {
+    if (!this.aiRuns) return undefined
+    try {
+      const route = typeof this.gateway.describeTaskRoute === 'function'
+        ? this.gateway.describeTaskRoute('knowledge_graph')
+        : undefined
+      return (await this.aiRuns.start({
+        graphName: 'KnowledgeGraphBuildGraph',
+        task: 'knowledge_graph',
+        userId,
+        provider: route?.provider,
+        model: route?.model,
+      })).runId
+    } catch {
+      this.logger.warn('AI run audit start failed for knowledge_graph')
+      return undefined
+    }
+  }
+
+  private async addRunStage(runId: string | undefined, stage: AiRunStage) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.addStage(runId, stage) }
+    catch { this.logger.warn(`AI run stage audit update failed for ${stage.name}`) }
+  }
+
+  private async mergeRunMetrics(runId: string | undefined, metrics: AiRunMetrics) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.mergeMetrics(runId, metrics) }
+    catch { this.logger.warn('AI run metrics audit update failed') }
+  }
+
+  private async succeedRun(runId: string | undefined) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.succeed(runId) }
+    catch { this.logger.warn('AI run audit success update failed') }
+  }
+
+  private async failRun(runId: string | undefined, error: unknown) {
+    if (!runId || !this.aiRuns) return
+    try { await this.aiRuns.fail(runId, error) }
+    catch { this.logger.warn('AI run audit failure update failed') }
   }
 
   async streamWriter(input: AiWriterInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
-    return this.withAiRun({ graphName: 'WriterGraph', route: 'text', context }, () => this.gateway.streamChat({ route: 'text', system: 'You are a focused writing assistant. Return only the requested content.', prompt: buildWriterPrompt(input), maxTokens: 1200, temperature: 0.5 }))
+    return this.gateway.streamTask({ task: 'writer', system: 'You are a focused writing assistant. Return only the requested content.', prompt: buildWriterPrompt(input), maxTokens: 1200, temperature: 0.5, audit: { graphName: 'WriterGraph', userId: context?.userId } })
   }
 
   async generateMindmap(input: AiMindmapInput, context?: AiWorkflowContext) {
     const content = input.content
     const scenario = input.scenario || 'generate'
-    const normalized = await this.withAiRun({ graphName: 'MindmapGenerationGraph', route: 'reasoning', context }, async () => {
-      const answer = await this.gateway.chat({ route: 'reasoning', system: 'You generate valid JSON for mind map data. Return JSON only.', prompt: buildMindmapPrompt(scenario, content), maxTokens: 2000, temperature: 0.2 })
+    const normalized = await (async () => {
+      const answer = (await this.gateway.chatTask({ task: 'mindmap', system: 'You generate valid JSON for mind map data. Return JSON only.', prompt: buildMindmapPrompt(scenario, content), maxTokens: 2000, temperature: 0.2, audit: { graphName: 'MindmapGenerationGraph', userId: context?.userId } })).content
       return this.normalizeMindmapOrRepair(answer, scenario, content)
-    })
+    })()
     return { content: normalized }
   }
 
   async generateMermaid(input: AiMermaidInput, context?: AiWorkflowContext) {
-    const code = await this.withAiRun({ graphName: 'MermaidGenerationGraph', route: 'reasoning', context }, async () => {
-      const answer = await this.gateway.chat({ route: 'reasoning', system: 'You generate Mermaid diagrams. Return Mermaid code only.', prompt: buildMermaidPrompt(input.content, input.availableIcons || []), maxTokens: 1800, temperature: 0.2 })
+    const code = await (async () => {
+      const answer = (await this.gateway.chatTask({ task: 'mermaid', system: 'You generate Mermaid diagrams. Return Mermaid code only.', prompt: buildMermaidPrompt(input.content, input.availableIcons || []), maxTokens: 4096, temperature: 0.2, audit: { graphName: 'MermaidGenerationGraph', userId: context?.userId } })).content
       return this.normalizeMermaidOrRepair(answer, input.content, input.availableIcons || [])
-    })
+    })()
     return { content: code }
   }
 
   async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
-    return this.withAiRun({ graphName: 'PetChatGraph', route: 'text', context }, () => this.gateway.streamChat({ route: 'text', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 400, temperature: 0.6, reasoningEffort: 'none' }))
+    return this.gateway.streamTask({ task: 'pet_chat', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 400, temperature: 0.6, audit: { graphName: 'PetChatGraph', userId: context?.userId } })
   }
 
   async generateEmbedding(text: string): Promise<number[]> { return this.gateway.embedding(text) }
 
   async generateTopicName(context: string): Promise<string> {
     try {
-      const answer = await this.gateway.chat({ route: 'text', system: 'You name clusters of notes. Return one short topic phrase only.', prompt: ['Based on the following notes, return one short topic phrase in the same language as the notes.', 'Use 2-6 words. Do not include quotes, punctuation, or explanation.', '', context.slice(0, 3000)].join('\n'), maxTokens: 64, temperature: 0.2 })
+      const answer = (await this.gateway.chatTask({ task: 'topic_name', system: 'You name clusters of notes. Return one short topic phrase only.', prompt: ['Based on the following notes, return one short topic phrase in the same language as the notes.', 'Use 2-6 words. Do not include quotes, punctuation, or explanation.', '', context.slice(0, 3000)].join('\n'), maxTokens: 64, temperature: 0.2 })).content
       return cleanTopicName(answer)
     } catch (error: any) { this.logger.warn(`Topic naming failed, using fallback: ${error.message}`); return 'General Topic' }
   }
@@ -156,7 +223,7 @@ export class AiService {
   private async normalizeMindmapOrRepair(answer: string, scenario: string, content: any) {
     const normalized = normalizeMindmapAnswer(answer)
     if (normalized) return normalized
-    const repaired = await this.gateway.chat({ route: 'reasoning', system: 'You repair invalid mind map JSON. Return JSON only.', prompt: buildMindmapRepairPrompt(answer, scenario, content), maxTokens: 2000, temperature: 0 })
+    const repaired = (await this.gateway.chatTask({ task: 'mindmap', system: 'You repair invalid mind map JSON. Return JSON only.', prompt: buildMindmapRepairPrompt(answer, scenario, content), maxTokens: 2000, temperature: 0 })).content
     const repairedNormalized = normalizeMindmapAnswer(repaired)
     if (!repairedNormalized) throw new Error('AI mind map output is invalid after repair.')
     return repairedNormalized
@@ -165,38 +232,10 @@ export class AiService {
   private async normalizeMermaidOrRepair(answer: string, content: string, availableIcons: string[]) {
     const normalized = normalizeMermaidCode(answer)
     if (normalized) return normalized
-    const repaired = await this.gateway.chat({ route: 'reasoning', system: 'You repair invalid Mermaid code. Return Mermaid code only.', prompt: buildMermaidRepairPrompt(answer, content, availableIcons), maxTokens: 1800, temperature: 0 })
+    const repaired = (await this.gateway.chatTask({ task: 'mermaid', system: 'You repair invalid Mermaid code. Return Mermaid code only.', prompt: buildMermaidRepairPrompt(answer, content, availableIcons), maxTokens: 4096, temperature: 0 })).content
     const repairedNormalized = normalizeMermaidCode(repaired)
     if (!repairedNormalized) throw new Error('AI Mermaid output is invalid after repair.')
     return repairedNormalized
   }
 
-  // withAiRun 封装 AI 调用的审计生命周期；审计失败不中断 AI 操作本身。
-  private async withAiRun<T>(input: { graphName: string; route: AiChatRoute; context?: AiWorkflowContext }, execute: () => Promise<T>): Promise<T> {
-    const run = await this.startRun(input)
-    try { const result = await execute(); await this.succeedRun(run?.runId); return result }
-    catch (error) { await this.failRun(run?.runId, error); throw error }
-  }
-
-  private async startRun(input: { graphName: string; route: AiChatRoute; context?: AiWorkflowContext }) {
-    if (!this.aiRuns) return undefined
-    const route = this.describeRoute(input.route)
-    try { return await this.aiRuns.start({ graphName: input.graphName, userId: input.context?.userId, provider: route.provider, model: route.model }) }
-    catch (error: any) { this.logger.warn(`AI run audit start failed for ${input.graphName}: ${error.message}`); return undefined }
-  }
-
-  private async succeedRun(runId?: string) {
-    if (!runId || !this.aiRuns) return
-    try { await this.aiRuns.succeed(runId) } catch (error: any) { this.logger.warn(`AI run audit success update failed for ${runId}: ${error.message}`) }
-  }
-
-  private async failRun(runId: string | undefined, error: unknown) {
-    if (!runId || !this.aiRuns) return
-    try { await this.aiRuns.fail(runId, error) } catch (auditError: any) { this.logger.warn(`AI run audit failure update failed for ${runId}: ${auditError.message}`) }
-  }
-
-  private describeRoute(route: AiChatRoute): { provider?: string; model?: string } {
-    try { return this.gateway.describeChatRoute(route) }
-    catch (error: any) { this.logger.warn(`AI route description failed for ${route}: ${error.message}`); return {} }
-  }
 }

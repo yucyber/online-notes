@@ -1,5 +1,5 @@
 import React from 'react'
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import '@testing-library/jest-dom'
 
 const mockKnowledgeBasesAPI = {
@@ -13,6 +13,10 @@ const mockKnowledgeBasesAPI = {
   saveGraph: jest.fn(),
 }
 
+const mockAiRunsAPI = {
+  getRun: jest.fn(),
+}
+
 const mockToast = {
   success: jest.fn(),
   error: jest.fn(),
@@ -20,6 +24,10 @@ const mockToast = {
 
 jest.mock('@/lib/api', () => ({
   knowledgeBasesAPI: mockKnowledgeBasesAPI,
+}))
+
+jest.mock('@/lib/api/ai-runs', () => ({
+  aiRunsAPI: mockAiRunsAPI,
 }))
 
 jest.mock('react-hot-toast', () => ({
@@ -36,6 +44,19 @@ const kb = {
   description: 'Graph work',
   createdAt: '2026-06-01T00:00:00.000Z',
   updatedAt: '2026-06-01T00:00:00.000Z',
+}
+
+const kb2 = {
+  ...kb,
+  id: 'kb-2',
+  name: '第二知识库',
+  description: 'Second graph',
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void
+  const promise = new Promise<T>((done) => { resolve = done })
+  return { promise, resolve }
 }
 
 const linkedNote = {
@@ -90,6 +111,19 @@ describe('knowledge base frontend entry', () => {
     mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue(graphProposal)
     mockKnowledgeBasesAPI.getGraph.mockResolvedValue(emptyGraph)
     mockKnowledgeBasesAPI.saveGraph.mockResolvedValue({ ...graphProposal, warnings: [] })
+    mockAiRunsAPI.getRun.mockResolvedValue({
+      runId: 'run-graph-1',
+      graphName: 'KnowledgeGraphBuildGraph',
+      task: 'knowledge_graph',
+      durationMs: 19200,
+      stages: [
+        { name: 'context_prepare', durationMs: 900, status: 'succeeded' },
+        { name: 'provider', durationMs: 17800, status: 'succeeded' },
+        { name: 'validation', durationMs: 500, status: 'succeeded' },
+      ],
+      metrics: {},
+      status: 'succeeded',
+    })
   })
 
   test('lists knowledge bases, creates one, and removes a note from the selected base', async () => {
@@ -166,6 +200,92 @@ describe('knowledge base frontend entry', () => {
     expect(screen.getAllByText('Low evidence edge kept for review.').length).toBeGreaterThan(0)
   })
 
+  test('shows real generation stages and the backend timing for this graph run', async () => {
+    const build = deferred<typeof graphProposal & { runId: string }>()
+    const timing = deferred<{
+      runId: string
+      graphName: string
+      task: string
+      durationMs: number
+      stages: Array<{ name: string; durationMs: number; status: string }>
+      metrics: Record<string, never>
+      status: string
+    }>()
+    mockKnowledgeBasesAPI.buildGraphProposal.mockReturnValue(build.promise)
+    mockAiRunsAPI.getRun.mockReturnValue(timing.promise)
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(screen.getByRole('status')).toHaveTextContent('准备数据 / 生成中')
+    build.resolve({ ...graphProposal, runId: 'run-graph-1' })
+
+    expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('build-graph-proposal')).toBeEnabled()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    timing.resolve({
+      runId: 'run-graph-1',
+      graphName: 'KnowledgeGraphBuildGraph',
+      task: 'knowledge_graph',
+      durationMs: 19200,
+      stages: [
+        { name: 'context_prepare', durationMs: 900, status: 'succeeded' },
+        { name: 'provider', durationMs: 17800, status: 'succeeded' },
+        { name: 'validation', durationMs: 500, status: 'succeeded' },
+      ],
+      metrics: {},
+      status: 'succeeded',
+    })
+    expect(await screen.findByText('总耗时 19.2 秒 · 模型 17.8 秒')).toBeInTheDocument()
+    expect(mockAiRunsAPI.getRun).toHaveBeenCalledWith('run-graph-1')
+  })
+
+  test('uses only an available server total when graph stage details are unavailable', async () => {
+    mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue({
+      ...graphProposal,
+      timing: { durationMs: 4300, stages: [] },
+    })
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(await screen.findByText('总耗时 4.3 秒 · 阶段明细不可用')).toBeInTheDocument()
+    expect(mockAiRunsAPI.getRun).not.toHaveBeenCalled()
+  })
+
+  test('marks timing unavailable when a legacy proposal has no timing fields', async () => {
+    mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue({ ...graphProposal })
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(await screen.findByText('阶段明细不可用')).toBeInTheDocument()
+    expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('save-graph-proposal')).toBeEnabled()
+    expect(mockAiRunsAPI.getRun).not.toHaveBeenCalled()
+  })
+
+  test('clears the graph running state and keeps a safe error when generation fails', async () => {
+    mockKnowledgeBasesAPI.buildGraphProposal.mockRejectedValue(new Error('provider secret payload'))
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(await screen.findByText('知识图谱提案生成失败，请稍后重试')).toBeInTheDocument()
+    expect(screen.queryByText('provider secret payload')).not.toBeInTheDocument()
+    expect(screen.getByTestId('build-graph-proposal')).toBeEnabled()
+    expect(screen.getByTestId('build-graph-proposal')).toHaveTextContent('生成提案')
+    expect(screen.queryByText(/总耗时/)).not.toBeInTheDocument()
+  })
+
   test('saves a generated graph proposal to the selected knowledge base', async () => {
     const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
 
@@ -202,5 +322,76 @@ describe('knowledge base frontend entry', () => {
     expect(await screen.findByText('还没有知识库。先创建一个，再从笔记列表加入内容。')).toBeInTheDocument()
     expect(await screen.findByText('暂无知识库')).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /加入知识库/ })).toBeDisabled()
+  })
+
+  test('快速切换知识库时旧图谱请求不能覆盖当前选择', async () => {
+    const oldGraph = deferred<typeof graphProposal>()
+    mockKnowledgeBasesAPI.getAll.mockResolvedValue([kb, kb2])
+    mockKnowledgeBasesAPI.getNotes.mockResolvedValue([])
+    mockKnowledgeBasesAPI.getGraph
+      .mockImplementationOnce(() => oldGraph.promise)
+      .mockResolvedValueOnce({
+        ...graphProposal,
+        knowledgeBaseId: 'kb-2',
+        nodes: [{ ...graphProposal.nodes[0], id: 'kb2-node', label: 'KB2 Node' }],
+        edges: [],
+      })
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: /第二知识库/ }))
+    expect(await screen.findByText('KB2 Node')).toBeInTheDocument()
+
+    oldGraph.resolve(graphProposal)
+
+    await waitFor(() => expect(screen.queryByText('Attention')).not.toBeInTheDocument())
+    expect(screen.getByText('KB2 Node')).toBeInTheDocument()
+  })
+
+  test('专注模式内通过抽屉切换知识库且保持全屏图谱', async () => {
+    mockKnowledgeBasesAPI.getAll.mockResolvedValue([kb, kb2])
+    mockKnowledgeBasesAPI.getNotes.mockResolvedValue([linkedNote])
+    mockKnowledgeBasesAPI.getGraph.mockImplementation(async (id: string) => ({
+      ...graphProposal,
+      knowledgeBaseId: id,
+      nodes: [{ ...graphProposal.nodes[0], id: `${id}-node`, label: id === 'kb-2' ? 'KB2 Node' : 'Attention' }],
+      edges: [],
+      warnings: [],
+    }))
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    fireEvent.click(await screen.findByRole('button', { name: '进入图谱专注模式' }))
+    const focus = screen.getByRole('dialog', { name: '知识图谱专注模式' })
+    expect(within(focus).getByText('已保存图谱')).toBeInTheDocument()
+
+    fireEvent.click(within(focus).getByRole('button', { name: '选择知识库' }))
+    fireEvent.click(within(focus).getByRole('button', { name: /第二知识库/ }))
+
+    expect(screen.getByRole('dialog', { name: '知识图谱专注模式' })).toBeInTheDocument()
+    expect(await within(focus).findByText('KB2 Node')).toBeInTheDocument()
+    expect(within(focus).getByRole('heading', { name: '第二知识库' })).toBeInTheDocument()
+  })
+
+  test('专注模式依次关闭抽屉和全屏并恢复焦点与页面滚动', async () => {
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+    render(<KnowledgeBasesPage />)
+    const trigger = await screen.findByRole('button', { name: '进入图谱专注模式' })
+
+    fireEvent.click(trigger)
+    const focus = screen.getByRole('dialog', { name: '知识图谱专注模式' })
+    expect(document.body.style.overflow).toBe('hidden')
+    expect(within(focus).getByRole('button', { name: '选择知识库' })).toHaveFocus()
+    fireEvent.click(within(focus).getByRole('button', { name: '选择知识库' }))
+    expect(within(focus).getByRole('searchbox', { name: '搜索知识库' })).toHaveFocus()
+
+    fireEvent.keyDown(document, { key: 'Escape' })
+    expect(within(focus).queryByRole('searchbox', { name: '搜索知识库' })).not.toBeInTheDocument()
+    expect(focus).toBeInTheDocument()
+    fireEvent.keyDown(document, { key: 'Escape' })
+
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: '知识图谱专注模式' })).not.toBeInTheDocument())
+    await waitFor(() => expect(trigger).toHaveFocus())
+    expect(document.body.style.overflow).toBe('')
   })
 })

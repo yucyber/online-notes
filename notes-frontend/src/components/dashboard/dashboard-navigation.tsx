@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from 'react'
 import type { User } from '@/types'
+import type { BreadcrumbOverride } from '@/hooks/useBreadcrumb'
 
 export const routeNames: Record<string, string> = {
   dashboard: '工作台', notes: '我的笔记', 'knowledge-bases': '知识库', boards: '看板', mindmaps: '思维导图', tags: '标签管理', settings: '设置', new: '新建', edit: '编辑', categories: '分类管理', activity: '活动日志', notifications: '消息中心', versions: '版本记录',
@@ -9,10 +10,7 @@ export const routeNames: Record<string, string> = {
 
 type IconName = 'dashboard' | 'notes' | 'knowledge' | 'activity' | 'categories' | 'tags' | 'settings'
 type NavigationItem = { label: string; icon: IconName; href: string }
-export type BreadcrumbOverride = {
-  items: Array<{ label: string; href?: string }>
-  onRename?: (title: string) => Promise<void>
-}
+export type { BreadcrumbOverride }
 
 export const navGroups: Array<{ label: string; items: NavigationItem[] }> = [
   { label: '工作台', items: [

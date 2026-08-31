@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, Post, Req, Res, UseGuards } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { Throttle } from '@nestjs/throttler'
 import type { Request, Response } from 'express'
 import { AiService } from './ai.service'
+import { AiRunService } from './ai-run.service'
 import { AiKnowledgeGraphInput, AiMermaidInput, AiMindmapInput, AiPetInput } from './ai-gateway.types'
-import { AiWriterDto, AiSummaryDto } from './dto'
+import { AiRunPerformanceQueryDto, AiWriterDto, AiSummaryDto } from './dto'
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -18,7 +19,20 @@ type AuthenticatedRequest = Request & {
 @UseGuards(AuthGuard('jwt'))
 @Controller('ai')
 export class AiController {
-  constructor(private readonly aiService: AiService) {}
+  constructor(
+    private readonly aiService: AiService,
+    private readonly aiRuns: AiRunService,
+  ) {}
+
+  @Get('runs/performance')
+  getRunPerformance(@Query() query: AiRunPerformanceQueryDto, @Req() req?: AuthenticatedRequest) {
+    return this.aiRuns.getPerformance(this.userId(req), query)
+  }
+
+  @Get('runs/:runId')
+  getRun(@Param('runId') runId: string, @Req() req?: AuthenticatedRequest) {
+    return this.aiRuns.getRun(this.userId(req), runId)
+  }
 
   @Post('writer/stream')
   async streamWriter(@Body() body: AiWriterDto, @Res() res: Response, @Req() req?: AuthenticatedRequest) {

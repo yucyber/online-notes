@@ -152,6 +152,63 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/ai/runs/performance:
+    get:
+      tags: [AI]
+      summary: 查询当前用户的 AI 性能指标
+      description: 默认查询最近 7 天，时间窗口最大 90 天；聚合和明细均限定为当前认证用户。
+      security:
+        - BearerAuth: []
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date-time }
+        - in: query
+          name: to
+          schema: { type: string, format: date-time }
+        - in: query
+          name: task
+          schema: { type: string }
+        - in: query
+          name: provider
+          schema: { type: string }
+        - in: query
+          name: model
+          schema: { type: string }
+        - in: query
+          name: status
+          schema: { type: string, enum: [running, succeeded, failed] }
+        - in: query
+          name: fallbackUsed
+          schema: { type: boolean }
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/Size'
+      responses:
+        '200':
+          $ref: '#/components/responses/AiRunPerformanceEnvelope'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/ai/runs/{runId}:
+    parameters:
+      - in: path
+        name: runId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [AI]
+      summary: 查询当前用户的一次 AI 运行明细
+      description: 不存在和不属于当前用户的 runId 统一返回 404。
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/AiRunEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/auth/register:
     post:
       tags: [Auth]
@@ -296,6 +353,35 @@ paths:
       responses:
         '200':
           $ref: '#/components/responses/Ok'
+  /api/notes/{noteId}/chunks/{chunkId}/location:
+    parameters:
+      - in: path
+        name: noteId
+        required: true
+        schema: { type: string }
+      - in: path
+        name: chunkId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [Notes]
+      summary: 读取笔记 Chunk 的原文定位信息
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          description: Chunk 定位信息
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/ApiEnvelope'
+                  - type: object
+                    properties:
+                      data:
+                        $ref: '#/components/schemas/NoteChunkLocation'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/notes/{id}/acl:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -912,6 +998,44 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/graph/nodes/{nodeId}/evidence:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - in: path
+        name: nodeId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [KnowledgeBases]
+      summary: 获取图谱节点的原文证据
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeGraphEvidenceEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/knowledge-bases/{id}/graph/edges/{edgeId}/evidence:
+    parameters:
+      - $ref: '#/components/parameters/Id'
+      - in: path
+        name: edgeId
+        required: true
+        schema: { type: string }
+    get:
+      tags: [KnowledgeBases]
+      summary: 获取图谱关系的原文证据
+      security:
+        - BearerAuth: []
+      responses:
+        '200':
+          $ref: '#/components/responses/KnowledgeGraphEvidenceEnvelope'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
   /api/knowledge-bases/{id}/notes/{noteId}:
     parameters:
       - $ref: '#/components/parameters/Id'
@@ -1344,6 +1468,28 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/AiSummaryOutput'
+    AiRunPerformanceEnvelope:
+      description: 当前用户的 AI 性能指标
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiRunPerformance'
+    AiRunEnvelope:
+      description: 当前用户的一次 AI 运行明细
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/AiRunPublic'
     AiKnowledgeGraphProposalEnvelope:
       description: 知识图谱 proposal
       content:
@@ -1354,7 +1500,7 @@ components:
               - type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/KnowledgeGraphProposal'
+                    $ref: '#/components/schemas/AiKnowledgeGraphProposal'
     KnowledgeGraphEnvelope:
       description: 知识库图谱
       content:
@@ -1366,6 +1512,17 @@ components:
                 properties:
                   data:
                     $ref: '#/components/schemas/KnowledgeGraphProposal'
+    KnowledgeGraphEvidenceEnvelope:
+      description: 当前可读的图谱原文证据
+      content:
+        application/json:
+          schema:
+            allOf:
+              - $ref: '#/components/schemas/ApiEnvelope'
+              - type: object
+                properties:
+                  data:
+                    $ref: '#/components/schemas/KnowledgeGraphEvidenceResult'
     KnowledgeBaseEnvelope:
       description: 知识库
       content:
@@ -1504,6 +1661,17 @@ components:
           type: integer
           description: 有效期，单位为秒
           example: 300
+    NoteChunkLocation:
+      type: object
+      required: [chunkId, headingPath, anchorText]
+      properties:
+        chunkId: { type: string }
+        headingPath:
+          type: array
+          items: { type: string }
+        anchorText:
+          type: string
+          maxLength: 160
     PaginatedNotes:
       type: object
       properties:
@@ -1645,6 +1813,104 @@ components:
       type: object
       properties:
         summary: { type: string }
+    AiRunStage:
+      type: object
+      required: [name, durationMs, status]
+      properties:
+        name:
+          type: string
+          enum: [request, context_prepare, capacity_wait, provider, validation, persistence, response]
+        durationMs: { type: number, minimum: 0 }
+        status: { type: string, enum: [succeeded, failed, skipped] }
+        attempt: { type: integer, minimum: 0 }
+        provider: { type: string }
+        model: { type: string }
+        fallbackType: { type: string, enum: [quality, provider] }
+    AiRunMetrics:
+      type: object
+      properties:
+        inputChars: { type: integer, minimum: 0 }
+        candidateNotes: { type: integer, minimum: 0 }
+        candidateChunks: { type: integer, minimum: 0 }
+        outputChars: { type: integer, minimum: 0 }
+    AiRunPublic:
+      type: object
+      required: [runId, graphName, status, stages, metrics]
+      properties:
+        runId: { type: string }
+        graphName: { type: string }
+        task: { type: string }
+        reasoningMode: { type: string, enum: [off, auto, deep] }
+        provider: { type: string }
+        model: { type: string }
+        durationMs: { type: number, minimum: 0 }
+        retryCount: { type: integer, minimum: 0 }
+        fallbackUsed: { type: boolean }
+        fallbackType: { type: string, enum: [quality, provider] }
+        fallbackReason: { type: string }
+        finishReason: { type: string }
+        contentChars: { type: integer, minimum: 0 }
+        reasoningChars: { type: integer, minimum: 0 }
+        validationResult: { type: string, enum: [valid, invalid] }
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiRunStage'
+        metrics:
+          $ref: '#/components/schemas/AiRunMetrics'
+        status: { type: string, enum: [running, succeeded, failed] }
+        createdAt: { type: string, format: date-time }
+        updatedAt: { type: string, format: date-time }
+        finishedAt: { type: string, format: date-time }
+    AiRunStagePerformance:
+      type: object
+      required: [name, requestCount, p50Ms, p95Ms]
+      properties:
+        name: { type: string }
+        requestCount: { type: integer, minimum: 0 }
+        p50Ms: { type: number, minimum: 0 }
+        p95Ms: { type: number, minimum: 0 }
+    AiRunTaskPerformance:
+      type: object
+      required: [task, requestCount, successRate, fallbackRate, p50Ms, p95Ms, stages]
+      properties:
+        task: { type: string }
+        requestCount: { type: integer, minimum: 0 }
+        successRate: { type: number, minimum: 0, maximum: 1 }
+        fallbackRate: { type: number, minimum: 0, maximum: 1 }
+        p50Ms: { type: number, minimum: 0 }
+        p95Ms: { type: number, minimum: 0 }
+        stages:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiRunStagePerformance'
+    AiRunPage:
+      type: object
+      required: [items, page, size, total, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiRunPublic'
+        page: { type: integer, minimum: 1 }
+        size: { type: integer, minimum: 1, maximum: 100 }
+        total: { type: integer, minimum: 0 }
+        totalPages: { type: integer, minimum: 0 }
+    AiRunPerformance:
+      type: object
+      required: [requestCount, successRate, fallbackRate, p50Ms, p95Ms, byTask, recentRuns]
+      properties:
+        requestCount: { type: integer, minimum: 0 }
+        successRate: { type: number, minimum: 0, maximum: 1 }
+        fallbackRate: { type: number, minimum: 0, maximum: 1 }
+        p50Ms: { type: number, minimum: 0 }
+        p95Ms: { type: number, minimum: 0 }
+        byTask:
+          type: array
+          items:
+            $ref: '#/components/schemas/AiRunTaskPerformance'
+        recentRuns:
+          $ref: '#/components/schemas/AiRunPage'
     AiKnowledgeGraphInput:
       type: object
       required: [knowledgeBaseId]
@@ -1678,6 +1944,14 @@ components:
         warnings:
           type: array
           items: { type: string }
+    AiKnowledgeGraphProposal:
+      allOf:
+        - $ref: '#/components/schemas/KnowledgeGraphProposal'
+        - type: object
+          properties:
+            runId:
+              type: string
+              description: 用于查询本次生成的公开 AI run timing；审计降级时可能缺省。
     KnowledgeGraphProposalNode:
       type: object
       properties:
@@ -1686,6 +1960,9 @@ components:
         type: { type: string, enum: [concept, entity, topic, claim] }
         confidence: { type: number, minimum: 0, maximum: 1 }
         noteIds:
+          type: array
+          items: { type: string }
+        evidenceChunkIds:
           type: array
           items: { type: string }
     KnowledgeGraphProposalEdge:
@@ -1699,6 +1976,32 @@ components:
         noteIds:
           type: array
           items: { type: string }
+        evidenceChunkIds:
+          type: array
+          items: { type: string }
+    KnowledgeGraphEvidenceResult:
+      type: object
+      required: [compatibility, items]
+      properties:
+        compatibility:
+          type: string
+          enum: [evidence_available, evidence_unavailable, legacy_graph_without_evidence]
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/KnowledgeGraphEvidence'
+    KnowledgeGraphEvidence:
+      type: object
+      required: [noteId, noteTitle, chunkId, headingPath, preview, content]
+      properties:
+        noteId: { type: string }
+        noteTitle: { type: string }
+        chunkId: { type: string }
+        headingPath:
+          type: array
+          items: { type: string }
+        preview: { type: string, maxLength: 320 }
+        content: { type: string }
     SavedFilter:
       type: object
       properties:

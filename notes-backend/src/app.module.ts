@@ -26,6 +26,7 @@ import { BoardsModule } from './modules/boards/boards.module';
 import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
 import { AiModule } from './modules/ai/ai.module';
 import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.module';
+import { QueueMonitorModule } from './modules/queue-monitor/queue-monitor.module';
 
 @Module({
   imports: [
@@ -67,6 +68,7 @@ import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.
     MindmapsModule,
     AiModule,
     KnowledgeBasesModule,
+    QueueMonitorModule,
   ],
   providers: [
     { provide: APP_INTERCEPTOR, useClass: IdempotencyInterceptor },

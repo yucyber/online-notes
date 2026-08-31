@@ -6,7 +6,7 @@
 
 **Architecture:** 整体按“运行环境与模型路由基础设施 → 检索和图谱证据层 → 只读 GraphRAG → 只读整理提案 → 可撤销写操作”构建。上层不得绕过下层权限、证据和审计接口；云端索引、额度和产品高风险决策设置为用户验收门，不由代码或代理猜测。
 
-**Tech Stack:** Node.js 22、NestJS 10、Next.js 16、React 18、TypeScript、Mongoose 8、MongoDB Atlas Vector Search、React Flow、SiliconFlow、B.AI、Jest、Node Test Runner。
+**Tech Stack:** Node.js 22、NestJS 10、Next.js 16、React 18、TypeScript、Mongoose 8、MongoDB Atlas Vector Search、Redis、BullMQ、React Flow、SiliconFlow、B.AI、AgentRouter、Jest、Node Test Runner。
 
 ## Global Constraints
 
@@ -15,7 +15,11 @@
 - 第一阶段已有代码先验收、修缺口，不重写已通过测试的主题向量、Chunk、混合搜索和图谱 UI。
 - 每个 AI 调用声明 `AiTask`；业务代码不得直接拼接供应商 reasoning 参数。
 - economy、standard、deep 分别使用 Qwen3.5-4B、Qwen3-14B、DeepSeek-V4-Flash；MiMo-V2.5 与 Hy3 不进入生产路由。
+- AgentRouter Claude Opus 4.8 不是默认层级，只允许作为拆分合并、复杂返工、证据冲突和复杂 Mermaid 的专家 `qualityFallback`，且预算不低于 4096 token。
+- SenseNova 已从活动运行时、配置模板和配置检查中移除；旧 SenseNova 专项文档只保留为历史决策与事故记录，不代表当前路由。
 - `qualityFallback` 处理合法响应的质量问题；`providerFallback` 处理 429、超时、网络错误和临时 5xx；单次任务最多执行一个 fallback。
+- 自动保存继续使用前端 400ms 防抖和后端按 note 10 秒静默合并；AI 派生任务必须进入可恢复队列，不得在保存请求或进程内 timer 中直接形成无界并发。
+- 并发、RPM、TPM 按 provider 隔离；额度未知时采用可配置的保守值，不得把控制台套餐剩余百分比当作 RPM/TPM。
 - 所有检索、图谱扩展和提案候选在模型调用前后都按服务端 `userId` 与 Note ACL 过滤。
 - GraphRAG 回答必须引用真实 Chunk；没有证据时明确说明，不允许用模型自身知识伪造“你的笔记中记录了”。
 - 第三阶段 AI 只生成 proposal；未经确认不得修改知识库、分类、标签或笔记正文。
@@ -34,7 +38,8 @@
 | --- | --- | --- | --- |
 | 主题向量来源 | `title + summary + categoryName + tagNames`，含来源哈希 | `note-vector-source.test.ts`、`note-vector-refresh.test.ts` | 已完成 |
 | 自动保存派生调度 | 按 note 合并任务、静默执行、陈旧快照拒绝写回 | `note-derived-scheduler.test.ts`、`notes-async-metadata.test.ts` | 已完成 |
-| Summary 时序 | 正文变化先生成 summary，再生成主题向量；失败可 fallback | `note-vector-refresh.test.ts`、`ai-gateway.test.ts` | 已完成，但仍使用旧模型路由 |
+| 派生任务容量保护 | 同一 note 有 10 秒防抖；不同 note 仍可同时执行，timer 在重启后丢失；尚无 provider 级 RPM/TPM 预算 | `note-derived-scheduler.ts`、`ai-gateway.client.ts` | 待补齐持久化队列与全局限速 |
+| Summary 时序 | 正文变化先生成 summary，再生成主题向量；SiliconFlow 失败可切换 B.AI | `note-vector-refresh.test.ts`、`ai-gateway.test.ts` | 已完成并迁移到新路由 |
 | 结构化 Chunk | Markdown/HTML 标题路径、完整代码块、HTML 标签完整、重叠 | `note-chunker.test.ts` | 已完成 |
 | Chunk embedding | 内容哈希复用、失败保留旧版、快照校验 | `note-chunk-index.test.ts` | 已完成 |
 | Chunk 检索权限 | 服务端可读笔记范围、knowledgeBaseId 边界 | `chunk-retrieval-access.test.ts` | 已完成 |
@@ -42,37 +47,38 @@
 | 搜索命中 UI | 标题路径、命中 Chunk、额外命中数 | `semantic-search-evidence.spec.tsx` | 已完成 |
 | 知识图谱生成/保存 | 已有 nodes、edges、warnings、事务替换 | `knowledge-graph-build-graph.test.ts`、`knowledge-graph-persistence.test.ts` | 已完成基础版 |
 | 知识图谱可视化 | React Flow 关系网络、力导向布局、交互 | `knowledge-bases.spec.tsx`、`knowledge-graph-layout.spec.ts` | 已完成基础版 |
-| 6 条数据回填器 | 幂等判断、逐条失败报告 | `backfill-note-vectors.test.ts` | 代码已完成，真实执行结果待确认 |
+| 6 条测试笔记派生数据 | AI summary、4096 维主题向量、60 个 Chunk 向量完整；未改变业务 `updatedAt` | 2026-08-27 数据库只读验收 | 已完成真实回填 |
+| 默认文本/推理路由 | text → SiliconFlow Qwen3-14B；reasoning → SiliconFlow DeepSeek-V4-Flash | `ai-gateway.test.ts`、live smoke test | 已完成 |
+| 跨供应商容灾 | 策略声明的任务在 SiliconFlow 瞬时 provider 故障时可切换 B.AI DeepSeek-V4-Flash | `ai-gateway.test.ts` | 已完成 |
+| AgentRouter 接入 | 固定 User-Agent；Claude Opus 4.8 只作为高风险任务专家质量目标 | live smoke test、固定任务评测 | 已完成受控路由 |
 
 ### 本轮实际验证
 
 ```text
-后端单测：152 passed / 0 failed
+后端单测：183 passed / 0 failed
 后端 TypeScript 编译：通过
+AI 配置检查：2 tests passed，dry-run 无警告
+真实模型 smoke test：SiliconFlow standard/deep、B.AI fallback、AR expert 均为 HTTP 200 且正文非空
 前端定向测试：3 suites、10 tests 断言通过
 前端 type-check：通过
 ```
 
 定向 Jest 因只运行少量测试而未达到仓库全局 8% coverage 阈值；这不代表断言失败。阶段验收仍需运行前端全量测试与正式 build。
 
-### 明确未实现
+### 明确未实现或仅部分实现
 
-- `AiTask`、economy/standard/deep 策略表；
-- SiliconFlow/B.AI chat provider 统一路由；
-- `off / auto / deep` 的供应商参数 adapter；
-- `qualityFallback / providerFallback` 状态机；
 - `evidenceChunkIds` 图谱证据持久化；
 - Query Planner、Query Rewrite、GraphRAG 编排；
 - 笔记引用定位与 RAG 回答 UI；
 - 全局知识库组织建议、增量归属建议；
 - 标签/分类、重复、拆分、合并、内容修改 proposal；
 - proposal 审核、执行日志和整批 undo。
+- 可恢复的 Note 派生任务队列、跨实例并发限制和 provider 级 RPM/TPM 主动节流；当前只有同 note 防抖和请求失败后的指数退避。
 
 ### 外部状态未知，不得由代理推断
 
 - Atlas `notes.vector_index` 与 `note_chunks.note_chunk_vector_index` 是否已创建且均为 4096 维；
-- 当前 6 条测试笔记是否都已完成 AI summary、主题向量和 Chunk 回填；
-- SiliconFlow 与 B.AI 当前 key 的 Workspace、余额、RPM/TPM 限制；
+- SiliconFlow、B.AI 与 AgentRouter 当前 key 的账户归属、余额和 RPM/TPM 限制；最小 live smoke 已通过，但不能替代控制台额度确认；
 - 高风险 proposal 的撤销保留时间和是否允许部分执行。
 
 ---
@@ -81,7 +87,7 @@
 
 | 优先级 | 层次 | 交付物 | 为什么现在做 | 阻塞下游 |
 | --- | --- | --- | --- | --- |
-| P0 | 开发与 AI 基础设施 | Node/npm 固化；AiTask；模型 adapter；两类 fallback；审计；评测 | 所有新 AI 功能共用，避免每条链路重复踩供应商参数和空正文问题 | P2、P3、P4 |
+| P0 | 开发与 AI 基础设施 | Node/npm 固化；AiTask；模型 adapter；两类 fallback；审计；评测；持久化派生队列与 provider 容量控制 | 所有新 AI 功能共用，避免每条链路重复踩供应商参数、空正文和 RPM/TPM 问题 | P1 回填、P2、P3、P4 |
 | P1 | 已有第一阶段验收 | Atlas 索引确认；真实回填；搜索/图谱 UI 完整验收 | 代码已大体完成，应先形成可靠数据底座 | P2、P3 |
 | P2 | 证据基础设施 | 图谱 node/edge 绑定 `evidenceChunkIds`；证据查询 API | GraphRAG 和可信提案都需要知道关系来自哪段原文 | P3、P4 |
 | P3 | 只读上层建筑 | Query Planner、混合检索、图谱一跳扩展、rerank、引用回答 | 首个用户可感知的知识助手闭环，且无破坏性写入 | 无，建议先上线观察 |
@@ -118,12 +124,12 @@ P0 和 P1 在代码上可以交错推进，但 P2 之后不得继续使用旧 `t
 
 **Produces:** Node 22.x 和 npm 的可执行前置检查；不自动修改用户 NVM 状态。
 
-- [ ] 编写 `check-runtime` 失败测试，覆盖 Node <22、错误包管理器 lockfile 和合法环境。
-- [ ] 添加 `.nvmrc`，内容固定为 `22`。
-- [ ] 在三个 `package.json` 增加 `engines.node: ">=22 <23"`；根 package 增加 `check:runtime`。
-- [ ] `check-runtime.mjs` 检查 `process.versions.node`、根 `package-lock.json` 和禁止出现的工作区级 pnpm lockfile；只报告修复命令，不自动切换 Node。
-- [ ] 使用 Node 22 运行 `node --test scripts/check-runtime.test.mjs` 和 `npm run check:runtime`。
-- [ ] 提交：`chore(项目): 固定 Node 与包管理器基线`。
+- [x] 编写 `check-runtime` 失败测试，覆盖 Node <22、错误包管理器 lockfile 和合法环境。
+- [x] 添加 `.nvmrc`，内容固定为 `22`。
+- [x] 在三个 `package.json` 增加 `engines.node: ">=22 <23"`；根 package 增加 `check:runtime`。
+- [x] `check-runtime.mjs` 检查 `process.versions.node`、根 `package-lock.json` 和禁止出现的工作区级 pnpm lockfile；只报告修复命令，不自动切换 Node。
+- [x] 使用 Node 22 运行 `node --test scripts/check-runtime.test.mjs` 和 `npm run check:runtime`。
+- [x] 提交：`chore(项目): 固定 Node 与包管理器基线`。
 
 ## Task 0.2～0.7：实现模型分层、adapter、fallback、审计和评测
 
@@ -141,21 +147,76 @@ interface AiModelPolicy {
 
 执行约束：
 
-- [ ] economy=`Qwen/Qwen3.5-4B`，standard=`Qwen/Qwen3-14B`，deep=`deepseek-ai/DeepSeek-V4-Flash`。
-- [ ] SiliconFlow Qwen 的 `off` 映射为 `enable_thinking=false`。
-- [ ] 主模型出现结构/正文质量错误时只走 `qualityFallback`。
-- [ ] 主供应商出现 429、超时、网络错误、502/503/504 时只走 B.AI `providerFallback`。
-- [ ] 单次任务最多一个 fallback；400、401、403、安全拒绝和 ACL 拒绝不 fallback。
-- [ ] 流式响应只允许首个正文 chunk 之前切换 provider。
-- [ ] AI run 记录 task、reasoningMode、模型、耗时、重试、fallbackType 和校验结果，不记录完整正文/reasoning/key。
-- [ ] 新路由由 `AI_TASK_ROUTING_ENABLED=false` 控制；固定评测通过后才打开。
+- [x] 将 economy、standard、deep 策略表完整映射到所有 `AiTask`；业务调用点已迁移到 `chatTask / streamTask`。
+- [x] 增加可选 `expertQualityTarget=AgentRouter claude-opus-4-8`；只映射到高风险 deep 任务且不作为默认 Provider。
+- [x] AgentRouter adapter 注入固定 User-Agent，且不发送未经确认的 reasoning 参数。
+- [x] SiliconFlow Qwen 的 `off` 映射为 `enable_thinking=false`。
+- [x] 主模型出现结构/正文质量错误时只走 `qualityFallback`。
+- [x] 将 B.AI `providerFallback` 扩展到策略表声明的任务。
+- [x] 单次任务最多一个 fallback；400、401、403、安全拒绝和 ACL 拒绝不 fallback。
+- [x] 流式响应只允许首个正文 chunk 之前切换 provider。
+- [x] AI run 记录 task、reasoningMode、模型、耗时、重试、fallbackType 和校验结果，不记录完整正文/reasoning/key。
+- [x] `AI_TASK_ROUTING_ENABLED=false` 时恢复迁移前的 text/reasoning 两级路由，便于灰度回退。
+- [x] `AI_TASK_ROUTING_ENABLED=true` 已启用；默认 text/reasoning 和 `note_summary` live smoke 均通过。
+
+## P0-A 检查点：恢复现有笔记 Summary（已完成）
+
+该检查点在 standard 模型、SiliconFlow reasoning adapter 和 summary fallback 已通过单测后立即执行，不等待 GraphRAG、图谱证据或其他上层功能。
+
+- [x] 按 `notes-backend/.env.example` 配置 SiliconFlow、B.AI 与 AR，并启用 `AI_TASK_ROUTING_ENABLED=true`。
+- [x] `note_summary` 使用 SiliconFlow `Qwen/Qwen3-14B` 且 `enable_thinking=false`，持续 429/503 时切换 B.AI。
+- [x] 长文本 live smoke 返回非空正文，没有把 reasoning 写入 summary。
+- [x] dry-run 只筛选 6 篇 `summarySource=fallback` 的测试笔记，用户确认后执行。
+- [x] 按 summary → 主题向量 → Chunk 顺序逐篇重建，并在中断后只读核对实际状态。
+- [x] 派生写回未改变 Note 业务 `updatedAt`。
+- [x] 6 篇均为 AI summary；主题向量均为 4096 维；60 个 Chunk embedding 全部完整。
+- [x] Summary 恢复完成，后续继续 P0 剩余任务路由、审计和固定评测。
+
+## Task 0.8：持久化 Note 派生队列与 provider 容量控制
+
+**现状约束：** 前端已在 400ms 后自动保存；`NoteDerivedScheduler` 已按 `noteId` 合并 10 秒静默期内的更新；`NotesService` 对无实际变化的保存不调度；长摘要的分段请求已串行；`AiGatewayClient` 已对 429/502/503/504 和网络错误执行最多两次指数退避重试。实现时保留这些正确行为，不重复实现第二套前端保存队列，也不把知识图谱提案或 RAG 查询错误地挂到自动保存上。
+
+**Files:**
+- Modify: `notes-backend/package.json`
+- Modify: `notes-backend/src/modules/notes/note-derived-scheduler.ts`
+- Modify: `notes-backend/src/modules/notes/note-derived.service.ts`
+- Modify: `notes-backend/src/modules/notes/notes.module.ts`
+- Create: `notes-backend/src/modules/notes/note-derived-job.types.ts`
+- Create: `notes-backend/src/modules/notes/note-derived-queue.service.ts`
+- Create: `notes-backend/src/modules/notes/note-derived.worker.ts`
+- Create: `notes-backend/src/modules/ai/ai-provider-capacity.service.ts`
+- Modify: `notes-backend/src/modules/ai/ai-gateway.client.ts`
+- Modify: `notes-backend/.env.example`
+- Test: `notes-backend/test/note-derived-queue.test.ts`
+- Test: `notes-backend/test/ai-provider-capacity.test.ts`
+- Test: `notes-backend/test/notes-update-access.test.ts`
+- Create: `docs/runbooks/ai-derived-job-operations.md`
+
+**Architecture:** 复用现有 Redis，使用 BullMQ 保存 Note 派生任务；job 只保存 noteId、userId、变化类型和 `expectedUpdatedAt`，worker 执行前重新读取 Note 并验证快照，不能把整篇正文复制到 Redis。使用稳定 `jobId=note-derived:<noteId>` 合并静默期内更新，不同进程共享同一去重与并发边界。AI Gateway 每次 provider 请求前通过 Redis 原子预算器预约请求数和估算 token；实际 usage 可得时回写差额，不可得时保留保守估算。
+
+- [x] 先写失败测试，证明同一 note 连续自动保存只留下最后一个 delayed job，不同 note 不互相覆盖，进程重新创建 queue 后未完成 job 仍存在。
+- [x] 引入 BullMQ，复用 `REDIS_URL`，为 queue、worker 和测试提供显式生命周期关闭，禁止测试进程悬挂。
+- [x] 将 `NoteDerivedScheduler` 从进程内 `Map + setTimeout` 改为持久化 delayed job；保留 10 秒 quiet period，并把 title/content/taxonomy 变化做并集合并。
+- [x] worker 处理前按 noteId/userId 重新读取当前 Note；若 `updatedAt` 已变化，丢弃陈旧 job 或用最新快照重新排队，禁止旧 summary、主题向量或 Chunk 覆盖新正文。
+- [x] worker 内保持单篇笔记 `summary → topic embedding → Chunk embedding` 时序；长摘要分段继续串行，不新增同笔记分段并发。
+- [x] provider 容量服务至少区分 `siliconflow`、`bai`、`ar`，配置 `*_AI_MAX_CONCURRENCY`、`*_AI_RPM`、`*_AI_TPM`；配置缺失时使用文档化的保守默认值，测试不得依赖真实供应商。
+- [x] 使用 Redis Lua 或等价原子操作完成滚动分钟 RPM/TPM 预约；多个 Nest 实例不能各自独立计数。等待容量时 job 保持 delayed/waiting，不占用 worker 并发槽忙等。
+- [x] token 预算基于消息输入估算加 `maxTokens` 预约；响应含 usage 时校正，供应商未返回 usage 时不伪造精确消耗。fallback 必须按实际目标 provider 重新预约预算。
+- [x] 保留 Gateway 已有 `Retry-After` 与指数退避；容量服务负责请求前削峰，Gateway retry 负责请求后的瞬时故障，两者不能互相递归或无限重试。
+- [x] 为 job 记录 status、attempts、nextRunAt、lastErrorCode 和耗时，不保存 API key、完整正文、prompt、reasoning 或模型完整响应；失败达到上限后进入 failed 集合并可按 noteId 安全重放。
+- [x] 增加运行手册：查看 waiting/active/delayed/failed 数量、按 noteId 重放、暂停/恢复 worker、调整并发/RPM/TPM；不要求用户粘贴 key。
+- [x] 故障测试覆盖 Redis 短暂不可用、worker 重启、429 Retry-After、容量等待、陈旧快照、任务重放和多实例竞争。
+- [x] 验收：模拟 20 篇笔记同时更新，保存 API 不等待 AI；实际 active 数不超过配置；同 note 只执行最新派生任务；重启后任务继续；无旧派生字段覆盖；后端全量单测和 build 通过。
+- [x] 提交：`feat(ai): 增加持久化派生队列与容量控制`。
 
 **P0 Exit Gate:**
 
-- [ ] 后端全部单测和 build 通过。
-- [ ] 固定评测中摘要、图谱、提案、RAG 样本空正文率为 0，结构有效率为 100%。
-- [ ] 故障注入验证 quality/provider 两条 fallback 不串联。
-- [ ] 用户完成“U1 API 配置与额度确认”后，live smoke test 通过。
+- [x] 当前后端 183 个单测和 build 通过。
+- [x] 20 个固定 live 样例覆盖摘要、图谱、提案、RAG：有效率 100%、空正文率 0%；Qwen3-14B 四条链路 P95 均小于 1.3 秒。
+- [x] SiliconFlow standard/deep 与 AR expert live smoke 均为 HTTP 200；B.AI provider fallback 通过故障注入测试。
+- [x] 故障注入验证 quality/provider 两条 fallback 不串联，流式输出开始后不切换 provider。
+- [x] Task 0.8 的持久化队列、跨实例并发、RPM/TPM 预约、重启恢复和 20 篇笔记突发验收通过。
+- [ ] live smoke 已通过；仍需用户在控制台完成 U1 的账户归属、余额与 RPM/TPM 确认。
 
 ---
 
@@ -171,13 +232,13 @@ interface AiModelPolicy {
 
 **Produces:** 一条不泄密的检查命令和一份用户可操作 runbook。
 
-- [ ] 检查脚本分别报告普通 MongoDB index 与 Atlas Vector Search index，不能把同名 B-tree index 误判为 Vector Search。
-- [ ] 报告期望契约：`notes.vector_index / embedding / 4096` 和 `note_chunks.note_chunk_vector_index / embedding / 4096`。
-- [ ] 回填报告补充 `summaryAi / summaryPassthrough / summaryFallback / topicSucceeded / chunkSucceeded / failedNoteIds`。
-- [ ] 回填后抽样校验 headingPath 不只包含笔记标题、HTML 标签闭合、embedding 长度为 4096。
-- [ ] runbook 只要求用户执行控制台权限内的动作，不要求用户粘贴密钥或数据库连接串到聊天。
-- [ ] 运行回填单测、语义搜索单测和后端 build。
-- [ ] 提交：`chore(search): 固化向量与回填验收流程`。
+- [x] 检查脚本分别报告普通 MongoDB index 与 Atlas Vector Search index，不能把同名 B-tree index 误判为 Vector Search。
+- [x] 报告期望契约：`notes.vector_index / embedding / 4096` 和 `note_chunks.note_chunk_vector_index / embedding / 4096`。
+- [x] 回填报告补充 `summaryAi / summaryPassthrough / summaryFallback / topicSucceeded / chunkSucceeded / failedNoteIds`。
+- [x] 回填后抽样校验 headingPath 不只包含笔记标题、HTML 标签闭合、embedding 长度为 4096。
+- [x] runbook 只要求用户执行控制台权限内的动作，不要求用户粘贴密钥或数据库连接串到聊天。
+- [x] 运行回填单测、语义搜索单测和后端 build。
+- [x] 提交：`chore(search): 固化向量与回填验收流程`（`4fa3c6d`）。
 
 ## Task 1.2：完成搜索与图谱 UI 发布验收
 
@@ -187,20 +248,20 @@ interface AiModelPolicy {
 - Test: `notes-frontend/__tests__/knowledge-graph-layout.spec.ts`
 - Modify only if a verified defect exists: `notes-frontend/src/components/notes/*`、`notes-frontend/src/components/knowledge-bases/*`、对应样式文件。
 
-- [ ] 先处理当前工作区未提交前端变更的归属：用户改动继续保留；本任务不得自动提交它们。
-- [ ] 运行前端全量 Jest、`npm run type-check` 和 `npm run build`，不能只依赖定向测试。
+- [x] 先处理当前工作区未提交前端变更的归属：用户改动继续保留；本任务不得自动提交它们。
+- [x] 运行前端全量 Jest、`npm run type-check` 和 `npm run build`，不能只依赖定向测试。
 - [ ] 使用真实 6 条笔记验证 keyword/vector/hybrid 三种模式；结果按笔记去重，命中 Chunk 可展开且 preview 是纯文本。
 - [ ] 知识库图谱验证空态、saved/proposal、warnings、长节点名、缩放、拖拽、节点筛选和窄屏。
-- [ ] 只有复现的 UI 缺陷才进入修复；不得因计划文本与现状不同而重写已通过界面。
-- [ ] 提交：`test(frontend): 收口搜索与图谱发布验收`，若没有代码变化则不制造空提交。
+- [x] 只有复现的 UI 缺陷才进入修复；不得因计划文本与现状不同而重写已通过界面。
+- [x] 提交：`test(frontend): 收口搜索与图谱发布验收`（`94e6f11`）。
 
 **P1 Exit Gate:**
 
-- [ ] 用户完成“U2 Atlas 索引确认”。
-- [ ] 用户完成“U3 真实回填确认”。
-- [ ] 6 条笔记抽样数据无空 embedding、错误 headingPath 或正文式假 summary。
-- [ ] 前后端全量测试、type-check 和 build 通过。
-- [ ] 搜索和图谱 UI 由用户完成一次视觉确认。
+- [x] 用户完成“U2 Atlas 索引确认”。2026-08-28 用户确认创建完成，代理只读脚本复验两套 index 均为 READY 且契约匹配。
+- [x] U3 真实回填已由用户确认并执行。
+- [x] 6 条笔记无空 embedding、错误 headingPath 或正文式假 summary。2026-08-28 复核确认唯一标题级 headingPath 对应正文原本没有小标题，不属于数据错误；经用户授权后以 0 次模型请求补齐 63 个旧 Chunk 的 `embeddingModel` 与 `chunkStrategyVersion`，复验无遗漏。
+- [x] 前后端全量测试、type-check 和 build 通过。
+- [x] 搜索和图谱 UI 由用户完成一次视觉确认。2026-08-28 用户确认，并反馈节点较多时画布偏小、知识库列表可考虑收缩。
 
 ---
 
@@ -219,12 +280,12 @@ interface AiModelPolicy {
 
 **Produces:** node/edge 的 `evidenceChunkIds: ObjectId[]`；保存时重新验证 user、knowledgeBase、note 三层边界。
 
-- [ ] 先写失败测试：模型返回知识库外、其他用户或不属于 node.noteIds 的 Chunk ID 时必须被剔除。
-- [ ] 图谱构建输入改为标题、summary 与有界 Chunk 证据；模型只能返回输入中出现的 Chunk ID。
-- [ ] 保存时查询 `NoteChunk` 再校验，不能信任模型或客户端 ID。
-- [ ] 保留旧 `noteIds` 兼容导航；旧图谱无 evidence 时仍可读取。
-- [ ] 删除/移出知识库的笔记必须清理失效证据引用，不能删除其他笔记共享节点。
-- [ ] 运行知识图谱和权限测试并提交：`feat(graph): 绑定图谱与原文证据`。
+- [x] 先写失败测试：模型返回知识库外、其他用户或不属于 node.noteIds 的 Chunk ID 时必须被剔除。
+- [x] 图谱构建输入改为标题、summary 与有界 Chunk 证据；模型只能返回输入中出现的 Chunk ID。
+- [x] 保存时查询 `NoteChunk` 再校验，不能信任模型或客户端 ID。
+- [x] 保留旧 `noteIds` 兼容导航；旧图谱无 evidence 时仍可读取。
+- [x] 删除/移出知识库的笔记必须清理失效证据引用，不能删除其他笔记共享节点。
+- [x] 运行知识图谱和权限测试并提交：`feat(graph): 绑定图谱与原文证据`（`d926e9e`）。
 
 ## Task 2.2：提供只读证据查询接口
 
@@ -237,16 +298,18 @@ interface AiModelPolicy {
 
 **Produces:** 点击 node/edge 时返回 `{ noteId, noteTitle, chunkId, headingPath, excerpt }[]`。
 
-- [ ] 接口始终重新应用 NoteAccess；图谱中残留 ID 不得扩大读权限。
-- [ ] excerpt 服务端截断并转纯文本，完整正文仍从现有笔记接口按权限读取。
-- [ ] 无证据的旧图谱返回空数组和兼容提示，不返回 500。
-- [ ] 更新 OpenAPI、API client、权限测试并提交：`feat(graph): 查询节点原文证据`。
+- [x] 接口始终重新应用 NoteAccess；图谱中残留 ID 不得扩大读权限。
+- [x] excerpt 服务端截断并转纯文本，完整正文仍从现有笔记接口按权限读取。
+- [x] 无证据的旧图谱返回空数组和兼容提示，不返回 500。
+- [x] 更新 OpenAPI、API client、权限测试并提交：`feat(graph): 查询节点原文证据`（`c8de74d`）。
 
 **P2 Exit Gate:**
 
-- [ ] 新生成图谱的节点与主要边具有可点击的真实 Chunk 证据。
-- [ ] 伪造 Chunk ID、跨用户和移出知识库场景全部被测试拒绝。
-- [ ] 旧图谱仍可展示。
+- [x] 新生成图谱的节点与主要边具有可点击的真实 Chunk 证据。
+- [x] 伪造 Chunk ID、跨用户和移出知识库场景全部被测试拒绝。
+- [x] 旧图谱仍可展示。
+
+2026-08-28：P2 代码与自动化验收完成。2026-08-31：对"项目测试库2"（6a8ecdd92d651b96f85c3a20）发起真实 proposal 并保存图谱，14 nodes/15 edges，节点与边证据绑定 100%（14/14、15/15），9 个唯一 Chunk ID 全部命中真实 note_chunks；浏览器验收通过（展开完整 Chunk、定位原文、性能面板阶段之和与总耗时一致）。
 
 ---
 
@@ -438,10 +501,11 @@ interface RagPlan {
 
 你需要：
 
-1. 确认 `SILICONFLOW_API_KEY` 与 `BAI_API_KEY` 属于预期 Workspace；
+1. 确认 `SILICONFLOW_API_KEY`、`BAI_API_KEY` 与 `AR_API_KEY` 属于预期账户或 Workspace；
 2. 确认硅基流动允许 Qwen3.5-4B、Qwen3-14B、DeepSeek-V4-Flash；
 3. 确认 B.AI DeepSeek-V4-Flash 的 RPM/TPM 和当前活动额度；
-4. 如果 live smoke test 返回 401/403/配额错误，只提供错误码和 request ID，不发送 key。
+4. 确认 AgentRouter 可调用 `claude-opus-4-8`，并接受其专家链路较高延迟和 4096～8000 token 预算；
+5. 如果 live smoke test 返回 401/403/配额错误，只提供错误码和 request ID，不发送 key。
 
 代理负责：实现配置检查、发送最小 smoke test、解析结果和调整代码。不会反复请求模型来猜额度。
 
@@ -463,9 +527,11 @@ note_chunks.note_chunk_vector_index
 
 代理负责提供并运行只读诊断脚本。若当前数据库账号没有 Search Index 管理权限，代理不会伪装已经创建成功。
 
-### U3：真实回填确认（P1 Exit Gate）
+2026-08-28 已完成：用户确认 `note_chunks.note_chunk_vector_index` 创建并进入 READY，代理随后通过只读脚本复验两套 index 的 path、dimensions 与 similarity 均匹配。
 
-代理运行回填并给出最终报告；你只需要确认允许对当前 6 条测试笔记重建派生数据，并在报告后抽看 1～2 篇笔记的 summary/Chunk 是否符合预期。若笔记数量或数据性质变化，需要你先说明是否仍可覆盖重建。
+### U3：真实回填确认（已完成）
+
+2026-08-27 已在用户确认后完成 6 篇测试笔记重建：全部写入 AI summary，主题向量均为 4096 维，60 个 Chunk embedding 完整，业务 `updatedAt` 未变化。以后若数据数量或性质变化，再次覆盖重建仍需重新确认范围。
 
 ### U4：高风险执行策略确认（P4 → P5 Gate）
 
@@ -514,11 +580,11 @@ note_chunks.note_chunk_vector_index
 
 立即开始且不需要额外产品决策的工作：
 
-1. Task 0.1 固定 Node/npm；
-2. P0 模型路由 Task 0.2～0.7；
-3. Task 1.1 完善索引/回填诊断；
-4. Task 1.2 前端全量验收；
-5. 等待 U1、U2、U3 的外部确认后关闭 P0/P1；
-6. 再进入 P2 图谱证据绑定。
+1. 执行 Task 0.8：持久化 Note 派生队列、跨实例并发和 provider RPM/TPM 容量控制；
+2. 用户在供应商控制台完成 U1 账户归属、余额与 RPM/TPM 确认，按真实限制调整环境变量后关闭 P0 Exit Gate；
+3. Task 1.1 完善 Atlas 索引/回填诊断与 runbook；
+4. Task 1.2 运行前端全量测试、正式 build 和搜索/图谱视觉验收；
+5. 用户完成 U2 Atlas Search Index 确认；U3 已完成；
+6. P1 Exit Gate 关闭后进入 P2 图谱证据绑定。
 
 禁止提前并行实现 P4/P5。它们依赖 P0 的模型审计、P2 的证据和 P3 暴露出的真实检索质量；提前开发只会把不稳定推理结果直接变成高风险写操作。

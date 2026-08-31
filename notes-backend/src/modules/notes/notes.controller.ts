@@ -42,6 +42,15 @@ export class NotesController {
     );
   }
 
+  @Get(':noteId/chunks/:chunkId/location')
+  async getChunkLocation(
+    @Param('noteId') noteId: string,
+    @Param('chunkId') chunkId: string,
+    @Request() req,
+  ) {
+    return this.notesService.getChunkLocation(noteId, chunkId, req.user.id);
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @Request() req) {
     return this.notesService.findOne(id, req.user.id);

@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useLayoutEffect, useCallback, useRef, Suspense } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, boardsAPI, mindmapsAPI } from '@/lib/api'
+import { fetchNoteById, fetchNotes, fetchCategories, fetchTags, updateNote, boardsAPI, mindmapsAPI, notesAPI } from '@/lib/api'
 import dynamic from 'next/dynamic'
 import { Button } from '@/components/ui/button'
 import type { Note, Category, Tag } from '@/types'
@@ -29,6 +29,57 @@ export interface NoteEditorShellProps {
   id: string
   initialData?: Note
   initialContent?: string
+}
+
+const normalizeLocationText = (value: string) => value.replace(/\s+/g, ' ').trim()
+
+function findAnchorTarget(root: HTMLElement, anchorText: string) {
+  const expected = normalizeLocationText(anchorText)
+  if (!expected) return null
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT)
+  const owners: Array<HTMLElement | null> = []
+  let flat = ''
+  let previousBlock: Element | null = null
+  let current = walker.nextNode()
+  while (current) {
+    const parent = current.parentElement
+    const block = parent?.closest('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre,div') || parent
+    if (flat && block && previousBlock && block !== previousBlock && !flat.endsWith(' ')) {
+      flat += ' '
+      owners.push(parent)
+    }
+    for (const character of current.textContent || '') {
+      if (/\s/.test(character)) {
+        if (flat && !flat.endsWith(' ')) {
+          flat += ' '
+          owners.push(parent)
+        }
+      } else {
+        flat += character
+        owners.push(parent)
+      }
+    }
+    previousBlock = block
+    current = walker.nextNode()
+  }
+  const index = normalizeLocationText(flat).indexOf(expected)
+  const owner = index >= 0 ? owners[index] : null
+  return owner?.closest<HTMLElement>('p,h1,h2,h3,h4,h5,h6,li,blockquote,pre') || owner
+}
+
+function findHeadingTarget(root: HTMLElement, headingPath: string[]) {
+  const headings = Array.from(root.querySelectorAll<HTMLElement>('h1,h2,h3,h4,h5,h6'))
+  const expectedPath = headingPath.map(normalizeLocationText).filter(Boolean)
+  const editorPaths = expectedPath.length > 1 ? [expectedPath, expectedPath.slice(1)] : [expectedPath]
+  const stack: Array<{ level: number; text: string }> = []
+  for (const heading of headings) {
+    const level = Number(heading.tagName.slice(1))
+    while (stack.length > 0 && stack[stack.length - 1].level >= level) stack.pop()
+    stack.push({ level, text: normalizeLocationText(heading.textContent || '') })
+    if (editorPaths.some((path) => path.length === stack.length
+      && stack.every((item, index) => item.text === path[index]))) return heading
+  }
+  return null
 }
 
 function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShellProps) {
@@ -81,6 +132,26 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
   const [outlinePinned, setOutlinePinned] = useState(true)
   const dragRef = useRef<{ pointerId: number; startX: number; startWidth: number; width: number } | null>(null)
   const [isResizingLeft, setIsResizingLeft] = useState(false)
+  const [editorRoot, setEditorRoot] = useState<HTMLElement | null>(null)
+  const [editorContentRevision, setEditorContentRevision] = useState(0)
+  const [evidenceLocation, setEvidenceLocation] = useState<{
+    key: string
+    anchorText: string
+    headingPath: string[]
+  } | null>(null)
+  const [evidenceLocationError, setEvidenceLocationError] = useState('')
+  const locatedEvidenceKeyRef = useRef('')
+  const failedEvidenceKeyRef = useRef('')
+  const chunkId = searchParams?.get('chunkId') || ''
+  const headingQuery = searchParams?.get('heading') || ''
+  const handleEditorReady = useCallback((root: HTMLElement | null) => {
+    if (root) {
+      locatedEvidenceKeyRef.current = ''
+      failedEvidenceKeyRef.current = ''
+    }
+    setEditorRoot(root)
+    if (root) setEditorContentRevision((revision) => revision + 1)
+  }, [])
   useEffect(() => {
     // 目录是辅助导航，加载失败不能阻断正文编辑。
     if (typeof fetchNotes !== 'function') return
@@ -317,6 +388,62 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
     if (initialData && !searchParams?.get('restored')) return
     void loadNote()
   }, [loadNote, initialData, searchParams])
+
+  useEffect(() => {
+    if (!editorRoot) return
+    // 协同正文可能晚于 editor view 到达，以真实 DOM 变化作为可定位时机。
+    const observer = new MutationObserver(() => setEditorContentRevision((revision) => revision + 1))
+    observer.observe(editorRoot, { childList: true, characterData: true, subtree: true })
+    return () => observer.disconnect()
+  }, [editorRoot])
+
+  useEffect(() => {
+    const evidenceKey = `${id}:${chunkId}`
+    let active = true
+    locatedEvidenceKeyRef.current = ''
+    failedEvidenceKeyRef.current = ''
+    setEvidenceLocation(null)
+    setEvidenceLocationError('')
+    if (!chunkId) return
+
+    void notesAPI.getChunkLocation(id, chunkId)
+      .then((location) => {
+        if (!active) return
+        setEvidenceLocation({ key: evidenceKey, ...location })
+      })
+      .catch(() => {
+        if (!active) return
+        const fallbackPath = headingQuery.split('>').map((part) => part.trim()).filter(Boolean)
+        setEvidenceLocation({ key: evidenceKey, anchorText: '', headingPath: fallbackPath })
+      })
+
+    return () => { active = false }
+  }, [chunkId, headingQuery, id])
+
+  useEffect(() => {
+    if (!chunkId || !editorRoot || loading || !evidenceLocation) return
+    const evidenceKey = `${id}:${chunkId}`
+    if (evidenceLocation.key !== evidenceKey || locatedEvidenceKeyRef.current === evidenceKey) return
+    const highlighted = findAnchorTarget(editorRoot, evidenceLocation.anchorText)
+      || findHeadingTarget(editorRoot, evidenceLocation.headingPath)
+    if (highlighted) {
+      locatedEvidenceKeyRef.current = evidenceKey
+      setEvidenceLocationError('')
+      highlighted.classList.add('evidence-location-target')
+      highlighted.scrollIntoView({ behavior: 'smooth', block: 'center' })
+      const clearTimer = window.setTimeout(() => highlighted.classList.remove('evidence-location-target'), 2400)
+      return () => {
+        window.clearTimeout(clearTimer)
+        highlighted.classList.remove('evidence-location-target')
+      }
+    }
+    // 定位失败只回到可见顶部并提示，不通过 editor command 或 Y.Doc 改写正文。
+    if (failedEvidenceKeyRef.current !== evidenceKey) {
+      failedEvidenceKeyRef.current = evidenceKey
+      editorRoot.scrollIntoView({ behavior: 'smooth', block: 'start' })
+      setEvidenceLocationError('未找到原证据位置')
+    }
+  }, [chunkId, editorContentRevision, editorRoot, evidenceLocation, id, loading])
 
   useEffect(() => {
     const loadMeta = async () => {
@@ -596,6 +723,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
             )}
           />
           {error && <div className="editor-error-banner" role="alert">{error}</div>}
+          {evidenceLocationError && <div className="editor-error-banner" role="status">{evidenceLocationError}</div>}
           <div className="editor-edit-row">
             <div ref={editorContainerRef} className="editor-rich-editor" data-fullscreen={isFullscreen} style={isFullscreen ? { position: 'fixed', inset: 0, zIndex: 50, width: '100vw', height: '100vh', overflowY: 'auto', background: 'var(--bg)' } : undefined}>
               <TiptapToolbar disabled={readOnly} isFullscreen={isFullscreen} formatState={formatState} exec={(cmd, payload) => {
@@ -629,6 +757,7 @@ function NoteEditorShellInner({ id, initialData, initialContent }: NoteEditorShe
                 onSelectionChange={(start, end) => setSelection({ start, end })}
                 onFormatChange={setFormatState}
                 onParticipantsChange={setParticipants}
+                onReady={handleEditorReady}
                 onContentChange={(html) => {
                   extractHeadingsFromHTML(html)
                   if (readOnly) return
