@@ -164,6 +164,8 @@ describe('AI performance settings panel', () => {
     expect(within(dialog).getByText('总耗时 19.2 秒')).toBeInTheDocument()
     expect(within(dialog).getByText('模型调用')).toBeInTheDocument()
     expect(within(dialog).getByText('17.8 秒')).toBeInTheDocument()
+    expect(within(dialog).getAllByText('deepseek-v3').length).toBeGreaterThan(0)
+    expect(within(dialog).getByText('首次调用')).toBeInTheDocument()
     fireEvent.keyDown(document, { key: 'Escape' })
     expect(screen.queryByRole('dialog', { name: 'AI 请求详情' })).not.toBeInTheDocument()
     await waitFor(() => expect(detailTrigger).toHaveFocus())
