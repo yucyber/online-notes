@@ -270,7 +270,7 @@ export function AiPerformancePanel() {
               <h3 id="recent-ai-runs-heading" className="text-sm font-semibold text-[var(--product-text)]">最近请求</h3>
               <span className="text-xs text-[var(--product-muted)]">共 {data.recentRuns.total} 条</span>
             </div>
-            <div className="overflow-x-auto rounded-lg border border-[var(--product-line)]">
+            <div className="overflow-x-auto [contain:paint] rounded-lg border border-[var(--product-line)]">
               <table className="w-full min-w-[680px] border-collapse text-left text-xs">
                 <thead className="bg-[var(--product-surface-muted)] text-[var(--product-muted)]"><tr><th className="px-3 py-2.5 font-medium">任务</th><th className="px-3 py-2.5 font-medium">状态</th><th className="px-3 py-2.5 font-medium">耗时</th><th className="px-3 py-2.5 font-medium">Fallback</th><th className="px-3 py-2.5 font-medium">时间</th><th className="px-3 py-2.5 font-medium"><span className="sr-only">操作</span></th></tr></thead>
                 <tbody className="divide-y divide-[var(--product-line)]">
