@@ -181,6 +181,22 @@ describe('AI performance settings panel', () => {
     expect(screen.getByRole('link', { name: 'AI 性能' })).toHaveAttribute('aria-current', 'location')
   })
 
+  it('returns to the default settings group when browser navigation clears the hash', async () => {
+    const { default: SettingsPage } = await import('@/app/dashboard/settings/page')
+    render(<SettingsPage />)
+
+    fireEvent.click(screen.getByRole('link', { name: 'AI 性能' }))
+    expect(await screen.findByText('12')).toBeInTheDocument()
+    expect(screen.getByRole('link', { name: 'AI 性能' })).toHaveAttribute('aria-current', 'location')
+
+    window.location.hash = ''
+
+    await waitFor(() => {
+      expect(screen.getByRole('link', { name: '账户信息' })).toHaveAttribute('aria-current', 'location')
+    })
+    expect(screen.getByRole('link', { name: 'AI 性能' })).not.toHaveAttribute('aria-current', 'location')
+  })
+
   it('ignores a slower stale response after task filters change', async () => {
     const stale = deferred<ReturnType<typeof performanceResult>>()
     mockAiRunsAPI.getPerformance

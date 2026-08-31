@@ -16,10 +16,10 @@ export interface KnowledgeGraphTimingSummary {
   stages: AiRunStage[]
 }
 
-function inlineGraphTiming(response: KnowledgeGraphBuildResponse): KnowledgeGraphTimingSummary | null {
+function inlineGraphTiming(response: KnowledgeGraphBuildResponse): KnowledgeGraphTimingSummary {
   const durationMs = response.timing?.durationMs ?? response.durationMs
   const stages = response.timing?.stages ?? response.stages ?? []
-  return durationMs === undefined && stages.length === 0 ? null : { durationMs, stages }
+  return { durationMs, stages }
 }
 
 export function getKnowledgeBaseErrorMessage(error: unknown, fallback: string) {
@@ -199,7 +199,7 @@ export function useKnowledgeBasePage() {
         }
       } catch {
         if (requestId === graphBuildRequestRef.current) {
-          setGraphTiming(inlineTiming || { stages: [] })
+          setGraphTiming(inlineTiming)
         }
       }
     } catch {

@@ -75,9 +75,9 @@ export default function SettingsPage() {
   useEffect(() => {
     const syncGroupFromHash = () => {
       const group = window.location.hash.slice(1)
-      if (!settingsGroupIds.has(group)) return
-      setActiveGroup(group)
-      if (group === 'ai-performance') setAiPerformanceEnabled(true)
+      const nextGroup = settingsGroupIds.has(group) ? group : 'account'
+      setActiveGroup(nextGroup)
+      if (nextGroup === 'ai-performance') setAiPerformanceEnabled(true)
     }
     syncGroupFromHash()
     window.addEventListener('hashchange', syncGroupFromHash)

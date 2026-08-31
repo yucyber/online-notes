@@ -257,6 +257,20 @@ describe('knowledge base frontend entry', () => {
     expect(mockAiRunsAPI.getRun).not.toHaveBeenCalled()
   })
 
+  test('marks timing unavailable when a legacy proposal has no timing fields', async () => {
+    mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue({ ...graphProposal })
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(await screen.findByText('阶段明细不可用')).toBeInTheDocument()
+    expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('save-graph-proposal')).toBeEnabled()
+    expect(mockAiRunsAPI.getRun).not.toHaveBeenCalled()
+  })
+
   test('clears the graph running state and keeps a safe error when generation fails', async () => {
     mockKnowledgeBasesAPI.buildGraphProposal.mockRejectedValue(new Error('provider secret payload'))
     const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
