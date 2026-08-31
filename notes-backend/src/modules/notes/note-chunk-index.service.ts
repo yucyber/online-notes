@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
-import { Model } from 'mongoose'
+import { Model, Types } from 'mongoose'
 import { EmbeddingService } from '../semantic/embedding.service'
 import { NoteChunkerService } from './note-chunker.service'
 import { Note, NoteDocument } from './schemas/note.schema'
@@ -36,9 +36,12 @@ export class NoteChunkIndexService {
   ) {}
 
   async refreshNoteChunks(snapshot: NoteChunkSourceSnapshot): Promise<NoteChunkRefreshResult> {
+    // 统一按 schema 声明存储为 ObjectId：读取方（图谱证据、语义检索）都用 ObjectId 查询，避免字符串/对象类型不一致导致永远匹配不到。
+    const noteId = new Types.ObjectId(String(snapshot.noteId))
+    const userId = new Types.ObjectId(String(snapshot.userId))
     const built = this.chunker.buildChunks({ title: snapshot.title, content: snapshot.content })
     const existing = await this.chunkModel
-      .find({ userId: snapshot.userId, noteId: snapshot.noteId })
+      .find({ userId, noteId })
       .lean()
       .exec()
     const byHash = new Map(existing.map((chunk: any) => [String(chunk.contentHash), chunk]))
@@ -85,10 +88,10 @@ export class NoteChunkIndexService {
       if (unchangedAtPosition) continue
       operations.push({
         replaceOne: {
-          filter: { userId: snapshot.userId, noteId: snapshot.noteId, chunkIndex: chunk.chunkIndex },
+          filter: { userId, noteId, chunkIndex: chunk.chunkIndex },
           replacement: {
-            userId: snapshot.userId,
-            noteId: snapshot.noteId,
+            userId,
+            noteId,
             chunkIndex: chunk.chunkIndex,
             headingPath: chunk.headingPath,
             content: chunk.content,
@@ -106,7 +109,7 @@ export class NoteChunkIndexService {
     if (removed > 0) {
       operations.push({
         deleteMany: {
-          filter: { userId: snapshot.userId, noteId: snapshot.noteId, chunkIndex: { $gte: built.length } },
+          filter: { userId, noteId, chunkIndex: { $gte: built.length } },
         },
       })
     }
