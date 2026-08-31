@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { forwardRef, Inject, Injectable } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { NoteAccessService } from '../notes/note-access.service'
@@ -30,7 +30,7 @@ export class ChunkRetrievalService {
     @InjectModel(Note.name) private readonly noteModel: Model<NoteDocument>,
     @InjectModel(KnowledgeBaseNote.name) private readonly kbNoteModel: Model<KnowledgeBaseNoteDocument>,
     private readonly noteAccess: NoteAccessService,
-    private readonly embeddingService: EmbeddingService,
+    @Inject(forwardRef(() => EmbeddingService)) private readonly embeddingService: EmbeddingService,
   ) {}
 
   async searchChunks(input: ChunkSearchInput, userId: string): Promise<ChunkSearchResult[]> {
@@ -91,6 +91,34 @@ export class ChunkRetrievalService {
       headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [],
       content: String(chunk.content || ''),
       score: Number(chunk.score || 0),
+    }))
+  }
+
+  async searchKeywordChunks(input: ChunkSearchInput, userId: string): Promise<ChunkSearchResult[]> {
+    const query = String(input.query || '').trim()
+    const limit = Math.max(1, Math.min(50, Number(input.limit || 8)))
+    if (!query) return []
+
+    const requestedIds = await this.resolveRequestedNoteIds(input, userId)
+    if (requestedIds && requestedIds.length === 0) return []
+    const readableAnd: any[] = [this.noteAccess.readableFilter(userId)]
+    if (requestedIds) readableAnd.push({ _id: { $in: requestedIds } })
+    const readableNotes = await this.noteModel.find({ $and: readableAnd }).select('_id title').lean().exec()
+    const allowedIds = readableNotes.map((note: any) => note._id as Types.ObjectId)
+    if (allowedIds.length === 0) return []
+
+    const tokens = query.split(/\s+/).filter(Boolean).slice(0, 3)
+    const pattern = tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
+    const chunks = await this.chunkModel.find({
+      userId: new Types.ObjectId(userId),
+      noteId: { $in: allowedIds },
+      content: { $regex: pattern, $options: 'i' },
+    }).select('_id noteId headingPath content').sort({ noteId: 1, chunkIndex: 1, _id: 1 }).lean().exec()
+    const titles = new Map(readableNotes.map((note: any) => [String(note._id), String(note.title || '')]))
+    return chunks.slice(0, limit).map((chunk: any, index: number) => ({
+      chunkId: String(chunk._id), noteId: String(chunk.noteId), title: titles.get(String(chunk.noteId)) || '',
+      headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [], content: String(chunk.content || ''),
+      score: Math.max(0, 1 - index / Math.max(1, limit)),
     }))
   }
 

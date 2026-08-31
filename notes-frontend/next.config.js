@@ -23,15 +23,19 @@ const nextConfig = {
   typescript: { ignoreBuildErrors: true },
   outputFileTracingRoot: __dirname,
   env: {
+    // 浏览器侧 baseURL 必须用 localhost：页面在 http://localhost:3000，若用 127.0.0.1 则跨 site，
+    // 后端 SameSite=Lax 的登录 cookie 不再随请求发送，会导致登录成功后立即 401 跳回登录页（循环）。
     NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api',
     // 可选：RUM 上报端点，若未配置则前端仅本地调试输出
     NEXT_PUBLIC_RUM_ENDPOINT: process.env.NEXT_PUBLIC_RUM_ENDPOINT || '',
     NEXT_PUBLIC_YWS_URL: process.env.NEXT_PUBLIC_YWS_URL,
   },
   async rewrites() {
-    // Next 重写：将前端域名下的 /api/* 代理到后端 3001，统一同源请求，减少 CORS/OPTIONS 负担
-    const apiUrl = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
-    const backendOrigin = apiUrl.replace(/\/(api|v\d+).*$/, '') || 'http://localhost:3001'
+    // Next 重写：将前端域名下的 /api/* 代理到后端 3001，统一同源请求，减少 CORS/OPTIONS 负担。
+    // 代理目标硬编码 127.0.0.1：这里是 Node 进程解析，用 localhost 会优先 IPv6 的 ::1，
+    // 而后端只监听 IPv4 的 0.0.0.0:3001，导致 ECONNREFUSED ::1:3001。
+    // 注意不要复用 NEXT_PUBLIC_API_URL（那是给浏览器的，必须是 localhost 以保持 cookie 同 site）。
+    const backendOrigin = 'http://127.0.0.1:3001'
     return [
       {
         source: '/api/:path*',

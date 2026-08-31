@@ -9,6 +9,14 @@
 - **数据库选择**：当前项目实际使用 `test` 库（`.env` 连接串未显式指定库名时，落到默认库）。排查数据问题时先确认连的是哪个库，别被旧数据（`notes` 库）误导。
 - **toJSON transform**：User schema 的 `toJSON` 里 `ret.id = ret._id`（未 `toString()`）是可疑点，序列化输出里 id 可能是 ObjectId 对象而非字符串，排查身份/ID 相关 bug 时留意。
 
+## Redis（ioredis）
+
+- **localhost 解析到 IPv6 ::1**：Node 解析 `localhost` 可能优先返回 IPv6 的 `::1`，而 Windows 本机 redis-server 常只监听 IPv4 的 `127.0.0.1`，导致 `ECONNREFUSED ::1:6379`。解决：`REDIS_URL` 显式写 `redis://127.0.0.1:6379`，不要用 `localhost`。
+
+## 前端 Node 侧直连后端（SSR / route handler）
+
+- **localhost 解析到 IPv6 ::1**（同 Redis 坑）：Node 进程内（SSR 组件、route handler、proxy）用 `localhost` fetch 后端会优先解析到 `::1`，而后端只监听 IPv4 `0.0.0.0:3001`，报 `ECONNREFUSED ::1:3001`。解决：Node 侧统一用 `SERVER_API_URL`（`src/lib/server/api-url.ts`，默认 `http://127.0.0.1:3001/api`），**不要复用 `NEXT_PUBLIC_API_URL`**——那是给浏览器的，必须保持 localhost 才能与页面同 site 带上登录 cookie。已发生案例：笔记详情 SSR 报 `ECONNREFUSED ::1:3001`，见 `docs/debug-records.md`。
+
 ## 认证 / 权限
 
 - JWT token 中 `sub` 是用户 `_id`，`jwt.strategy.ts` 用 `findById(payload.sub)` 返回 mongoose document 挂到 `req.user`。

@@ -10,8 +10,10 @@ import { REDIS_CLIENT } from './redis.constants'
     {
       provide: REDIS_CLIENT,
       inject: [ConfigService],
+      // 默认地址用 127.0.0.1 而非 localhost：Node 解析 localhost 可能优先走 IPv6 ::1，
+      // 而本机 Redis 通常只监听 IPv4 的 127.0.0.1，导致 ECONNREFUSED ::1:6379。
       useFactory: (config: ConfigService) =>
-        new Redis(config.get<string>('REDIS_URL') || 'redis://localhost:6379'),
+        new Redis(config.get<string>('REDIS_URL') || 'redis://127.0.0.1:6379'),
     },
   ],
   exports: [REDIS_CLIENT],

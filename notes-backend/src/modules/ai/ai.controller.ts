@@ -5,7 +5,7 @@ import type { Request, Response } from 'express'
 import { AiService } from './ai.service'
 import { AiRunService } from './ai-run.service'
 import { AiKnowledgeGraphInput, AiMermaidInput, AiMindmapInput, AiPetInput } from './ai-gateway.types'
-import { AiRunPerformanceQueryDto, AiWriterDto, AiSummaryDto } from './dto'
+import { AiRagAnswerDto, AiRunPerformanceQueryDto, AiWriterDto, AiSummaryDto } from './dto'
 
 type AuthenticatedRequest = Request & {
   user?: {
@@ -63,6 +63,11 @@ export class AiController {
 
     const stream = await this.aiService.chatPet(body, this.aiContext(req))
     return this.writeTextStream(stream, res)
+  }
+
+  @Post('rag/answer')
+  async answerRag(@Body() body: AiRagAnswerDto, @Req() req?: AuthenticatedRequest) {
+    return this.aiService.answerRag(body.question, body.knowledgeBaseId, this.aiContext(req))
   }
 
   @Post('summary')

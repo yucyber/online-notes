@@ -1,5 +1,5 @@
 import { Transform } from 'class-transformer'
-import { IsString, IsOptional, IsEnum, IsArray, MaxLength, IsBoolean, IsDateString, IsInt, Min, Max } from 'class-validator'
+import { IsString, IsOptional, IsEnum, IsArray, MaxLength, IsBoolean, IsDateString, IsInt, Min, Max, IsMongoId } from 'class-validator'
 
 import { AiRunStatus } from '../schemas/ai-run.schema'
 
@@ -20,6 +20,16 @@ export class AiWriterDto {
 export class AiSummaryDto {
   @IsArray()
   notes: any[]
+}
+
+export class AiRagAnswerDto {
+  @IsString()
+  @MaxLength(2000)
+  question: string
+
+  @IsOptional()
+  @IsMongoId()
+  knowledgeBaseId?: string
 }
 
 export class AiRunPerformanceQueryDto {

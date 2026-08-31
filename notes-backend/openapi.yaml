@@ -117,6 +117,25 @@ paths:
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/ai/rag/answer:
+    post:
+      tags: [AI]
+      summary: Answer a read-only question with verified note citations
+      security:
+        - BearerAuth: []
+      requestBody:
+        $ref: '#/components/requestBodies/AiRagAnswerInput'
+      responses:
+        '201':
+          description: Grounded answer and server-verified citations
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AiRagAnswerOutput'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/ai/pet:
     post:
       tags: [AI]
@@ -1277,6 +1296,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/AiPetInput'
+    AiRagAnswerInput:
+      required: true
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/AiRagAnswerInput'
     AiSummaryInput:
       required: true
       content:
@@ -1779,6 +1804,32 @@ components:
       properties:
         message: { type: string }
         conversationId: { type: string }
+    AiRagAnswerInput:
+      type: object
+      required: [question]
+      properties:
+        question: { type: string, maxLength: 2000 }
+        knowledgeBaseId: { type: string, pattern: '^[a-fA-F0-9]{24}$' }
+    AiRagAnswerOutput:
+      type: object
+      required: [answer, citations, planSummary, warnings]
+      properties:
+        answer: { type: string }
+        citations:
+          type: array
+          items:
+            type: object
+            properties:
+              evidenceId: { type: string }
+              noteId: { type: string }
+              noteTitle: { type: string }
+              chunkId: { type: string }
+              headingPath: { type: array, items: { type: string } }
+              excerpt: { type: string }
+              score: { type: number }
+        planSummary: { type: object }
+        warnings: { type: array, items: { type: string } }
+        runId: { type: string }
     AiSummaryInput:
       type: object
       required: [notes]

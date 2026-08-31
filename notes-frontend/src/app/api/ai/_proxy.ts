@@ -1,8 +1,9 @@
 import { NextResponse } from 'next/server'
 import { cookies } from 'next/headers'
+import { SERVER_API_URL } from '@/lib/server/api-url'
 
 function getBackendApiUrl() {
-  return (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api').replace(/\/+$/, '')
+  return SERVER_API_URL.replace(/\/+$/, '')
 }
 
 async function buildJsonHeaders() {

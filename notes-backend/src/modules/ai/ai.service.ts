@@ -6,6 +6,7 @@ import { AiRunMetrics, AiRunStage, AiRunTiming } from './ai-run-timing'
 import { AggregateSummaryGraph } from './graphs/aggregate-summary.graph'
 import { KnowledgeGraphBuildGraph } from './graphs/knowledge-graph-build.graph'
 import { KnowledgeBasesService } from '../knowledge-bases/knowledge-bases.service'
+import { RagAnswerService } from './rag/rag-answer.service'
 import { buildMermaidPrompt, buildMermaidRepairPrompt, buildMindmapPrompt, buildMindmapRepairPrompt, buildWriterPrompt, cleanText, cleanTopicName, normalizeMermaidCode, normalizeMindmapAnswer, truncateContent } from './ai-content'
 
 export type SummaryGenerationResult = {
@@ -23,6 +24,7 @@ export class AiService {
     @Optional() private readonly aiRuns?: AiRunService,
     @Optional() private readonly aggregateSummaryGraph?: AggregateSummaryGraph,
     @Optional() private readonly knowledgeGraphBuildGraph?: KnowledgeGraphBuildGraph,
+    @Optional() private readonly ragAnswer?: RagAnswerService,
   ) {}
 
   // 单段摘要的上限字符数；超过则分段各自摘要再合并，保证长笔记后半部分也参与主题向量。
@@ -208,6 +210,11 @@ export class AiService {
 
   async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
     return this.gateway.streamTask({ task: 'pet_chat', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 400, temperature: 0.6, audit: { graphName: 'PetChatGraph', userId: context?.userId } })
+  }
+
+  async answerRag(question: string, knowledgeBaseId: string | undefined, context?: AiWorkflowContext) {
+    if (!this.ragAnswer) throw new Error('RAG answer service is not available.')
+    return this.ragAnswer.answer(question, knowledgeBaseId, context)
   }
 
   async generateEmbedding(text: string): Promise<number[]> { return this.gateway.embedding(text) }

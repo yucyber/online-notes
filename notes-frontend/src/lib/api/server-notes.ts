@@ -1,7 +1,8 @@
 import { cookies } from 'next/headers'
 import { Note } from '@/types'
+import { SERVER_API_URL } from '@/lib/server/api-url'
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001/api'
+const API_URL = SERVER_API_URL
 
 export async function getNoteById(id: string): Promise<Note | null> {
     try {

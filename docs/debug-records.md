@@ -117,3 +117,18 @@
   验证：同一请求由 `total: 0` 变为 `total: 7`，返回各笔记的 `bestChunk`（semantic 命中）与 `additionalChunks`。
 
 - **经验教训**：`$vectorSearch` 的 `filter` 字段必须在 Atlas 向量索引里显式声明为 `filter` 类型，光有向量 `path` 不够。此外 controller 对向量检索异常直接 fallback 到 keyword 会掩盖索引/配置类错误，排查时应先看后端日志里的 `Vector search failed` 输出，再通过 `db.collection.listSearchIndexes()` 核对索引定义是否覆盖了 `filter` 用到的字段。
+
+---
+
+## SSR 直连后端报 ECONNREFUSED ::1:3001
+
+- **日期**：2026-09-01
+- **现象**：前端 `npm run dev` 后访问 `/dashboard/notes/[id]` 页面，SSR 阶段打印 `Error fetching note: TypeError: fetch failed`，`cause: Error: connect ECONNREFUSED ::1:3001`，笔记详情拿不到；`/dashboard/notes` 列表等其他页面正常。
+- **根因**：SSR 服务端代码（`getNoteById`）在 **Node 进程内**用 `NEXT_PUBLIC_API_URL`（值 `http://localhost:3001/api`）直接 fetch 后端。Windows 下 Node 解析 `localhost` 优先返回 IPv6 `::1`，而后端 NestJS 只监听 IPv4 的 `0.0.0.0:3001`，IPv6 连接被拒。`next.config.js` 的 rewrite 代理早已硬编码 `127.0.0.1` 修复过同类问题（见该文件注释），但 `server-notes.ts` 与 AI route handler 两处遗漏，仍沿用浏览器侧的 localhost baseURL。
+- **相关文件**：
+  - `notes-frontend/src/lib/api/server-notes.ts`（SSR 笔记详情数据获取）
+  - `notes-frontend/src/app/api/ai/_proxy.ts`（AI 接口 route handler 代理）
+  - `notes-frontend/src/lib/server/api-url.ts`（新增的服务端 baseURL 常量）
+  - `notes-frontend/next.config.js`（rewrite 代理，早先已用 127.0.0.1）
+- **修复方案**：新增 `src/lib/server/api-url.ts` 导出 `SERVER_API_URL`（默认 `http://127.0.0.1:3001/api`，可用 `SERVER_API_URL` 环境变量覆盖以支持远程部署）；`server-notes.ts` 与 `_proxy.ts` 改用该常量。浏览器侧的 `NEXT_PUBLIC_API_URL` 保持不变（浏览器必须用 localhost 才能与页面同 site，保证 SameSite=Lax 登录 cookie 随请求发送）。
+- **经验教训**：Node 侧（SSR、route handler、proxy）解析 `localhost` 在 Windows 下会优先 IPv6 `::1`，直连后端必须显式用 `127.0.0.1`；`NEXT_PUBLIC_*` 变量是给浏览器的，不要在后端进程内复用来直连后端，Node 侧应单独维护 baseURL 常量。

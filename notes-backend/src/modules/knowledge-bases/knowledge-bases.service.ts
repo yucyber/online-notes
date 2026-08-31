@@ -387,6 +387,27 @@ export class KnowledgeBasesService {
     return { compatibility: items.length > 0 ? 'evidence_available' : 'evidence_unavailable', items }
   }
 
+  async expandGraphEvidence(id: string, userId: string, seedChunkIds: string[]) {
+    const kb = await this.requireKnowledgeBase(id, userId)
+    const scope = { knowledgeBaseId: this.idOf(kb), userId: this.objectId(userId, 'user id') }
+    const seeds = uniqueStrings(seedChunkIds.filter((value) => Types.ObjectId.isValid(value)))
+    if (seeds.length === 0) return []
+    const nodes = await this.requireGraphNodeModel().find({ ...scope, evidenceChunkIds: { $in: seeds.map((value) => new Types.ObjectId(value)) } }).select('nodeId evidenceChunkIds').lean().exec()
+    const nodeIds = nodes.map((node: any) => String(node.nodeId)).filter(Boolean)
+    if (nodeIds.length === 0) return []
+    const edges = await this.requireGraphEdgeModel().find({ ...scope, $or: [{ source: { $in: nodeIds } }, { target: { $in: nodeIds } }] }).select('source target evidenceChunkIds').lean().exec()
+    const expandedIds = uniqueStrings([...nodes, ...edges].flatMap((item: any) => Array.isArray(item.evidenceChunkIds) ? item.evidenceChunkIds.map(String) : []))
+    const linkedNoteIds = await this.listKnowledgeBaseNoteIds(scope.knowledgeBaseId, scope.userId)
+    const readable = linkedNoteIds.length ? await this.noteModel.find(this.noteAccess.readableNotesQuery(linkedNoteIds, userId)).select('_id title').lean().exec() : []
+    const titleById = new Map(readable.map((note: any) => [String(note._id), String(note.title || 'Untitled')]))
+    if (titleById.size === 0 || expandedIds.length === 0) return []
+    const chunks = await this.requireNoteChunkModel().find({
+      _id: { $in: expandedIds.filter((value) => Types.ObjectId.isValid(value)).map((value) => new Types.ObjectId(value)) },
+      userId: scope.userId, noteId: { $in: [...titleById.keys()].map((value) => new Types.ObjectId(value)) },
+    }).select('_id noteId headingPath content').lean().exec()
+    return chunks.map((chunk: any) => ({ chunkId: String(chunk._id), noteId: String(chunk.noteId), noteTitle: titleById.get(String(chunk.noteId)) || 'Untitled', headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [], content: this.graphEvidenceContent(chunk.content), graphPath: nodeIds }))
+  }
+
   private async loadValidEvidence(input: SaveKnowledgeGraphDto, userId: Types.ObjectId, allowedNoteIds: Types.ObjectId[]) {
     const candidateIds = uniqueStrings([...(input?.nodes || []), ...(input?.edges || [])]
       .flatMap((item) => Array.isArray(item?.evidenceChunkIds) ? item.evidenceChunkIds : [])
