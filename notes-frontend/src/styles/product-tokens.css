@@ -183,6 +183,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 .prototype-note-row:focus-within .prototype-note-preview { opacity: 1; transform: none; }
 /* 选中模式下浮卡与勾选框争位，整张隐藏 */
 .prototype-note-row.is-selection-mode .prototype-note-preview { opacity: 0 !important; visibility: hidden; }
+/* 语义搜索命中项展开“另外命中 N 处”后卡片变高，绝对定位浮卡会压住下一列表项，展开期间禁用 */
+.prototype-note-row:has(.search-hit-evidence__extras) .prototype-note-preview { opacity: 0 !important; visibility: hidden; }
 .prototype-note-preview__title { margin-bottom: 7px; color: var(--product-text); font-size: 13px; font-weight: 650; }
 .prototype-note-preview__copy { margin: 0; color: var(--product-text-secondary); font-size: 12px; line-height: 1.65; }
 .prototype-note-preview__tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 12px; }
