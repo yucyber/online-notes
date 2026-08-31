@@ -265,7 +265,30 @@ export class AiGatewayClient {
     const reader = stream.getReader()
     const provider = (stream as any).__aiProvider as AiProviderConfig
     const retryCount = Number((stream as any).__aiRetryCount || 0)
+    const decoder = new TextDecoder()
     let contentChars = 0
+    let cancelled = false
+    let finalized = false
+    const finalize = async (status: 'succeeded' | 'failed', error?: unknown) => {
+      if (finalized) return false
+      finalized = true
+      if (status === 'failed') {
+        await this.failTaskRun(runId, error)
+        return true
+      }
+      await this.mergeTaskMetrics(runId, { outputChars: contentChars })
+      await this.succeedTaskRun(runId, {
+        content: '',
+        attempt: {
+          task, reasoningMode, provider: provider.provider, model: provider.model,
+          durationMs: Date.now() - startedAt, retryCount,
+          fallbackUsed: Boolean(fallbackReason),
+          fallbackType: fallbackReason ? 'provider' : undefined,
+          fallbackReason, contentChars, reasoningChars: 0, validationResult: 'valid',
+        },
+      })
+      return true
+    }
     return new ReadableStream<Uint8Array>({
       start: (controller) => {
         const pump = async () => {
@@ -274,30 +297,28 @@ export class AiGatewayClient {
               const next = await reader.read()
               if (next.done) break
               if (next.value) {
-                contentChars += new TextDecoder().decode(next.value).length
+                contentChars += decoder.decode(next.value, { stream: true }).length
                 controller.enqueue(next.value)
               }
             }
-            await this.mergeTaskMetrics(runId, { outputChars: contentChars })
-            await this.succeedTaskRun(runId, {
-              content: '',
-              attempt: {
-                task, reasoningMode, provider: provider.provider, model: provider.model,
-                durationMs: Date.now() - startedAt, retryCount,
-                fallbackUsed: Boolean(fallbackReason),
-                fallbackType: fallbackReason ? 'provider' : undefined,
-                fallbackReason, contentChars, reasoningChars: 0, validationResult: 'valid',
-              },
-            })
-            controller.close()
+            contentChars += decoder.decode().length
+            if (cancelled) return
+            if (await finalize('succeeded')) controller.close()
           } catch (error) {
-            await this.failTaskRun(runId, error)
-            controller.error(error)
+            if (await finalize('failed', error)) controller.error(error)
           }
         }
         void pump()
       },
-      cancel(reason) { return reader.cancel(reason) },
+      cancel: async (reason) => {
+        cancelled = true
+        const finalizeCancellation = finalize('failed', new Error('AI stream cancelled'))
+        try {
+          await reader.cancel(reason)
+        } finally {
+          await finalizeCancellation
+        }
+      },
     })
   }
 

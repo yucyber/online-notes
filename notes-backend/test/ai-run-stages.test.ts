@@ -47,6 +47,21 @@ function sseResponse(content: string) {
   }), { status: 200, headers: { 'Content-Type': 'text/event-stream' } })
 }
 
+function withProductionStreamMetadata(stream: ReadableStream<Uint8Array>) {
+  Object.defineProperties(stream, {
+    __aiProvider: {
+      value: {
+        provider: 'siliconflow',
+        model: 'Qwen/Qwen3-14B',
+        apiKey: 'siliconflow-secret',
+        baseUrl: 'https://api.siliconflow.cn/v1',
+      },
+    },
+    __aiRetryCount: { value: 0 },
+  })
+  return stream
+}
+
 async function readTextStream(stream: ReadableStream<Uint8Array>) {
   const reader = stream.getReader()
   const decoder = new TextDecoder()
@@ -257,11 +272,11 @@ test('streamTask finalizes client cancellation as one failure', async () => {
   const audit = createAuditRecorder()
   const encoder = new TextEncoder()
   const client = new AiGatewayClient(createConfig() as any, (async () => sseResponse('unused')) as any, audit.service as any, createCapacity() as any)
-  ;(client as any).openPrimedTaskStream = async () => new ReadableStream<Uint8Array>({
+  ;(client as any).openPrimedTaskStream = async () => withProductionStreamMetadata(new ReadableStream<Uint8Array>({
     start(controller) {
       controller.enqueue(encoder.encode('partial'))
     },
-  })
+  }))
 
   const reader = (await client.streamTask({ task: 'writer', prompt: 'write' })).getReader()
   const first = await reader.read()
@@ -269,8 +284,30 @@ test('streamTask finalizes client cancellation as one failure', async () => {
   await reader.cancel('client cancelled')
   await new Promise<void>((resolve) => setImmediate(resolve))
 
+  assert.equal(audit.succeeded.length + audit.failed.length, 1)
   assert.equal(audit.succeeded.length, 0)
   assert.equal(audit.failed.length, 1)
+})
+
+test('streamTask counts a UTF-8 character split across chunks once', async () => {
+  const audit = createAuditRecorder()
+  const encoded = new TextEncoder().encode('你')
+  const client = new AiGatewayClient(createConfig() as any, (async () => sseResponse('unused')) as any, audit.service as any, createCapacity() as any)
+  ;(client as any).openPrimedTaskStream = async () => withProductionStreamMetadata(new ReadableStream<Uint8Array>({
+    start(controller) {
+      controller.enqueue(encoded.slice(0, 1))
+      controller.enqueue(encoded.slice(1))
+      controller.close()
+    },
+  }))
+
+  const content = await readTextStream(await client.streamTask({ task: 'writer', prompt: 'write' }))
+
+  assert.equal(content, '你')
+  assert.deepEqual(audit.metrics.map(({ runId, ...metrics }) => metrics), [
+    { inputChars: 5 },
+    { outputChars: 1 },
+  ])
 })
 
 test('chatTask records each transient retry as its own provider attempt', async () => {
