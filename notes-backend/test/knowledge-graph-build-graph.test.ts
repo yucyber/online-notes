@@ -46,9 +46,10 @@ test('KnowledgeGraphBuildGraph extracts a proposal scoped to one knowledge base'
   assert.match(calls[0].prompt, /优先发现不同 Note ID 之间有证据的关系/)
   assert.match(calls[0].prompt, /关系使用简洁中文/)
   assert.match(calls[0].prompt, /没有可靠证据时不要连线/)
+  assert.match(calls[0].prompt, /最多引用 2 条最相关的 evidenceChunkIds/)
   assert.doesNotMatch(calls[0].prompt, /Content:/)
   assert.equal(calls[0].task, 'knowledge_graph')
-  assert.equal(calls[0].maxTokens, 1400)
+  assert.equal(calls[0].maxTokens, 4096)
   assert.deepEqual(calls[0].responseFormat, { type: 'json_object' })
   assert.deepEqual(calls[0].audit, {
     graphName: 'KnowledgeGraphBuildGraph',
@@ -104,8 +105,8 @@ test('KnowledgeGraphBuildGraph limits the default proposal size', async () => {
     notes: [{ id: 'note-1', title: 'Limits' }],
   })
 
-  assert.equal(proposal.nodes.length, 24)
-  assert.equal(proposal.edges.length, 36)
+  assert.equal(proposal.nodes.length, 14)
+  assert.equal(proposal.edges.length, 20)
 })
 
 test('AiService builds knowledge graph proposals from readable knowledge base notes', async () => {

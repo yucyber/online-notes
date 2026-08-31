@@ -85,8 +85,8 @@ export class KnowledgeGraphBuildGraph {
   ) {
     this.maxNotes = options.maxNotes || 40
     this.maxNoteChars = options.maxNoteChars || 1600
-    this.maxNodes = options.maxNodes || 24
-    this.maxEdges = options.maxEdges || 36
+    this.maxNodes = options.maxNodes || 14
+    this.maxEdges = options.maxEdges || 20
     this.maxChunks = options.maxChunks || 120
     this.maxChunkChars = options.maxChunkChars || 800
   }
@@ -124,7 +124,7 @@ export class KnowledgeGraphBuildGraph {
       task: 'knowledge_graph',
       system: 'You extract knowledge graph proposals for a notes knowledge base. Return JSON only.',
       prompt: input.prompt,
-      maxTokens: 1400,
+      maxTokens: 4096,
       temperature: 0.2,
       responseFormat: { type: 'json_object' },
       audit: { graphName: 'KnowledgeGraphBuildGraph', userId: context?.userId, runId: context?.runId },
@@ -162,6 +162,7 @@ export class KnowledgeGraphBuildGraph {
       'Return strict JSON with this shape:',
       '{"nodes":[{"label":"string","type":"concept|entity|topic|claim","noteIds":["note id"],"evidenceChunkIds":["chunk id"],"confidence":0.0}],"edges":[{"source":"node label","target":"node label","relation":"string","noteIds":["note id"],"evidenceChunkIds":["chunk id"],"weight":0.0}],"warnings":["string"]}',
       'Only cite noteIds and chunkIds present in the input. If evidence is uncertain, return an empty evidenceChunkIds array. Never invent IDs.',
+      '每个节点或边最多引用 2 条最相关的 evidenceChunkIds，不要超量罗列证据。',
       '优先发现不同 Note ID 之间有证据的关系，并比较不同笔记中的概念、实体、主题和主张。',
       '关系使用简洁中文。没有可靠证据时不要连线，保持节点断开。',
       '合并表达相同或近义概念的节点，避免重复。',
