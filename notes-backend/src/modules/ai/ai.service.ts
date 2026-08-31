@@ -134,10 +134,11 @@ export class AiService {
     if (prepared.notes.length === 0) {
       const proposal = await graph.runPrepared(prepared, { ...context, userId, runId })
       await this.succeedRun(runId)
-      return proposal
+      return { ...proposal, runId }
     }
 
-    return graph.runPrepared(prepared, { ...context, userId, runId })
+    const proposal = await graph.runPrepared(prepared, { ...context, userId, runId })
+    return { ...proposal, runId }
   }
 
   private async startKnowledgeGraphRun(userId: string) {

@@ -148,9 +148,41 @@ test('AiService builds knowledge graph proposals from readable knowledge base no
   const proposal = await service.buildKnowledgeGraphProposal('kb-1', { userId: 'user-1' })
 
   assert.equal(proposal.knowledgeBaseId, 'kb-1')
+  assert.equal(proposal.runId, 'run-1')
+  assert.equal('userId' in proposal, false)
+  assert.equal('error' in proposal, false)
+  assert.equal('stages' in proposal, false)
   assert.deepEqual(order, ['list', 'prepare', 'stage', 'run'])
   assert.deepEqual(graphCalls[0].input.notes, [{ id: 'note-1', title: 'Only readable', chunks: [{ chunkId: 'chunk-1', content: 'Scoped note' }] }])
   assert.deepEqual(graphCalls[0].context, { userId: 'user-1', runId: 'run-1' })
+})
+
+test('AiService returns the audit run id when a knowledge base has no graph candidates', async () => {
+  const graph = {
+    prepare: () => ({ knowledgeBaseId: 'kb-empty', notes: [], prompt: '' }),
+    runPrepared: async () => ({
+      knowledgeBaseId: 'kb-empty',
+      generatedAt: '2026-06-05T00:00:00.000Z',
+      nodes: [],
+      edges: [],
+      warnings: [],
+    }),
+  }
+  const knowledgeBases = { listGraphNotes: async () => [] }
+  const succeeded: string[] = []
+  const audit = {
+    start: async (input: any) => ({ ...input, runId: 'run-empty', status: 'running' }),
+    addStage: async () => undefined,
+    mergeMetrics: async () => undefined,
+    succeed: async (runId: string) => { succeeded.push(runId) },
+    fail: async () => { throw new Error('unexpected failure finalization') },
+  }
+  const service = new AiService({} as any, knowledgeBases as any, audit as any, undefined, graph as any)
+
+  const proposal = await service.buildKnowledgeGraphProposal('kb-empty', { userId: 'user-1' })
+
+  assert.equal(proposal.runId, 'run-empty')
+  assert.deepEqual(succeeded, ['run-empty'])
 })
 
 test('AiService requires KnowledgeBasesService at module startup', () => {

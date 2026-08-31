@@ -1,5 +1,16 @@
 import api from './client'
 import type { KnowledgeBase, KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
+import type { AiRunStage } from './ai-runs'
+
+export type KnowledgeGraphBuildResponse = KnowledgeGraphProposal & {
+  runId?: string
+  durationMs?: number
+  stages?: AiRunStage[]
+  timing?: {
+    durationMs?: number
+    stages?: AiRunStage[]
+  }
+}
 
 export type KnowledgeGraphEvidence = {
   noteId: string
@@ -32,8 +43,8 @@ export const knowledgeBasesAPI = {
     api.delete(`/knowledge-bases/${id}/notes/${noteId}`).then(res => res as unknown as { ok: boolean }),
 
   buildGraphProposal: (id: string) =>
-    api.post<KnowledgeGraphProposal>('/ai/knowledge-graph/proposal', { knowledgeBaseId: id }, { timeout: 60000 })
-      .then(res => res as unknown as KnowledgeGraphProposal),
+    api.post<KnowledgeGraphBuildResponse>('/ai/knowledge-graph/proposal', { knowledgeBaseId: id }, { timeout: 60000 })
+      .then(res => res as unknown as KnowledgeGraphBuildResponse),
 
   getGraph: (id: string) =>
     api.get<KnowledgeGraphProposal>(`/knowledge-bases/${id}/graph`).then(res => res as unknown as KnowledgeGraphProposal),

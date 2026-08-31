@@ -13,6 +13,10 @@ const mockKnowledgeBasesAPI = {
   saveGraph: jest.fn(),
 }
 
+const mockAiRunsAPI = {
+  getRun: jest.fn(),
+}
+
 const mockToast = {
   success: jest.fn(),
   error: jest.fn(),
@@ -20,6 +24,10 @@ const mockToast = {
 
 jest.mock('@/lib/api', () => ({
   knowledgeBasesAPI: mockKnowledgeBasesAPI,
+}))
+
+jest.mock('@/lib/api/ai-runs', () => ({
+  aiRunsAPI: mockAiRunsAPI,
 }))
 
 jest.mock('react-hot-toast', () => ({
@@ -103,6 +111,19 @@ describe('knowledge base frontend entry', () => {
     mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue(graphProposal)
     mockKnowledgeBasesAPI.getGraph.mockResolvedValue(emptyGraph)
     mockKnowledgeBasesAPI.saveGraph.mockResolvedValue({ ...graphProposal, warnings: [] })
+    mockAiRunsAPI.getRun.mockResolvedValue({
+      runId: 'run-graph-1',
+      graphName: 'KnowledgeGraphBuildGraph',
+      task: 'knowledge_graph',
+      durationMs: 19200,
+      stages: [
+        { name: 'context_prepare', durationMs: 900, status: 'succeeded' },
+        { name: 'provider', durationMs: 17800, status: 'succeeded' },
+        { name: 'validation', durationMs: 500, status: 'succeeded' },
+      ],
+      metrics: {},
+      status: 'succeeded',
+    })
   })
 
   test('lists knowledge bases, creates one, and removes a note from the selected base', async () => {
@@ -177,6 +198,78 @@ describe('knowledge base frontend entry', () => {
     expect(screen.getByText('supports')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: /Low evidence edge kept for review/ }))
     expect(screen.getAllByText('Low evidence edge kept for review.').length).toBeGreaterThan(0)
+  })
+
+  test('shows real generation stages and the backend timing for this graph run', async () => {
+    const build = deferred<typeof graphProposal & { runId: string }>()
+    const timing = deferred<{
+      runId: string
+      graphName: string
+      task: string
+      durationMs: number
+      stages: Array<{ name: string; durationMs: number; status: string }>
+      metrics: Record<string, never>
+      status: string
+    }>()
+    mockKnowledgeBasesAPI.buildGraphProposal.mockReturnValue(build.promise)
+    mockAiRunsAPI.getRun.mockReturnValue(timing.promise)
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(screen.getByRole('status')).toHaveTextContent('准备数据 / 生成中')
+    build.resolve({ ...graphProposal, runId: 'run-graph-1' })
+
+    expect((await screen.findAllByText('Attention')).length).toBeGreaterThan(0)
+    expect(screen.getByTestId('build-graph-proposal')).toBeEnabled()
+    expect(screen.queryByRole('status')).not.toBeInTheDocument()
+    timing.resolve({
+      runId: 'run-graph-1',
+      graphName: 'KnowledgeGraphBuildGraph',
+      task: 'knowledge_graph',
+      durationMs: 19200,
+      stages: [
+        { name: 'context_prepare', durationMs: 900, status: 'succeeded' },
+        { name: 'provider', durationMs: 17800, status: 'succeeded' },
+        { name: 'validation', durationMs: 500, status: 'succeeded' },
+      ],
+      metrics: {},
+      status: 'succeeded',
+    })
+    expect(await screen.findByText('总耗时 19.2 秒 · 模型 17.8 秒')).toBeInTheDocument()
+    expect(mockAiRunsAPI.getRun).toHaveBeenCalledWith('run-graph-1')
+  })
+
+  test('uses only an available server total when graph stage details are unavailable', async () => {
+    mockKnowledgeBasesAPI.buildGraphProposal.mockResolvedValue({
+      ...graphProposal,
+      timing: { durationMs: 4300, stages: [] },
+    })
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(await screen.findByText('总耗时 4.3 秒 · 阶段明细不可用')).toBeInTheDocument()
+    expect(mockAiRunsAPI.getRun).not.toHaveBeenCalled()
+  })
+
+  test('clears the graph running state and keeps a safe error when generation fails', async () => {
+    mockKnowledgeBasesAPI.buildGraphProposal.mockRejectedValue(new Error('provider secret payload'))
+    const { default: KnowledgeBasesPage } = await import('@/app/dashboard/knowledge-bases/page')
+
+    render(<KnowledgeBasesPage />)
+    await screen.findByRole('button', { name: /笔记 1/ })
+    fireEvent.click(screen.getByTestId('build-graph-proposal'))
+
+    expect(await screen.findByText('知识图谱提案生成失败，请稍后重试')).toBeInTheDocument()
+    expect(screen.queryByText('provider secret payload')).not.toBeInTheDocument()
+    expect(screen.getByTestId('build-graph-proposal')).toBeEnabled()
+    expect(screen.getByTestId('build-graph-proposal')).toHaveTextContent('生成提案')
+    expect(screen.queryByText(/总耗时/)).not.toBeInTheDocument()
   })
 
   test('saves a generated graph proposal to the selected knowledge base', async () => {

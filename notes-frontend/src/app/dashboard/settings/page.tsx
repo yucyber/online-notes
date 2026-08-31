@@ -2,14 +2,17 @@
 
 import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { AlertTriangle, LogOut, PanelLeft, Save, Trash2, UserRound } from 'lucide-react'
+import { Activity, AlertTriangle, LogOut, PanelLeft, Save, Trash2, UserRound } from 'lucide-react'
 import { toast } from 'react-hot-toast'
 import { Button } from '@/components/ui/button'
 import { useEditorLayoutPreferences } from '@/components/editor/useEditorLayoutPreferences'
+import { AiPerformancePanel } from '@/components/settings/AiPerformancePanel'
 import { usersAPI } from '@/lib/api/users'
 import { appToast } from '@/lib/app-toast'
 import { getCurrentUser, logout, setCurrentUser } from '@/lib/auth'
 import type { User } from '@/types'
+
+const settingsGroupIds = new Set(['account', 'editor', 'ai-performance', 'danger'])
 
 function PanelHeader({ icon, title, description, danger = false }: {
   icon: React.ReactNode
@@ -55,6 +58,8 @@ export default function SettingsPage() {
   const [displayName, setDisplayName] = useState('')
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
+  const [activeGroup, setActiveGroup] = useState('account')
+  const [aiPerformanceEnabled, setAiPerformanceEnabled] = useState(false)
 
   useEffect(() => {
     const currentUser = getCurrentUser()
@@ -66,6 +71,18 @@ export default function SettingsPage() {
     setDisplayName(currentUser.displayName ?? '')
     setLoading(false)
   }, [router])
+
+  useEffect(() => {
+    const syncGroupFromHash = () => {
+      const group = window.location.hash.slice(1)
+      if (!settingsGroupIds.has(group)) return
+      setActiveGroup(group)
+      if (group === 'ai-performance') setAiPerformanceEnabled(true)
+    }
+    syncGroupFromHash()
+    window.addEventListener('hashchange', syncGroupFromHash)
+    return () => window.removeEventListener('hashchange', syncGroupFromHash)
+  }, [])
 
   const trimmedDisplayName = displayName.trim()
   const canSave = Boolean(trimmedDisplayName) && trimmedDisplayName !== (user?.displayName ?? '') && !saving
@@ -116,12 +133,18 @@ export default function SettingsPage() {
           {[
             ['account', '账户信息'],
             ['editor', '编辑偏好'],
+            ['ai-performance', 'AI 性能'],
             ['danger', '危险操作'],
-          ].map(([id, label], index) => (
+          ].map(([id, label]) => (
             <a
               key={id}
               href={`#${id}`}
-              className={`rounded-lg px-3 py-2 text-[13px] transition-colors ${index === 0 ? 'bg-[var(--product-accent-soft)] font-semibold text-[var(--product-accent)]' : 'text-[var(--product-text-secondary)] hover:bg-[var(--product-surface-hover)] hover:text-[var(--product-text)]'}`}
+              aria-current={activeGroup === id ? 'location' : undefined}
+              onClick={() => {
+                setActiveGroup(id)
+                if (id === 'ai-performance') setAiPerformanceEnabled(true)
+              }}
+              className={`rounded-lg px-3 py-2 text-[13px] transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--product-accent)] ${activeGroup === id ? 'bg-[var(--product-accent-soft)] font-semibold text-[var(--product-accent)]' : 'text-[var(--product-text-secondary)] hover:bg-[var(--product-surface-hover)] hover:text-[var(--product-text)]'}`}
             >
               {label}
             </a>
@@ -176,6 +199,11 @@ export default function SettingsPage() {
                 </button>
               </div>
             </FieldRow>
+          </section>
+
+          <section id="ai-performance" className="calm-panel scroll-mt-24" aria-label="AI 性能">
+            <PanelHeader icon={<Activity className="h-[18px] w-[18px]" />} title="AI 性能" description="查看当前账户的 AI 请求质量、耗时与阶段分布" />
+            {aiPerformanceEnabled ? <AiPerformancePanel /> : <p className="px-5 py-6 text-sm text-[var(--product-muted)]">进入此分组后加载性能数据。</p>}
           </section>
 
           <section id="danger" className="calm-panel scroll-mt-24 border-[color-mix(in_srgb,var(--product-danger)_30%,var(--product-line))]" aria-label="危险操作">

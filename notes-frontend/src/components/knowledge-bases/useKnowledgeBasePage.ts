@@ -2,11 +2,24 @@
 
 import { FormEvent, useEffect, useMemo, useRef, useState } from 'react'
 import { knowledgeBasesAPI } from '@/lib/api'
+import { aiRunsAPI, type AiRunStage } from '@/lib/api/ai-runs'
+import type { KnowledgeGraphBuildResponse } from '@/lib/api/knowledge-bases'
 import type { KnowledgeBase, KnowledgeBaseNoteLink, KnowledgeGraphProposal } from '@/types'
 
 const emptyForm = {
   name: '',
   description: '',
+}
+
+export interface KnowledgeGraphTimingSummary {
+  durationMs?: number
+  stages: AiRunStage[]
+}
+
+function inlineGraphTiming(response: KnowledgeGraphBuildResponse): KnowledgeGraphTimingSummary | null {
+  const durationMs = response.timing?.durationMs ?? response.durationMs
+  const stages = response.timing?.stages ?? response.stages ?? []
+  return durationMs === undefined && stages.length === 0 ? null : { durationMs, stages }
 }
 
 export function getKnowledgeBaseErrorMessage(error: unknown, fallback: string) {
@@ -32,9 +45,11 @@ export function useKnowledgeBasePage() {
   const [buildingGraph, setBuildingGraph] = useState(false)
   const [loadingGraph, setLoadingGraph] = useState(false)
   const [savingGraph, setSavingGraph] = useState(false)
+  const [graphTiming, setGraphTiming] = useState<KnowledgeGraphTimingSummary | null>(null)
   const [error, setError] = useState('')
   const linksRequestRef = useRef(0)
   const graphRequestRef = useRef(0)
+  const graphBuildRequestRef = useRef(0)
 
   const selectedKnowledgeBase = useMemo(
     () => knowledgeBases.find((item) => item.id === selectedId) || null,
@@ -114,6 +129,9 @@ export function useKnowledgeBasePage() {
 
   useEffect(() => {
     setGraphProposal(null)
+    setGraphTiming(null)
+    setBuildingGraph(false)
+    graphBuildRequestRef.current += 1
     void loadLinks(selectedId)
     void loadGraph(selectedId)
   }, [selectedId])
@@ -159,16 +177,38 @@ export function useKnowledgeBasePage() {
 
   const handleBuildGraphProposal = async () => {
     if (!selectedId || links.length === 0) return
+    // 生成期间切换知识库时，旧 proposal 和 timing 都不能落到新知识库。
+    const requestId = ++graphBuildRequestRef.current
     try {
       setBuildingGraph(true)
+      setGraphTiming(null)
       setError('')
       const proposal = await knowledgeBasesAPI.buildGraphProposal(selectedId)
+      if (requestId !== graphBuildRequestRef.current) return
       setGraphProposal(proposal)
-    } catch (err) {
-      console.error('Failed to build knowledge graph proposal', err)
-      setError(getKnowledgeBaseErrorMessage(err, '知识图谱提案生成失败，请稍后重试'))
-    } finally {
       setBuildingGraph(false)
+      const inlineTiming = inlineGraphTiming(proposal)
+      if (!proposal.runId) {
+        setGraphTiming(inlineTiming)
+        return
+      }
+      try {
+        const run = await aiRunsAPI.getRun(proposal.runId)
+        if (requestId === graphBuildRequestRef.current) {
+          setGraphTiming({ durationMs: run.durationMs ?? inlineTiming?.durationMs, stages: run.stages })
+        }
+      } catch {
+        if (requestId === graphBuildRequestRef.current) {
+          setGraphTiming(inlineTiming || { stages: [] })
+        }
+      }
+    } catch {
+      if (requestId === graphBuildRequestRef.current) {
+        setGraphTiming(null)
+        setError('知识图谱提案生成失败，请稍后重试')
+      }
+    } finally {
+      if (requestId === graphBuildRequestRef.current) setBuildingGraph(false)
     }
   }
 
@@ -213,6 +253,7 @@ export function useKnowledgeBasePage() {
     buildingGraph,
     loadingGraph,
     savingGraph,
+    graphTiming,
     error,
     selectedKnowledgeBase,
     loadLinks,

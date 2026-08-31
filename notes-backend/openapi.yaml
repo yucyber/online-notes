@@ -1500,7 +1500,7 @@ components:
               - type: object
                 properties:
                   data:
-                    $ref: '#/components/schemas/KnowledgeGraphProposal'
+                    $ref: '#/components/schemas/AiKnowledgeGraphProposal'
     KnowledgeGraphEnvelope:
       description: 知识库图谱
       content:
@@ -1944,6 +1944,14 @@ components:
         warnings:
           type: array
           items: { type: string }
+    AiKnowledgeGraphProposal:
+      allOf:
+        - $ref: '#/components/schemas/KnowledgeGraphProposal'
+        - type: object
+          properties:
+            runId:
+              type: string
+              description: 用于查询本次生成的公开 AI run timing；审计降级时可能缺省。
     KnowledgeGraphProposalNode:
       type: object
       properties:
