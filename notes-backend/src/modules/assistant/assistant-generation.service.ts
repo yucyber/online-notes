@@ -71,7 +71,9 @@ export class AssistantGenerationService {
       emitter.emit('event', { event: 'started', data: { conversationId: conversation.id, userMessageId: userMessage.messageId, assistantMessageId: assistantMessage.messageId, requestId } })
 
       // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
+      // finally 后的 catch 兜底：catch 块内落库（flush/markCancelled/markFailed）失败时避免 unhandledRejection 崩溃进程。
       void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish())
+        .catch((e) => this.logger.error('assistant generation cleanup failed', e))
     } catch (error) {
       // 前置步骤失败时释放占位，避免 requestId 永久停留在运行态。
       finish()
@@ -85,6 +87,8 @@ export class AssistantGenerationService {
   }
 
   async cancel(requestId: string, userId: string): Promise<void> {
+    // 未运行/已结束的请求不写取消标记：cancelKeys 只在 runGeneration 的 finally 清理，避免无界增长。
+    if (!this.running.has(requestId)) return
     // 单实例内存取消标记为当前实现；跨实例取消通过 Redis 发布订阅增强（后续阶段）。
     this.cancelKeys.add(requestId)
     const emitter = this.emitters.get(requestId)
