@@ -657,6 +657,8 @@ git commit -m "feat(assistant): 会话与消息仓储服务"
 
 **Files:**
 - Create: `notes-backend/src/modules/ai/rag/rag-stream.service.ts`
+- Create: `notes-backend/src/modules/ai/rag/rag-task-builder.ts`（共享任务选项/prompt 构建器，双 RAG 路径复用）
+- Modify: `notes-backend/src/modules/ai/rag/rag-answer.service.ts`（改用 builder，行为不变）
 - Modify: `notes-backend/src/modules/ai/ai.module.ts`（导出）
 - Test: `notes-backend/test/rag-stream.service.test.ts`
 
@@ -730,6 +732,7 @@ import { RagCitation, RagPlanSummary } from './rag.types'
 import { QueryPlannerService } from './query-planner.service'
 import { RagRetrievalService } from './rag-retrieval.service'
 import { createRagCitationSanitizer } from './rag-citation-sanitize'
+import { buildRagAnswerTaskOptions } from './rag-task-builder'
 
 export type RagStreamHooks = {
   onStatus(stage: 'retrieving' | 'answering', message: string): void | Promise<void>
@@ -751,12 +754,7 @@ export class RagStreamService {
     }
     await hooks.onStatus('answering', `已找到 ${result.evidence.length} 个相关片段`)
     const allowed = result.evidence
-    const stream = await this.gateway.streamTask({
-      task: 'rag_answer', reasoningMode: plan.reasoningMode, maxTokens: 1800, temperature: 0.2,
-      audit: { graphName: 'GraphRagAnswerGraph', userId },
-      system: 'Answer in Chinese. Cite note-supported claims using only [E1] style IDs supplied in context. General knowledge is allowed only when labelled “通用补充”, never as a user-note fact. For user history claims, use only evidence. Do not reveal reasoning.',
-      prompt: ['用户问题：' + question, '', '证据：', ...allowed.map((item, index) => `[E${index + 1}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
-    })
+    const stream = await this.gateway.streamTask(buildRagAnswerTaskOptions({ question, allowed, plan, userId }))
     const sanitizer = createRagCitationSanitizer(allowed)
     const reader = stream.getReader()
     const decoder = new TextDecoder()
@@ -770,7 +768,10 @@ export class RagStreamService {
         }
       }
     } finally {
-      const tail = sanitizer.flush()
+      // 流结束时补一次无参 decode，冲刷解码缓冲区内残留的多字节字符尾部（与 ai-gateway 的 auditTextStream 同一惯例）
+      const tailText = decoder.decode()
+      const safe = tailText ? sanitizer.push(tailText) : ''
+      const tail = safe + sanitizer.flush()
       if (tail) await hooks.onDelta(tail)
     }
     const warnings = [...result.warnings]
@@ -780,6 +781,26 @@ export class RagStreamService {
   }
 }
 ```
+
+```ts
+// notes-backend/src/modules/ai/rag/rag-task-builder.ts
+import { AiChatOptions } from '../ai-gateway.types'
+import { RagEvidence, RagPlan } from './rag.types'
+
+// 一次性 answer 与流式 streamRagAnswer 两条 RAG 路径共用同一份任务选项与提示词，避免后续调优只改一处导致双路径漂移。
+export function buildRagAnswerTaskOptions(input: { question: string; allowed: RagEvidence[]; plan: RagPlan; userId: string; runId?: string }): AiChatOptions & { task: 'rag_answer' } {
+  const audit: any = { graphName: 'GraphRagAnswerGraph', userId: input.userId }
+  if (input.runId) audit.runId = input.runId
+  return {
+    task: 'rag_answer', reasoningMode: input.plan.reasoningMode, maxTokens: 1800, temperature: 0.2,
+    audit,
+    system: 'Answer in Chinese. Cite note-supported claims using only [E1] style IDs supplied in context. General knowledge is allowed only when labelled “通用补充”, never as a user-note fact. For user history claims, use only evidence. Do not reveal reasoning.',
+    prompt: ['用户问题：' + input.question, '', '证据：', ...input.allowed.map((item, index) => `[E${index + 1}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
+  }
+}
+```
+
+`rag-answer.service.ts`：同步把 `chatTask({...})` 内联选项改为 `buildRagAnswerTaskOptions({ question, allowed: result.evidence, plan, userId: context.userId, runId })`（`runId` 仅该路径有；行为不变，grounding 测试保持通过）。warning 聚合仅两行且两路径条件相同，不抽取。
 
 `ai.module.ts`：在 `providers` 增加 `RagStreamService`，`exports` 增加 `RagStreamService`。
 
@@ -791,7 +812,7 @@ Expected: PASS
 - [ ] **Step 5: 提交**
 
 ```bash
-git add notes-backend/src/modules/ai/rag/rag-stream.service.ts notes-backend/src/modules/ai/ai.module.ts notes-backend/test/rag-stream.service.test.ts
+git add notes-backend/src/modules/ai/rag/rag-stream.service.ts notes-backend/src/modules/ai/rag/rag-task-builder.ts notes-backend/src/modules/ai/rag/rag-answer.service.ts notes-backend/src/modules/ai/ai.module.ts notes-backend/test/rag-stream.service.test.ts
 git commit -m "feat(ai): 流式 RAG 回答编排"
 ```
 
