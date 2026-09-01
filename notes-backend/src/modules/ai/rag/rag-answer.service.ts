@@ -7,6 +7,7 @@ import { QueryPlannerService } from './query-planner.service'
 import { RagAnswerResponse } from './rag.types'
 import { RagRetrievalService } from './rag-retrieval.service'
 import { sanitizeCitationText } from './rag-citation-sanitize'
+import { buildRagAnswerTaskOptions } from './rag-task-builder'
 
 @Injectable()
 export class RagAnswerService {
@@ -31,12 +32,7 @@ export class RagAnswerService {
         return { answer: '笔记中未找到相关记录。', citations: [], planSummary: { ...plan, rerankApplied: result.rerankApplied }, warnings: [...result.warnings, '未找到足够笔记证据'], runId }
       }
       const allowed = result.evidence
-      const response = await timing.measure('response', () => this.gateway.chatTask({
-        task: 'rag_answer', reasoningMode: plan.reasoningMode, maxTokens: 1800, temperature: 0.2,
-        audit: { graphName: 'GraphRagAnswerGraph', userId: context.userId, runId },
-        system: 'Answer in Chinese. Cite note-supported claims using only [E1] style IDs supplied in context. General knowledge is allowed only when labelled “通用补充”, never as a user-note fact. For user history claims, use only evidence. Do not reveal reasoning.',
-        prompt: ['用户问题：' + question, '', '证据：', ...allowed.map((item, index) => `[E${index + 1}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
-      }))
+      const response = await timing.measure('response', () => this.gateway.chatTask(buildRagAnswerTaskOptions({ question, allowed: result.evidence, plan, userId: context.userId, runId })))
       const sanitized = sanitizeCitationText(response.content, allowed)
       const citations = sanitized.citations
       const warnings = [...result.warnings]

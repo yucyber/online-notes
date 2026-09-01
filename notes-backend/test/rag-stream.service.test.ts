@@ -33,6 +33,20 @@ test('无证据时不调用模型并返回降级提示', async () => {
   assert.ok(result.warnings.includes('未找到足够笔记证据'))
 })
 
+test('多 chunk 中文正文经解码器尾部冲刷后仍完整下发', async () => {
+  const deltas: string[] = []
+  const service = new RagStreamService(
+    { plan: async () => ({ intent: 'explain', tools: ['chunk_vector', 'rerank'], reasoningMode: 'off', graphHops: 0 }) } as any,
+    { retrieve: async () => ({ evidence, warnings: [], rerankApplied: true, candidateCount: 1 }) } as any,
+    { streamTask: async () => sseStream(['这是答', '案']) } as any,
+  )
+  await service.streamRagAnswer({ question: 'React 是什么', userId: 'u1' }, {
+    onStatus: async () => undefined,
+    onDelta: async (text) => { deltas.push(text) },
+  })
+  assert.equal(deltas.join(''), '这是答案')
+})
+
 // 构造一个按 chunk 输出的上游 ReadableStream（模拟 gateway 流式响应）
 function sseStream(parts: string[]): ReadableStream<Uint8Array> {
   const encoder = new TextEncoder()

@@ -4,6 +4,7 @@ import { RagCitation, RagPlanSummary } from './rag.types'
 import { QueryPlannerService } from './query-planner.service'
 import { RagRetrievalService } from './rag-retrieval.service'
 import { createRagCitationSanitizer } from './rag-citation-sanitize'
+import { buildRagAnswerTaskOptions } from './rag-task-builder'
 
 export type RagStreamHooks = {
   onStatus(stage: 'retrieving' | 'answering', message: string): void | Promise<void>
@@ -25,12 +26,7 @@ export class RagStreamService {
     }
     await hooks.onStatus('answering', `已找到 ${result.evidence.length} 个相关片段`)
     const allowed = result.evidence
-    const stream = await this.gateway.streamTask({
-      task: 'rag_answer', reasoningMode: plan.reasoningMode, maxTokens: 1800, temperature: 0.2,
-      audit: { graphName: 'GraphRagAnswerGraph', userId },
-      system: 'Answer in Chinese. Cite note-supported claims using only [E1] style IDs supplied in context. General knowledge is allowed only when labelled “通用补充”, never as a user-note fact. For user history claims, use only evidence. Do not reveal reasoning.',
-      prompt: ['用户问题：' + question, '', '证据：', ...allowed.map((item, index) => `[E${index + 1}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
-    })
+    const stream = await this.gateway.streamTask(buildRagAnswerTaskOptions({ question, allowed, plan, userId }))
     const sanitizer = createRagCitationSanitizer(allowed)
     const reader = stream.getReader()
     const decoder = new TextDecoder()
@@ -44,7 +40,10 @@ export class RagStreamService {
         }
       }
     } finally {
-      const tail = sanitizer.flush()
+      // 流结束时补一次无参 decode，冲刷解码缓冲区内残留的多字节字符尾部（与 ai-gateway 的 auditTextStream 同一惯例）
+      const tailText = decoder.decode()
+      const safe = tailText ? sanitizer.push(tailText) : ''
+      const tail = safe + sanitizer.flush()
       if (tail) await hooks.onDelta(tail)
     }
     const warnings = [...result.warnings]
