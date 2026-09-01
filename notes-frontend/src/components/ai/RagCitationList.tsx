@@ -9,7 +9,7 @@ export default function RagCitationList({ citations }: { citations: RagCitation[
     <p className="text-xs font-medium text-[var(--product-text-secondary)]">基于你的笔记</p>
     {citations.map((citation) => {
       const heading = citation.headingPath.join(' > ');
-      const params = new URLSearchParams({ chunk: citation.chunkId, ...(heading ? { heading } : {}) });
+      const params = new URLSearchParams({ chunkId: citation.chunkId, ...(heading ? { heading } : {}) });
       return <Link key={citation.evidenceId} href={`/dashboard/notes/${citation.noteId}?${params.toString()}`} className="block rounded-md border border-[var(--product-line)] p-2 text-xs hover:bg-[var(--product-panel-soft)]">
         <span className="font-medium text-[var(--product-text-primary)]">{citation.noteTitle}</span>
         {heading && <span className="ml-1 text-[var(--product-text-secondary)]">{heading}</span>}
