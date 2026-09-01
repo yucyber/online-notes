@@ -943,6 +943,8 @@ export class AssistantGenerationService {
   private readonly emitters = new Map<string, EventEmitter>()
   private readonly running = new Set<string>()
   private readonly cancelKeys = new Set<string>()
+  // requestId -> 生成停止时 resolve 的 promise：cancel 等待它，保证返回时 cancelled 已落库并广播。
+  private readonly stops = new Map<string, Promise<void>>()
 
   constructor(
     private readonly conversations: AssistantConversationsService,
@@ -956,38 +958,52 @@ export class AssistantGenerationService {
 
   async start(input: { userId: string; conversationId?: string; requestId: string; question: string; knowledgeBaseId?: string; forceRoute?: 'pet' | 'rag' }, emit: (event: AssistantStreamEvent) => void): Promise<void> {
     const { userId, requestId } = input
-    // 幂等：同一 (userId, requestId) 已有消息时不重复生成，直接补发终态。
-    const existing = await this.messages.getByRequestId(userId, requestId)
-    if (existing) {
-      emit({ event: 'started', data: { conversationId: String(existing.conversationId), userMessageId: existing.retryOfMessageId || '', assistantMessageId: existing.id, requestId } })
-      if (existing.status === 'completed' || existing.status === 'failed' || existing.status === 'cancelled') {
-        emit({ event: 'complete', data: { messageId: existing.id, route: existing.route, citations: existing.citations, warnings: existing.warnings } })
-      } else {
-        this.attach(requestId, emit)
-      }
-      return
-    }
     if (this.running.has(requestId)) { this.attach(requestId, emit); return }
 
+    // 同步段先占位运行态并注册停止处理器：cancel 在 start 首个 await 前调用也能等到生成停止。
     this.running.add(requestId)
+    let resolveStop!: () => void
+    const stop = new Promise<void>((resolve) => { resolveStop = resolve })
+    this.stops.set(requestId, stop)
     const emitter = new EventEmitter()
     this.emitters.set(requestId, emitter)
     emitter.on('event', (event: AssistantStreamEvent) => { try { emit(event) } catch { /* 订阅者已断开 */ } })
-
-    const route: 'pet' | 'rag' = input.forceRoute === 'pet' || input.forceRoute === 'rag'
-      ? input.forceRoute
-      : (input.forceRoute === 'rag' || NOTE_INTENT.test(input.question) ? 'rag' : 'pet')
-    const conversation = await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
-    const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
-    const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId)
-    await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
-    emitter.emit('event', { event: 'started', data: { conversationId: conversation.id, userMessageId: userMessage.messageId, assistantMessageId: assistantMessage.messageId, requestId } })
-
-    // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
-    void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => {
+    const finish = () => {
       this.running.delete(requestId)
       this.emitters.delete(requestId)
-    })
+      this.stops.delete(requestId)
+      resolveStop()
+    }
+    try {
+      // 幂等：同一 (userId, requestId) 已有消息时不重复生成，直接补发终态。
+      const existing = await this.messages.getByRequestId(userId, requestId)
+      if (existing) {
+        emit({ event: 'started', data: { conversationId: String(existing.conversationId), userMessageId: existing.retryOfMessageId || '', assistantMessageId: existing.id, requestId } })
+        if (existing.status === 'completed' || existing.status === 'failed' || existing.status === 'cancelled') {
+          emit({ event: 'complete', data: { messageId: existing.id, route: existing.route, citations: existing.citations, warnings: existing.warnings } })
+        } else {
+          this.attach(requestId, emit)
+        }
+        finish()
+        return
+      }
+
+      const route: 'pet' | 'rag' = input.forceRoute === 'pet' || input.forceRoute === 'rag'
+        ? input.forceRoute
+        : (input.forceRoute === 'rag' || NOTE_INTENT.test(input.question) ? 'rag' : 'pet')
+      const conversation = await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
+      const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
+      const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId)
+      await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
+      emitter.emit('event', { event: 'started', data: { conversationId: conversation.id, userMessageId: userMessage.messageId, assistantMessageId: assistantMessage.messageId, requestId } })
+
+      // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
+      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish())
+    } catch (error) {
+      // 前置步骤失败时释放占位，避免 requestId 永久停留在运行态。
+      finish()
+      throw error
+    }
   }
 
   attach(requestId: string, emit: (event: AssistantStreamEvent) => void): void {
@@ -1000,6 +1016,9 @@ export class AssistantGenerationService {
     this.cancelKeys.add(requestId)
     const emitter = this.emitters.get(requestId)
     if (emitter) emitter.emit('event', { event: 'error', data: { code: 'CANCELLED', message: '已停止生成', retryable: false } })
+    // 等待生成循环真正停止：cancel 返回时 cancelled 已落库并广播。
+    const stop = this.stops.get(requestId)
+    if (stop) await stop
   }
 
   private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag' }, emitter: EventEmitter): Promise<void> {
@@ -1074,7 +1093,7 @@ export class AssistantGenerationService {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test -r ts-node/register -r tsconfig-paths/register test/assistant-generation.test.ts`
-Expected: PASS。若 `cancel` 竞态导致测试不稳定，把 `cancel` 实现为：先 `running.add` 阶段由 `start` 内部自行注册取消处理器，测试断言改为"调用 cancel 后最终消息为 cancelled 且只广播一次"。
+Expected: PASS。实现已采用 Step 4 预案：`start` 在同步段注册 running/stop/emitter（首个 await 之前），`cancel` 等待 stop promise——cancel 竞态已消除，测试断言「调用 cancel 后最终消息为 cancelled 且只广播一次」。
 
 - [ ] **Step 5: 提交**
 
