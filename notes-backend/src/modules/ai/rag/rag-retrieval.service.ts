@@ -19,8 +19,9 @@ export class RagRetrievalService {
     if (plan.tools.includes('graph_expand') && knowledgeBaseId) {
       const graph = await this.knowledgeBases.expandGraphEvidence(knowledgeBaseId, userId, candidates.map((item) => item.chunkId))
       candidates.push(...graph.map((item: any) => ({ ...item, excerpt: item.content.slice(0, 700), content: item.content.slice(0, 1200), score: 0.35, source: 'graph_expand' as RagTool })))
-    } else if (!plan.tools.includes('graph_expand')) warnings.push('本次未使用知识图谱扩展')
-    const unique = [...new Map(candidates.map((item) => [item.chunkId, item])).values()].slice(0, 30)
+    } else if (plan.tools.includes('graph_expand')) warnings.push('未指定知识库，已跳过图谱扩展')
+    else warnings.push('本次未使用知识图谱扩展')
+    const unique = this.mergeEvidence(candidates).slice(0, 30)
     let rerankApplied = false
     if (plan.tools.includes('rerank') && unique.length > 1) {
       try {
@@ -44,5 +45,22 @@ export class RagRetrievalService {
   private fromChunk(item: any, source: RagTool): RagEvidence {
     const content = String(item.content || '').replace(/\s+/g, ' ').trim().slice(0, 1200)
     return { noteId: item.noteId, noteTitle: item.title, chunkId: item.chunkId, headingPath: item.headingPath || [], content, excerpt: content.slice(0, 700), score: Number(item.score || 0), source }
+  }
+
+  private mergeEvidence(candidates: RagEvidence[]): RagEvidence[] {
+    const byChunkId = new Map<string, RagEvidence>()
+    for (const candidate of candidates) {
+      const current = byChunkId.get(candidate.chunkId)
+      if (!current) {
+        byChunkId.set(candidate.chunkId, { ...candidate })
+        continue
+      }
+      const higher = candidate.score > current.score ? candidate : current
+      byChunkId.set(candidate.chunkId, {
+        ...higher,
+        graphPath: candidate.graphPath?.length ? candidate.graphPath : current.graphPath,
+      })
+    }
+    return [...byChunkId.values()]
   }
 }

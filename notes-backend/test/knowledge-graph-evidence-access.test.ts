@@ -7,6 +7,7 @@ const userId = '507f1f77bcf86cd799439012'
 const kbId = '507f1f77bcf86cd799439013'
 const noteId = '507f1f77bcf86cd799439014'
 const chunkId = '507f1f77bcf86cd799439021'
+const neighborChunkId = '507f1f77bcf86cd799439022'
 const sanitizedContent = 'Hello & ' + 'x'.repeat(1000)
 
 function execResult<T>(value: T) { return { exec: async () => value } }
@@ -84,4 +85,28 @@ test('KnowledgeBasesService returns an explicit empty compatibility result for l
   const service = new KnowledgeBasesService(kbModel as any, {} as any, {} as any, { objectId: (id: string) => new Types.ObjectId(id) } as any, graphNodeModel as any, {} as any)
 
   assert.deepEqual(await service.getGraphEvidence(kbId, 'node', 'node-a', userId), { compatibility: 'legacy_graph_without_evidence', items: [] })
+})
+
+test('GraphRAG 一跳扩展返回邻居节点证据且不按当前阅读者过滤 Chunk owner', async () => {
+  let chunkQuery: any
+  const kbModel = { findOne: (query: any) => execResult(doc({ _id: new Types.ObjectId(kbId), userId: query.userId })) }
+  const linkModel = { find: () => ({ sort: () => execResult([doc({ noteId: new Types.ObjectId(noteId) })]) }) }
+  const noteModel = { find: () => ({ select: () => ({ lean: () => execResult([{ _id: new Types.ObjectId(noteId), title: 'Neighbor note' }]) }) }) }
+  const noteAccess = { objectId: (id: string) => new Types.ObjectId(id), readableNotesQuery: (ids: Types.ObjectId[]) => ({ _id: { $in: ids } }) }
+  const graphNodeModel = {
+    find: (query: any) => ({ select: () => ({ lean: () => execResult(query.evidenceChunkIds
+      ? [{ nodeId: 'seed-node', evidenceChunkIds: [new Types.ObjectId(chunkId)] }]
+      : [{ nodeId: 'neighbor-node', evidenceChunkIds: [new Types.ObjectId(neighborChunkId)] }]) }) }),
+  }
+  const graphEdgeModel = { find: () => ({ select: () => ({ lean: () => execResult([{ source: 'seed-node', target: 'neighbor-node', evidenceChunkIds: [] }]) }) }) }
+  const chunkModel = { find: (query: any) => { chunkQuery = query; return { select: () => ({ lean: () => execResult([{
+    _id: new Types.ObjectId(neighborChunkId), noteId: new Types.ObjectId(noteId), headingPath: ['Neighbor'], content: 'Neighbor evidence',
+  }]) }) } } }
+  const service = new KnowledgeBasesService(kbModel as any, linkModel as any, noteModel as any, noteAccess as any, graphNodeModel as any, graphEdgeModel as any, undefined, chunkModel as any)
+
+  const result = await service.expandGraphEvidence(kbId, userId, [chunkId])
+
+  assert.deepEqual(result.map((item) => item.chunkId), [neighborChunkId])
+  assert.equal('userId' in chunkQuery, false)
+  assert.equal(chunkQuery._id.$in.map(String).includes(neighborChunkId), true)
 })
