@@ -16,4 +16,5 @@ test('引用链接使用编辑器支持的 chunkId 参数', () => {
     'href',
     '/dashboard/notes/note-1?chunkId=chunk-1&heading=React+%3E+Diff',
   )
+  expect(screen.getByText('引用来源')).toBeInTheDocument()
 })

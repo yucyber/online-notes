@@ -13,6 +13,9 @@ test('检索意图在统一对话中自动使用 RAG 并持久化来源', async 
   Object.defineProperty(globalThis, 'fetch', { configurable: true, value: fetchMock })
   Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: jest.fn() })
   render(<ChatWindow isOpen onClose={() => undefined} />)
+  expect(screen.queryByText('宠物聊天')).not.toBeInTheDocument()
+  expect(screen.queryByText('知识助手')).not.toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '搜索笔记' })).toHaveAttribute('aria-pressed', 'false')
   fireEvent.change(screen.getByPlaceholderText('问问小助手…'), { target: { value: '帮我找之前的 React Diff 笔记' } })
   fireEvent.click(screen.getByLabelText('发送'))
   await waitFor(() => expect(fetchMock).toHaveBeenCalledWith('/api/ai/rag/answer', expect.objectContaining({ method: 'POST' })))
@@ -29,6 +32,7 @@ test('关闭再打开后仍呈现统一历史且初始空 state 不覆盖记录'
 
   const first = render(<ChatWindow isOpen onClose={() => undefined} />)
   expect(await screen.findByText('之前保存的回答')).toBeInTheDocument()
+  expect(screen.getByText('轻松聊聊')).toBeInTheDocument()
   first.unmount()
 
   render(<ChatWindow isOpen onClose={() => undefined} />)
