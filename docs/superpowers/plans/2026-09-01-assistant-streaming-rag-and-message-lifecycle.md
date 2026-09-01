@@ -956,6 +956,13 @@ export class AssistantGenerationService {
 
   isRunning(requestId: string): boolean { return this.running.has(requestId) }
 
+  // SSE 控制器用：保持响应打开直到生成到达终态（complete/cancelled/failed），再 res.end()。
+  // 生成已结束时返回立即 resolve 的 promise（stops 已被 finish 删除）；运行中返回 stop promise，finish 时 resolve。
+  waitForTerminal(requestId: string): Promise<void> {
+    const stop = this.stops.get(requestId)
+    return stop || Promise.resolve()
+  }
+
   async start(input: { userId: string; conversationId?: string; requestId: string; question: string; knowledgeBaseId?: string; forceRoute?: 'pet' | 'rag' }, emit: (event: AssistantStreamEvent) => void): Promise<void> {
     const { userId, requestId } = input
     if (this.running.has(requestId)) { this.attach(requestId, emit); return }
@@ -1109,6 +1116,7 @@ git commit -m "feat(assistant): 生成编排支持幂等取消与后台续跑"
 **Files:**
 - Create: `notes-backend/src/modules/assistant/assistant.controller.ts`
 - Create: `notes-backend/src/modules/assistant/assistant.module.ts`
+- Modify: `notes-backend/src/modules/assistant/assistant-generation.service.ts`（新增 `waitForTerminal(requestId)`：返回 stop promise 或立即 resolve，供 SSE 保持打开到终态）
 - Modify: `notes-backend/src/app.module.ts`（注册 AssistantModule）
 - Modify: `notes-backend/src/modules/ai/ai.module.ts`（如 Task 5 未完成则一并处理）
 - Test: `notes-backend/test/assistant-controller.test.ts`（构造 controller 实例，校验 DTO 校验与 SSE 写出）
@@ -1120,6 +1128,8 @@ git commit -m "feat(assistant): 生成编排支持幂等取消与后台续跑"
   - `POST /api/assistant/generations/:requestId/cancel`：调 `cancel(requestId, userId)`，返回 `{ cancelled: true }`。
   - `GET /api/assistant/conversations/:id/messages?afterSeq=&limit=`：返回 `{ items: AssistantMessageView[] }`。
 
+> ⚠️ 全局 `IdempotencyInterceptor` 会对带 `Idempotency-Key` 头的 POST/PUT/PATCH/DELETE 做响应级去重（Redis 缓存 + setnx 锁）。`POST /assistant/chat` 与 `POST /assistant/generations/:requestId/cancel` **不得携带 Idempotency-Key**：生成服务已原生实现 `(userId, requestId)` 幂等（start 重放/attach），且 SSE 响应无法被响应级缓存有意义地复用（重试会命中缓存返回损坏的 JSON 信封，重连会命中 `idempotency in-flight` CONFLICT）。前端 Task 8 的 fetch 包装对这两个端点必须显式不发幂等键头。GET 端点不受影响。
+
 - [ ] **Step 1: 写失败测试**
 
 ```ts
@@ -1128,32 +1138,41 @@ import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { AssistantController } from '../src/modules/assistant/assistant.controller'
 
-test('chat 端点把生成事件写出为 SSE 并结束响应', async () => {
+test('chat 端点把生成事件写出为 SSE 并保持打开直到终态再结束响应', async () => {
   const events: any[] = []
   const generation = {
     start: async (_input: any, emit: (event: any) => void) => {
       emit({ event: 'started', data: { conversationId: 'c1', userMessageId: 'um1', assistantMessageId: 'am1', requestId: 'r1' } })
-      emit({ event: 'complete', data: { messageId: 'am1', route: 'pet', citations: [], warnings: [] } })
+      // start 模拟后台续跑：设置完成后返回，流仍在进行中。
+    },
+    // waitForTerminal 模拟终态到达后结束：resolve 前响应不得 end()。
+    waitForTerminal: async () => {
+      await new Promise((r) => setTimeout(r, 10))
+      // 终态事件在 waitForTerminal resolve 之前经 emit 写出（真实实现由生成循环发出）。
     },
     cancel: async () => undefined,
   }
   const messages = { list: async () => [] }
   const controller = new AssistantController(generation as any, messages as any)
   let written = ''
+  let endedAt = -1
   const res: any = {
     setHeader: (k: string, v: string) => { res.headers = { ...(res.headers || {}), [k]: v } },
     write: (chunk: string) => { written += chunk },
-    end: () => { res.ended = true },
+    end: () => { res.ended = true; endedAt = Date.now() },
+    writableEnded: false,
   }
-  await controller.chat({ requestId: 'r1', question: 'hi', forceRoute: 'pet' }, res, { user: { id: 'u1' } })
+  const p = controller.chat({ requestId: 'r1', question: 'hi', forceRoute: 'pet' }, res, { user: { id: 'u1' } })
+  await new Promise((r) => setTimeout(r, 5))
+  assert.equal(res.ended, false, 'waitForTerminal 未 resolve 前响应必须保持打开')
+  await p
   assert.equal(res.headers['Content-Type'], 'text/event-stream; charset=utf-8')
   assert.ok(written.includes('event: started'))
-  assert.ok(written.includes('event: complete'))
   assert.equal(res.ended, true)
 })
 
 test('cancel 端点返回取消结果', async () => {
-  const generation = { start: async () => undefined, cancel: async () => undefined }
+  const generation = { start: async () => undefined, cancel: async () => undefined, waitForTerminal: async () => undefined }
   const controller = new AssistantController(generation as any, { list: async () => [] } as any)
   const result = await controller.cancel('r1', { user: { id: 'u1' } })
   assert.deepEqual(result, { cancelled: true })
@@ -1210,11 +1229,13 @@ export class AssistantController {
     res.setHeader('Cache-Control', 'no-cache')
     res.setHeader('Connection', 'keep-alive')
     const emit = (event: any) => { if (!res.writableEnded) res.write(formatSseEvent(event)) }
-    // start 本身不等待生成结束（后台续跑），这里等待首个事件落定后由客户端保持连接直到终态事件。
+    // start 后台续跑、返回早；waitForTerminal 保持响应打开直到终态事件（complete/cancelled/failed）落定后 res.end()，
+    // 客户端才能收全 started/status/delta/complete 流（与 ai.controller 流式端点等流读完再 end 的模式一致）。
     await this.generation.start(
       { userId, conversationId: body.conversationId, requestId: body.requestId, question: body.question, knowledgeBaseId: body.knowledgeBaseId, forceRoute: body.forceRoute },
       emit,
     )
+    await this.generation.waitForTerminal(body.requestId)
     res.end()
   }
 
