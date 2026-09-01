@@ -12,6 +12,7 @@ import { SemanticModule } from '../semantic/semantic.module';
 import { QueryPlannerService } from './rag/query-planner.service';
 import { RagRetrievalService } from './rag/rag-retrieval.service';
 import { RagAnswerService } from './rag/rag-answer.service';
+import { RagStreamService } from './rag/rag-stream.service';
 
 @Module({
     imports: [
@@ -21,7 +22,7 @@ import { RagAnswerService } from './rag/rag-answer.service';
         forwardRef(() => SemanticModule),
     ],
     controllers: [AiController],
-    providers: [AiGatewayClient, AiService, AiRunService, AiProviderCapacityService, QueryPlannerService, RagRetrievalService, RagAnswerService],
-    exports: [AiService, AiRunService, AiProviderCapacityService],
+    providers: [AiGatewayClient, AiService, AiRunService, AiProviderCapacityService, QueryPlannerService, RagRetrievalService, RagAnswerService, RagStreamService],
+    exports: [AiService, AiRunService, AiProviderCapacityService, RagStreamService],
 })
 export class AiModule { }
