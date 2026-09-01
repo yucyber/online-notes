@@ -457,27 +457,35 @@ import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { AssistantMessagesService } from '../src/modules/assistant/assistant-messages.service'
 
-// 最小内存模型：支持 findOne/create/updateOne 与 find().sort().limit().lean().exec() 链式调用。
+// 最小内存模型：支持 findOne/find/create/updateOne 与 .sort().select()/.limit().lean().exec() 链式调用；过滤器支持 $gt 运算符（afterSeq 游标）。
+function matches(d: any, filter: any): boolean {
+  return Object.entries(filter).every(([k, v]) => {
+    if (v && typeof v === 'object' && '$gt' in v) return Number(d[k]) > v.$gt
+    return String(d[k]) === String(v)
+  })
+}
 class MemoryModel {
   docs: any[] = []
   constructor(private readonly seed: any[] = []) { this.docs = seed.map((d) => ({ ...d, _id: d._id || `id-${Math.random()}` })) }
-  async findOne(filter: any) {
-    const chain = (doc: any) => ({
-      sort: () => ({ select: () => ({ lean: async () => doc }) }),
-      lean: async () => doc,
-    })
-    const doc = this.docs.find((d) => Object.entries(filter).every(([k, v]) => String(d[k]) === String(v))) ?? null
-    return chain(doc)
-  }
-  async find(filter: any) {
-    const matches = this.docs.filter((d) => Object.entries(filter).every(([k, v]) => String(d[k]) === String(v)))
+  findOne(filter: any) {
+    const doc = this.docs.find((d) => matches(d, filter)) ?? null
+    const exec = async () => doc
     return {
-      sort: () => ({ limit: (n: number) => ({ lean: async () => [...matches].sort((a, b) => a.seq - b.seq).slice(0, n) }) }),
+      sort: () => ({ select: () => ({ lean: () => ({ exec }) }) }),
+      lean: () => ({ exec }),
+    }
+  }
+  find(filter: any) {
+    const result = this.docs.filter((d) => matches(d, filter))
+    const execAll = async () => [...result].sort((a, b) => a.seq - b.seq)
+    return {
+      sort: () => ({ limit: (n: number) => ({ lean: () => ({ exec: async () => (await execAll()).slice(0, n) }) }) }),
+      lean: () => ({ exec: execAll }),
     }
   }
   async create(data: any) { const doc = { ...data, _id: data._id || `id-${this.docs.length + 1}` }; this.docs.push(doc); return doc }
   async findOneAndUpdate(filter: any, update: any) {
-    const doc = this.docs.find((d) => Object.entries(filter).every(([k, v]) => String(d[k]) === String(v)))
+    const doc = this.docs.find((d) => matches(d, filter))
     if (!doc) return null
     const sets = update.$set || {}
     Object.assign(doc, sets)
@@ -487,21 +495,21 @@ class MemoryModel {
 
 test('消息按 seq 升序返回并支持 afterSeq 游标', async () => {
   const model = new MemoryModel([
-    { _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 1, role: 'user', route: 'pet', content: 'hi', status: 'completed' },
-    { _id: 'm2', conversationId: 'c1', userId: 'u1', seq: 2, role: 'assistant', route: 'pet', content: 'hello', status: 'completed' },
+    { _id: 'm1', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 1, role: 'user', route: 'pet', content: 'hi', status: 'completed' },
+    { _id: 'm2', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 2, role: 'assistant', route: 'pet', content: 'hello', status: 'completed' },
   ])
   const service = new AssistantMessagesService(model as any)
-  const all = await service.list('u1', 'c1')
+  const all = await service.list('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc')
   assert.deepEqual(all.map((m) => m.seq), [1, 2])
-  const after = await service.list('u1', 'c1', { afterSeq: 1 })
+  const after = await service.list('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc', { afterSeq: 1 })
   assert.deepEqual(after.map((m) => m.seq), [2])
 })
 
 test('getByRequestId 按用户与 requestId 精确查询', async () => {
-  const model = new MemoryModel([{ _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 1, role: 'user', route: 'rag', content: 'q', status: 'completed', requestId: 'req-1' }])
+  const model = new MemoryModel([{ _id: 'm1', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 1, role: 'user', route: 'rag', content: 'q', status: 'completed', requestId: 'req-1' }])
   const service = new AssistantMessagesService(model as any)
-  assert.ok(await service.getByRequestId('u1', 'req-1'))
-  assert.equal(await service.getByRequestId('u2', 'req-1'), null)
+  assert.ok(await service.getByRequestId('aaaaaaaaaaaaaaaaaaaaaaaa', 'req-1'))
+  assert.equal(await service.getByRequestId('bbbbbbbbbbbbbbbbbbbbbbbb', 'req-1'), null)
 })
 ```
 
@@ -633,7 +641,7 @@ export class AssistantConversationsService {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `node --test -r ts-node/register -r tsconfig-paths/register test/assistant-store.test.ts`
-Expected: PASS（`nextSeq` 用到 `sort` 链式调用，若内存模型不支持需在 Step 3 实现中给 `findOne` 补 `sort` 支持或改用一个独立计数查询，见 Step 3 代码 `nextSeq`——内存假模型需支持 `findOne().sort().select().lean().exec()` 链；如不支持，把测试假模型按该链式形态实现即可）
+Expected: PASS（假模型已按服务调用形态实现：`findOne().sort().select().lean().exec()`、`find().sort().limit().lean().exec()` 与 `$gt` 过滤器；测试种子使用合法 ObjectId hex 字符串，服务端 `new Types.ObjectId(...)` 不会抛错。若实现者对服务代码做了查询形态调整，保持假模型与服务调用一致即可）
 
 - [ ] **Step 5: 提交**
 
