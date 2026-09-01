@@ -30,10 +30,12 @@ export interface RagCitation {
   score?: number
 }
 
+export type RagPlanSummary = { intent: RagIntent; tools: RagTool[]; graphHops: 0 | 1; rerankApplied: boolean }
+
 export interface RagAnswerResponse {
   answer: string
   citations: RagCitation[]
-  planSummary: { intent: RagIntent, tools: RagTool[], graphHops: 0 | 1, rerankApplied: boolean }
+  planSummary: RagPlanSummary
   warnings: string[]
   runId?: string
 }
