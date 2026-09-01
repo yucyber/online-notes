@@ -4,8 +4,9 @@ import { AiGatewayClient } from '../ai-gateway.client'
 import { AiRunService } from '../ai-run.service'
 import { AiRunTiming } from '../ai-run-timing'
 import { QueryPlannerService } from './query-planner.service'
-import { RagAnswerResponse, RagCitation } from './rag.types'
+import { RagAnswerResponse } from './rag.types'
 import { RagRetrievalService } from './rag-retrieval.service'
+import { sanitizeCitationText } from './rag-citation-sanitize'
 
 @Injectable()
 export class RagAnswerService {
@@ -29,14 +30,14 @@ export class RagAnswerService {
         await this.runs?.succeed(runId!)
         return { answer: '笔记中未找到相关记录。', citations: [], planSummary: { ...plan, rerankApplied: result.rerankApplied }, warnings: [...result.warnings, '未找到足够笔记证据'], runId }
       }
-      const allowed = result.evidence.map((item, index) => ({ id: `E${index + 1}`, item }))
+      const allowed = result.evidence
       const response = await timing.measure('response', () => this.gateway.chatTask({
         task: 'rag_answer', reasoningMode: plan.reasoningMode, maxTokens: 1800, temperature: 0.2,
         audit: { graphName: 'GraphRagAnswerGraph', userId: context.userId, runId },
         system: 'Answer in Chinese. Cite note-supported claims using only [E1] style IDs supplied in context. General knowledge is allowed only when labelled “通用补充”, never as a user-note fact. For user history claims, use only evidence. Do not reveal reasoning.',
-        prompt: ['用户问题：' + question, '', '证据：', ...allowed.map(({ id, item }) => `[${id}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
+        prompt: ['用户问题：' + question, '', '证据：', ...allowed.map((item, index) => `[E${index + 1}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
       }))
-      const sanitized = this.sanitizeCitations(response.content, allowed)
+      const sanitized = sanitizeCitationText(response.content, allowed)
       const citations = sanitized.citations
       const warnings = [...result.warnings]
       if (sanitized.invalidReferenceFound) warnings.push('已忽略无效引用')
@@ -48,26 +49,6 @@ export class RagAnswerService {
       if (runId) await this.runs?.fail(runId, error).catch(() => undefined)
       throw error
     }
-  }
-
-  private sanitizeCitations(answer: string, allowed: Array<{ id: string, item: any }>): { answer: string, citations: RagCitation[], invalidReferenceFound: boolean } {
-    const byId = new Map(allowed.map((value) => [value.id, value.item]))
-    const seen = new Set<string>()
-    const citations: RagCitation[] = []
-    let invalidReferenceFound = false
-    const cleaned = answer.replace(/\[(E\d+)\]/g, (marker, id: string) => {
-      const item = byId.get(id)
-      if (!item) {
-        invalidReferenceFound = true
-        return ''
-      }
-      if (!seen.has(id)) {
-        seen.add(id)
-        citations.push({ evidenceId: id, noteId: item.noteId, noteTitle: item.noteTitle, chunkId: item.chunkId, headingPath: item.headingPath, excerpt: item.excerpt, score: item.score })
-      }
-      return marker
-    })
-    return { answer: cleaned.replace(/[ \t]{2,}/g, ' ').trim(), citations, invalidReferenceFound }
   }
 
   private async startRun(userId: string) {
