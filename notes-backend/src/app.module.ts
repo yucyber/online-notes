@@ -25,6 +25,7 @@ import { RumModule } from './modules/rum/rum.module';
 import { BoardsModule } from './modules/boards/boards.module';
 import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
 import { AiModule } from './modules/ai/ai.module';
+import { AssistantModule } from './modules/assistant/assistant.module';
 import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.module';
 import { QueueMonitorModule } from './modules/queue-monitor/queue-monitor.module';
 
@@ -67,6 +68,7 @@ import { QueueMonitorModule } from './modules/queue-monitor/queue-monitor.module
     BoardsModule,
     MindmapsModule,
     AiModule,
+    AssistantModule,
     KnowledgeBasesModule,
     QueueMonitorModule,
   ],

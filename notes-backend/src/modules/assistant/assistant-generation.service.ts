@@ -29,6 +29,13 @@ export class AssistantGenerationService {
 
   isRunning(requestId: string): boolean { return this.running.has(requestId) }
 
+  // SSE 控制器用：保持响应打开直到生成到达终态（complete/cancelled/failed），再 res.end()。
+  // 生成已结束时返回立即 resolve 的 promise（stops 已被 finish 删除）；运行中返回 stop promise，finish 时 resolve。
+  waitForTerminal(requestId: string): Promise<void> {
+    const stop = this.stops.get(requestId)
+    return stop || Promise.resolve()
+  }
+
   async start(input: { userId: string; conversationId?: string; requestId: string; question: string; knowledgeBaseId?: string; forceRoute?: 'pet' | 'rag' }, emit: (event: AssistantStreamEvent) => void): Promise<void> {
     const { userId, requestId } = input
     if (this.running.has(requestId)) { this.attach(requestId, emit); return }
