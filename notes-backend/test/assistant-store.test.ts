@@ -2,7 +2,7 @@ import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { AssistantMessagesService } from '../src/modules/assistant/assistant-messages.service'
 
-// 最小内存模型：支持 findOne/find/create/updateOne 与 .sort().select()/.limit().lean().exec() 链式调用；过滤器支持 $gt 运算符（afterSeq 游标）。
+// 最小内存模型：支持 findOne/find/create/findOneAndUpdate；findOne 支持 .sort().select().lean().exec()、find 支持 .sort().limit().lean().exec()；过滤器支持 $gt 运算符。updateOne 未实现（本任务测试未覆盖更新路径）。
 function matches(d: any, filter: any): boolean {
   return Object.entries(filter).every(([k, v]) => {
     if (v && typeof v === 'object' && '$gt' in v) return Number(d[k]) > (v as { $gt: number }).$gt

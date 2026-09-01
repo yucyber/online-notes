@@ -25,13 +25,13 @@ export class AssistantMessagesService {
   constructor(@InjectModel(AssistantMessage.name) private readonly model: Model<AssistantMessageDocument>) {}
 
   async appendUser(userId: string, conversationId: string, route: 'pet' | 'rag', content: string, requestId: string): Promise<{ messageId: string; seq: number }> {
-    const seq = await this.nextSeq(conversationId)
+    const seq = await this.nextSeq(userId, conversationId)
     const created = await this.model.create({ userId: new Types.ObjectId(userId), conversationId: new Types.ObjectId(conversationId), seq, role: 'user', route, content, status: 'completed', requestId })
     return { messageId: String(created._id), seq }
   }
 
   async createPlaceholder(userId: string, conversationId: string, route: 'pet' | 'rag', requestId?: string, retryOfMessageId?: string): Promise<{ messageId: string; seq: number }> {
-    const seq = await this.nextSeq(conversationId)
+    const seq = await this.nextSeq(userId, conversationId)
     const created = await this.model.create({
       userId: new Types.ObjectId(userId), conversationId: new Types.ObjectId(conversationId), seq, role: 'assistant', route, content: '', status: 'pending',
       ...(requestId ? { requestId } : {}), ...(retryOfMessageId ? { retryOfMessageId: new Types.ObjectId(retryOfMessageId) } : {}),
@@ -39,8 +39,9 @@ export class AssistantMessagesService {
     return { messageId: String(created._id), seq }
   }
 
-  private async nextSeq(conversationId: string): Promise<number> {
-    const last = await this.model.findOne({ conversationId: new Types.ObjectId(conversationId) }).sort({ seq: -1 }).select('seq').lean().exec()
+  // 顺序生成 seq：假设单写者；并发时依赖唯一索引 (conversationId, seq) 兜底报错，而非静默错序。
+  private async nextSeq(userId: string, conversationId: string): Promise<number> {
+    const last = await this.model.findOne({ userId: new Types.ObjectId(userId), conversationId: new Types.ObjectId(conversationId) }).sort({ seq: -1 }).select('seq').lean().exec()
     return (Number(last?.seq) || 0) + 1
   }
 
