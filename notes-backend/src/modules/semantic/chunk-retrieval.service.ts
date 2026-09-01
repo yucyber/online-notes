@@ -9,6 +9,7 @@ import { EmbeddingService } from './embedding.service'
 
 export interface ChunkSearchInput {
   query: string
+  keywords?: string[]
   knowledgeBaseId?: string
   noteIds?: string[]
   limit?: number
@@ -107,10 +108,11 @@ export class ChunkRetrievalService {
     const allowedIds = readableNotes.map((note: any) => note._id as Types.ObjectId)
     if (allowedIds.length === 0) return []
 
-    const tokens = query.split(/\s+/).filter(Boolean).slice(0, 3)
+    const tokens = [...new Set((input.keywords?.length ? input.keywords : query.split(/\s+/))
+      .map((token) => String(token).trim())
+      .filter(Boolean))].slice(0, 3)
     const pattern = tokens.map((token) => token.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
     const chunks = await this.chunkModel.find({
-      userId: new Types.ObjectId(userId),
       noteId: { $in: allowedIds },
       content: { $regex: pattern, $options: 'i' },
     }).select('_id noteId headingPath content').sort({ noteId: 1, chunkIndex: 1, _id: 1 }).lean().exec()

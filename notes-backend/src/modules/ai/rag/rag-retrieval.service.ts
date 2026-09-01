@@ -11,10 +11,11 @@ export class RagRetrievalService {
   async retrieve(question: string, userId: string, knowledgeBaseId: string | undefined, plan: RagPlan) {
     const warnings: string[] = []
     const rewrite = await this.rewrite(question, warnings)
-    const input = { query: rewrite.query, knowledgeBaseId, limit: 15 }
+    const vectorInput = { query: rewrite.query, knowledgeBaseId, limit: 15 }
+    const keywordInput = { ...vectorInput, keywords: rewrite.keywords }
     const candidates: RagEvidence[] = []
-    if (plan.tools.includes('keyword')) candidates.push(...(await this.chunks.searchKeywordChunks(input, userId)).map((item) => this.fromChunk(item, 'keyword')))
-    if (plan.tools.includes('chunk_vector')) candidates.push(...(await this.chunks.searchChunks(input, userId)).map((item) => this.fromChunk(item, 'chunk_vector')))
+    if (plan.tools.includes('keyword')) candidates.push(...(await this.chunks.searchKeywordChunks(keywordInput, userId)).map((item) => this.fromChunk(item, 'keyword')))
+    if (plan.tools.includes('chunk_vector')) candidates.push(...(await this.chunks.searchChunks(vectorInput, userId)).map((item) => this.fromChunk(item, 'chunk_vector')))
     if (plan.tools.includes('graph_expand') && knowledgeBaseId) {
       const graph = await this.knowledgeBases.expandGraphEvidence(knowledgeBaseId, userId, candidates.map((item) => item.chunkId))
       candidates.push(...graph.map((item: any) => ({ ...item, excerpt: item.content.slice(0, 700), content: item.content.slice(0, 1200), score: 0.35, source: 'graph_expand' as RagTool })))

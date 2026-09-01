@@ -2,7 +2,7 @@ import assert = require('node:assert/strict')
 import { test } from 'node:test'
 import { ChunkRetrievalService } from '../src/modules/semantic/chunk-retrieval.service'
 
-test('关键词 Chunk 检索始终使用服务端 ACL 和知识库笔记范围', async () => {
+test('共享 reader 的关键词 Chunk 检索只使用服务端可读 noteId 范围', async () => {
   const readableId = '507f1f77bcf86cd799439011'
   let query: any
   const chain = (value: any) => ({ select: () => chain(value), sort: () => chain(value), lean: () => chain(value), exec: async () => value })
@@ -16,5 +16,5 @@ test('关键词 Chunk 检索始终使用服务端 ACL 和知识库笔记范围',
   const result = await service.searchKeywordChunks({ query: 'diff', knowledgeBaseId: '507f1f77bcf86cd799439013' }, '507f1f77bcf86cd799439012')
   assert.equal(result.length, 1)
   assert.deepEqual(query.noteId.$in.map(String), [readableId])
-  assert.equal(query.userId.toString(), '507f1f77bcf86cd799439012')
+  assert.equal('userId' in query, false)
 })
