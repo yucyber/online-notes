@@ -52,6 +52,7 @@
 **Files:**
 - Modify: `notes-backend/src/modules/assistant/schemas/assistant-conversation.schema.ts`
 - Modify: `notes-backend/src/modules/assistant/assistant-conversations.service.ts`
+- Modify: `notes-backend/src/modules/assistant/assistant-generation.service.ts`（`cancelByConversation` + `activeRequestId` 维护）
 - Modify: `notes-backend/src/modules/assistant/assistant.controller.ts`
 - Test: `notes-backend/test/assistant-conversation-management.test.ts`
 
@@ -62,6 +63,8 @@
   - `AssistantConversationsService.setStatus(userId, id, status: 'active' | 'archived' | 'deleted'): Promise<{ id: string; status: string }>`（deleted 同时写 `deletedAt`）。
   - `AssistantConversationsService.setActiveRequest(userId, id, requestId: string | null)`。
   - `AssistantConversationsService.getActiveRequest(userId, id): Promise<string | null>`。
+  - `AssistantGenerationService.cancelByConversation(userId, conversationId)`：读 `getActiveRequest`，有则 `cancel(requestId, userId)`。
+  - `AssistantGenerationService.start` 在占位消息创建后 `setActiveRequest(userId, conversation.id, requestId)`，`runGeneration` 的 `finally` 中清空（`setActiveRequest(userId, conversation.id, null)`）。
   - 端点：`PATCH /api/assistant/conversations/:id`（body `{ title }`）；`POST /api/assistant/conversations/:id/archive` / `unarchive` / `delete`；delete 时先 `generation.cancelByConversation(userId, id)`。
 
 - [ ] **Step 1: 写失败测试**
@@ -71,6 +74,7 @@
 import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { AssistantConversationsService } from '../src/modules/assistant/assistant-conversations.service'
+import { AssistantGenerationService } from '../src/modules/assistant/assistant-generation.service'
 
 class MemoryModel {
   docs: any[]
@@ -105,6 +109,16 @@ test('activeRequest 读写', async () => {
   assert.equal(await service.getActiveRequest('u1', 'c1'), 'req-1')
   await service.setActiveRequest('u1', 'c1', null)
   assert.equal(await service.getActiveRequest('u1', 'c1'), null)
+})
+
+test('cancelByConversation 取消该会话正在运行的生成', async () => {
+  const conversations = { getActiveRequest: async () => 'req-9' }
+  const service = new AssistantGenerationService(conversations as any, {} as any, {} as any, {} as any, undefined as any)
+  let cancelled = ''
+  // 用实例方法覆写观测 cancel 调用（cancel 内部依赖私有 cancelKeys/emitters）。
+  service.cancel = async (requestId: string) => { cancelled = requestId }
+  await service.cancelByConversation('u1', 'c1')
+  assert.equal(cancelled, 'req-9')
 })
 ```
 
@@ -185,21 +199,39 @@ async unarchive(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
 @Post('conversations/:id/delete')
 async deleteConversation(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
   const userId = this.userId(req) || ''
-  const active = await this.conversations.getActiveRequest(userId, id)
-  if (active) await this.generation.cancel(active, userId)
+  await this.generation.cancelByConversation(userId, id)
   return this.conversations.setStatus(userId, id, 'deleted')
 }
 ```
 
+`assistant-generation.service.ts` 增加：
+
+```ts
+async cancelByConversation(userId: string, conversationId: string) {
+  const requestId = await this.conversations.getActiveRequest(userId, conversationId)
+  if (requestId) await this.cancel(requestId, userId)
+}
+```
+
+`activeRequestId` 维护（`start` 中占位消息创建后、`runGeneration` 的 `finally` 中）：
+
+```ts
+await this.conversations.setActiveRequest(userId, conversation.id, requestId)
+// ... runGeneration 的 finally 中：
+await this.conversations.setActiveRequest(userId, conversation.id, null).catch(() => undefined)
+```
+
+> 说明：同步更新 `test/assistant-generation.test.ts` 的 `fakeStore().conversations` 增加 `setActiveRequest: async () => undefined`（无操作），保持阶段一生成测试通过（fakeStore 无该方法时 `start` 会抛错）。
+
 - [ ] **Step 4: 运行确认通过**
 
-Run: `node --test -r ts-node/register -r tsconfig-paths/register test/assistant-conversation-management.test.ts test/assistant-conversations-list.test.ts; npm run build`
+Run: `node --test -r ts-node/register -r tsconfig-paths/register test/assistant-conversation-management.test.ts test/assistant-conversations-list.test.ts test/assistant-generation.test.ts; npm run build`
 Expected: PASS；编译通过
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add notes-backend/src/modules/assistant/schemas/assistant-conversation.schema.ts notes-backend/src/modules/assistant/assistant-conversations.service.ts notes-backend/src/modules/assistant/assistant.controller.ts notes-backend/test/assistant-conversation-management.test.ts
+git add notes-backend/src/modules/assistant/schemas/assistant-conversation.schema.ts notes-backend/src/modules/assistant/assistant-conversations.service.ts notes-backend/src/modules/assistant/assistant-generation.service.ts notes-backend/src/modules/assistant/assistant.controller.ts notes-backend/test/assistant-conversation-management.test.ts notes-backend/test/assistant-generation.test.ts
 git commit -m "feat(assistant): 会话重命名归档与软删除"
 ```
 
