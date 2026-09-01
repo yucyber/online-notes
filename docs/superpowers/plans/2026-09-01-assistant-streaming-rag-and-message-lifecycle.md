@@ -460,7 +460,7 @@ import { AssistantMessagesService } from '../src/modules/assistant/assistant-mes
 // 最小内存模型：支持 findOne/find/create/updateOne 与 .sort().select()/.limit().lean().exec() 链式调用；过滤器支持 $gt 运算符（afterSeq 游标）。
 function matches(d: any, filter: any): boolean {
   return Object.entries(filter).every(([k, v]) => {
-    if (v && typeof v === 'object' && '$gt' in v) return Number(d[k]) > v.$gt
+    if (v && typeof v === 'object' && '$gt' in v) return Number(d[k]) > (v as { $gt: number }).$gt
     return String(d[k]) === String(v)
   })
 }
