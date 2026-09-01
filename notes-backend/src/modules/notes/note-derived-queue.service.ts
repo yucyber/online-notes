@@ -37,6 +37,8 @@ export class NoteDerivedQueueService implements OnModuleDestroy {
         if (state === 'delayed') await existing.changeDelay(this.quietMs)
         return existing
       }
+      // completed job 会因固定 jobId 阻止后续保存重新入队；先移除终态任务，才能为最新正文创建新任务。
+      if (state === 'completed') await existing.remove()
     }
 
     const options: JobsOptions = {

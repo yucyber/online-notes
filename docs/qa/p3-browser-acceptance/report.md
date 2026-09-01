@@ -11,7 +11,7 @@
 
 ## 结论
 
-P3 核心交互大部分通过，但知识库笔记保存后的 RAG 检索未命中唯一关键词，当前不建议将 P3 判定为完全验收通过。
+P3 核心交互与 RAG 检索链路均已通过。修复笔记派生任务调度和 Note 查询类型问题后，知识库中的唯一关键词能够命中，并返回可跳转的笔记引用。
 
 ## 验收结果
 
@@ -23,17 +23,18 @@ P3 核心交互大部分通过，但知识库笔记保存后的 RAG 检索未命
 | 关闭、重开及页面刷新后恢复历史 | 通过 | `screenshots/history-restored.png` |
 | 强制“搜索笔记”路由与无证据降级 | 通过 | `screenshots/rag-empty-result.png` |
 | 创建知识库并加入笔记 | 通过 | `screenshots/kb-note-added.png`、`screenshots/knowledge-base-with-note.png` |
-| 已入库笔记的唯一关键词检索 | 失败 | `screenshots/rag-citation-result.png` |
+| 已入库笔记的唯一关键词检索与引用跳转 | 通过 | 浏览器回归：返回 `[E1]` 并成功跳转原笔记 |
 | 移动端笔记页与小助手布局 | 通过 | `screenshots/mobile-notes.png`、`screenshots/mobile-assistant.png` |
 | 独立 Playwright 桌面与移动端加载 | 通过 | `screenshots/playwright-dashboard.png`、`screenshots/playwright-mobile.png` |
 
-## ISSUE-001：已入库并保存的笔记无法被 RAG 检索
+## ISSUE-001：已入库并保存的笔记无法被 RAG 检索（已修复）
 
 | 字段 | 内容 |
 |---|---|
 | 严重程度 | High |
 | 分类 | Functional / RAG indexing |
 | 页面 | `/dashboard/notes`、`/dashboard/knowledge-bases` |
+| 状态 | 已修复并通过浏览器回归 |
 
 ### 现象
 
@@ -48,9 +49,17 @@ P3 核心交互大部分通过，但知识库笔记保存后的 RAG 检索未命
 5. 输入“蓝色海豚对应的项目结论是什么？”并发送。
 6. 实际结果为“笔记中未找到相关记录”；预期应命中该笔记并返回引用。
 
-### 初步判断
+### 根因与修复
 
-浏览器请求成功返回，没有观察到 JavaScript 异常。问题更可能位于笔记保存后的 chunk/embedding 重建、知识库成员变更后的索引同步，或检索时的可见性过滤，而不是聊天 UI 路由。
+1. 派生任务使用固定 `jobId`，但已完成任务仍保留在 BullMQ 中，导致同一笔记后续保存无法重新入队。调度器现在会先移除同 ID 的 completed job，再创建最新快照任务。
+2. Note schema 的 `userId` 在当前 Mongoose 定义中是 Mixed，worker 使用字符串查询时不会自动转换为 BSON ObjectId，因而把存在的笔记误判为无权限或不存在。worker 现在显式使用 ObjectId 查询 `_id` 与 `userId`。
+
+### 修复后回归
+
+- 最新派生任务状态为 completed，返回 `{ status: 'completed' }`。
+- MongoDB 已生成目标笔记的 chunk 与 embedding。
+- 询问“蓝色海豚对应的项目结论是什么？”后，小助手返回正确结论及 `[E1]` 引用。
+- 点击引用可跳转到原笔记及对应 chunk，浏览器控制台无相关错误。
 
 ## 其他观察
 

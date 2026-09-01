@@ -2,7 +2,7 @@ import { Inject, Injectable, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { InjectModel } from '@nestjs/mongoose'
 import { DelayedError, Job, Worker } from 'bullmq'
 import Redis from 'ioredis'
-import { Model } from 'mongoose'
+import { Model, Types } from 'mongoose'
 import { REDIS_CLIENT } from '../../common/redis/redis.constants'
 import { AiCapacityDeferredError } from '../ai/ai-provider-capacity.service'
 import { NoteDerivedJobData, NOTE_DERIVED_QUEUE } from './note-derived-job.types'
@@ -37,7 +37,10 @@ export class NoteDerivedWorker implements OnModuleInit, OnModuleDestroy {
       await job.moveToDelayed(Date.parse(job.data.nextRunAt), token)
       throw new DelayedError()
     }
-    const current = await this.noteModel.findOne({ _id: job.data.noteId, userId: job.data.userId }).lean().exec() as any
+    const current = await this.noteModel.findOne({
+      _id: new Types.ObjectId(job.data.noteId),
+      userId: new Types.ObjectId(job.data.userId),
+    }).lean().exec() as any
     if (!current) return { status: 'discarded', reason: 'note_missing_or_forbidden' }
     const currentUpdatedAt = new Date(current.updatedAt)
     if (currentUpdatedAt.toISOString() !== new Date(job.data.expectedUpdatedAt).toISOString()) {

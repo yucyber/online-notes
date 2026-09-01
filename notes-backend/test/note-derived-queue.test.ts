@@ -5,11 +5,12 @@ import { NoteDerivedQueueService } from '../src/modules/notes/note-derived-queue
 class MemoryJob {
   state: string = 'delayed'
   delay = 0
-  constructor(readonly id: string, public data: any) {}
+  constructor(readonly id: string, public data: any, private readonly onRemove: () => void) {}
   async getState() { return this.state }
   async updateData(data: any) { this.data = data }
   async changeDelay(delay: number) { this.delay = delay }
   async retry() { this.state = 'waiting' }
+  async remove() { this.onRemove() }
 }
 
 class MemoryQueue {
@@ -18,7 +19,7 @@ class MemoryQueue {
   async add(_name: string, data: any, options: any) {
     const existing = this.jobs.get(options.jobId)
     if (existing) return existing
-    const job = new MemoryJob(options.jobId, data)
+    const job = new MemoryJob(options.jobId, data, () => this.jobs.delete(options.jobId))
     job.delay = options.delay
     this.jobs.set(options.jobId, job)
     return job
@@ -95,4 +96,20 @@ test('20 篇笔记突发更新立即入队，同 note 仍只保留最新任务',
   assert.deepEqual((await service.getJob('note-0'))?.data.changes, {
     titleChanged: true, contentChanged: true, taxonomyChanged: true,
   })
+})
+
+test('同一 note 的旧任务 completed 后，新快照会重新入队', async () => {
+  const queue = new MemoryQueue()
+  const service = new NoteDerivedQueueService(queue as any, 10_000)
+
+  await service.schedule(payload('note-1', { titleChanged: false, contentChanged: true, taxonomyChanged: false }, '2026-08-28T00:00:00.000Z'))
+  const completed = await service.getJob('note-1') as unknown as MemoryJob
+  completed.state = 'completed'
+
+  await service.schedule(payload('note-1', { titleChanged: true, contentChanged: true, taxonomyChanged: false }, '2026-08-28T00:01:00.000Z'))
+
+  const rescheduled = await service.getJob('note-1') as unknown as MemoryJob
+  assert.notEqual(rescheduled, completed)
+  assert.equal(rescheduled.state, 'delayed')
+  assert.equal(rescheduled.data.expectedUpdatedAt, '2026-08-28T00:01:00.000Z')
 })
