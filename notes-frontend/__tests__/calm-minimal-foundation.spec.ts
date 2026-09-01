@@ -61,6 +61,7 @@ describe('Calm Minimal 全局界面基础契约', () => {
     const categories = read('src/components/categories/CategoryListPanel.tsx')
     const tags = read('src/app/dashboard/tags/page.tsx')
     const aiChat = read('src/components/ai/ChatWindow.tsx')
+    const tokens = read('src/styles/product-tokens.css')
 
     for (const source of [dashboard, categories, tags]) {
       expect(source).not.toContain('card-hover')
@@ -69,7 +70,8 @@ describe('Calm Minimal 全局界面基础契约', () => {
     }
     expect(dashboard).not.toContain('text-gray-900')
     expect(tags).toContain('page-heading')
-    expect(aiChat).toContain('border-[var(--product-line)]')
+    expect(aiChat).toContain('ink-panel-real')
+    expect(tokens).toContain('border: 1px solid var(--product-line)')
     expect(aiChat).not.toContain('shadow-2xl')
     expect(aiChat).not.toContain('slide-in-from-bottom')
   })
@@ -147,7 +149,7 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(tokens).not.toContain('--product-bg: #0f1724')
   })
 
-  test('AI 入口使用墨点助手而不是机器人客服悬浮块', () => {
+  test('AI 入口使用统一小助手而不是机器人客服悬浮块', () => {
     const entry = read('src/components/ai/AIPet.tsx')
     const chat = read('src/components/ai/ChatWindow.tsx')
 
@@ -155,9 +157,11 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(entry).toContain('N')
     expect(entry).not.toContain('<Bot')
     expect(entry).not.toContain('green-')
-    expect(chat).toContain('墨点助手')
-    expect(chat).toContain('总结当前笔记')
-    expect(chat).toContain('搜索我的知识库')
+    expect(chat).toContain('小助手')
+    expect(chat).toContain('帮我理清今天的想法')
+    expect(chat).toContain('搜索笔记')
+    expect(chat).not.toContain("activeTab === 'pet'")
+    expect(chat).not.toContain("activeTab === 'rag'")
   })
 
   test('笔记管理页使用紧凑平面列表', () => {

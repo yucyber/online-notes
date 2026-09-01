@@ -40,15 +40,15 @@ describe('ChatWindow 请求失败', () => {
       .mockResolvedValueOnce({ ok: true, body: { getReader: () => reader } } as Response)
 
     render(<ChatWindow isOpen onClose={() => undefined} />)
-    const input = screen.getByPlaceholderText('问问墨点…')
+    const input = screen.getByPlaceholderText('问问小助手…')
     fireEvent.change(input, { target: { value: '继续生成' } })
     fireEvent.keyDown(input, { key: 'Enter' })
 
-    expect(await screen.findByText('AI 生成失败，请稍后重试。')).toBeInTheDocument()
+    expect(await screen.findByText('小助手暂时没有回应，请稍后重试。')).toBeInTheDocument()
     expect(mockAppToastError).toHaveBeenCalledTimes(1)
     expect(mockAppToastError).toHaveBeenCalledWith(expect.objectContaining({
       id: 'ai-pet:request',
-      title: 'AI 生成失败',
+      title: '小助手请求失败',
       persistent: true,
       action: expect.objectContaining({ label: '重试生成' }),
     }))

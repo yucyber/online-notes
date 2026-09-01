@@ -51,9 +51,21 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
             const result = await getRagAnswer(content);
             setMessages((prev) => [...prev, createMessage('assistant', result.answer, 'rag', result)]);
             appToast.dismiss('ai-rag:request');
-        } catch {
-            setMessages((prev) => [...prev, createMessage('assistant', '知识检索暂时不可用，请稍后重试。', 'rag')]);
-            appToast.error({ id: 'ai-rag:request', title: '知识检索失败', message: '请检查网络后重试。', persistent: true });
+            } catch {
+                setMessages((prev) => [...prev, createMessage('assistant', '知识检索暂时不可用，请稍后重试。', 'rag')]);
+                appToast.error({
+                    id: 'ai-rag:request',
+                    title: '知识检索失败',
+                    message: '请检查网络后重试。',
+                    persistent: true,
+                    action: {
+                        label: '重试检索',
+                        onClick: () => {
+                            setIsLoading(true);
+                            void generateRagReply(content).finally(() => setIsLoading(false));
+                        },
+                    },
+                });
         }
     };
 
@@ -79,10 +91,22 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
                 }
             }
             appToast.dismiss('ai-pet:request');
-        } catch (error) {
-            console.error('Chat error:', error);
-            setMessages((prev) => [...prev, createMessage('assistant', '小助手暂时没有回应，请稍后重试。', 'pet')]);
-            appToast.error({ id: 'ai-pet:request', title: '小助手请求失败', message: '请检查网络后重试。', persistent: true });
+            } catch (error) {
+                console.error('Chat error:', error);
+                setMessages((prev) => [...prev, createMessage('assistant', '小助手暂时没有回应，请稍后重试。', 'pet')]);
+                appToast.error({
+                    id: 'ai-pet:request',
+                    title: '小助手请求失败',
+                    message: '请检查网络后重试。',
+                    persistent: true,
+                    action: {
+                        label: '重试生成',
+                        onClick: () => {
+                            setIsLoading(true);
+                            void generatePetReply(content).finally(() => setIsLoading(false));
+                        },
+                    },
+                });
         }
     };
 
