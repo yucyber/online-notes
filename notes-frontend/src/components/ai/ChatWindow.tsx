@@ -1,228 +1,126 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
-import { Loader2 } from 'lucide-react';
+import React, { useEffect, useRef, useState } from 'react';
+import { BookOpen, Loader2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { appToast } from '@/lib/app-toast';
-import { getRagAnswer, type RagAnswer } from '@/lib/ai-client';
+import { getRagAnswer } from '@/lib/ai-client';
+import { AssistantMessage, ASSISTANT_HISTORY_KEY, loadAssistantHistory, routeAssistantMessage, saveAssistantHistory } from './assistant-history';
 import RagCitationList from './RagCitationList';
 
-interface Message {
-    role: 'user' | 'assistant';
-    content: string;
-}
-interface RagMessage extends Message { result?: RagAnswer }
+interface ChatWindowProps { isOpen: boolean; onClose: () => void }
 
-interface ChatWindowProps {
-    isOpen: boolean;
-    onClose: () => void;
+function messageId() {
+    return typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+        ? crypto.randomUUID()
+        : `assistant-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+}
+
+function createMessage(role: AssistantMessage['role'], content: string, route: AssistantMessage['route'], result?: AssistantMessage['result']): AssistantMessage {
+    return { id: messageId(), role, content, route, ...(result ? { result } : {}), createdAt: new Date().toISOString() };
 }
 
 export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
-    const [messages, setMessages] = useState<Message[]>([]);
-    const [ragMessages, setRagMessages] = useState<RagMessage[]>([]);
-    const [mode, setMode] = useState<'pet' | 'rag'>('pet');
+    const [messages, setMessages] = useState<AssistantMessage[]>([]);
+    const [hydrated, setHydrated] = useState(false);
+    const [forceNotes, setForceNotes] = useState(false);
     const [input, setInput] = useState('');
     const [isLoading, setIsLoading] = useState(false);
     const messagesEndRef = useRef<HTMLDivElement>(null);
 
     useEffect(() => {
-        const saved = localStorage.getItem('ai_pet_history');
-        if (saved) {
-            try {
-                const parsed = JSON.parse(saved) as Message[];
-                setMessages(
-                    Array.isArray(parsed)
-                        ? parsed.map((msg) => ({ role: msg.role, content: String(msg.content || '') }))
-                        : [],
-                );
-            } catch (e) {
-                console.error('Failed to parse chat history', e);
-            }
-        }
+        setMessages(loadAssistantHistory(localStorage));
+        setHydrated(true);
     }, []);
 
     useEffect(() => {
-        const saved = localStorage.getItem('ai_rag_history');
-        if (!saved) return;
-        try {
-            const parsed = JSON.parse(saved) as RagMessage[];
-            if (Array.isArray(parsed)) setRagMessages(parsed.map((msg) => ({ role: msg.role, content: String(msg.content || ''), result: msg.result })));
-        } catch { localStorage.removeItem('ai_rag_history'); }
-    }, []);
+        if (hydrated) saveAssistantHistory(localStorage, messages);
+    }, [hydrated, messages]);
 
-    useEffect(() => {
-        localStorage.setItem('ai_pet_history', JSON.stringify(messages));
-    }, [messages]);
-    useEffect(() => { localStorage.setItem('ai_rag_history', JSON.stringify(ragMessages)); }, [ragMessages]);
-
-    useEffect(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-    }, [messages, ragMessages, mode]);
+    useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, isLoading]);
 
     const handleClearHistory = () => {
-        if (mode === 'pet') { setMessages([]); localStorage.removeItem('ai_pet_history'); }
-        else { setRagMessages([]); localStorage.removeItem('ai_rag_history'); }
+        setMessages([]);
+        localStorage.removeItem(ASSISTANT_HISTORY_KEY);
+        localStorage.removeItem('ai_pet_history');
+        localStorage.removeItem('ai_rag_history');
     };
 
     const generateRagReply = async (content: string) => {
-        setRagMessages((prev) => [...prev, { role: 'user', content }]);
-        setIsLoading(true);
         try {
             const result = await getRagAnswer(content);
-            setRagMessages((prev) => [...prev, { role: 'assistant', content: result.answer, result }]);
+            setMessages((prev) => [...prev, createMessage('assistant', result.answer, 'rag', result)]);
             appToast.dismiss('ai-rag:request');
         } catch {
-            setRagMessages((prev) => [...prev, { role: 'assistant', content: '知识助手暂时不可用，请稍后重试。' }]);
-            appToast.error({ id: 'ai-rag:request', title: '知识助手请求失败', message: '请检查网络后重试。', persistent: true });
-        } finally { setIsLoading(false); }
+            setMessages((prev) => [...prev, createMessage('assistant', '知识检索暂时不可用，请稍后重试。', 'rag')]);
+            appToast.error({ id: 'ai-rag:request', title: '知识检索失败', message: '请检查网络后重试。', persistent: true });
+        }
     };
 
-    const generateReply = async (userMsg: Message, appendUserMessage: boolean) => {
-        if (appendUserMessage) setMessages((prev) => [...prev, userMsg]);
-        setIsLoading(true);
-
+    const generatePetReply = async (content: string) => {
+        const assistantId = messageId();
         try {
-            const response = await fetch('/api/ai/pet', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    message: userMsg.content,
-                }),
-            });
-
-            if (!response.ok) {
-                let errorMessage = 'Failed to send message';
-                try {
-                    const errorData = await response.json();
-                    errorMessage = errorData.error || errorMessage;
-                } catch {
-                    const text = await response.text();
-                    if (text) errorMessage = text;
-                }
-                throw new Error(errorMessage);
-            }
-
-            if (!response.body) throw new Error('No response body');
-
+            const response = await fetch('/api/ai/pet', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: content }) });
+            if (!response.ok || !response.body) throw new Error('Pet chat request failed');
             const reader = response.body.getReader();
             const decoder = new TextDecoder();
-            let assistantMessage = '';
-            let isFirstChunk = true;
-
+            let answer = '';
+            let appended = false;
             while (true) {
                 const { done, value } = await reader.read();
                 if (done) break;
-
-                const chunk = decoder.decode(value, { stream: true });
-                if (!chunk) continue;
-
-                assistantMessage += chunk;
-
-                if (isFirstChunk) {
-                    isFirstChunk = false;
-                    setMessages((prev) => [...prev, { role: 'assistant', content: assistantMessage }]);
+                answer += decoder.decode(value, { stream: true });
+                if (!answer) continue;
+                if (!appended) {
+                    appended = true;
+                    setMessages((prev) => [...prev, { ...createMessage('assistant', answer, 'pet'), id: assistantId }]);
                 } else {
-                    setMessages((prev) => {
-                        const newMessages = [...prev];
-                        const lastMsg = newMessages[newMessages.length - 1];
-                        if (lastMsg.role === 'assistant') {
-                            lastMsg.content = assistantMessage;
-                        }
-                        return newMessages;
-                    });
+                    setMessages((prev) => prev.map((message) => message.id === assistantId ? { ...message, content: answer } : message));
                 }
             }
             appToast.dismiss('ai-pet:request');
         } catch (error) {
             console.error('Chat error:', error);
-            setMessages((prev) => [
-                ...prev,
-                { role: 'assistant', content: 'AI 生成失败，请稍后重试。' },
-            ]);
-            appToast.error({
-                id: 'ai-pet:request',
-                title: 'AI 生成失败',
-                message: '请检查网络后重试。',
-                action: { label: '重试生成', onClick: () => { void generateReply(userMsg, false); } },
-                persistent: true,
-            });
-        } finally {
-            setIsLoading(false);
+            setMessages((prev) => [...prev, createMessage('assistant', '小助手暂时没有回应，请稍后重试。', 'pet')]);
+            appToast.error({ id: 'ai-pet:request', title: '小助手请求失败', message: '请检查网络后重试。', persistent: true });
         }
     };
 
     const handleSend = () => {
         const content = input.trim();
         if (!content || isLoading) return;
-
+        const route = routeAssistantMessage(content, forceNotes);
         setInput('');
-        if (mode === 'pet') void generateReply({ role: 'user', content }, true);
-        else void generateRagReply(content);
+        setMessages((prev) => [...prev, createMessage('user', content, route)]);
+        setIsLoading(true);
+        const request = route === 'rag' ? generateRagReply(content) : generatePetReply(content);
+        void request.finally(() => setIsLoading(false));
     };
 
     if (!isOpen) return null;
-
     return (
-        <aside className="ink-panel-real" aria-label="墨点助手">
+        <aside className="ink-panel-real" aria-label="小助手">
             <div className="ink-head-real">
-                <div><h3>{mode === 'pet' ? '墨点助手' : '知识助手'}</h3><p>{mode === 'pet' ? '轻松聊聊' : '只读检索你的笔记'}</p></div>
-                <div className="ink-head-actions">
-                    <button type="button" onClick={handleClearHistory} title="清空对话">清空</button>
-                    <button type="button" onClick={onClose} aria-label="关闭墨点助手">×</button>
-                </div>
+                <div className="ink-head-title"><span className="ink-head-mark"><Sparkles aria-hidden="true" /></span><div><h3>小助手</h3><p>闲聊，或从你的笔记中寻找答案</p></div></div>
+                <div className="ink-head-actions"><button type="button" onClick={handleClearHistory} title="清空对话">清空</button><button type="button" onClick={onClose} aria-label="关闭小助手">×</button></div>
             </div>
-
-            <div className="flex gap-2 border-b border-[var(--product-line)] px-3 py-2 text-sm">
-                <button type="button" className={mode === 'pet' ? 'font-medium' : 'text-[var(--product-text-secondary)]'} onClick={() => setMode('pet')}>宠物聊天</button>
-                <button type="button" className={mode === 'rag' ? 'font-medium' : 'text-[var(--product-text-secondary)]'} onClick={() => setMode('rag')}>知识助手</button>
-            </div>
-
             <div className="ink-body-real">
-                {mode === 'pet' && messages.length === 0 && (
-                    <div className="text-[var(--product-text-secondary)]">
-                        <p className="leading-6">把零散想法变成清晰的下一步。你可以从这些常用操作开始：</p>
-                        <div className="mt-4 grid gap-2">
-                            {['总结当前笔记', '从笔记中提取待办', '搜索我的知识库'].map((action) => <button key={action} className="rounded-[8px] border border-[var(--product-line)] px-3 py-2.5 text-left text-sm hover:bg-[var(--product-panel-soft)]" onClick={() => setInput(action)}>{action}</button>)}
-                        </div>
-                    </div>
-                )}
-                {mode === 'pet' && messages.map((msg, idx) => (
-                    <div key={idx} className={`ink-message-real ${msg.role}`}>
-                        <div>
-                            <div className="prose dark:prose-invert max-w-none text-sm">
-                                <ReactMarkdown>{msg.content}</ReactMarkdown>
-                            </div>
-                        </div>
-                    </div>
-                ))}
-                {mode === 'rag' && ragMessages.length === 0 && <p className="text-sm leading-6 text-[var(--product-text-secondary)]">向知识助手提问。它只会引用当前有权限访问的笔记；找不到记录时会明确说明。</p>}
-                {mode === 'rag' && ragMessages.map((msg, idx) => (
-                    <div key={idx} className={`ink-message-real ${msg.role}`}><div><div className="prose dark:prose-invert max-w-none text-sm"><ReactMarkdown>{msg.content}</ReactMarkdown></div>{msg.result && <RagCitationList citations={msg.result.citations} />}{msg.result?.warnings.map((warning) => <p key={warning} className="mt-2 text-xs text-[var(--product-text-secondary)]">{warning}</p>)}</div></div>
-                ))}
-                {isLoading && ((mode === 'pet' && messages[messages.length - 1]?.role !== 'assistant') || mode === 'rag') && (
-                    <div className="ink-message-real assistant">
-                        <div>
-                            <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                        </div>
-                    </div>
-                )}
+                {messages.length === 0 && <div className="ink-empty-real"><span><Sparkles aria-hidden="true" /></span><h4>今天想聊点什么？</h4><p>直接聊天，或让我从你有权限访问的笔记里寻找依据。</p><div>{['帮我理清今天的想法', '找找我之前踩过的坑'].map((action) => <button key={action} type="button" onClick={() => setInput(action)}>{action}</button>)}</div></div>}
+                {messages.map((message) => <div key={message.id} className={`ink-message-real ${message.role}`}>
+                    {message.role === 'assistant' && <div className={`ink-message-source ${message.route}`}>{message.route === 'rag' ? <BookOpen aria-hidden="true" /> : <Sparkles aria-hidden="true" />}{message.route === 'rag' ? '基于你的笔记' : '轻松聊聊'}</div>}
+                    <div className="prose dark:prose-invert max-w-none text-sm"><ReactMarkdown>{message.content}</ReactMarkdown></div>
+                    {message.result && <RagCitationList citations={message.result.citations} />}
+                    {message.result?.warnings.map((warning) => <p key={warning} className="ink-message-warning">{warning}</p>)}
+                </div>)}
+                {isLoading && <div className="ink-message-real assistant ink-loading-real"><Loader2 aria-label="小助手正在回复" /></div>}
                 <div ref={messagesEndRef} />
             </div>
-
-            <div className="ink-compose-real">
-                    <textarea
-                        value={input}
-                        onChange={(e) => setInput(e.target.value)}
-                        onKeyDown={(e) => {
-                            if (e.key === 'Enter' && !e.shiftKey) {
-                                e.preventDefault();
-                                handleSend();
-                            }
-                        }}
-                        placeholder={mode === 'pet' ? '问问墨点…' : '问问你的笔记…'}
-                    />
+            <div className="ink-compose-wrap">
+                <button type="button" className="ink-note-toggle" aria-pressed={forceNotes} onClick={() => setForceNotes((current) => !current)}><BookOpen aria-hidden="true" />搜索笔记</button>
+                <div className="ink-compose-real">
+                    <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); } }} placeholder="问问小助手…" />
                     <button type="button" onClick={handleSend} disabled={isLoading || !input.trim()} aria-label="发送">↑</button>
+                </div>
             </div>
         </aside>
     );
