@@ -683,7 +683,7 @@ test('流式回答逐段下发正文并剔除伪造引用', async () => {
   )
   const result = await service.streamRagAnswer({ question: 'React 是什么', userId: 'u1' }, {
     onStatus: async () => undefined,
-    onDelta: async (text) => deltas.push(text),
+    onDelta: async (text) => { deltas.push(text) },
   })
   assert.equal(deltas.join(''), '这是答案 [E1] 另见 ')
   assert.equal(result.citations[0].evidenceId, 'E1')
