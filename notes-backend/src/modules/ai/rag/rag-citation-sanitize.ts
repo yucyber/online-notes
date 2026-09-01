@@ -34,7 +34,8 @@ export function createRagCitationSanitizer(allowed: RagEvidence[]): RagCitationS
       const lastOpen = combined.lastIndexOf('[')
       if (lastOpen === -1) { buffer = ''; return emit(combined) }
       const tail = combined.slice(lastOpen)
-      if (/^\[E\d*$/.test(tail)) { buffer = tail; return emit(combined.slice(0, lastOpen)) }
+      // `[` 与 `E` 可能被拆到相邻 chunk，单个 `[` 也须缓冲，闭合后才判定。
+      if (/^\[E?\d*$/.test(tail)) { buffer = tail; return emit(combined.slice(0, lastOpen)) }
       buffer = ''
       return emit(combined)
     },

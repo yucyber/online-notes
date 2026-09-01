@@ -25,3 +25,23 @@ test('流式版跨 chunk 拆分也能识别完整标记', () => {
   assert.equal(sanitizer.citations[0].evidenceId, 'E1')
   assert.equal(sanitizer.invalidReferenceFound, true)
 })
+
+test('流式版在 `[` 与 `E` 被拆分时也缓冲左括号并识别标记', () => {
+  const sanitizer = createRagCitationSanitizer(allowed)
+  const out1 = sanitizer.push('结论 [')
+  const out2 = sanitizer.push('E1] 更多')
+  assert.equal(out1, '结论 ')
+  assert.equal(out2, '[E1] 更多')
+  assert.equal(sanitizer.flush(), '')
+  assert.equal(sanitizer.citations.length, 1)
+  assert.equal(sanitizer.citations[0].evidenceId, 'E1')
+  assert.equal(sanitizer.invalidReferenceFound, false)
+})
+
+test('流结束时悬空的单个左括号由 flush 返回', () => {
+  const sanitizer = createRagCitationSanitizer(allowed)
+  assert.equal(sanitizer.push('说明见 ['), '说明见 ')
+  assert.equal(sanitizer.flush(), '[')
+  assert.equal(sanitizer.citations.length, 0)
+  assert.equal(sanitizer.invalidReferenceFound, false)
+})
