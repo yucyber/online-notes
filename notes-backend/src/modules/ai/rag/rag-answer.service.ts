@@ -36,26 +36,38 @@ export class RagAnswerService {
         system: 'Answer in Chinese. Cite note-supported claims using only [E1] style IDs supplied in context. General knowledge is allowed only when labelled “通用补充”, never as a user-note fact. For user history claims, use only evidence. Do not reveal reasoning.',
         prompt: ['用户问题：' + question, '', '证据：', ...allowed.map(({ id, item }) => `[${id}] ${item.noteTitle} | ${item.headingPath.join(' > ')}\n${item.content}`)].join('\n\n'),
       }))
-      const citations = this.citations(response.content, allowed)
+      const sanitized = this.sanitizeCitations(response.content, allowed)
+      const citations = sanitized.citations
       const warnings = [...result.warnings]
-      if (/\[E\d+\]/.test(response.content) && citations.length === 0) warnings.push('已忽略无效引用')
-      await this.runs?.mergeMetrics(runId!, { outputChars: response.content.length, candidateNotes: new Set(result.evidence.map((item) => item.noteId)).size, candidateChunks: result.evidence.length })
+      if (sanitized.invalidReferenceFound) warnings.push('已忽略无效引用')
+      if (citations.length === 0) warnings.push('回答未附带可验证引用')
+      await this.runs?.mergeMetrics(runId!, { outputChars: sanitized.answer.length, candidateNotes: new Set(result.evidence.map((item) => item.noteId)).size, candidateChunks: result.evidence.length })
       await this.runs?.succeed(runId!, response.attempt)
-      return { answer: response.content.trim(), citations, planSummary: { ...plan, rerankApplied: result.rerankApplied }, warnings, runId }
+      return { answer: sanitized.answer, citations, planSummary: { ...plan, rerankApplied: result.rerankApplied }, warnings, runId }
     } catch (error) {
       if (runId) await this.runs?.fail(runId, error).catch(() => undefined)
       throw error
     }
   }
 
-  private citations(answer: string, allowed: Array<{ id: string, item: any }>): RagCitation[] {
+  private sanitizeCitations(answer: string, allowed: Array<{ id: string, item: any }>): { answer: string, citations: RagCitation[], invalidReferenceFound: boolean } {
     const byId = new Map(allowed.map((value) => [value.id, value.item]))
     const seen = new Set<string>()
-    return [...answer.matchAll(/\[(E\d+)\]/g)].flatMap((match) => {
-      const id = match[1]; const item = byId.get(id)
-      if (!item || seen.has(id)) return []; seen.add(id)
-      return [{ evidenceId: id, noteId: item.noteId, noteTitle: item.noteTitle, chunkId: item.chunkId, headingPath: item.headingPath, excerpt: item.excerpt, score: item.score }]
+    const citations: RagCitation[] = []
+    let invalidReferenceFound = false
+    const cleaned = answer.replace(/\[(E\d+)\]/g, (marker, id: string) => {
+      const item = byId.get(id)
+      if (!item) {
+        invalidReferenceFound = true
+        return ''
+      }
+      if (!seen.has(id)) {
+        seen.add(id)
+        citations.push({ evidenceId: id, noteId: item.noteId, noteTitle: item.noteTitle, chunkId: item.chunkId, headingPath: item.headingPath, excerpt: item.excerpt, score: item.score })
+      }
+      return marker
     })
+    return { answer: cleaned.replace(/[ \t]{2,}/g, ' ').trim(), citations, invalidReferenceFound }
   }
 
   private async startRun(userId: string) {
