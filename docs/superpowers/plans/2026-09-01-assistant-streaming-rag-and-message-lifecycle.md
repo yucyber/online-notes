@@ -457,7 +457,7 @@ import { test } from 'node:test'
 import assert = require('node:assert/strict')
 import { AssistantMessagesService } from '../src/modules/assistant/assistant-messages.service'
 
-// 最小内存模型：支持 findOne/find/create/updateOne 与 .sort().select()/.limit().lean().exec() 链式调用；过滤器支持 $gt 运算符（afterSeq 游标）。
+// 最小内存模型：支持 findOne/find/create/findOneAndUpdate；findOne 支持 .sort().select().lean().exec()、find 支持 .sort().limit().lean().exec()；过滤器支持 $gt 运算符（afterSeq 游标）。updateOne 未实现（本任务测试未覆盖更新路径）。
 function matches(d: any, filter: any): boolean {
   return Object.entries(filter).every(([k, v]) => {
     if (v && typeof v === 'object' && '$gt' in v) return Number(d[k]) > (v as { $gt: number }).$gt
@@ -549,13 +549,13 @@ export class AssistantMessagesService {
   constructor(@InjectModel(AssistantMessage.name) private readonly model: Model<AssistantMessageDocument>) {}
 
   async appendUser(userId: string, conversationId: string, route: 'pet' | 'rag', content: string, requestId: string): Promise<{ messageId: string; seq: number }> {
-    const seq = await this.nextSeq(conversationId)
+    const seq = await this.nextSeq(userId, conversationId)
     const created = await this.model.create({ userId: new Types.ObjectId(userId), conversationId: new Types.ObjectId(conversationId), seq, role: 'user', route, content, status: 'completed', requestId })
     return { messageId: String(created._id), seq }
   }
 
   async createPlaceholder(userId: string, conversationId: string, route: 'pet' | 'rag', requestId?: string, retryOfMessageId?: string): Promise<{ messageId: string; seq: number }> {
-    const seq = await this.nextSeq(conversationId)
+    const seq = await this.nextSeq(userId, conversationId)
     const created = await this.model.create({
       userId: new Types.ObjectId(userId), conversationId: new Types.ObjectId(conversationId), seq, role: 'assistant', route, content: '', status: 'pending',
       ...(requestId ? { requestId } : {}), ...(retryOfMessageId ? { retryOfMessageId: new Types.ObjectId(retryOfMessageId) } : {}),
@@ -563,8 +563,9 @@ export class AssistantMessagesService {
     return { messageId: String(created._id), seq }
   }
 
-  private async nextSeq(conversationId: string): Promise<number> {
-    const last = await this.model.findOne({ conversationId: new Types.ObjectId(conversationId) }).sort({ seq: -1 }).select('seq').lean().exec()
+  private async nextSeq(userId: string, conversationId: string): Promise<number> {
+    // 顺序生成 seq：假设单写者；并发时依赖唯一索引 (conversationId, seq) 兜底报错，而非静默错序
+    const last = await this.model.findOne({ conversationId: new Types.ObjectId(conversationId), userId: new Types.ObjectId(userId) }).sort({ seq: -1 }).select('seq').lean().exec()
     return (Number(last?.seq) || 0) + 1
   }
 
