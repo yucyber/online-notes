@@ -997,8 +997,8 @@ export class AssistantGenerationService {
       await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
       emitter.emit('event', { event: 'started', data: { conversationId: conversation.id, userMessageId: userMessage.messageId, assistantMessageId: assistantMessage.messageId, requestId } })
 
-      // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
-      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish())
+      // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。catch 兜底：catch 块内的落库失败若不处理会逃逸成 unhandledRejection 直接终止进程。
+      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish()).catch((e) => this.logger.error('assistant generation cleanup failed', e))
     } catch (error) {
       // 前置步骤失败时释放占位，避免 requestId 永久停留在运行态。
       finish()
