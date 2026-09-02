@@ -10,9 +10,11 @@ class MemoryModel {
     return (d: any) => Object.entries(filter).every(([k, v]) => String(d[k]) === String(v))
   }
   async findOne(filter: any) { return this.docs.find(this.match(filter)) ?? null }
-  async updateOne(filter: any, update: any) {
+  updateOne(filter: any, update: any) {
     const doc = this.docs.find(this.match(filter))
     if (doc) Object.assign(doc, update.$set)
+    // 服务按 Mongoose Query 惯例链 .exec()，mock 同步返回可 exec 对象（不能 async：async 方法返回 Promise，链不上 .exec）。
+    return { exec: async () => ({ matchedCount: doc ? 1 : 0 }) }
   }
   // findOneAndUpdate 链式 mock：命中则原地应用 $set 并返回更新后 doc（服务总是传 { new: true }），未命中返回 null。
   findOneAndUpdate(filter: any, update: any) {
@@ -82,4 +84,24 @@ test('cancelByConversation 无 activeRequest 时不取消', async () => {
   service.cancel = async () => { cancelCalled = true; return { cancelled: true } }
   await service.cancelByConversation('u1', 'c1')
   assert.equal(cancelCalled, false)
+})
+
+test('renameIfDefault 仅当标题仍为默认"新对话"时更新', async () => {
+  const model = new MemoryModel([{ _id: 'c1', userId: 'u1', title: '新对话', status: 'active' }])
+  const service = new AssistantConversationsService(model as any)
+  await service.renameIfDefault('u1', 'c1', '自动标题前缀')
+  assert.equal(model.docs[0].title, '自动标题前缀')
+})
+
+test('renameIfDefault 标题已改或会话不存在时静默保留（不抛 NotFound）', async () => {
+  // R=1 竞态回归：生成期间用户手动改名后，自动标题的条件更新不命中，不得覆盖也不抛错。
+  const model = new MemoryModel([
+    { _id: 'c1', userId: 'u1', title: '用户手动改的标题', status: 'active' },
+    { _id: 'c2', userId: 'u1', title: '新对话', status: 'active' },
+  ])
+  const service = new AssistantConversationsService(model as any)
+  await service.renameIfDefault('u1', 'c1', '自动标题')   // 标题已非默认 → 不更新
+  await service.renameIfDefault('u1', 'missing', '自动标题') // 会话不存在 → 静默（尽力而为，与 .catch 兜底一致）
+  assert.equal(model.docs[0].title, '用户手动改的标题')
+  assert.equal(model.docs[1].title, '新对话')
 })

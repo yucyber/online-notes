@@ -10,15 +10,25 @@ function fakeStore() {
   const byRequest = new Map<string, any>()
   const events: any[] = []
   const activeRequestCalls: Array<{ userId: string; conversationId: string; requestId: string | null }> = []
+  const renameCalls: Array<{ userId: string; conversationId: string; title: string }> = []
+  // 会话标题登记：模拟 renameIfDefault 的原子条件——仅标题仍为默认"新对话"时自动标题才生效。
+  const titles: Record<string, string> = { c1: '新对话' }
   return {
     events,
     activeRequestCalls,
+    renameCalls,
+    titles,
     conversations: {
       ensure: async () => ({ id: 'c1', isNew: true }),
-      get: async () => ({ id: 'c1', title: 't', status: 'active' }),
+      get: async (_u: string, id: string) => ({ id, title: titles[id] ?? '新对话', status: 'active' }),
       touch: async () => undefined,
-      // Task 3 自动标题：ensure 判定 isNew 时生成成功后会调 rename，fake 需提供该方法。
-      rename: async () => undefined,
+      // 模拟服务端 renameIfDefault：标题已非默认（如用户手动改名）时不记录、不覆盖。
+      renameIfDefault: async (userId: string, conversationId: string, title: string) => {
+        if (titles[conversationId] === '新对话') {
+          titles[conversationId] = title
+          renameCalls.push({ userId, conversationId, title })
+        }
+      },
       // 记录 activeRequestId 写操作（start 写入 requestId、runGeneration finally 清空 null），供断言生成生命周期。
       setActiveRequest: async (userId: string, conversationId: string, requestId: string | null) => {
         activeRequestCalls.push({ userId, conversationId, requestId })
@@ -189,4 +199,64 @@ test('生成结束后清空会话 activeRequestId', async () => {
   const calls = store.activeRequestCalls
   assert.ok(calls.some((c) => c.requestId === requestId), 'start 应写入会话 activeRequestId')
   assert.equal(calls[calls.length - 1].requestId, null, '生成结束后应清空 activeRequestId')
+})
+
+test('生成成功后自动标题：以问题前 24 字调用 renameIfDefault', async () => {
+  // R=1 建议：成功 + 默认标题会话 → 自动标题收到截断后的问题前缀（fakeStore 记录 renameIfDefault 参数）。
+  const store = fakeStore()
+  const question = '这是一段超过二十四个字符的中文问题文本用来验证自动标题截断行为'
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  await service.start({ userId, requestId: 'req-title', question, forceRoute: 'rag' }, () => undefined)
+  // 等生成到达终态：renameIfDefault 在 runGeneration 收尾（finish 前）执行，waitForTerminal resolve 后断言才稳定。
+  await service.waitForTerminal('req-title')
+  assert.equal(store.renameCalls.length, 1)
+  assert.equal(store.renameCalls[0].conversationId, 'c1')
+  assert.equal(store.renameCalls[0].title, question.slice(0, 24), '标题应为问题前 24 字（截断）')
+})
+
+test('取消的生成不触发自动标题', async () => {
+  // R=1 建议：completed=false（取消）路径不得调用 renameIfDefault，避免失败问答污染会话标题。
+  const store = fakeStore()
+  let releaseRag!: () => void
+  const ragGate = new Promise<void>((resolve) => { releaseRag = resolve })
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async (_input: any, hooks: any) => {
+      await ragGate
+      await hooks.onDelta('部分文本')
+      return { route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }
+    } } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted: any[] = []
+  const done = service.start({ userId, requestId: 'req-title-cancel', question: 'q', forceRoute: 'rag' }, (e) => emitted.push(e))
+  await new Promise((r) => setTimeout(r, 10))
+  // cancel 等待生成真正停止（stop promise 在 finish 时 resolve），返回后自动标题路径已走完，可安全断言。
+  const cancelPromise = service.cancel('req-title-cancel', userId)
+  releaseRag()
+  await cancelPromise
+  await done
+  assert.equal(store.renameCalls.length, 0, '取消路径不得自动重命名')
+})
+
+test('会话已有标题时自动标题不覆盖（get 路径成功也不改名）', async () => {
+  // R=1 建议：conversationId 指定走 get 路径（无 isNew）；生成期间用户已手动改名 → renameIfDefault 条件不命中，标题保留。
+  const store = fakeStore()
+  store.titles.c1 = '用户手动改的标题'
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  await service.start({ userId, conversationId: 'c1', requestId: 'req-titled', question: 'q', forceRoute: 'rag' }, () => undefined)
+  await service.waitForTerminal('req-titled')
+  assert.equal(store.renameCalls.length, 0, '标题已非默认时不自动改名')
+  assert.equal(store.titles.c1, '用户手动改的标题')
 })

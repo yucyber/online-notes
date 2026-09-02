@@ -11,7 +11,7 @@ test('retry 占位消息携带 retryOfMessageId', async () => {
       get: async () => ({ id: 'c1', title: 't', status: 'active' }),
       ensure: async () => ({ id: 'c1', isNew: false }),
       touch: async () => undefined,
-      rename: async (u: string, id: string, title: string) => { calls.push({ type: 'rename', title }) },
+      renameIfDefault: async (u: string, id: string, title: string) => { calls.push({ type: 'renameIfDefault', title }) },
       setActiveRequest: async () => undefined,
     },
     messages: {

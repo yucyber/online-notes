@@ -79,11 +79,9 @@ export class AssistantGenerationService {
         ? input.forceRoute
         : (input.forceRoute === 'rag' || NOTE_INTENT.test(input.question) ? 'rag' : 'pet')
       // 尊重前端指定的会话：带 userId 归属校验；id 失效（已删除/无权限）时回退到最新 active 会话，避免新消息落入不存在会话。
-      // isNew 仅 ensure 返回（新建为 true）；指定会话 id 走 get 路径无此字段，视为非新会话。
-      const conversation: { id: string; isNew?: boolean } = input.conversationId
+      const conversation = input.conversationId
         ? (await this.conversations.get(userId, input.conversationId)) ?? (await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined))
         : await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
-      const isNewConversation = conversation.isNew === true
       const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
       // 重试追溯：占位消息记录被重试的原始回答消息 id（retryOf），供前端定位来源与历史链。
       const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId, input.retryOfMessageId)
@@ -94,7 +92,7 @@ export class AssistantGenerationService {
 
       // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
       // finally 后的 catch 兜底：catch 块内落库（flush/markCancelled/markFailed）失败时避免 unhandledRejection 崩溃进程。
-      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route, isNewConversation }, emitter).finally(() => finish())
+      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish())
         .catch((e) => this.logger.error('assistant generation cleanup failed', e))
     } catch (error) {
       // 前置步骤失败时释放占位，避免 requestId 永久停留在运行态。
@@ -131,7 +129,7 @@ export class AssistantGenerationService {
     if (requestId) await this.cancel(requestId, userId)
   }
 
-  private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag'; retryOfMessageId?: string; isNewConversation: boolean }, emitter: EventEmitter): Promise<void> {
+  private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag'; retryOfMessageId?: string }, emitter: EventEmitter): Promise<void> {
     const { userId, assistantMessageId, requestId, route } = input
     let content = ''
     let completed = false
@@ -200,10 +198,11 @@ export class AssistantGenerationService {
       // 生成结束（含取消/失败）清空会话 activeRequestId，避免残留导致误取消或误判。
       await this.conversations.setActiveRequest(userId, input.conversationId, null).catch(() => undefined)
     }
-    // 新会话首次问答成功后用问题前缀生成标题：仅成功且 ensure 判定为新会话时触发（取消/失败不重命名），
-    // rename 失败静默降级，不影响生成完成。
-    if (completed && input.isNewConversation) {
-      await this.conversations.rename(userId, input.conversationId, input.question.slice(0, 24)).catch(() => undefined)
+    // 自动标题：成功问答后用问题前 24 字尝试重命名。renameIfDefault 按"标题仍为默认'新对话'"条件原子更新：
+    // 新会话首次生成失败/取消后标题不会被卡死（后续成功问答即补上）；生成期间用户手动改名也不会被覆盖。
+    // 失败/取消（completed=false）不触发；异常（如会话已删）静默降级，不影响生成完成。
+    if (completed) {
+      await this.conversations.renameIfDefault(userId, input.conversationId, input.question.slice(0, 24)).catch(() => undefined)
     }
   }
 }

@@ -43,6 +43,17 @@ export class AssistantConversationsService {
     return { id: String(doc._id), title: String(doc.title) }
   }
 
+  // 自动标题专用：仅当标题仍为默认"新对话"时原子更新（默认标题进查询条件），
+  // 避免覆盖生成期间用户手动改的标题，也让"新会话首次生成失败后标题卡默认"的会话在后续成功问答时补上标题。
+  // 会话不存在或标题已改时静默返回（不抛 NotFound）：自动标题是尽力而为，非管理操作，调用方已 .catch 兜底。
+  async renameIfDefault(userId: string, id: string, title: string) {
+    const nextTitle = String(title || '').trim().slice(0, 80) || '新对话'
+    await this.model.updateOne(
+      { _id: toObjectId(id), userId: toObjectId(userId), title: '新对话' },
+      { $set: { title: nextTitle } },
+    ).exec()
+  }
+
   async setStatus(userId: string, id: string, status: 'active' | 'archived' | 'deleted') {
     const update: any = { $set: { status } }
     if (status === 'deleted') update.$set.deletedAt = new Date()
