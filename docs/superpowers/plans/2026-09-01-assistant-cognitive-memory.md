@@ -148,7 +148,8 @@ export class AssistantMemoryCandidate {
   @Prop({ required: true })
   statement: string
 
-  @Prop({ required: true, type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true }, default: { type: 'global' } })
+  // scope 内嵌 type 字面量：mongoose 8 中 required/default 须内嵌于 type 字段（同级会抛 Invalid schema configuration）；id 供非 global 范围锚定实体（ObjectId，global 恒不写）。
+  @Prop({ type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true, default: 'global' }, id: { type: Types.ObjectId } })
   scope: MemoryScope
 
   @Prop({ required: true, enum: ['pending', 'rejected', 'confirmed'], default: 'pending', index: true })
@@ -196,7 +197,8 @@ export class AssistantMemory {
   @Prop({ required: true })
   statement: string
 
-  @Prop({ required: true, type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true }, default: { type: 'global' } })
+  // scope 内嵌 type 字面量：mongoose 8 中 required/default 须内嵌于 type 字段（同级会抛 Invalid schema configuration）；id 供非 global 范围锚定实体（ObjectId，global 恒不写）。
+  @Prop({ type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true, default: 'global' }, id: { type: Types.ObjectId } })
   scope: MemoryScope
 
   @Prop({ required: true, enum: ['confirmed', 'superseded'], default: 'confirmed', index: true })
