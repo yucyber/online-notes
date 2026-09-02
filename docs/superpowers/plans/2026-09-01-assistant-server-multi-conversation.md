@@ -1260,8 +1260,8 @@ Expected: 全部通过
 
 > 浏览器 UI 冒烟依赖 Task 8 的 `ConversationList`/`AssistantWorkspace` 组件，已延后至计划 3 完成后执行（见 Task 8 执行顺序决策）。本阶段以 REST API 级冒烟验证后端链路（验收账户直连端点）：
 
-- 会话管理：新建两个会话各发一条消息（`POST conversations` → `POST conversations/:id/stream`），`PATCH conversations/:id/rename` 改名、`POST archive`/`unarchive`、`POST delete`（删除后 `GET conversations` 列表消失、`activeRequestId` 清空停止运行中生成）。
-- 搜索：`GET conversations/search?q=<唯一关键词>` 确认标题命中与 `GET messages/search` 消息命中（结果含 conversationId/messageId/seq）。
+- 会话管理：发消息走 `POST /api/assistant/chat`（SSE，body 不带 conversationId 时自动 ensure 新建会话，从 started 事件取 conversationId）；`PATCH /api/assistant/conversations/:id` 改名、`POST conversations/:id/archive`/`unarchive`/`delete`（删除后列表消失、`activeRequestId` 清空停止运行中生成——注：列表/新建无独立 REST 端点，由计划 3 前端 UI 承接）。
+- 搜索：`GET /api/assistant/search?q=<唯一关键词>` 合并返回 `{ conversations: [标题命中], messages: [正文命中] }`（消息含 conversationId/messageId/seq，用于定位）。
 - 重试：`GET messages?afterSeq` 观察失败消息（模拟方式视环境）；`POST conversations/:id/stream` 传 `retryOfMessageId` 确认新回答 + 原失败消息保留。
 - 分支：`POST conversations/:id/branch { fromSeq }`，确认新会话含前缀消息、标题带"分支"、`parentConversationId` 落库。
 - 导出：`GET conversations/:id/export` 返回 `assistant-<id>.jsonl`，内容含 conversation/message/citation 行。
@@ -1292,3 +1292,4 @@ git log --oneline -10
 - 规格覆盖：重命名/归档/删除（Task 1）、停止运行中生成（Task 1 delete + Task 3 activeRequestId）、搜索标题与正文并定位消息（Task 2 + Task 8 跳转）、游标分页（阶段一 `afterSeq` 沿用，Task 8 用于定位）、Checkpoint 触发条件与内容边界（Task 5）、分区上下文与预算（Task 6）、`[已确认认知]` 接口预留（Task 6 `MemoryRecallServiceLike`，阶段四注册）、编辑=分支语义与重试追溯（Task 3/4）、软删除与恢复（Task 1）、JSONL 导出（Task 7）。语义搜索（message embedding）按规格明确为后续演进，不在第一阶段。
 - 占位符扫描：无 TBD/TODO；所有代码步骤均给出可运行测试与实现。
 - 类型一致性：`AssistantMessageView` 沿用阶段一；`ConversationListItem` 与后端 `list()` 一致；`MemoryRecallServiceLike.recall` 返回 `{ label, text }` 与阶段四 `MemoryRecallService` 输出契约一致（阶段四 Task 将按此签名实现）；`retryOfMessageId` 在阶段一 schema、阶段三 DTO/start 输入/占位消息中命名一致；checkpoint 视图字段与 schema 一致。
+- 历史注记（whole-branch review 2026-09-02）：计划内嵌代码片段中的 `throw new Error('conversation not found')`（Task 1/4 片段）为早期草稿写法，实现已统一为 `NotFoundException`（404 语义，Task 1 Minor1 修复）——计划片段保留历史原样，以实现为准；Task 9 Step 3 冒烟已按真实路由改写（chat 自动建会话 + 合并 `GET /assistant/search`）。
