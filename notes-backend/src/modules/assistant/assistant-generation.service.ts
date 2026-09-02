@@ -85,6 +85,8 @@ export class AssistantGenerationService {
       const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
       const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId)
       await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
+      // 记录会话当前运行的生成 requestId：删除/归档会话时可据此取消正在进行的生成。
+      await this.conversations.setActiveRequest(userId, conversation.id, requestId)
       emitter.emit('event', { event: 'started', data: { conversationId: conversation.id, userMessageId: userMessage.messageId, assistantMessageId: assistantMessage.messageId, requestId } })
 
       // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
@@ -118,6 +120,12 @@ export class AssistantGenerationService {
     const stop = this.stops.get(requestId)
     if (stop) await stop
     return { cancelled: true }
+  }
+
+  async cancelByConversation(userId: string, conversationId: string) {
+    // 删除会话前取消该会话正在运行的生成：读会话当前 activeRequestId，有则取消。
+    const requestId = await this.conversations.getActiveRequest(userId, conversationId)
+    if (requestId) await this.cancel(requestId, userId)
   }
 
   private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag' }, emitter: EventEmitter): Promise<void> {
@@ -184,6 +192,8 @@ export class AssistantGenerationService {
       }
     } finally {
       this.cancelKeys.delete(requestId)
+      // 生成结束（含取消/失败）清空会话 activeRequestId，避免残留导致误取消或误判。
+      await this.conversations.setActiveRequest(userId, input.conversationId, null).catch(() => undefined)
     }
   }
 }

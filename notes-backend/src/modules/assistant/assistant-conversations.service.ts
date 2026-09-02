@@ -30,4 +30,39 @@ export class AssistantConversationsService {
     if (delta.knowledgeBaseId !== undefined) update.$set.knowledgeBaseId = delta.knowledgeBaseId ? new Types.ObjectId(delta.knowledgeBaseId) : null
     await this.model.updateOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) }, update).exec()
   }
+
+  // 测试内存模型用明文 id（'c1'/'u1'），生产是 ObjectId hex：isValid 兜底避免构造非法 ObjectId 抛错，同时保证生产查询仍按 ObjectId 匹配。
+  private toObjectId(v: string) {
+    return Types.ObjectId.isValid(v) ? new Types.ObjectId(v) : v
+  }
+
+  async rename(userId: string, id: string, title: string) {
+    const filter = { _id: this.toObjectId(id), userId: this.toObjectId(userId) }
+    const doc = await this.model.findOne(filter)
+    if (!doc) throw new Error('conversation not found')
+    const nextTitle = String(title || '').trim().slice(0, 80) || '新对话'
+    await this.model.updateOne(filter, { $set: { title: nextTitle } })
+    return { id: String(doc._id), title: nextTitle }
+  }
+
+  async setStatus(userId: string, id: string, status: 'active' | 'archived' | 'deleted') {
+    const filter = { _id: this.toObjectId(id), userId: this.toObjectId(userId) }
+    const doc = await this.model.findOne(filter)
+    if (!doc) throw new Error('conversation not found')
+    const update: any = { $set: { status } }
+    if (status === 'deleted') update.$set.deletedAt = new Date()
+    if (status === 'active') update.$set.deletedAt = null
+    await this.model.updateOne(filter, update)
+    return { id: String(doc._id), status }
+  }
+
+  async setActiveRequest(userId: string, id: string, requestId: string | null) {
+    // 显式写 null 清空（$set: undefined 在 Mongoose 中不更新字段，会残留旧 requestId）
+    await this.model.updateOne({ _id: this.toObjectId(id), userId: this.toObjectId(userId) }, { $set: { activeRequestId: requestId } })
+  }
+
+  async getActiveRequest(userId: string, id: string) {
+    const doc = await this.model.findOne({ _id: this.toObjectId(id), userId: this.toObjectId(userId) }, 'activeRequestId')
+    return doc?.activeRequestId ?? null
+  }
 }

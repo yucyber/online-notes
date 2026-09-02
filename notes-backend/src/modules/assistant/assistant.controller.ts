@@ -1,8 +1,9 @@
-import { BadRequestException, Body, Controller, Get, Param, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { Throttle } from '@nestjs/throttler'
 import { IsEnum, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator'
 import type { Request, Response } from 'express'
+import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
 import { AssistantMessagesService } from './assistant-messages.service'
 import { formatSseEvent } from './assistant-stream-format'
@@ -32,6 +33,7 @@ export class AssistantController {
   constructor(
     private readonly generation: AssistantGenerationService,
     private readonly messages: AssistantMessagesService,
+    private readonly conversations: AssistantConversationsService,
   ) {}
 
   @Post('chat')
@@ -67,6 +69,29 @@ export class AssistantController {
       ...(limit !== undefined ? { limit: Math.min(200, Number(limit) || 200) } : {}),
     })
     return { items }
+  }
+
+  @Patch('conversations/:id')
+  async renameConversation(@Param('id') id: string, @Body('title') title: string, @Req() req?: AuthenticatedRequest) {
+    return this.conversations.rename(this.userId(req) || '', id, String(title || ''))
+  }
+
+  @Post('conversations/:id/archive')
+  async archive(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
+    return this.conversations.setStatus(this.userId(req) || '', id, 'archived')
+  }
+
+  @Post('conversations/:id/unarchive')
+  async unarchive(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
+    return this.conversations.setStatus(this.userId(req) || '', id, 'active')
+  }
+
+  @Post('conversations/:id/delete')
+  async deleteConversation(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req) || ''
+    // 软删除前取消该会话正在运行的生成，避免删除后生成继续写消息。
+    await this.generation.cancelByConversation(userId, id)
+    return this.conversations.setStatus(userId, id, 'deleted')
   }
 
   private userId(req?: AuthenticatedRequest): string | undefined {

@@ -16,7 +16,7 @@ test('chat 端点把生成事件写出为 SSE 并保持打开直到终态再结�
     cancel: async () => undefined,
   }
   const messages = { list: async () => [] }
-  const controller = new AssistantController(generation as any, messages as any)
+  const controller = new AssistantController(generation as any, messages as any, {} as any)
   let written = ''
   let endedAt = -1
   const res: any = {
@@ -43,7 +43,7 @@ test('cancel 端点返回取消实际结果（透传 not_found/not_running/cance
     cancel: async () => ({ cancelled: false, reason: 'not_running' as const }),
     waitForTerminal: async () => undefined,
   }
-  const controller = new AssistantController(generation as any, { list: async () => [] } as any)
+  const controller = new AssistantController(generation as any, { list: async () => [] } as any, {} as any)
   const result = await controller.cancel('r1', { user: { id: 'u1' } } as any)
   assert.deepEqual(result, { cancelled: false, reason: 'not_running' })
 })

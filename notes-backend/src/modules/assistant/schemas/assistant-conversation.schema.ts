@@ -31,6 +31,15 @@ export class AssistantConversation {
 
   @Prop({ type: Date })
   deletedAt?: Date
+
+  @Prop()
+  activeRequestId?: string
+
+  @Prop({ type: Types.ObjectId })
+  parentConversationId?: Types.ObjectId
+
+  @Prop()
+  forkedFromSeq?: number
 }
 
 export const AssistantConversationSchema = SchemaFactory.createForClass(AssistantConversation)

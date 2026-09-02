@@ -15,6 +15,8 @@ function fakeStore() {
       ensure: async () => ({ id: 'c1', isNew: true }),
       get: async () => ({ id: 'c1', title: 't', status: 'active' }),
       touch: async () => undefined,
+      // 阶段一 fakeStore 未提供此方法时 start 会调用并抛错，补空实现保持生成测试通过。
+      setActiveRequest: async () => undefined,
     },
     messages: {
       appendUser: async () => ({ messageId: 'um1', seq: 1 }),
