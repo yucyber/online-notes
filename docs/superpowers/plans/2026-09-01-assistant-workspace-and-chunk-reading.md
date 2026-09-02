@@ -73,11 +73,14 @@ class MemoryModel {
   docs: any[]
   constructor(seed: any[] = []) { this.docs = seed.map((d) => ({ ...d })) }
   async find(filter: any) {
-    return {
-      sort: () => ({ lean: async () => this.docs
-        .filter((d) => Object.entries(filter).every(([k, v]) => String(d[k]) === String(v)))
-        .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt))) }),
-    }
+    // mock 需与实现链同形：find → sort → lean → exec
+    const result = this.docs
+      .filter((d) => Object.entries(filter).every(([k, v]) => {
+        if (k === 'status' && typeof v === 'object' && v !== null && '$ne' in v) return d.status !== v.$ne
+        return String(d[k]) === String(v)
+      }))
+      .sort((a, b) => String(b.updatedAt).localeCompare(String(a.updatedAt)))
+    return { sort: () => ({ lean: () => ({ exec: async () => result }) }) }
   }
 }
 
@@ -91,6 +94,27 @@ test('list 只返回当前用户未删除会话并按 updatedAt 降序', async (
   const items = await service.list('u1')
   assert.deepEqual(items.map((i) => i.id), ['c1'])
   assert.equal(items[0].title, 'A')
+})
+
+test('list 返回空数组当用户无会话', async () => {
+  const model = new MemoryModel([])
+  const service = new AssistantConversationsService(model as any)
+  const items = await service.list('u1')
+  assert.deepEqual(items, [])
+})
+
+// controller 端点：GET /api/assistant/conversations → { items }
+test('GET conversations 端点返回 items 且未认证抛 400', async () => {
+  const { AssistantController } = await import('../src/modules/assistant/assistant.controller')
+  const { BadRequestException } = await import('@nestjs/common')
+  const list = async (userId: string) => (userId === 'u1' ? [{ id: 'c1', title: 'A', status: 'active', messageCount: 2, updatedAt: 'x' }] : [])
+  const controller = new AssistantController({} as any, {} as any, { list } as any, {} as any)
+  const result = await controller.conversations({ user: { id: 'u1' } } as any)
+  assert.deepEqual(result.items.map((i: any) => i.id), ['c1'])
+  await assert.rejects(
+    () => controller.conversations({} as any),
+    (err: any) => err instanceof BadRequestException,
+  )
 })
 ```
 
@@ -126,7 +150,7 @@ async conversations(@Req() req?: AuthenticatedRequest) {
 }
 ```
 
-（注意：controller 构造器需注入 `AssistantConversationsService`；`messages` 字段名与既有 `GET conversations/:id/messages` 不冲突，路由顺序：`conversations` 在 `conversations/:id/messages` 之前注册，Nest 按声明顺序匹配，先声明 `conversations`。同步更新阶段一的 `test/assistant-controller.test.ts`：`new AssistantController(generation, messages)` 改为 `new AssistantController(generation, messages, {} as any)`（第三个参数为 conversations 假实现）。）
+（controller 构造器已注入 `AssistantConversationsService`（计划 2 4 参：generation/messages/conversations/checkpoints）——无需改构造；`GET conversations` 与既有 `GET conversations/:id/messages` 无冲突，Nest 按声明顺序匹配，`conversations` 声明在前即可。`list` 用 `status: { $ne: 'deleted' }` 排除软删除；`messageCount`/`lastMessageAt`/`updatedAt` 均为 schema 既有字段。controller 端点测试沿用 4 参构造（conversations 假实现补 `list`）。）
 
 - [ ] **Step 4: 运行确认通过**
 
