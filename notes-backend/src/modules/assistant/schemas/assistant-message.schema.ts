@@ -54,5 +54,5 @@ export const AssistantMessageSchema = SchemaFactory.createForClass(AssistantMess
 AssistantMessageSchema.index({ conversationId: 1, seq: 1 }, { name: 'idx_assistant_msg_conv_seq', unique: true })
 // 幂等锚点 = user 消息：同一 (userId, requestId) 只允许一条用户提问（防止重复生成）。assistant 消息的 requestId 仅用于关联/重放定位，不参与唯一。
 AssistantMessageSchema.index({ userId: 1, requestId: 1 }, { name: 'idx_assistant_msg_user_request', unique: true, partialFilterExpression: { requestId: { $type: 'string' }, role: 'user' } })
-// 消息正文文本索引：搜索端点按 content 正则 + 用户过滤，文本索引加速词项匹配（与 searchMessages 配套）。
+// 预留：供后续语义召回演进（$text 检索）；当前 $regex 路径不使用该索引（MongoDB text 索引只服务 $text 操作符）。
 AssistantMessageSchema.index({ content: 'text' }, { name: 'idx_assistant_msg_content_text' })

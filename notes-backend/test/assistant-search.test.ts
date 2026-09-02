@@ -7,22 +7,30 @@ import { AssistantMessagesService } from '../src/modules/assistant/assistant-mes
 
 // 最小内存模型：find 返回 .sort().limit().lean() 链对象（lean 直接 resolve 数组，实现按方案 A 不带 .exec()）。
 // find 必须是非 async：async 方法返回 Promise，无法继续 .sort() 链式（与计划 1 assistant-store.test.ts 的 mock 风格一致）。
-// 过滤器支持 $regex/$in/$ne/等值比较。
+// 过滤器支持 $regex/$in/$ne/等值比较；sort 尊重 sortSpec 字段方向（T10 教训：吞方向会掩蔽「最近命中」语义）。
 class MemoryModel {
   docs: any[]
   constructor(seed: any[] = []) { this.docs = seed.map((d) => ({ ...d })) }
   find(filter: any) {
     return {
-      sort: () => ({
+      sort: (sortSpec: any) => ({
         limit: (n: number) => ({
-          lean: async () => this.docs.filter((d) => Object.entries(filter).every(([k, v]) => {
-            // typeof 收窄后 v 为 object，需经 any 访问操作符字段（brief 原样写法在 ts-node 类型检查下报 TS2339）。
-            const o = v as any
-            if (typeof v === 'object' && o?.$regex) return new RegExp(o.$regex, 'i').test(String(d[k] || ''))
-            if (typeof v === 'object' && o?.$in) return o.$in.some((x: any) => String(x) === String(d[k]))
-            if (typeof v === 'object' && o?.$ne) return String(d[k]) !== String(o.$ne)
-            return String(d[k]) === String(v)
-          })).slice(0, n)
+          lean: async () => {
+            let rows = this.docs.filter((d) => Object.entries(filter).every(([k, v]) => {
+              // typeof 收窄后 v 为 object，需经 any 访问操作符字段（brief 原样写法在 ts-node 类型检查下报 TS2339）。
+              const o = v as any
+              if (typeof v === 'object' && o?.$regex) return new RegExp(o.$regex, 'i').test(String(d[k] || ''))
+              if (typeof v === 'object' && o?.$in) return o.$in.some((x: any) => String(x) === String(d[k]))
+              if (typeof v === 'object' && o?.$ne) return String(d[k]) !== String(o.$ne)
+              return String(d[k]) === String(v)
+            }))
+            const entry = sortSpec && typeof sortSpec === 'object' ? Object.entries(sortSpec as Record<string, number>)[0] : undefined
+            if (entry) {
+              const [field, dir] = entry
+              rows = [...rows].sort((a, b) => (new Date(a[field] || 0).getTime() - new Date(b[field] || 0).getTime()) * dir)
+            }
+            return rows.slice(0, n)
+          },
         }),
       }),
     }
@@ -50,18 +58,21 @@ test('正则元字符被转义，不会误匹配', async () => {
   assert.equal(none.length, 0)
 })
 
-test('同一会话最多保留 3 条命中，其他会话不受影响', async () => {
+test('同一会话最多保留 3 条命中，保留最新的 3 条', async () => {
   const model = new MemoryModel([
-    { _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 1, role: 'user', content: '蓝色海豚 A', updatedAt: '2026-09-01T00:00:00.000Z' },
-    { _id: 'm2', conversationId: 'c1', userId: 'u1', seq: 2, role: 'assistant', content: '蓝色海豚 B', updatedAt: '2026-09-01T00:00:00.000Z' },
-    { _id: 'm3', conversationId: 'c1', userId: 'u1', seq: 3, role: 'user', content: '蓝色海豚 C', updatedAt: '2026-09-01T00:00:00.000Z' },
-    { _id: 'm4', conversationId: 'c1', userId: 'u1', seq: 4, role: 'user', content: '蓝色海豚 D', updatedAt: '2026-09-01T00:00:00.000Z' },
-    { _id: 'm5', conversationId: 'c2', userId: 'u1', seq: 1, role: 'user', content: '蓝色海豚 E', updatedAt: '2026-09-01T00:00:00.000Z' },
+    { _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 1, role: 'user', content: '蓝色海豚 A', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' },
+    { _id: 'm2', conversationId: 'c1', userId: 'u1', seq: 2, role: 'assistant', content: '蓝色海豚 B', createdAt: '2026-09-01T01:00:00.000Z', updatedAt: '2026-09-01T01:00:00.000Z' },
+    { _id: 'm3', conversationId: 'c1', userId: 'u1', seq: 3, role: 'user', content: '蓝色海豚 C', createdAt: '2026-09-01T02:00:00.000Z', updatedAt: '2026-09-01T02:00:00.000Z' },
+    { _id: 'm4', conversationId: 'c1', userId: 'u1', seq: 4, role: 'user', content: '蓝色海豚 D', createdAt: '2026-09-01T03:00:00.000Z', updatedAt: '2026-09-01T03:00:00.000Z' },
+    { _id: 'm5', conversationId: 'c2', userId: 'u1', seq: 1, role: 'user', content: '蓝色海豚 E', createdAt: '2026-09-01T04:00:00.000Z', updatedAt: '2026-09-01T04:00:00.000Z' },
   ])
   const service = new AssistantMessagesService(model as any)
   const hits = await service.searchMessages('u1', '蓝色海豚')
   assert.equal(hits.length, 4)
-  assert.equal(hits.filter((h) => h.conversationId === 'c1').length, 3)
+  const c1Hits = hits.filter((h) => h.conversationId === 'c1')
+  assert.equal(c1Hits.length, 3)
+  // 验证「最近」语义：按 createdAt 降序截断，c1 保留最新 3 条（m2/m3/m4），最旧 m1 被挤掉。
+  assert.deepEqual(c1Hits.map((h) => h.messageId).sort(), ['m2', 'm3', 'm4'])
   assert.equal(hits.filter((h) => h.conversationId === 'c2').length, 1)
 })
 
@@ -74,6 +85,14 @@ test('总命中上限 20 条', async () => {
   assert.equal(hits.length, 20)
 })
 
+test('limit 传 0 时按 1 兜底，不清空结果', async () => {
+  // limit: 0 在 MongoDB 语义为不限，服务端 Math.max(1, ...) 兜底避免误传清空。
+  const model = new MemoryModel([{ _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 1, role: 'user', content: '蓝色海豚', createdAt: '2026-09-01T00:00:00.000Z', updatedAt: '2026-09-01T00:00:00.000Z' }])
+  const service = new AssistantMessagesService(model as any)
+  const hits = await service.searchMessages('u1', '蓝色海豚', { limit: 0 })
+  assert.equal(hits.length, 1)
+})
+
 test('结果包含 messageId/seq/role/updatedAt 字段', async () => {
   const model = new MemoryModel([{ _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 7, role: 'assistant', content: '命中内容', updatedAt: '2026-09-02T00:00:00.000Z' }])
   const service = new AssistantMessagesService(model as any)
@@ -82,7 +101,9 @@ test('结果包含 messageId/seq/role/updatedAt 字段', async () => {
 })
 
 test('空 query 直接返回空数组，不触达存储', async () => {
-  const service = new AssistantMessagesService(new MemoryModel() as any)
+  // seed 有命中数据：若 early-return 被删，空串正则会命中全部，断言 [] 才能证明短路生效。
+  const model = new MemoryModel([{ _id: 'm1', conversationId: 'c1', userId: 'u1', seq: 1, role: 'user', content: '蓝色海豚', updatedAt: '2026-09-01T00:00:00.000Z' }])
+  const service = new AssistantMessagesService(model as any)
   assert.deepEqual(await service.searchMessages('u1', ''), [])
   assert.deepEqual(await service.searchMessages('u1', '   '), [])
 })

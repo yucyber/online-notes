@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
+import { toObjectId } from './object-id.util'
 import { AssistantConversation, AssistantConversationDocument } from './schemas/assistant-conversation.schema'
 
 @Injectable()
@@ -31,15 +32,10 @@ export class AssistantConversationsService {
     await this.model.updateOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) }, update).exec()
   }
 
-  // 测试内存模型用明文 id（'c1'/'u1'），生产是 ObjectId hex：isValid 兜底避免构造非法 ObjectId 抛错，同时保证生产查询仍按 ObjectId 匹配。
-  private toObjectId(v: string) {
-    return Types.ObjectId.isValid(v) ? new Types.ObjectId(v) : v
-  }
-
   async rename(userId: string, id: string, title: string) {
     const nextTitle = String(title || '').trim().slice(0, 80) || '新对话'
     const doc = await this.model.findOneAndUpdate(
-      { _id: this.toObjectId(id), userId: this.toObjectId(userId) },
+      { _id: toObjectId(id), userId: toObjectId(userId) },
       { $set: { title: nextTitle } },
       { new: true },
     ).lean().exec()
@@ -52,7 +48,7 @@ export class AssistantConversationsService {
     if (status === 'deleted') update.$set.deletedAt = new Date()
     if (status === 'active') update.$set.deletedAt = null
     const doc = await this.model.findOneAndUpdate(
-      { _id: this.toObjectId(id), userId: this.toObjectId(userId) },
+      { _id: toObjectId(id), userId: toObjectId(userId) },
       update,
       { new: true },
     ).lean().exec()
@@ -63,7 +59,7 @@ export class AssistantConversationsService {
   async setActiveRequest(userId: string, id: string, requestId: string | null) {
     // 显式写 null 清空（$set: undefined 在 Mongoose 中不更新字段，会残留旧 requestId）；找不到会话时抛 NotFound（管理操作与 rename/setStatus 一致）。
     const doc = await this.model.findOneAndUpdate(
-      { _id: this.toObjectId(id), userId: this.toObjectId(userId) },
+      { _id: toObjectId(id), userId: toObjectId(userId) },
       { $set: { activeRequestId: requestId } },
       { new: true },
     ).lean().exec()
@@ -72,7 +68,7 @@ export class AssistantConversationsService {
 
   async getActiveRequest(userId: string, id: string) {
     // 只读辅助：会话不存在时返回 null（cancelByConversation 据此跳过取消），与写操作抛 NotFound 区分。
-    const doc = await this.model.findOne({ _id: this.toObjectId(id), userId: this.toObjectId(userId) }, 'activeRequestId')
+    const doc = await this.model.findOne({ _id: toObjectId(id), userId: toObjectId(userId) }, 'activeRequestId')
     return doc?.activeRequestId ?? null
   }
 
@@ -82,7 +78,7 @@ export class AssistantConversationsService {
     if (!q) return []
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
     const docs = await this.model.find({
-      userId: this.toObjectId(userId), status: { $ne: 'deleted' }, title: { $regex: escaped, $options: 'i' },
+      userId: toObjectId(userId), status: { $ne: 'deleted' }, title: { $regex: escaped, $options: 'i' },
     }).sort({ updatedAt: -1 }).limit(20).lean() as any[]
     return docs.map((doc) => ({ id: String(doc._id), title: String(doc.title || ''), updatedAt: String(doc.updatedAt || new Date().toISOString()) }))
   }

@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { RagCitation } from '../ai/rag/rag.types'
+import { toObjectId } from './object-id.util'
 import { AssistantMessage, AssistantMessageDocument } from './schemas/assistant-message.schema'
 
 export type AssistantMessageView = {
@@ -78,20 +79,16 @@ export class AssistantMessagesService {
     return doc ? toView(doc) : null
   }
 
-  // 测试内存模型用明文 id（'u1'），生产是 ObjectId hex：isValid 兜底避免构造非法 ObjectId 抛错（与 conversations service 一致）。
-  private toObjectId(v: string) {
-    return Types.ObjectId.isValid(v) ? new Types.ObjectId(v) : v
-  }
-
   // 搜索：query 转义后做 content 正则包含匹配；先取最近 limit 条命中，再按会话截断每会话最多 3 条——
   // 该顺序意味着某会话第 4+ 条新命中会挤掉其他会话的配额（按 brief 语义）。lean() 直接 await 返回数组（方案 A，与 .exec() 等效）。
   async searchMessages(userId: string, query: string, opts?: { limit?: number }): Promise<Array<{ conversationId: string; messageId: string; seq: number; role: 'user' | 'assistant'; snippet: string; updatedAt: string }>> {
     const q = String(query || '').trim()
     if (!q) return []
     const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
-    const limit = Math.min(20, opts?.limit ?? 20)
+    // limit 下限 1：limit: 0 在 MongoDB 语义为不限，防御调用方误传。
+    const limit = Math.max(1, Math.min(20, opts?.limit ?? 20))
     const docs = await this.model.find({
-      userId: this.toObjectId(userId),
+      userId: toObjectId(userId),
       content: { $regex: escaped, $options: 'i' },
     }).sort({ createdAt: -1 }).limit(limit).lean() as any[]
     const perConversation = new Map<string, number>()
