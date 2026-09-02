@@ -54,6 +54,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   const activeRequestIdRef = useRef<string | null>(null);
   const stoppingRef = useRef(false);
   const debounceTimerRef = useRef<number | null>(null);
+  // 搜索在途响应防串：query 变化即自增，晚到的旧响应不再打开结果面板
+  const searchSeqRef = useRef(0);
   // 返回本页时消费一次导航快照（引用/面板/滚动恢复）
   const navSnapshotRef = useRef<AssistantNavigationSnapshot | null>(null);
 
@@ -65,7 +67,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
 
   useEffect(() => { refreshConversations(); }, [refreshConversations]);
 
-  // 会话消息加载：仅在 activeId 变化且未加载过该会话时拉取
+  // 会话消息加载：仅在 activeId 变化且未加载过该会话时拉取。
+  // 历史快照只在列表仍为空时应用：切会话后若已乐观发送，晚到的历史不得覆盖乐观消息（评审 P2-2）
   useEffect(() => {
     if (!activeId || loadedConversationId === activeId) return;
     let cancelled = false;
@@ -73,7 +76,7 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     void fetchConversationMessages(activeId)
       .then((result) => {
         if (cancelled) return;
-        setMessages(result.items);
+        setMessages((prev) => (prev.length === 0 ? result.items : prev));
         setLoadedConversationId(activeId);
       })
       .catch(() => { if (!cancelled) setMessages([]); });
@@ -104,10 +107,12 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     if (snapshot.scrollAnchorMessageId) setAnchorMessageId(snapshot.scrollAnchorMessageId);
   }, [activeId, loadedConversationId, messages]);
 
-  // 搜索防抖：300ms 无新输入才调 searchAssistant；输入清空即收起结果
+  // 搜索防抖：300ms 无新输入才调 searchAssistant；输入清空即收起结果。
+  // 每次 query 变化自增 seq：在途响应晚到（已清空/已输入新词）时丢弃，不复活旧结果面板（评审 P3-1）
   useEffect(() => {
     if (debounceTimerRef.current !== null) window.clearTimeout(debounceTimerRef.current);
     const query = searchQuery.trim();
+    const seq = ++searchSeqRef.current;
     if (!query) {
       setSearchOpen(false);
       setSearchResults(null);
@@ -115,8 +120,12 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     }
     debounceTimerRef.current = window.setTimeout(() => {
       void searchAssistant(query)
-        .then((result) => { setSearchResults(result); setSearchOpen(true); })
-        .catch(() => { setSearchOpen(false); });
+        .then((result) => {
+          if (searchSeqRef.current !== seq) return;
+          setSearchResults(result);
+          setSearchOpen(true);
+        })
+        .catch(() => { if (searchSeqRef.current === seq) setSearchOpen(false); });
     }, SEARCH_DEBOUNCE_MS);
     return () => {
       if (debounceTimerRef.current !== null) window.clearTimeout(debounceTimerRef.current);
@@ -143,6 +152,11 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
 
   const handleNewConversation = () => {
     if (generating) return;
+    clearConversation();
+  };
+
+  // 清空当前选择（不含 generating 守卫）：新建按钮走守卫版；归档/删除当前会话需先停流再清空
+  const clearConversation = () => {
     localStorage.removeItem(CURRENT_CONVERSATION_KEY);
     setActiveId('');
     setLoadedConversationId(null);
@@ -261,7 +275,7 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     startReply(content, routeAssistantMessage(content, forceNotes));
   };
 
-  const handleStop = () => {
+  const cancelActiveRequest = () => {
     const current = activeRequestIdRef.current;
     if (!current) return;
     stoppingRef.current = true;
@@ -269,8 +283,12 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     void fetch(`/api/assistant/generations/${encodeURIComponent(current)}/cancel`, { method: 'POST' }).catch(() => undefined);
   };
 
-  // failed 回答重试：以原消息为 retryOfMessageId 重发（question 取前一条 user 消息，缺省用失败内容）
+  const handleStop = () => { cancelActiveRequest(); };
+
+  // failed 回答重试：以原消息为 retryOfMessageId 重发（question 取前一条 user 消息，缺省用失败内容）。
+  // 点击即移除原消息 failed 标记：避免成功后该气泡仍可重复点击造成重复追加（评审 P3-2）
   const handleRetry = (messageId: string) => {
+    if (generating) return;
     const index = messages.findIndex((m) => m.id === messageId);
     if (index < 0) return;
     const failed = messages[index];
@@ -279,6 +297,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     for (let i = index - 1; i >= 0; i -= 1) {
       if (messages[i].role === 'user') { question = messages[i].content; break; }
     }
+    if (!question.trim()) return;
+    setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, status: 'completed' } : m)));
     startReply(question, failed.route, messageId);
   };
 
@@ -287,22 +307,19 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   };
 
   const handleArchive = (id: string) => {
+    // 归档生成中的当前会话：先取消在途流，再清空选择（handleNewConversation 的 generating 守卫会吞掉此路径）
+    if (generating && id === activeId) cancelActiveRequest();
     void setConversationStatus(id, 'archive').then(() => {
       setConversations((prev) => prev.filter((c) => c.id !== id));
-      if (id === activeId) handleNewConversation();
+      if (id === activeId) clearConversation();
     }).catch(() => undefined);
   };
 
   const handleDelete = (id: string) => {
+    if (generating && id === activeId) cancelActiveRequest();
     void setConversationStatus(id, 'delete').then(() => {
       setConversations((prev) => prev.filter((c) => c.id !== id));
-      if (id === activeId) {
-        localStorage.removeItem(CURRENT_CONVERSATION_KEY);
-        setActiveId('');
-        setLoadedConversationId(null);
-        setMessages([]);
-        setAnchorMessageId(null);
-      }
+      if (id === activeId) clearConversation();
     }).catch(() => undefined);
   };
 

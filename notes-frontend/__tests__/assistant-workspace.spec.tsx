@@ -294,7 +294,7 @@ describe('AssistantWorkspace 三栏工作台', () => {
   })
 
   // ==== 合并 Task 8：失败回答重试 ====
-  test('failed 消息显示重新回答，点击以 retryOfMessageId 重发且原失败保留', async () => {
+  test('failed 消息显示重新回答，点击以 retryOfMessageId 重发且原消息不再可重复重试', async () => {
     const c1Messages = [
       message({ id: 'u1', conversationId: 'c1', seq: 1, role: 'user', route: 'rag', content: '帮我查海豚项目结论' }),
       message({ id: 'am1', conversationId: 'c1', seq: 2, role: 'assistant', route: 'rag', content: '部分内容', status: 'failed' }),
@@ -319,14 +319,79 @@ describe('AssistantWorkspace 三栏工作台', () => {
     await screen.findByText('部分内容')
     expect(screen.getByText('回答生成中断，请重试。')).toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: '重新回答' }))
-    // 原失败消息保留、新回答流式呈现
+    // 点击即移除原消息 failed 标记（防成功后重复点击追加）；新回答流式呈现，原部分内容仍展示
     expect(await screen.findByText('重试成功')).toBeInTheDocument()
     expect(screen.getByText('部分内容')).toBeInTheDocument()
-    expect(screen.getAllByText('回答生成中断，请重试。')).toHaveLength(1)
+    expect(screen.queryByText('回答生成中断，请重试。')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: '重新回答' })).not.toBeInTheDocument()
     // 重发携带 retryOfMessageId 与原问题
     await waitFor(() => expect(chatCalls).toBe(1))
     const chatCall = fetchMock.mock.calls.find(([u]: any) => String(u) === '/api/assistant/chat')!
     const body = JSON.parse(chatCall[1].body)
     expect(body).toMatchObject({ conversationId: 'c1', question: '帮我查海豚项目结论', retryOfMessageId: 'am1' })
+  })
+
+  // ==== 评审 P2-2 回归：切会话后立即发送，晚到的历史快照不覆盖乐观消息 ====
+  test('切会话后立即发送：历史响应晚到不覆盖乐观消息', async () => {
+    const convList = [conversation('c1', '会话一', 1), conversation('c2', '会话二', 1)]
+    let releaseHistory!: () => void
+    const historyGate = new Promise<void>((resolve) => { releaseHistory = resolve })
+    let historyStarted = false
+    let releaseStarted!: () => void
+    const startedGate = new Promise<void>((resolve) => { releaseStarted = resolve })
+    const encoder = new TextEncoder()
+    const chatChunks = [
+      'event: started\ndata: {"conversationId":"c2","userMessageId":"um2","assistantMessageId":"am2","requestId":"r2"}\n\n',
+      'event: delta\ndata: {"text":"新回答"}\n\n',
+      'event: complete\ndata: {"messageId":"am2","route":"pet","citations":[],"warnings":[]}\n\n',
+    ]
+    let chatIndex = 0
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: convList })
+      if (href.includes('/c2/messages')) {
+        historyStarted = true
+        await historyGate
+        return json({ items: [message({ id: 'h1', conversationId: 'c2', seq: 1, content: '历史消息' })] })
+      }
+      if (href === '/api/assistant/chat') {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          body: {
+            getReader: () => ({
+              read: async () => {
+                // 首个 chunk（started）等历史 resolve 后再发，确保落在"乐观消息已追加、onStarted 前"
+                if (chatIndex === 0) await startedGate
+                return chatIndex < chatChunks.length
+                  ? { done: false, value: encoder.encode(chatChunks[chatIndex++]) }
+                  : { done: true, value: undefined }
+              },
+            }),
+          },
+        } as unknown as Response
+      }
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace />)
+    await screen.findByRole('button', { name: /会话二 \d+ 条/ })
+    fireEvent.click(screen.getByRole('button', { name: /会话二 \d+ 条/ }))
+    await waitFor(() => expect(historyStarted).toBe(true))
+
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '新问题' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.getByText('新问题')).toBeInTheDocument()
+
+    // 历史此刻才 resolve：不得覆盖已乐观追加的 user/assistant 消息
+    await act(async () => { releaseHistory() })
+    expect(screen.getByText('新问题')).toBeInTheDocument()
+    expect(screen.queryByText('历史消息')).not.toBeInTheDocument()
+
+    // started 随后到达：占位消息替换为服务端 id，流式内容正常呈现
+    await act(async () => { releaseStarted() })
+    expect(await screen.findByText('新回答')).toBeInTheDocument()
+    expect(screen.getByText('新问题')).toBeInTheDocument()
+    expect(screen.queryByText('历史消息')).not.toBeInTheDocument()
   })
 })

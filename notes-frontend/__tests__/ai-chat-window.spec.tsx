@@ -389,13 +389,24 @@ describe('ChatWindow 统一流式协议', () => {
     expect(await screen.findByText('回答生成中断，请重试。')).toBeInTheDocument()
   })
 
-  it('点击展开按钮跳转全屏工作台', () => {
+  it('恢复既有会话后点击展开按钮携带 conversation 参数', async () => {
+    // 展开全屏工作台应带当前会话 id：工作台挂载只认 initialConversationId||URL，不读 localStorage
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
     mockFetch.mockImplementation(async (url: string) => {
-      if (String(url).includes('/messages')) return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response
+      if (String(url).includes('/messages')) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            items: [{ id: 'm1', conversationId: 'c1', seq: 1, role: 'assistant', route: 'pet', content: '早', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' }],
+          }),
+        } as unknown as Response
+      }
       return sseResponse([])
     })
     render(<ChatWindow isOpen onClose={() => undefined} />)
+    // 恢复完成（消息渲染）后 conversationIdRef 已赋值
+    await screen.findByText('早')
     fireEvent.click(screen.getByRole('button', { name: '展开全屏工作台' }))
-    expect(mockRouterPush).toHaveBeenCalledWith('/dashboard/assistant')
+    expect(mockRouterPush).toHaveBeenCalledWith('/dashboard/assistant?conversation=c1')
   })
 })

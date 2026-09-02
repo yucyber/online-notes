@@ -148,8 +148,15 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
       <div className="ink-head-real">
         <div className="ink-head-title"><span className="ink-head-mark"><Sparkles aria-hidden="true" /></span><div><h3>小助手</h3><p>闲聊，或从你的笔记中寻找答案</p></div></div>
         <div className="ink-head-actions">
-          {/* 全屏工作台（/dashboard/assistant）阶段二已上线：点击跳转展开 */}
-          <button type="button" title="展开全屏工作台" aria-label="展开全屏工作台" onClick={() => router.push('/dashboard/assistant')}><Maximize2 aria-hidden="true" /></button>
+          {/* 全屏工作台（/dashboard/assistant）：带当前会话 id 展开，工作台按 ?conversation 直接定位该会话 */}
+          <button
+            type="button"
+            title="展开全屏工作台"
+            aria-label="展开全屏工作台"
+            onClick={() => router.push(`/dashboard/assistant${conversationIdRef.current ? `?conversation=${encodeURIComponent(conversationIdRef.current)}` : ''}`)}
+          >
+            <Maximize2 aria-hidden="true" />
+          </button>
           <button type="button" onClick={handleNewConversation} title="新建对话">新建</button>
           <button type="button" onClick={onClose} aria-label="关闭小助手">×</button>
         </div>
