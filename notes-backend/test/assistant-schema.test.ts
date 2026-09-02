@@ -16,5 +16,10 @@ test('消息 schema 的 seq/requestId 唯一索引与状态枚举', () => {
   assert.equal(AssistantMessageSchema.path('status').options.enum.includes('cancelled'), true)
   const index = AssistantMessageSchema.indexes()
   assert.ok(index.some(([fields]) => fields.conversationId === 1 && fields.seq === 1))
-  assert.ok(index.some(([fields]) => fields.userId === 1 && fields.requestId === 1))
+  // 幂等锚点限定 user 角色（T10 修复回归）：user+assistant 两条消息同 requestId 只允许 user 参与唯一，
+  // 若回退到无 role 限定会重现 E11000 dup key。
+  const userRequest = index.find(([fields]) => fields.userId === 1 && fields.requestId === 1)
+  assert.ok(userRequest)
+  assert.equal(userRequest[1]?.unique, true)
+  assert.equal(userRequest[1]?.partialFilterExpression?.role, 'user')
 })

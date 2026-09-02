@@ -18,6 +18,8 @@ export class AssistantGenerationService {
   private readonly cancelKeys = new Set<string>()
   // requestId -> 生成停止时 resolve 的 promise：cancel 等待它，保证返回时 cancelled 已落库并广播。
   private readonly stops = new Map<string, Promise<void>>()
+  // requestId -> 生成循环真正在跑：与 running（start 占位）分离，重放时据此区分"进程内活跃生成"与"重启残留/半途崩溃"。
+  private readonly activeGenerations = new Set<string>()
 
   constructor(
     private readonly conversations: AssistantConversationsService,
@@ -59,10 +61,19 @@ export class AssistantGenerationService {
       const existing = await this.messages.getByRequestId(userId, requestId)
       if (existing) {
         emit({ event: 'started', data: { conversationId: String(existing.conversationId), userMessageId: existing.retryOfMessageId || '', assistantMessageId: existing.id, requestId } })
-        if (existing.status === 'completed' || existing.status === 'failed' || existing.status === 'cancelled') {
+        // 正常重放：assistant 消息已是终态（complete/failed/cancelled）→ 补发 complete。
+        if (existing.role === 'assistant' && (existing.status === 'completed' || existing.status === 'failed' || existing.status === 'cancelled')) {
           emit({ event: 'complete', data: { messageId: existing.id, route: existing.route, citations: existing.citations, warnings: existing.warnings } })
-        } else {
+        } else if (this.activeGenerations.has(requestId)) {
+          // 进程内生成仍在跑（同实例重连）：订阅现有 emitter 续收事件。
           this.attach(requestId, emit)
+        } else {
+          // stale：服务重启后残留非终态 assistant 消息，或崩溃窗口只剩 user 提问（appendUser 与 createPlaceholder 之间）——
+          // 生成已不可能到达终态，落库 failed（保留已流内容）并补发 error，避免 DB 消息永久 streaming 且客户端断流。
+          if (existing.role === 'assistant') {
+            await this.messages.markFailed(userId, existing.id, existing.content || '回答生成中断')
+          }
+          emit({ event: 'error', data: { code: 'GENERATION_INTERRUPTED', message: '回答生成中断，请重试。', retryable: true } })
         }
         finish()
         return
@@ -71,7 +82,10 @@ export class AssistantGenerationService {
       const route: 'pet' | 'rag' = input.forceRoute === 'pet' || input.forceRoute === 'rag'
         ? input.forceRoute
         : (input.forceRoute === 'rag' || NOTE_INTENT.test(input.question) ? 'rag' : 'pet')
-      const conversation = await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
+      // 尊重前端指定的会话：带 userId 归属校验；id 失效（已删除/无权限）时回退到最新 active 会话，避免新消息落入不存在会话。
+      const conversation = input.conversationId
+        ? (await this.conversations.get(userId, input.conversationId)) ?? (await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined))
+        : await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
       const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
       const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId)
       await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
@@ -93,13 +107,13 @@ export class AssistantGenerationService {
     if (emitter) emitter.on('event', (event: AssistantStreamEvent) => { try { emit(event) } catch { /* ignore */ } })
   }
 
-  async cancel(requestId: string, userId: string): Promise<void> {
+  async cancel(requestId: string, userId: string): Promise<{ cancelled: boolean; reason?: 'not_found' | 'not_running' }> {
     // 授权校验：仅请求归属者可取消——(userId, requestId) 查无此消息（他人请求或不存在）则静默返回，
     // 不写取消标记、不广播、不等待（getByRequestId 本身按 userId 约束）。
     const owned = await this.messages.getByRequestId(userId, requestId)
-    if (!owned) return
+    if (!owned) return { cancelled: false, reason: 'not_found' }
     // 未运行/已结束的请求不写取消标记：cancelKeys 只在 runGeneration 的 finally 清理，避免无界增长。
-    if (!this.running.has(requestId)) return
+    if (!this.running.has(requestId)) return { cancelled: false, reason: 'not_running' }
     // 单实例内存取消标记为当前实现；跨实例取消通过 Redis 发布订阅增强（后续阶段）。
     this.cancelKeys.add(requestId)
     const emitter = this.emitters.get(requestId)
@@ -107,10 +121,13 @@ export class AssistantGenerationService {
     // 等待生成循环真正停止：cancel 返回时 cancelled 已落库并广播。
     const stop = this.stops.get(requestId)
     if (stop) await stop
+    return { cancelled: true }
   }
 
   private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag' }, emitter: EventEmitter): Promise<void> {
     const { userId, assistantMessageId, requestId, route } = input
+    // 生成循环真正开始：重放路径据此识别"进程内活跃生成"（可重连），与 start 的 running 占位区分。
+    this.activeGenerations.add(requestId)
     let content = ''
     let flushedAt = 0
     let flushedChars = 0
@@ -173,6 +190,7 @@ export class AssistantGenerationService {
       }
     } finally {
       this.cancelKeys.delete(requestId)
+      this.activeGenerations.delete(requestId)
     }
   }
 }

@@ -126,3 +126,40 @@ test('route 未指定时按问题路由 pet/rag', async () => {
   await service.start({ userId, requestId: 'req-pet', question: '今天天气不错', forceRoute: undefined }, () => undefined)
   assert.equal(petCalled, true)
 })
+
+test('重放残留非终态消息（服务重启后）标记 failed 并补发 error 终态', async () => {
+  // I-2 修复回归：重启后 emitters/running 为空，残留 streaming 消息不再 attach 空转，
+  // 落库 failed（保留已流内容）并补发 error，DB 消息不会永久 streaming。
+  const store = fakeStore()
+  let ragCalls = 0
+  store.byRequest.set(requestId, { id: 'am1', userId, role: 'assistant', status: 'streaming', content: '半截内容', conversationId: 'c1', route: 'rag', citations: [], warnings: [] })
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => { ragCalls += 1; return { route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } } } } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted.push(e))
+  assert.equal(ragCalls, 0, 'stale 消息不得重新生成')
+  assert.ok(emitted.some((e) => e.event === 'error' && e.data.code === 'GENERATION_INTERRUPTED'))
+  assert.equal(emitted.some((e) => e.event === 'complete'), false)
+})
+
+test('重放只剩 user 提问（appendUser 与 createPlaceholder 之间崩溃）不把提问当回答', async () => {
+  // M-5 修复回归：崩溃窗口 getByRequestId 只命中 user 消息，重放不得补发 complete（否则前端把用户提问渲染为回答）。
+  const store = fakeStore()
+  let ragCalls = 0
+  store.byRequest.set(requestId, { id: 'um1', userId, role: 'user', status: 'completed', content: 'q', conversationId: 'c1', route: 'rag', citations: [], warnings: [] })
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => { ragCalls += 1; return { route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } } } } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted.push(e))
+  assert.equal(ragCalls, 0)
+  assert.equal(emitted.some((e) => e.event === 'complete'), false, 'user-only 不得补发 complete')
+  assert.ok(emitted.some((e) => e.event === 'error'))
+})

@@ -22,10 +22,19 @@ class MemoryModel {
   }
   find(filter: any) {
     const result = this.docs.filter((d) => matches(d, filter))
-    const execAll = async () => [...result].sort((a, b) => a.seq - b.seq)
+    // sort 尊重传入方向（T10 修复回归：getByRequestId 依赖 seq 降序取最新一条，假模型吞方向会掩蔽回归）
     return {
-      sort: () => ({ limit: (n: number) => ({ lean: () => ({ exec: async () => (await execAll()).slice(0, n) }) }) }),
-      lean: () => ({ exec: execAll }),
+      sort: (sortSpec: any) => ({
+        limit: (n: number) => ({
+          lean: () => ({ exec: async () => {
+            const sorted = sortSpec && typeof sortSpec === 'object' && sortSpec.seq < 0
+              ? [...result].sort((a, b) => b.seq - a.seq)
+              : [...result].sort((a, b) => a.seq - b.seq)
+            return sorted.slice(0, n)
+          } }),
+        }),
+      }),
+      lean: () => ({ exec: async () => [...result].sort((a, b) => a.seq - b.seq) }),
     }
   }
   async create(data: any) { const doc = { ...data, _id: data._id || `id-${this.docs.length + 1}` }; this.docs.push(doc); return doc }
@@ -55,4 +64,17 @@ test('getByRequestId 按用户与 requestId 精确查询', async () => {
   const service = new AssistantMessagesService(model as any)
   assert.ok(await service.getByRequestId('aaaaaaaaaaaaaaaaaaaaaaaa', 'req-1'))
   assert.equal(await service.getByRequestId('bbbbbbbbbbbbbbbbbbbbbbbb', 'req-1'), null)
+})
+
+test('getByRequestId 返回 seq 最大消息（同 requestId 的 user+assistant 时取 assistant）', async () => {
+  // T10 修复回归：幂等重放定位须落在 assistant 消息（终态在其上），user 提问 seq 更小。
+  const model = new MemoryModel([
+    { _id: 'm1', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 1, role: 'user', route: 'rag', content: 'q', status: 'completed', requestId: 'req-2' },
+    { _id: 'm2', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 2, role: 'assistant', route: 'rag', content: 'answer', status: 'completed', requestId: 'req-2' },
+  ])
+  const service = new AssistantMessagesService(model as any)
+  const found = await service.getByRequestId('aaaaaaaaaaaaaaaaaaaaaaaa', 'req-2')
+  assert.ok(found)
+  assert.equal(found!.role, 'assistant')
+  assert.equal(found!.seq, 2)
 })

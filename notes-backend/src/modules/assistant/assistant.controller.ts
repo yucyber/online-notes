@@ -54,8 +54,8 @@ export class AssistantController {
 
   @Post('generations/:requestId/cancel')
   async cancel(@Param('requestId') requestId: string, @Req() req?: AuthenticatedRequest) {
-    await this.generation.cancel(requestId, this.userId(req) || '')
-    return { cancelled: true }
+    // 返回实际取消结果（not_found/not_running 如实上报，不再静默回 cancelled:true）
+    return this.generation.cancel(requestId, this.userId(req) || '')
   }
 
   @Get('conversations/:id/messages')
