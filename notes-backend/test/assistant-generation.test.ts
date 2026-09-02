@@ -17,6 +17,8 @@ function fakeStore() {
       ensure: async () => ({ id: 'c1', isNew: true }),
       get: async () => ({ id: 'c1', title: 't', status: 'active' }),
       touch: async () => undefined,
+      // Task 3 自动标题：ensure 判定 isNew 时生成成功后会调 rename，fake 需提供该方法。
+      rename: async () => undefined,
       // 记录 activeRequestId 写操作（start 写入 requestId、runGeneration finally 清空 null），供断言生成生命周期。
       setActiveRequest: async (userId: string, conversationId: string, requestId: string | null) => {
         activeRequestCalls.push({ userId, conversationId, requestId })

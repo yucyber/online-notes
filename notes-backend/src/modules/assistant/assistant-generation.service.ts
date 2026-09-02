@@ -36,7 +36,7 @@ export class AssistantGenerationService {
     return stop || Promise.resolve()
   }
 
-  async start(input: { userId: string; conversationId?: string; requestId: string; question: string; knowledgeBaseId?: string; forceRoute?: 'pet' | 'rag' }, emit: (event: AssistantStreamEvent) => void): Promise<void> {
+  async start(input: { userId: string; conversationId?: string; requestId: string; question: string; knowledgeBaseId?: string; forceRoute?: 'pet' | 'rag'; retryOfMessageId?: string }, emit: (event: AssistantStreamEvent) => void): Promise<void> {
     const { userId, requestId } = input
     if (this.running.has(requestId)) { this.attach(requestId, emit); return }
 
@@ -79,11 +79,14 @@ export class AssistantGenerationService {
         ? input.forceRoute
         : (input.forceRoute === 'rag' || NOTE_INTENT.test(input.question) ? 'rag' : 'pet')
       // 尊重前端指定的会话：带 userId 归属校验；id 失效（已删除/无权限）时回退到最新 active 会话，避免新消息落入不存在会话。
-      const conversation = input.conversationId
+      // isNew 仅 ensure 返回（新建为 true）；指定会话 id 走 get 路径无此字段，视为非新会话。
+      const conversation: { id: string; isNew?: boolean } = input.conversationId
         ? (await this.conversations.get(userId, input.conversationId)) ?? (await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined))
         : await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
+      const isNewConversation = conversation.isNew === true
       const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
-      const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId)
+      // 重试追溯：占位消息记录被重试的原始回答消息 id（retryOf），供前端定位来源与历史链。
+      const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId, input.retryOfMessageId)
       await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
       // 记录会话当前运行的生成 requestId：删除/归档会话时可据此取消正在进行的生成。
       await this.conversations.setActiveRequest(userId, conversation.id, requestId)
@@ -91,7 +94,7 @@ export class AssistantGenerationService {
 
       // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
       // finally 后的 catch 兜底：catch 块内落库（flush/markCancelled/markFailed）失败时避免 unhandledRejection 崩溃进程。
-      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish())
+      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route, isNewConversation }, emitter).finally(() => finish())
         .catch((e) => this.logger.error('assistant generation cleanup failed', e))
     } catch (error) {
       // 前置步骤失败时释放占位，避免 requestId 永久停留在运行态。
@@ -128,9 +131,10 @@ export class AssistantGenerationService {
     if (requestId) await this.cancel(requestId, userId)
   }
 
-  private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag' }, emitter: EventEmitter): Promise<void> {
+  private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag'; retryOfMessageId?: string; isNewConversation: boolean }, emitter: EventEmitter): Promise<void> {
     const { userId, assistantMessageId, requestId, route } = input
     let content = ''
+    let completed = false
     let flushedAt = 0
     let flushedChars = 0
     const flush = async (force: boolean) => {
@@ -180,6 +184,7 @@ export class AssistantGenerationService {
         await this.messages.finalize(userId, assistantMessageId, { content, citations: [], warnings: [] })
         emitter.emit('event', { event: 'complete', data: { messageId: assistantMessageId, route: 'pet', citations: [], warnings: [] } })
       }
+      completed = true
     } catch (error: any) {
       if (cancelled() || String(error?.message) === 'CANCELLED') {
         await flush(true)
@@ -194,6 +199,11 @@ export class AssistantGenerationService {
       this.cancelKeys.delete(requestId)
       // 生成结束（含取消/失败）清空会话 activeRequestId，避免残留导致误取消或误判。
       await this.conversations.setActiveRequest(userId, input.conversationId, null).catch(() => undefined)
+    }
+    // 新会话首次问答成功后用问题前缀生成标题：仅成功且 ensure 判定为新会话时触发（取消/失败不重命名），
+    // rename 失败静默降级，不影响生成完成。
+    if (completed && input.isNewConversation) {
+      await this.conversations.rename(userId, input.conversationId, input.question.slice(0, 24)).catch(() => undefined)
     }
   }
 }

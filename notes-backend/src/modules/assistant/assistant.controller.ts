@@ -19,6 +19,8 @@ class AssistantChatDto {
   knowledgeBaseId?: string
   @IsOptional() @IsEnum(['pet', 'rag'])
   forceRoute?: 'pet' | 'rag'
+  @IsOptional() @IsMongoId()
+  retryOfMessageId?: string
 }
 
 type AuthenticatedRequest = Request & { user?: { id?: string; _id?: string; userId?: string } }
@@ -47,7 +49,7 @@ export class AssistantController {
     // start 后台续跑、返回早；waitForTerminal 保持响应打开直到终态事件（complete/cancelled/failed）落定后 res.end()，
     // 客户端才能收全 started/status/delta/complete 流（与 ai.controller 流式端点等流读完再 end 的模式一致）。
     await this.generation.start(
-      { userId, conversationId: body.conversationId, requestId: body.requestId, question: body.question, knowledgeBaseId: body.knowledgeBaseId, forceRoute: body.forceRoute },
+      { userId, conversationId: body.conversationId, requestId: body.requestId, question: body.question, knowledgeBaseId: body.knowledgeBaseId, forceRoute: body.forceRoute, retryOfMessageId: body.retryOfMessageId },
       emit,
     )
     await this.generation.waitForTerminal(body.requestId)
