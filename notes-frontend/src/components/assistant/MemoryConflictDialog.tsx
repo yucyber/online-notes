@@ -5,7 +5,8 @@ import { type MemoryScope, type MemoryResolveAction } from '@/lib/assistant-api'
 
 export type MemoryConflictEntity = { memoryId: string; subject: string; statement: string; scope?: MemoryScope };
 
-// 'modify' 为前端流动作：返回候选编辑表单，其余动作直接对应后端 resolveConflict
+// 'modify' 为前端流动作：面板收到后转 reject_memory（后端删除已物化记忆并把候选退回 pending），
+// 候选重新出现在待确认列表供编辑重提；其余动作直接对应后端 resolveConflict
 export type MemoryConflictAction = MemoryResolveAction | { type: 'modify' };
 
 type Props = {
@@ -25,9 +26,18 @@ const scopeOptions: Array<{ value: MemoryScope['type']; label: string }> = [
 export function MemoryConflictDialog({ conflict, existing, onResolve }: Props) {
   const [keepBothOpen, setKeepBothOpen] = useState(false);
   const [chosenScope, setChosenScope] = useState<MemoryScope['type'] | ''>('');
-  // 既有节点缺省按全局判定：未改范围直接保留会让后端拒绝 keep_both
+  const [scopeId, setScopeId] = useState('');
+  // 既有节点缺省按全局判定：未改范围直接保留会被后端按同范围重叠拒绝 keep_both
   const existingScopeType = existing.scope?.type ?? 'global';
   const canKeepBoth = chosenScope !== '' && chosenScope !== existingScopeType;
+
+  // keep_both 需携带调整后的新结论 scope；非 global 可补 id 精确锚定实体
+  const keepBothAction = (): MemoryResolveAction => ({
+    type: 'keep_both',
+    scope: chosenScope === 'global'
+      ? { type: 'global' }
+      : { type: chosenScope as MemoryScope['type'], ...(scopeId.trim() ? { id: scopeId.trim() } : {}) },
+  });
 
   return (
     <div className="assistant-memory-conflict" role="dialog" aria-label="认知冲突解决" data-testid="memory-conflict-dialog">
@@ -59,19 +69,28 @@ export function MemoryConflictDialog({ conflict, existing, onResolve }: Props) {
               <select
                 aria-label="新结论范围"
                 value={chosenScope}
-                onChange={(event) => setChosenScope(event.target.value as MemoryScope['type'])}
+                onChange={(event) => { setChosenScope(event.target.value as MemoryScope['type']); setScopeId(''); }}
               >
                 <option value="">请选择范围</option>
                 {scopeOptions.map((scope) => <option key={scope.value} value={scope.value}>{scope.label}</option>)}
               </select>
             </label>
+            {chosenScope !== '' && chosenScope !== 'global' && (
+              <label>范围 ID
+                <input
+                  aria-label="新结论范围 ID"
+                  value={scopeId}
+                  onChange={(event) => setScopeId(event.target.value)}
+                />
+              </label>
+            )}
             <div>
               <button
                 type="button"
                 disabled={!canKeepBoth}
-                onClick={() => onResolve(conflict.memoryId, { type: 'keep_both' })}
+                onClick={() => onResolve(conflict.memoryId, keepBothAction())}
               >按新范围保留两者</button>
-              <button type="button" onClick={() => setKeepBothOpen(false)}>取消</button>
+              <button type="button" onClick={() => { setKeepBothOpen(false); setChosenScope(''); setScopeId(''); }}>取消</button>
             </div>
           </div>
         )}

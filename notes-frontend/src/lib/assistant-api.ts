@@ -127,9 +127,10 @@ export function memoryScopeLabel(scope: MemoryScope): string {
 
 export type MemoryConfirmConflict = { memoryId: string; subject: string; statement: string };
 
+// keep_both 需携带调整后的新结论 scope：后端不换范围直接保留会按同范围重叠拒绝（400）
 export type MemoryResolveAction =
   | { type: 'supersede'; targetMemoryId: string }
-  | { type: 'keep_both' }
+  | { type: 'keep_both'; scope?: MemoryScope }
   | { type: 'reject_memory' };
 
 function unwrapList<T>(payload: any): T[] {

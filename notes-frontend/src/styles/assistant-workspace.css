@@ -751,6 +751,7 @@
 .assistant-memory-edit select,
 .assistant-memory-edit textarea,
 .assistant-memory-conflict-scope select,
+.assistant-memory-conflict-scope input,
 .assistant-memory-reject-inline textarea {
   border: 1px solid var(--product-line-strong);
   border-radius: 6px;
@@ -763,9 +764,12 @@
 .assistant-memory-edit input:focus,
 .assistant-memory-edit select:focus,
 .assistant-memory-edit textarea:focus,
-.assistant-memory-conflict-scope select:focus { border-color: var(--product-accent); }
+.assistant-memory-conflict-scope select:focus,
+.assistant-memory-conflict-scope input:focus { border-color: var(--product-accent); }
 .assistant-memory-edit input,
-.assistant-memory-edit select { padding: 5px 8px; }
+.assistant-memory-edit select,
+.assistant-memory-conflict-scope select,
+.assistant-memory-conflict-scope input { padding: 5px 8px; }
 .assistant-memory-edit textarea { min-height: 56px; padding: 5px 8px; resize: vertical; }
 
 /* —— 时间线 —— */

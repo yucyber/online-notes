@@ -117,8 +117,11 @@ export default function AssistantContextPanel({ tab, onTabChange, citations, evi
   const handleResolveConflict = (memoryId: string, action: MemoryConflictAction) => {
     setConflict(null);
     if (action.type === 'modify') {
-      // 修改新结论：关闭冲突层，刷新候选（后端把该候选退回 pending 供再次编辑）
-      void loadCognition();
+      // 修改新结论：候选此时已被物化确认并挂起（不在 pending 列表），先 resolve reject_memory
+      // 让后端删除该记忆并把候选退回 pending，刷新后重新出现在待确认列表供编辑重提
+      void resolveMemoryConflict(memoryId, { type: 'reject_memory' })
+        .catch(() => setCognitionError('冲突解决失败，请稍后重试。'))
+        .finally(() => { void loadCognition(); });
       return;
     }
     void resolveMemoryConflict(memoryId, action)
