@@ -71,6 +71,16 @@ export class AssistantController {
     return { items }
   }
 
+  @Get('search')
+  async search(@Query('q') q: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return {
+      conversations: await this.conversations.searchByTitle(userId, String(q || '')),
+      messages: await this.messages.searchMessages(userId, String(q || '')),
+    }
+  }
+
   @Patch('conversations/:id')
   async renameConversation(@Param('id') id: string, @Body('title') title: string, @Req() req?: AuthenticatedRequest) {
     return this.conversations.rename(this.userId(req) || '', id, String(title || ''))

@@ -75,4 +75,15 @@ export class AssistantConversationsService {
     const doc = await this.model.findOne({ _id: this.toObjectId(id), userId: this.toObjectId(userId) }, 'activeRequestId')
     return doc?.activeRequestId ?? null
   }
+
+  // 标题搜索：排除 deleted（archived 仍可搜到），query 转义后正则包含匹配，按 updatedAt 倒序最多 20 条。
+  async searchByTitle(userId: string, query: string): Promise<Array<{ id: string; title: string; updatedAt: string }>> {
+    const q = String(query || '').trim()
+    if (!q) return []
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    const docs = await this.model.find({
+      userId: this.toObjectId(userId), status: { $ne: 'deleted' }, title: { $regex: escaped, $options: 'i' },
+    }).sort({ updatedAt: -1 }).limit(20).lean() as any[]
+    return docs.map((doc) => ({ id: String(doc._id), title: String(doc.title || ''), updatedAt: String(doc.updatedAt || new Date().toISOString()) }))
+  }
 }
