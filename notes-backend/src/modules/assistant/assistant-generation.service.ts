@@ -8,6 +8,7 @@ import { AssistantStreamEvent } from './assistant-stream-format'
 import { AssistantCheckpointService } from './assistant-checkpoint.service'
 import { AssistantContextService } from './assistant-context.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
+import { AssistantMemoryExtractorService } from './assistant-memory-extractor.service'
 import { AssistantMessagesService } from './assistant-messages.service'
 
 const NOTE_INTENT = /(我的笔记|笔记里|之前|当时|踩坑|查找|找到|搜索|哪篇|比较|区别|差异|冲突|矛盾|知识库)/i
@@ -31,6 +32,8 @@ export class AssistantGenerationService {
     @Optional() private readonly checkpoints?: AssistantCheckpointService,
     // 分区上下文组装在 Task 6 接入；阶段一/二构造（无该参）时注入为 undefined，pet 分支退化为直接提问。
     @Optional() private readonly context?: AssistantContextService,
+    // 认知记忆候选提取在阶段四接入；未接线（本阶段构造无该参）时注入为 undefined，触发路径走可选调用。
+    @Optional() private readonly memoryExtractor?: AssistantMemoryExtractorService,
   ) {}
 
   isRunning(requestId: string): boolean { return this.running.has(requestId) }
@@ -220,6 +223,11 @@ export class AssistantGenerationService {
       // checkpoint 压缩触发：finalize 落库成功后按会话最新 seq 评估（距上一 checkpoint ≥10 才真正 build）。
       // 可选注入未接线（阶段一）或触发路径失败（如会话已删）时静默降级，不阻塞生成收尾。
       await this.checkpoints?.schedule(userId, input.conversationId, input.assistantSeq).catch((error) => this.logger.warn(`checkpoint schedule failed: ${error?.message}`))
+      // 记忆候选提取触发：finalize 落库成功后 fire-and-forget；会话设置判断（临时/关闭记忆）在 extractor
+      // 内部完成，这里只发起不等待，提取失败（模型/落库异常）不阻塞生成收尾。
+      if (this.memoryExtractor) {
+        void this.memoryExtractor.extract(userId, input.conversationId).catch(() => undefined)
+      }
     }
   }
 }

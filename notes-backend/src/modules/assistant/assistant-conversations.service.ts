@@ -98,6 +98,27 @@ export class AssistantConversationsService {
     return doc?.activeRequestId ?? null
   }
 
+  // 记忆设置读取：memoryEnabled 缺省（旧数据）按 true 处理，temporary 按 false；写操作语义与 rename/setStatus 一致（找不到会话抛 NotFound）。
+  async getSettings(userId: string, id: string): Promise<{ memoryEnabled: boolean; temporary: boolean }> {
+    const doc: any = await this.model.findOne({ _id: toObjectId(id), userId: toObjectId(userId) })
+    if (!doc) throw new NotFoundException('conversation not found')
+    return { memoryEnabled: doc.memoryEnabled !== false, temporary: Boolean(doc.temporary) }
+  }
+
+  async updateSettings(userId: string, id: string, settings: { memoryEnabled?: boolean; temporary?: boolean }): Promise<{ memoryEnabled: boolean; temporary: boolean }> {
+    // 仅更新显式传入的开关，未传字段保持原值（findOneAndUpdate 不带 lean 链：测试内存模型同步返回 doc，await 对真实 Mongoose 同样返回 doc）。
+    const update: any = {}
+    if (settings.memoryEnabled !== undefined) update.memoryEnabled = Boolean(settings.memoryEnabled)
+    if (settings.temporary !== undefined) update.temporary = Boolean(settings.temporary)
+    const doc: any = await this.model.findOneAndUpdate(
+      { _id: toObjectId(id), userId: toObjectId(userId) },
+      { $set: update },
+      { new: true },
+    )
+    if (!doc) throw new NotFoundException('conversation not found')
+    return { memoryEnabled: doc.memoryEnabled !== false, temporary: Boolean(doc.temporary) }
+  }
+
   // 标题搜索：排除 deleted（archived 仍可搜到），query 转义后正则包含匹配，按 updatedAt 倒序最多 20 条。
   async searchByTitle(userId: string, query: string): Promise<Array<{ id: string; title: string; updatedAt: string }>> {
     const q = String(query || '').trim()

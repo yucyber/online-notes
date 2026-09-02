@@ -17,6 +17,7 @@ export type AiTask =
   | 'conflict_analysis'
   | 'proposal_revision'
   | 'context_summary'
+  | 'memory_extract'
 
 export type AiReasoningMode = 'off' | 'auto' | 'deep'
 export type AiModelTier = 'economy' | 'standard' | 'deep'

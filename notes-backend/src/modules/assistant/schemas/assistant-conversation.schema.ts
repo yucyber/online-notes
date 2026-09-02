@@ -40,6 +40,13 @@ export class AssistantConversation {
 
   @Prop()
   forkedFromSeq?: number
+
+  // 认知记忆（阶段四）：memoryEnabled 关闭/临时会话不产生长期候选；默认均开启/非临时，旧数据按开启处理。
+  @Prop({ default: true })
+  memoryEnabled: boolean
+
+  @Prop({ default: false })
+  temporary: boolean
 }
 
 export const AssistantConversationSchema = SchemaFactory.createForClass(AssistantConversation)

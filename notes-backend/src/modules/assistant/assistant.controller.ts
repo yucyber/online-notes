@@ -117,6 +117,14 @@ export class AssistantController {
     return this.conversations.rename(userId, id, String(title || ''))
   }
 
+  // 会话记忆设置（阶段四）：只更新显式传入的开关，未传字段保持原值；会话不存在/无权时由 service 抛 NotFound。
+  @Patch('conversations/:id/settings')
+  async updateConversationSettings(@Param('id') id: string, @Body('settings') settings: { memoryEnabled?: boolean; temporary?: boolean }, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.conversations.updateSettings(userId, id, settings || {})
+  }
+
   @Post('conversations/:id/archive')
   async archive(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
     const userId = this.userId(req)

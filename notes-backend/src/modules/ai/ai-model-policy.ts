@@ -33,6 +33,7 @@ export const AI_TASKS = [
   'conflict_analysis',
   'proposal_revision',
   'context_summary',
+  'memory_extract',
 ] as const satisfies readonly AiTask[]
 
 const policies = {
@@ -53,6 +54,8 @@ const policies = {
   conflict_analysis: policy('deep', 'deep', 5000, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),
   proposal_revision: policy('deep', 'deep', 5000, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),
   context_summary: policy('standard', 'off', 1024, 'siliconflow_standard', 'siliconflow_deep', 'bai_deepseek'),
+  // 记忆提取：economy 档文本模型即可（extractor 自带 temperature 0 / json_object），质量降级到 standard，供应商降级同其他任务。
+  memory_extract: policy('economy', 'off', 512, 'siliconflow_economy', 'siliconflow_standard', 'bai_deepseek'),
 } satisfies Record<AiTask, AiModelPolicy>
 
 function policy(
