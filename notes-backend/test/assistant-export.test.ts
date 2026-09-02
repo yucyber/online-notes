@@ -17,3 +17,16 @@ test('导出按会话、消息、引用顺序生成 JSONL 行', () => {
   assert.ok(lines[3].startsWith('{"type":"citation"'))
   assert.ok(lines[3].includes('"messageSeq":2'))
 })
+
+test('时间统一归一化为 ISO 8601（本地化串输入 → UTC ISO 输出，无效日期回退原值）', () => {
+  const lines = buildExportLines(
+    { id: 'c1', title: 't', createdAt: 'Tue Sep 01 2026 10:00:00 GMT+0800 (中国标准时间)' },
+    [
+      { seq: 1, role: 'user', route: 'rag', content: 'q', status: 'completed', citations: [], createdAt: 'not-a-date' },
+    ],
+  )
+  const conv = JSON.parse(lines[0])
+  assert.equal(conv.createdAt, '2026-09-01T02:00:00.000Z')
+  const msg = JSON.parse(lines[1])
+  assert.equal(msg.createdAt, 'not-a-date') // 无效日期回退原值，不抛错
+})
