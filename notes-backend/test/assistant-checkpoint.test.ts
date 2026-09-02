@@ -90,3 +90,71 @@ test('schedule 距上一 checkpoint 达到 10 条触发压缩', async () => {
   assert.equal(chatCalls, 1)
   assert.equal(model.docs[model.docs.length - 1].throughSeq, 12)
 })
+
+test('build 超预算时 throughSeq 只推进到实际纳入的最后一条', async () => {
+  // P2 内容边界回归：transcript 按字符预算逐条截断，截断尾部消息不得计入已压缩范围（否则永久漏压）。
+  const model = new MemoryModel()
+  let prompt = ''
+  const gateway = {
+    chatTask: async (options: any) => {
+      prompt = options.prompt
+      return { content: JSON.stringify({ summary: 's', decisions: [], openQuestions: [], referencedEntities: [] }) }
+    },
+  }
+  const messages = {
+    list: async () => [
+      { id: 'm1', seq: 1, role: 'user', route: 'rag', content: 'A'.repeat(5000), status: 'completed', citations: [], warnings: [], createdAt: '' },
+      { id: 'm2', seq: 2, role: 'assistant', route: 'rag', content: 'B'.repeat(5000), status: 'completed', citations: [], warnings: [], createdAt: '' },
+      { id: 'm3', seq: 3, role: 'user', route: 'rag', content: 'C'.repeat(5000), status: 'completed', citations: [], warnings: [], createdAt: '' },
+    ],
+  }
+  const service = new AssistantCheckpointService(model as any, gateway as any, messages as any)
+  const result = await service.build('u1', 'c1')
+  // 预算只够前两条：throughSeq 停在 2（第三条 5000 字符未进 prompt 也不能算已压缩）。
+  assert.equal(result.throughSeq, 2)
+  assert.deepEqual(result.sourceMessageIds, ['m1', 'm2'])
+  assert.ok(prompt.includes('A'.repeat(100)))
+  assert.ok(prompt.includes('B'.repeat(100)))
+  assert.equal(prompt.includes('C'.repeat(100)), false)
+})
+
+test('build 只摘要 completed 消息（失败/取消不参与）', async () => {
+  const model = new MemoryModel()
+  let prompt = ''
+  const gateway = {
+    chatTask: async (options: any) => {
+      prompt = options.prompt
+      return { content: JSON.stringify({ summary: 's', decisions: [], openQuestions: [], referencedEntities: [] }) }
+    },
+  }
+  const messages = {
+    list: async () => [
+      { id: 'm1', seq: 1, role: 'user', route: 'rag', content: '问题一', status: 'completed', citations: [], warnings: [], createdAt: '' },
+      { id: 'm2', seq: 2, role: 'assistant', route: 'rag', content: '失败回答', status: 'failed', citations: [], warnings: [], createdAt: '' },
+      { id: 'm3', seq: 3, role: 'user', route: 'rag', content: '问题二', status: 'completed', citations: [], warnings: [], createdAt: '' },
+    ],
+  }
+  const service = new AssistantCheckpointService(model as any, gateway as any, messages as any)
+  const result = await service.build('u1', 'c1')
+  assert.equal(result.throughSeq, 3)
+  assert.deepEqual(result.sourceMessageIds, ['m1', 'm3'])
+  assert.ok(prompt.includes('问题一') && prompt.includes('问题二'))
+  assert.equal(prompt.includes('失败回答'), false)
+})
+
+test('build 窗口内无 completed 消息时保留现有 checkpoint 且不调用模型', async () => {
+  const model = new MemoryModel()
+  model.docs.push({ conversationId: 'c1', userId: 'u1', throughSeq: 10, summary: 's', decisions: [], openQuestions: [], referencedEntities: [], sourceMessageIds: [] })
+  let chatCalls = 0
+  const gateway = { chatTask: async () => { chatCalls += 1; return { content: '{}' } } }
+  const messages = {
+    list: async () => [
+      { id: 'm1', seq: 11, role: 'assistant', route: 'rag', content: '生成中断', status: 'failed', citations: [], warnings: [], createdAt: '' },
+      { id: 'm2', seq: 12, role: 'assistant', route: 'rag', content: '半截回答', status: 'cancelled', citations: [], warnings: [], createdAt: '' },
+    ],
+  }
+  const service = new AssistantCheckpointService(model as any, gateway as any, messages as any)
+  const result = await service.build('u1', 'c1')
+  assert.equal(result.throughSeq, 10)
+  assert.equal(chatCalls, 0)
+})

@@ -32,6 +32,7 @@ export const AI_TASKS = [
   'destructive_reorganization',
   'conflict_analysis',
   'proposal_revision',
+  'context_summary',
 ] as const satisfies readonly AiTask[]
 
 const policies = {
