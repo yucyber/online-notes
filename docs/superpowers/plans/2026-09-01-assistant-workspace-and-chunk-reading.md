@@ -293,8 +293,14 @@ async getChunkEvidence(noteId: string, chunkId: string, userId: string, opts?: {
   }
   if (!chunk) throw new NotFoundException('证据位置不存在')
 
-  const before = Math.max(0, Math.min(3, Number(opts?.before ?? 1)))
-  const after = Math.max(0, Math.min(3, Number(opts?.after ?? 1)))
+  // clamp 0-3：非法（NaN/Infinity）回落默认 1——直接 Number('abc')=NaN 经 Math.max/min 仍 NaN，
+  // slice(NaN→0, index) 会返回目标前全部邻居绕过 clamp，故先 Number.isFinite 守卫。
+  const finite = (v: unknown, fallback: number) => {
+    const n = Number(v)
+    return Number.isFinite(n) ? Math.max(0, Math.min(3, n)) : fallback
+  }
+  const before = finite(opts?.before ?? 1, 1)
+  const after = finite(opts?.after ?? 1, 1)
   const siblings = await this.noteChunkModel
     .find({ noteId: noteIdObj })
     .select('_id chunkIndex headingPath content')
