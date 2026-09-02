@@ -793,7 +793,7 @@ git commit -m "feat(assistant): 公共 Chunk 证据阅读器"
 - Test: `notes-frontend/__tests__/conversation-list.spec.tsx`（含管理操作测试）
 
 **Interfaces:**
-- Produces `AssistantCompose({ value, onChange, onSend, onStop, generating, forceNotes, onToggleForceNotes, disabled }: {...})`：Enter 发送 / Shift+Enter 换行、"搜索笔记"开关、生成中显示"停止"按钮、`textarea` placeholder "问问小助手…"。
+- Produces `AssistantCompose({ value, onChange, onSend, onStop, generating, forceNotes, onToggleForceNotes, placeholder? }: {...})`：Enter 发送 / Shift+Enter 换行、"搜索笔记"开关、生成中显示"停止"按钮、`textarea` placeholder 默认 "问问小助手…"。
 - Produces `ConversationList({ items, activeId, onSelect, onNew, onRename, onArchive, onDelete }: { items: ConversationListItem[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void; onRename: (id: string, title: string) => void; onArchive: (id: string) => void; onDelete: (id: string) => void })`：按今天 / 最近 7 天 / 更早分组渲染，active 高亮，顶部"新建会话"按钮；标题为空显示"新对话"。
 - 每项会话行右侧操作菜单（按钮组）：重命名（`aria-label` 如 `重命名 会话标题`，弹 prompt/inline 输入改名）、归档（`aria-label` 如 `归档 会话标题`）、删除（`aria-label` 如 `删除 会话标题`）。管理动作触发回调不自动刷新（由父级 AssistantWorkspace 接线刷新列表）。
 - `AssistantCompose` 增加可选 `onRetryLabel?` 不需要——重试按钮在 AssistantMessages（Task 6）渲染，Compose 只管输入与发送/停止。
@@ -806,7 +806,9 @@ import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { ConversationList } from '@/components/assistant/ConversationList'
 
-const now = new Date('2026-09-01T12:00:00.000Z').getTime()
+// 时间脆性防护：fixture 相对真实 Date.now() 锚定（组件用运行时时钟分组）——
+// 固定时刻会在机器时钟越过偏移边界后使分组断言变红，不得写死 2026-09-01。
+const now = Date.now()
 const items = [
   { id: 'c-today', title: '今天会话', status: 'active' as const, messageCount: 3, updatedAt: new Date(now - 3_600_000).toISOString() },
   { id: 'c-week', title: '上周会话', status: 'active' as const, messageCount: 1, updatedAt: new Date(now - 5 * 86_400_000).toISOString() },
