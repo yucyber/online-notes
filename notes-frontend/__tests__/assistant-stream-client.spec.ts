@@ -30,13 +30,17 @@ describe('streamAssistantReply', () => {
 
   test('解析 started/status/delta/complete 事件并依次回调', async () => {
     const calls: string[] = []
-    global.fetch = jest.fn(async () => sseResponse([
-      'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
-      'event: status\ndata: {"stage":"routing","message":"小助手正在回复"}\n\n',
-      'event: delta\ndata: {"text":"你"}\n\n',
-      'event: delta\ndata: {"text":"好"}\n\n',
-      'event: complete\ndata: {"messageId":"am1","route":"pet","citations":[],"warnings":[]}\n\n',
-    ])) as any
+    global.fetch = jest.fn(async (_url: string, init?: any) => {
+      // 幂等键豁免守护：/api/assistant/chat 不得携带 Idempotency-Key（后端 IdempotencyInterceptor 响应级去重）
+      expect(init?.headers?.['Idempotency-Key']).toBeUndefined()
+      return sseResponse([
+        'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
+        'event: status\ndata: {"stage":"routing","message":"小助手正在回复"}\n\n',
+        'event: delta\ndata: {"text":"你"}\n\n',
+        'event: delta\ndata: {"text":"好"}\n\n',
+        'event: complete\ndata: {"messageId":"am1","route":"pet","citations":[],"warnings":[]}\n\n',
+      ])
+    }) as any
 
     await streamAssistantReply({ requestId: 'r1', question: 'hi' }, {
       onStarted: () => calls.push('started'),
@@ -118,6 +122,15 @@ describe('streamAssistantReply', () => {
     controller.abort()
     await expect(streamAssistantReply({ requestId: 'r1', question: 'hi' }, {}, controller.signal)).resolves.toBeUndefined()
     expect(aborted).toBe(true)
+  })
+
+  test('fetch 请求阶段 Abort 时静默结束不抛错', async () => {
+    // signal 在 fetch 尚未 resolve 时已 abort：原生 fetch 直接 reject AbortError，不得抛给调用方
+    global.fetch = jest.fn(async () => { throw new DOMException('The operation was aborted.', 'AbortError') }) as any
+
+    const controller = new AbortController()
+    controller.abort()
+    await expect(streamAssistantReply({ requestId: 'r1', question: 'hi' }, {}, controller.signal)).resolves.toBeUndefined()
   })
 })
 

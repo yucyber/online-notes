@@ -43,12 +43,19 @@ export async function streamAssistantReply(
 ): Promise<void> {
   // 注意：/api/assistant/chat 与 cancel 端点不得携带 Idempotency-Key（后端 IdempotencyInterceptor 会做响应级去重，
   // 生成服务已原生实现 (userId, requestId) 幂等），因此这里用原生 fetch，不走可能附加幂等头的 API 封装。
-  const response = await fetch('/api/assistant/chat', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(input),
-    ...(signal ? { signal } : {}),
-  });
+  let response: Response;
+  try {
+    response = await fetch('/api/assistant/chat', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(input),
+      ...(signal ? { signal } : {}),
+    });
+  } catch (error: any) {
+    // signal 在请求未 resolve 时已 abort：fetch 直接 reject AbortError，同样静默结束（与读取阶段一致）
+    if (error?.name === 'AbortError') return;
+    throw error;
+  }
   if (!response.ok) {
     let detail = response.statusText;
     try {
@@ -82,7 +89,7 @@ export async function streamAssistantReply(
       }
     }
   } catch (error: any) {
-    // 用户主动停止（AbortSignal）时静默结束，不向调用方抛错
+    // 用户主动停止（AbortSignal）时读取阶段静默结束，不向调用方抛错
     if (error?.name === 'AbortError') return;
     throw error;
   }
