@@ -60,6 +60,22 @@ test('消息按 seq 升序返回并支持 afterSeq 游标', async () => {
   assert.deepEqual(after.map((m) => m.seq), [2])
 })
 
+test('listAll 导出全量不受 list 的 200 封顶限制', async () => {
+  // P2 导出契约：list 升序封顶 200（分页语义），导出必须拿全量；若 listAll 复用 list 会把 5000 截回 200，静默漏导。
+  const seeds = Array.from({ length: 250 }, (_, i) => ({
+    conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+    seq: i + 1, role: (i % 2 === 0 ? 'user' : 'assistant'), route: 'rag', content: `m${i + 1}`, status: 'completed',
+  }))
+  const model = new MemoryModel(seeds)
+  const service = new AssistantMessagesService(model as any)
+  const all = await service.listAll('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc')
+  assert.equal(all.length, 250)
+  assert.deepEqual(all.slice(0, 3).map((m) => m.seq), [1, 2, 3])
+  // list 仍封顶 200：listAll 不受其影响。
+  const paged = await service.list('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc')
+  assert.equal(paged.length, 200)
+})
+
 test('listBefore 取 seq ≤ seqLte 的最近段并按 seq 升序返回', async () => {
   // P2 契约：历史召回需要 throughSeq 之前最近一段（而非 list 升序封顶 200 的最旧消息），
   // DB 侧倒序取再反序回升序——seqLte 过滤 + limit 取最近 N 条 + 升序返回。

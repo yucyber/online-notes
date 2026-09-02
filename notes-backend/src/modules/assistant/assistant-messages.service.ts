@@ -84,6 +84,13 @@ export class AssistantMessagesService {
     return docs.map(toView)
   }
 
+  // 导出全量专用：list 的 limit 封顶 200（分页语义），导出需拿完整会话历史，上限放宽到 5000 防极端长会话撑爆内存。
+  // 独立写查询而非复用 list——list 内部 Math.min(200, ...) 会把传参截回 200，复用会静默漏导。
+  async listAll(userId: string, conversationId: string): Promise<AssistantMessageView[]> {
+    const docs = await this.model.find({ conversationId: new Types.ObjectId(conversationId), userId: new Types.ObjectId(userId) }).sort({ seq: 1 }).limit(5000).lean().exec()
+    return docs.map(toView)
+  }
+
   // 历史召回专用：取 seq ≤ seqLte 的最近 limit 条（DB 侧倒序取再反序回升序）。list 升序封顶 200 会取到最旧 200 条，
   // 长会话（>200 条）时 throughSeq 前的最新压缩前历史永远扫不到；此处按 seqLte 上限倒序取最近段，避免静默漏召回。
   async listBefore(userId: string, conversationId: string, opts?: { seqLte?: number; limit?: number }): Promise<AssistantMessageView[]> {

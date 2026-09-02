@@ -1,4 +1,4 @@
-import { BadRequestException, Body, Controller, Get, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { Throttle } from '@nestjs/throttler'
 import { IsEnum, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator'
@@ -7,6 +7,7 @@ import { AssistantCheckpointService } from './assistant-checkpoint.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
 import { AssistantMessagesService } from './assistant-messages.service'
+import { buildExportLines } from './assistant-export'
 import { formatSseEvent } from './assistant-stream-format'
 
 class AssistantChatDto {
@@ -73,6 +74,21 @@ export class AssistantController {
       ...(limit !== undefined ? { limit: Math.min(200, Number(limit) || 200) } : {}),
     })
     return { items }
+  }
+
+  // 导出会话为 JSONL 附件：conversation 行的 createdAt 取会话 updatedAt（阶段一 get 只返回 id/title/status，本端点按会话更新时间标记导出时点）。
+  // 走 @Res 直接写流（与 chat SSE 一致，绕过 ApiEnvelopeInterceptor 的 JSON 信封）；归属校验在 conversations.get 内完成（带 userId 过滤）。
+  @Get('conversations/:id/export')
+  async exportConversation(@Param('id') id: string, @Res() res: Response, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    const conversation = await this.conversations.get(userId, id)
+    if (!conversation) throw new NotFoundException('会话不存在')
+    const messages = await this.messages.listAll(userId, id)
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+    res.setHeader('Content-Disposition', `attachment; filename="assistant-${id}.jsonl"`)
+    res.write(buildExportLines({ id, title: conversation.title, createdAt: conversation.updatedAt }, messages).join('\n'))
+    res.end()
   }
 
   @Get('search')

@@ -47,3 +47,46 @@ test('cancel 端点返回取消实际结果（透传 not_found/not_running/cance
   const result = await controller.cancel('r1', { user: { id: 'u1' } } as any)
   assert.deepEqual(result, { cancelled: false, reason: 'not_running' })
 })
+
+test('export 端点校验会话归属并把会话+消息写为 NDJSON 附件', async () => {
+  const conversations = {
+    get: async () => ({ id: 'c1', title: 'P3 设计', status: 'active', updatedAt: '2026-09-01T02:00:00.000Z' }),
+  }
+  const messages = {
+    list: async () => [],
+    listAll: async () => [
+      { id: 'm1', conversationId: 'c1', seq: 1, role: 'user', route: 'rag', content: '结论？', status: 'completed', citations: [], createdAt: '2026-09-01T00:00:00.000Z' },
+      { id: 'm2', conversationId: 'c1', seq: 2, role: 'assistant', route: 'rag', content: '统一入口 [E1]', status: 'completed', citations: [{ evidenceId: 'E1', noteId: 'n1', chunkId: 'c1', headingPath: [] }], createdAt: '2026-09-01T00:01:00.000Z' },
+    ],
+  }
+  const controller = new AssistantController({} as any, messages as any, conversations as any, {} as any)
+  let written = ''
+  const headers: Record<string, string> = {}
+  const res: any = {
+    setHeader: (k: string, v: string) => { headers[k] = v },
+    write: (chunk: string) => { written += chunk },
+    end: () => { res.ended = true },
+    writableEnded: false,
+    ended: false,
+  }
+  await controller.exportConversation('c1', res, { user: { id: 'u1' } } as any)
+  assert.equal(headers['Content-Type'], 'application/x-ndjson; charset=utf-8')
+  assert.equal(headers['Content-Disposition'], 'attachment; filename="assistant-c1.jsonl"')
+  assert.equal(res.ended, true)
+  const lines = written.split('\n').filter(Boolean)
+  assert.equal(lines.length, 4)
+  assert.ok(lines[0].includes('"type":"conversation"') && lines[0].includes('"createdAt":"2026-09-01T02:00:00.000Z"'))
+  assert.ok(lines[1].includes('"type":"message"') && lines[1].includes('"seq":1'))
+  assert.ok(lines[2].includes('"type":"message"') && lines[2].includes('"seq":2'))
+  assert.ok(lines[3].includes('"type":"citation"') && lines[3].includes('"messageSeq":2'))
+})
+
+test('export 端点会话不存在或不属于该用户时抛 404', async () => {
+  const conversations = { get: async () => null }
+  const messages = { list: async () => [], listAll: async () => [] }
+  const controller = new AssistantController({} as any, messages as any, conversations as any, {} as any)
+  await assert.rejects(
+    () => controller.exportConversation('c1', {} as any, { user: { id: 'u1' } } as any),
+    (error: any) => error?.name === 'NotFoundException' || /会话不存在/.test(String(error?.message ?? error)),
+  )
+})

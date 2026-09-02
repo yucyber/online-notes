@@ -22,9 +22,11 @@ export class AssistantConversationsService {
 
   async get(userId: string, id: string) {
     // 只认 active 会话：archived/deleted 会话命中视为不存在（调用方回退新建），避免新消息写入失效会话。
-    const doc = await this.model.findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId), status: 'active' }).lean().exec()
+    // updatedAt/createdAt 由 schema timestamps 插件落库、未声明在类上，lean 结果 cast any 访问（与 searchByTitle 同型）。
+    const doc: any = await this.model.findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId), status: 'active' }).lean().exec()
     if (!doc) return null
-    return { id: String(doc._id), title: String(doc.title || ''), status: doc.status }
+    // updatedAt 随 timestamps 落库；旧数据缺失时回退 createdAt，供导出把会话更新时间作为 createdAt 行输出。
+    return { id: String(doc._id), title: String(doc.title || ''), status: doc.status, updatedAt: String(doc.updatedAt || doc.createdAt || new Date().toISOString()) }
   }
 
   async touch(userId: string, id: string, delta: { lastMessageAt: Date; messageCount: number; knowledgeBaseId?: string | null }) {
