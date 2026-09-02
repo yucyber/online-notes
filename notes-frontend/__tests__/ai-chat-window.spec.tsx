@@ -288,6 +288,30 @@ describe('ChatWindow 统一流式协议', () => {
     expect(localStorage.getItem('assistant_current_conversation_id')).toBe('c2')
   })
 
+  it('服务端先发 error(CANCELLED) 再发 cancelled 时不短暂标 failed（M-1 回归）', async () => {
+    // 真实 cancel 路径：服务端先广播 error{code:CANCELLED}（供旧客户端识别），随后落库 cancelled 并广播 cancelled 事件。
+    // onError 对 CANCELLED 直接忽略，消息最终呈现 cancelled 而非 failed，避免闪烁"回答生成中断"。
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/cancel')) return { ok: true, status: 200, json: async () => ({ cancelled: true }) } as unknown as Response
+      if (String(url).includes('/messages')) return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response
+      return sseResponse([
+        'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
+        'event: delta\ndata: {"text":"部分"}\n\n',
+        'event: error\ndata: {"code":"CANCELLED","message":"已停止生成","retryable":false}\n\n',
+        'event: cancelled\ndata: {"messageId":"am1","text":"部分","reason":"user_stopped"}\n\n',
+      ])
+    })
+
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '今天心情不错' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await screen.findByText('部分')
+    await waitFor(() => expect(screen.queryByText('回答生成中断，请重试。')).not.toBeInTheDocument())
+    expect(mockAppToastError).not.toHaveBeenCalled()
+  })
+
   it('停止后 SSE 断开不再误报失败或弹 Toast', async () => {
     const encoder = new TextEncoder()
     const chunks = [

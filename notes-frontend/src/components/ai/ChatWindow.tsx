@@ -90,7 +90,9 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
         onCancelled: (data) => {
           setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'cancelled', content: data.text } : m)));
         },
-        onError: () => {
+        onError: (code) => {
+          // cancel 会先发 error(CANCELLED) 随后发 cancelled 事件标记终态：这里忽略，避免短暂把消息标 failed 闪烁"回答生成中断"
+          if (code === 'CANCELLED') return;
           setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
         },
       },
@@ -143,7 +145,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
       <div className="ink-head-real">
         <div className="ink-head-title"><span className="ink-head-mark"><Sparkles aria-hidden="true" /></span><div><h3>小助手</h3><p>闲聊，或从你的笔记中寻找答案</p></div></div>
         <div className="ink-head-actions">
-          <button type="button" title="展开全屏工作台" aria-label="展开全屏工作台"><Maximize2 aria-hidden="true" /></button>
+          {/* 全屏工作台（/dashboard/assistant）属阶段二：当前禁用，避免点空 */}
+          <button type="button" disabled title="展开全屏工作台（即将上线）" aria-label="展开全屏工作台（即将上线）"><Maximize2 aria-hidden="true" /></button>
           <button type="button" onClick={handleNewConversation} title="新建对话">新建</button>
           <button type="button" onClick={onClose} aria-label="关闭小助手">×</button>
         </div>
