@@ -4,12 +4,17 @@ export type AssistantRoute = 'pet' | 'rag';
 
 export type RagCitation = { evidenceId: string; noteId: string; noteTitle: string; chunkId: string; headingPath: string[]; excerpt: string; score?: number };
 
+// 认知召回引用：model 回答中以 [M1] 标记，与笔记引用 [E1]（RagCitation）严格分离
+export type MemoryCitation = { marker: string; memoryId: string; text: string };
+
 export type RagPlanSummary = { intent: string; tools: string[]; graphHops: 0 | 1; rerankApplied: boolean };
 
 export type AssistantMessageView = {
   id: string; conversationId: string; seq: number; role: 'user' | 'assistant'; route: AssistantRoute;
   content: string; status: 'pending' | 'streaming' | 'completed' | 'failed' | 'cancelled';
   requestId?: string; retryOfMessageId?: string; citations: RagCitation[]; warnings: string[];
+  // 可选：历史消息/complete 事件携带的已确认认知引用（阶段一/二解析器缺省为空数组）
+  memoryCitations?: MemoryCitation[];
   tokenUsage?: { input: number; output: number };
   createdAt: string; completedAt?: string;
 };
@@ -18,7 +23,7 @@ export type AssistantStreamEvents = {
   onStarted?(data: { conversationId: string; userMessageId: string; assistantMessageId: string; requestId: string }): void;
   onStatus?(stage: 'routing' | 'retrieving' | 'answering', message: string): void;
   onDelta?(text: string): void;
-  onComplete?(data: { messageId: string; route: AssistantRoute; citations: RagCitation[]; warnings: string[]; planSummary?: RagPlanSummary; runId?: string }): void;
+  onComplete?(data: { messageId: string; route: AssistantRoute; citations: RagCitation[]; warnings: string[]; planSummary?: RagPlanSummary; runId?: string; memoryCitations?: MemoryCitation[] }): void;
   onCancelled?(data: { messageId: string; text: string; reason: string }): void;
   onError?(code: string, message: string, retryable: boolean): void;
 };

@@ -99,6 +99,32 @@ export default function AssistantMessages({ messages, generating, onRetry, onOpe
                 </div>
               </div>
             )}
+            {item.memoryCitations && item.memoryCitations.length > 0 && (
+              <div className="assistant-message-memory" aria-label="已确认认知引用">
+                <p className="assistant-citations-label">来自已确认认知</p>
+                <ul className="assistant-memory-citation-list" style={{ margin: '6px 0 0', padding: 0, listStyle: 'none' }}>
+                  {item.memoryCitations.map((citation) => (
+                    <li
+                      key={citation.memoryId}
+                      className="assistant-memory-citation"
+                      style={{
+                        display: 'inline-flex', alignItems: 'baseline', gap: 6,
+                        maxWidth: '100%', padding: '5px 9px', margin: '2px 6px 2px 0',
+                        border: '1px dashed var(--product-accent-line)',
+                        borderRadius: 8, background: 'var(--product-accent-soft)',
+                        color: 'var(--product-text)', fontSize: 11, lineHeight: 1.5,
+                      }}
+                    >
+                      <strong style={{
+                        flex: 'none', color: 'var(--product-accent)', fontWeight: 650,
+                        fontVariantNumeric: 'tabular-nums',
+                      }}>[{citation.marker.replace(/^\[|\]$/g, '')}]</strong>
+                      <span>{citation.text}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
             {item.warnings.map((warning) => <p key={warning} className="assistant-message-warning">{warning}</p>)}
           </div>
         </article>
