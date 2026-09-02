@@ -5,6 +5,7 @@ import { REDIS_CLIENT } from '../../common/redis/redis.constants'
 import { AiService } from '../ai/ai.service'
 import { RagStreamService } from '../ai/rag/rag-stream.service'
 import { AssistantStreamEvent } from './assistant-stream-format'
+import { AssistantCheckpointService } from './assistant-checkpoint.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantMessagesService } from './assistant-messages.service'
 
@@ -25,6 +26,8 @@ export class AssistantGenerationService {
     private readonly ragStream: RagStreamService,
     private readonly aiService: AiService,
     @Optional() @Inject(REDIS_CLIENT) private readonly redis?: Redis,
+    // checkpoint 压缩在阶段二接入；阶段一构造（无该参）时 Optional 注入为 undefined，触发路径走可选调用。
+    @Optional() private readonly checkpoints?: AssistantCheckpointService,
   ) {}
 
   isRunning(requestId: string): boolean { return this.running.has(requestId) }
@@ -92,7 +95,7 @@ export class AssistantGenerationService {
 
       // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
       // finally 后的 catch 兜底：catch 块内落库（flush/markCancelled/markFailed）失败时避免 unhandledRejection 崩溃进程。
-      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, route }, emitter).finally(() => finish())
+      void this.runGeneration({ ...input, conversationId: conversation.id, assistantMessageId: assistantMessage.messageId, assistantSeq: assistantMessage.seq, route }, emitter).finally(() => finish())
         .catch((e) => this.logger.error('assistant generation cleanup failed', e))
     } catch (error) {
       // 前置步骤失败时释放占位，避免 requestId 永久停留在运行态。
@@ -129,7 +132,7 @@ export class AssistantGenerationService {
     if (requestId) await this.cancel(requestId, userId)
   }
 
-  private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag'; retryOfMessageId?: string }, emitter: EventEmitter): Promise<void> {
+  private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; assistantSeq: number; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag'; retryOfMessageId?: string }, emitter: EventEmitter): Promise<void> {
     const { userId, assistantMessageId, requestId, route } = input
     let content = ''
     let completed = false
@@ -203,6 +206,9 @@ export class AssistantGenerationService {
     // 失败/取消（completed=false）不触发；异常（如会话已删）静默降级，不影响生成完成。
     if (completed) {
       await this.conversations.renameIfDefault(userId, input.conversationId, input.question.slice(0, 24)).catch(() => undefined)
+      // checkpoint 压缩触发：finalize 落库成功后按会话最新 seq 评估（距上一 checkpoint ≥10 才真正 build）。
+      // 可选注入未接线（阶段一）或触发路径失败（如会话已删）时静默降级，不阻塞生成收尾。
+      await this.checkpoints?.schedule(userId, input.conversationId, input.assistantSeq).catch((error) => this.logger.warn(`checkpoint schedule failed: ${error?.message}`))
     }
   }
 }

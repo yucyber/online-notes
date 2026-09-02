@@ -51,6 +51,7 @@ const policies = {
   destructive_reorganization: policy('deep', 'deep', 6000, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),
   conflict_analysis: policy('deep', 'deep', 5000, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),
   proposal_revision: policy('deep', 'deep', 5000, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),
+  context_summary: policy('standard', 'off', 1024, 'siliconflow_standard', 'siliconflow_deep', 'bai_deepseek'),
 } satisfies Record<AiTask, AiModelPolicy>
 
 function policy(

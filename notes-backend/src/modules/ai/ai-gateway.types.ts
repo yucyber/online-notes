@@ -16,6 +16,7 @@ export type AiTask =
   | 'destructive_reorganization'
   | 'conflict_analysis'
   | 'proposal_revision'
+  | 'context_summary'
 
 export type AiReasoningMode = 'off' | 'auto' | 'deep'
 export type AiModelTier = 'economy' | 'standard' | 'deep'

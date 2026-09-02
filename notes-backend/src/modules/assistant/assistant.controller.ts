@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport'
 import { Throttle } from '@nestjs/throttler'
 import { IsEnum, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator'
 import type { Request, Response } from 'express'
+import { AssistantCheckpointService } from './assistant-checkpoint.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
 import { AssistantMessagesService } from './assistant-messages.service'
@@ -36,6 +37,7 @@ export class AssistantController {
     private readonly generation: AssistantGenerationService,
     private readonly messages: AssistantMessagesService,
     private readonly conversations: AssistantConversationsService,
+    private readonly checkpoints: AssistantCheckpointService,
   ) {}
 
   @Post('chat')
@@ -111,6 +113,12 @@ export class AssistantController {
     const userId = this.userId(req) || ''
     const seq = Math.max(1, Number(fromSeq) || 0)
     return this.conversations.branch(userId, id, seq, this.messages)
+  }
+
+  // 手动整理：立即压缩该会话（不等待 schedule 阈值），返回最新 checkpoint 视图。
+  @Post('conversations/:id/checkpoint')
+  async checkpoint(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
+    return this.checkpoints.build(this.userId(req) || '', id)
   }
 
   private userId(req?: AuthenticatedRequest): string | undefined {

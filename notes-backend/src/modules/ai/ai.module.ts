@@ -23,6 +23,6 @@ import { RagStreamService } from './rag/rag-stream.service';
     ],
     controllers: [AiController],
     providers: [AiGatewayClient, AiService, AiRunService, AiProviderCapacityService, QueryPlannerService, RagRetrievalService, RagAnswerService, RagStreamService],
-    exports: [AiService, AiRunService, AiProviderCapacityService, RagStreamService],
+    exports: [AiGatewayClient, AiService, AiRunService, AiProviderCapacityService, RagStreamService],
 })
 export class AiModule { }

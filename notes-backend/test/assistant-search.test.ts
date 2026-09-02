@@ -130,7 +130,7 @@ test('searchByTitle 空 query 返回空数组', async () => {
 test('search 端点返回会话与消息命中', async () => {
   const conversations = { searchByTitle: async () => [{ id: 'c1', title: 't', updatedAt: 'x' }] }
   const messages = { searchMessages: async () => [{ conversationId: 'c1', messageId: 'm1', seq: 1, role: 'user', snippet: 's', updatedAt: 'x' }] }
-  const controller = new AssistantController({} as any, messages as any, conversations as any)
+  const controller = new AssistantController({} as any, messages as any, conversations as any, {} as any)
   const result = await controller.search('蓝色海豚', { user: { id: 'u1' } } as any)
   assert.deepEqual(result, {
     conversations: [{ id: 'c1', title: 't', updatedAt: 'x' }],
@@ -139,6 +139,6 @@ test('search 端点返回会话与消息命中', async () => {
 })
 
 test('search 端点无认证用户时抛 BadRequest', async () => {
-  const controller = new AssistantController({} as any, {} as any, {} as any)
+  const controller = new AssistantController({} as any, {} as any, {} as any, {} as any)
   await assert.rejects(() => controller.search('q', undefined as any), BadRequestException)
 })
