@@ -1,5 +1,6 @@
 import { test } from 'node:test'
 import assert = require('node:assert/strict')
+import { BadRequestException } from '@nestjs/common'
 import { AssistantController } from '../src/modules/assistant/assistant.controller'
 
 test('chat 端点把生成事件写出为 SSE 并保持打开直到终态再结束响应', async () => {
@@ -89,4 +90,17 @@ test('export 端点会话不存在或不属于该用户时抛 404', async () => 
     () => controller.exportConversation('c1', {} as any, { user: { id: 'u1' } } as any),
     (error: any) => error?.name === 'NotFoundException' || /会话不存在/.test(String(error?.message ?? error)),
   )
+})
+
+test('管理端点无认证用户时抛 400（rename/archive/unarchive/delete/branch/checkpoint/cancel 同守门）', async () => {
+  const controller = new AssistantController({} as any, {} as any, {} as any, {} as any)
+  const noUser = undefined as any
+  await assert.rejects(() => controller.renameConversation('c1', '新标题', noUser), BadRequestException)
+  await assert.rejects(() => controller.archive('c1', noUser), BadRequestException)
+  await assert.rejects(() => controller.unarchive('c1', noUser), BadRequestException)
+  await assert.rejects(() => controller.deleteConversation('c1', noUser), BadRequestException)
+  await assert.rejects(() => controller.branch('c1', 5, noUser), BadRequestException)
+  await assert.rejects(() => controller.checkpoint('c1', noUser), BadRequestException)
+  await assert.rejects(() => controller.cancel('r1', noUser), BadRequestException)
+  await assert.rejects(() => controller.listMessages('c1', undefined, undefined, noUser), BadRequestException)
 })

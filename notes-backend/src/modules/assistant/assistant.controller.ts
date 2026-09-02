@@ -62,7 +62,9 @@ export class AssistantController {
   @Post('generations/:requestId/cancel')
   async cancel(@Param('requestId') requestId: string, @Req() req?: AuthenticatedRequest) {
     // 返回实际取消结果（not_found/not_running 如实上报，不再静默回 cancelled:true）
-    return this.generation.cancel(requestId, this.userId(req) || '')
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.generation.cancel(requestId, userId)
   }
 
   @Get('conversations/:id/messages')
@@ -103,22 +105,29 @@ export class AssistantController {
 
   @Patch('conversations/:id')
   async renameConversation(@Param('id') id: string, @Body('title') title: string, @Req() req?: AuthenticatedRequest) {
-    return this.conversations.rename(this.userId(req) || '', id, String(title || ''))
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.conversations.rename(userId, id, String(title || ''))
   }
 
   @Post('conversations/:id/archive')
   async archive(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
-    return this.conversations.setStatus(this.userId(req) || '', id, 'archived')
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.conversations.setStatus(userId, id, 'archived')
   }
 
   @Post('conversations/:id/unarchive')
   async unarchive(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
-    return this.conversations.setStatus(this.userId(req) || '', id, 'active')
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.conversations.setStatus(userId, id, 'active')
   }
 
   @Post('conversations/:id/delete')
   async deleteConversation(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
-    const userId = this.userId(req) || ''
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
     // 软删除前取消该会话正在运行的生成，避免删除后生成继续写消息。
     await this.generation.cancelByConversation(userId, id)
     return this.conversations.setStatus(userId, id, 'deleted')
@@ -126,7 +135,8 @@ export class AssistantController {
 
   @Post('conversations/:id/branch')
   async branch(@Param('id') id: string, @Body('fromSeq') fromSeq: number, @Req() req?: AuthenticatedRequest) {
-    const userId = this.userId(req) || ''
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
     const seq = Math.max(1, Number(fromSeq) || 0)
     return this.conversations.branch(userId, id, seq, this.messages)
   }
@@ -134,7 +144,9 @@ export class AssistantController {
   // 手动整理：立即压缩该会话（不等待 schedule 阈值），返回最新 checkpoint 视图。
   @Post('conversations/:id/checkpoint')
   async checkpoint(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
-    return this.checkpoints.build(this.userId(req) || '', id)
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.checkpoints.build(userId, id)
   }
 
   private userId(req?: AuthenticatedRequest): string | undefined {
