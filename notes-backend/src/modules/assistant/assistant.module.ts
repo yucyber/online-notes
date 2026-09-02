@@ -2,6 +2,7 @@ import { Module, forwardRef } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { AiModule } from '../ai/ai.module'
 import { AssistantCheckpointService } from './assistant-checkpoint.service'
+import { AssistantContextService } from './assistant-context.service'
 import { AssistantController } from './assistant.controller'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
@@ -21,7 +22,8 @@ import { AssistantContextCheckpoint, AssistantCheckpointSchema } from './schemas
     forwardRef(() => AiModule),
   ],
   controllers: [AssistantController],
-  providers: [AssistantConversationsService, AssistantMessagesService, AssistantGenerationService, AssistantCheckpointService],
+  // AssistantContextService 依赖 messages/checkpoints（同模块直接注入）；MEMORY_RECALL_SERVICE 阶段四才注册 provider。
+  providers: [AssistantConversationsService, AssistantMessagesService, AssistantGenerationService, AssistantCheckpointService, AssistantContextService],
   exports: [AssistantConversationsService, AssistantMessagesService],
 })
 export class AssistantModule { }
