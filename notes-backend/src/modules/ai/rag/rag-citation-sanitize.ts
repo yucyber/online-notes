@@ -51,3 +51,48 @@ export function sanitizeCitationText(answer: string, allowed: RagEvidence[]): { 
   const cleaned = sanitizer.push(answer) + sanitizer.flush()
   return { answer: cleaned.replace(/[ \t]{2,}/g, ' ').trim(), citations: sanitizer.citations, invalidReferenceFound: sanitizer.invalidReferenceFound }
 }
+
+// 认知引用条目：memoryId 为召回记忆标识（RagStreamService 按位置生成 M1..Mn），text 供前端直接展示依据。
+export type MemoryCitation = { marker: string; memoryId: string; text: string }
+
+export interface MemoryCitationSanitizer {
+  push(chunk: string): string
+  flush(): string
+  readonly memoryCitations: MemoryCitation[]
+  readonly invalidReferenceFound: boolean
+}
+
+// 认知节 [M\d+] 清洗，与 E 版同构：缓冲可能被拆分的 `[M...` 前缀（含单独 `[`），闭合后再判定是否属于 recalled。
+export function createMemoryCitationSanitizer(recalled: Array<{ id: string; label: string; text: string }>): MemoryCitationSanitizer {
+  const byId = new Map(recalled.map((item, index) => [`M${index + 1}`, item]))
+  const seen = new Set<string>()
+  const memoryCitations: MemoryCitation[] = []
+  let invalidReferenceFound = false
+  let buffer = ''
+
+  const emit = (text: string): string => text.replace(/\[(M\d+)\]/g, (marker, id: string) => {
+    const item = byId.get(id)
+    if (!item) { invalidReferenceFound = true; return '' }
+    if (!seen.has(id)) {
+      seen.add(id)
+      memoryCitations.push({ marker: id, memoryId: item.id, text: item.text })
+    }
+    return marker
+  })
+
+  return {
+    push(chunk: string): string {
+      const combined = buffer + chunk
+      const lastOpen = combined.lastIndexOf('[')
+      if (lastOpen === -1) { buffer = ''; return emit(combined) }
+      const tail = combined.slice(lastOpen)
+      // `[` 与 `M` 可能被拆到相邻 chunk，单个 `[` 也须缓冲（与 E 版同构），闭合后才判定。
+      if (/^\[M?\d*$/.test(tail)) { buffer = tail; return emit(combined.slice(0, lastOpen)) }
+      buffer = ''
+      return emit(combined)
+    },
+    flush(): string { const rest = buffer; buffer = ''; return emit(rest) },
+    get memoryCitations() { return memoryCitations },
+    get invalidReferenceFound() { return invalidReferenceFound },
+  }
+}

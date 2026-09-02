@@ -1,10 +1,11 @@
 import { RagCitation, RagPlanSummary } from '../ai/rag/rag.types'
+import { MemoryCitation } from '../ai/rag/rag-citation-sanitize'
 
 export type AssistantStreamEvent =
   | { event: 'started'; data: { conversationId: string; userMessageId: string; assistantMessageId: string; requestId: string } }
   | { event: 'status'; data: { stage: 'routing' | 'retrieving' | 'answering'; message: string } }
   | { event: 'delta'; data: { text: string } }
-  | { event: 'complete'; data: { messageId: string; route: 'pet' | 'rag'; citations: RagCitation[]; warnings: string[]; planSummary?: RagPlanSummary; runId?: string } }
+  | { event: 'complete'; data: { messageId: string; route: 'pet' | 'rag'; citations: RagCitation[]; memoryCitations?: MemoryCitation[]; warnings: string[]; planSummary?: RagPlanSummary; runId?: string } }
   | { event: 'cancelled'; data: { messageId: string; text: string; reason: 'user_stopped' } }
   | { event: 'error'; data: { code: string; message: string; retryable: boolean } }
 
