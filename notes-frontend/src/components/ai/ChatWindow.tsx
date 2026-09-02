@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
-import { BookOpen, Maximize2, Sparkles, Square } from 'lucide-react';
+import { BookOpen, Maximize2, Sparkles } from 'lucide-react';
 import ReactMarkdown from 'react-markdown';
 import { appToast } from '@/lib/app-toast';
 import {
@@ -9,6 +9,7 @@ import {
 } from '@/lib/assistant-stream-client';
 import { routeAssistantMessage } from './assistant-history';
 import RagCitationList from './RagCitationList';
+import AssistantCompose from '../assistant/AssistantCompose';
 
 const CURRENT_CONVERSATION_KEY = 'assistant_current_conversation_id';
 
@@ -162,15 +163,16 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
         </div>)}
         <div ref={messagesEndRef} />
       </div>
-      <div className="ink-compose-wrap">
-        <button type="button" className="ink-note-toggle" aria-pressed={forceNotes} onClick={() => setForceNotes((current) => !current)}><BookOpen aria-hidden="true" />搜索笔记</button>
-        <div className="ink-compose-real">
-          <textarea value={input} onChange={(event) => setInput(event.target.value)} onKeyDown={(event) => { if (event.key === 'Enter' && !event.shiftKey) { event.preventDefault(); handleSend(); } }} placeholder="问问小助手…" />
-          {generating
-            ? <button type="button" onClick={handleStop} aria-label="停止生成"><Square aria-hidden="true" /></button>
-            : <button type="button" onClick={handleSend} disabled={!input.trim()} aria-label="发送">↑</button>}
-        </div>
-      </div>
+      {/* 输入区收敛到共享组件 AssistantCompose：ChatWindow 与全屏工作台同构，避免重复维护 */}
+      <AssistantCompose
+        value={input}
+        onChange={setInput}
+        onSend={handleSend}
+        onStop={handleStop}
+        generating={generating}
+        forceNotes={forceNotes}
+        onToggleForceNotes={() => setForceNotes((current) => !current)}
+      />
     </aside>
   );
 }
