@@ -23,7 +23,8 @@ export class AssistantMemoryCandidate {
 
   // 范围子文档：默认 global。type 字面量字段需以 { type: { type: String } } 形式声明，
   // 否则 mongoose 会把 type 当 SchemaType 声明并把 enum/default 误判为子路径。
-  @Prop({ type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true, default: 'global' } })
+  // id 供非 global 范围（knowledge_base/note/conversation）锚定实体 ObjectId；不声明会被 strict 模式静默剥离。
+  @Prop({ type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true, default: 'global' }, id: { type: MongooseSchema.Types.ObjectId } })
   scope: MemoryScope
 
   @Prop({ required: true, enum: ['pending', 'rejected', 'confirmed'], default: 'pending', index: true })

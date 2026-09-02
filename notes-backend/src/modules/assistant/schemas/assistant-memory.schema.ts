@@ -22,7 +22,8 @@ export class AssistantMemory {
   statement: string
 
   // 范围子文档：默认 global，声明方式同候选 schema（type 为字面量字段）。
-  @Prop({ type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true, default: 'global' } })
+  // id 供非 global 范围锚定实体 ObjectId，供 findConflict/supersede/recall 按 'scope.id' 匹配。
+  @Prop({ type: { type: String, enum: ['global', 'knowledge_base', 'note', 'conversation'], required: true, default: 'global' }, id: { type: MongooseSchema.Types.ObjectId } })
   scope: MemoryScope
 
   @Prop({ required: true, enum: ['confirmed', 'superseded'], default: 'confirmed', index: true })
