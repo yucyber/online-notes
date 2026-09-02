@@ -1096,8 +1096,10 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   useEffect(() => {
     if (!activeId || loadedConversationId === activeId) return;
     let active = true;
+    // 守卫：切换会话后立刻发送时（历史加载在途）不得用历史响应覆盖乐观 user/assistant 消息——
+    // 参考 ChatWindow L49 函数式 prev.length===0 守卫；否则 onStarted 找不到 local id，回答在 UI 消失（服务端有）。
     void fetchConversationMessages(activeId)
-      .then((result) => { if (active) { setMessages(result.items); setLoadedConversationId(activeId); } })
+      .then((result) => { if (active) { setMessages((prev) => prev.length === 0 ? result.items : prev); setLoadedConversationId(activeId); } })
       .catch(() => { if (active) setMessages([]); });
     return () => { active = false; };
   }, [activeId, loadedConversationId]);
