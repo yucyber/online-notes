@@ -172,4 +172,128 @@ describe('ChatWindow 统一流式协议', () => {
     expect(screen.getByText('今天想聊点什么？')).toBeInTheDocument()
     expect(localStorage.getItem('assistant_current_conversation_id')).toBeNull()
   })
+
+  it('恢复会话慢于首次发送时不覆盖新会话消息', async () => {
+    // 挂载恢复 c1 的请求被 gate 挂起，用户先发送触发 chat SSE（onStarted 新建 c2），随后恢复才 resolve
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    let releaseRestore!: () => void
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve })
+    let restoreStarted = false
+    const encoder = new TextEncoder()
+    const chatChunks = [
+      'event: started\ndata: {"conversationId":"c2","userMessageId":"um2","assistantMessageId":"am2","requestId":"r2"}\n\n',
+      'event: delta\ndata: {"text":"新会话回答"}\n\n',
+      'event: complete\ndata: {"messageId":"am2","route":"pet","citations":[],"warnings":[]}\n\n',
+    ]
+    let chatIndex = 0
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) {
+        restoreStarted = true
+        await restoreGate
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{ id: 'm1', conversationId: 'c1', seq: 1, role: 'assistant', route: 'pet', content: '旧会话消息', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' }],
+          }),
+        } as unknown as Response
+      }
+      return {
+        ok: true, status: 200, statusText: 'OK',
+        body: {
+          getReader: () => ({
+            read: async () => chatIndex < chatChunks.length
+              ? { done: false, value: encoder.encode(chatChunks[chatIndex++]) }
+              : { done: true, value: undefined },
+          }),
+        },
+      } as unknown as Response
+    })
+
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    await waitFor(() => expect(restoreStarted).toBe(true))
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '你好' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await screen.findByText('新会话回答')
+    expect(localStorage.getItem('assistant_current_conversation_id')).toBe('c2')
+
+    // 恢复此刻才 resolve：旧会话快照不得覆盖新会话消息，ref 不得被改回
+    await act(async () => { releaseRestore() })
+    await waitFor(() => expect(screen.queryByText('旧会话消息')).not.toBeInTheDocument())
+    expect(screen.getByText('新会话回答')).toBeInTheDocument()
+    expect(localStorage.getItem('assistant_current_conversation_id')).toBe('c2')
+  })
+
+  it('停止后 SSE 断开不再误报失败或弹 Toast', async () => {
+    const encoder = new TextEncoder()
+    const chunks = [
+      'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
+      'event: delta\ndata: {"text":"部分"}\n\n',
+    ]
+    let index = 0
+    // 停止后才断开：第三次 read 挂起，等测试点击停止并释放 gate 再抛错
+    let releaseBreak!: () => void
+    const breakGate = new Promise<void>((resolve) => { releaseBreak = resolve })
+    const reader = {
+      read: async () => {
+        if (index < chunks.length) return { done: false, value: encoder.encode(chunks[index++]) }
+        await breakGate
+        // 停止后服务端 SSE 断开（无 cancelled 事件）：读取阶段抛错模拟
+        throw new Error('stream interrupted')
+      },
+    }
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/cancel')) return { ok: true, status: 200, json: async () => ({ cancelled: true }) } as unknown as Response
+      if (String(url).includes('/messages')) return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response
+      return { ok: true, status: 200, statusText: 'OK', body: { getReader: () => reader } } as unknown as Response
+    })
+
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '今天心情不错' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await screen.findByText('部分')
+    fireEvent.click(screen.getByLabelText('停止生成'))
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/assistant/generations/'),
+      expect.objectContaining({ method: 'POST' }),
+    ))
+    await act(async () => { releaseBreak() })
+    await waitFor(() => expect(screen.queryByLabelText('停止生成')).not.toBeInTheDocument())
+    expect(screen.queryByText('回答生成中断，请重试。')).not.toBeInTheDocument()
+    expect(mockAppToastError).not.toHaveBeenCalled()
+  })
+
+  it('流提前结束未收到终态事件时兜底标记失败', async () => {
+    const encoder = new TextEncoder()
+    const chunks = [
+      'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
+      'event: delta\ndata: {"text":"半截"}\n\n',
+    ]
+    let index = 0
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response
+      return {
+        ok: true, status: 200, statusText: 'OK',
+        body: {
+          getReader: () => ({
+            read: async () => index < chunks.length
+              ? { done: false, value: encoder.encode(chunks[index++]) }
+              : { done: true, value: undefined },
+          }),
+        },
+      } as unknown as Response
+    })
+
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '今天心情不错' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+
+    await screen.findByText('半截')
+    expect(await screen.findByText('回答生成中断，请重试。')).toBeInTheDocument()
+  })
 })

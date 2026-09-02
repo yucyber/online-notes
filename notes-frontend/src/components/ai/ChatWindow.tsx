@@ -29,6 +29,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
   const [generating, setGenerating] = useState(false);
   const activeRequestIdRef = useRef<string | null>(null);
   const conversationIdRef = useRef<string | null>(null);
+  // 用户已点停止：后续 SSE 断开/报错不算失败，不标 failed、不弹 toast（服务端会落库 cancelled）
+  const stoppingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
   // 挂载时按本地保存的会话 ID 从服务端恢复消息；服务端不可用时保持空态
@@ -38,7 +40,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     if (!conversationId) return;
     void fetchConversationMessages(conversationId)
       .then((result) => {
-        if (!active) return;
+        // 恢复期间用户已开始新会话（onStarted 已设置 ref）：丢弃旧会话快照，避免覆盖新消息
+        if (!active || conversationIdRef.current !== null) return;
         conversationIdRef.current = conversationId;
         setMessages(result.items);
       })
@@ -87,7 +90,15 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
           setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
         },
       },
-    ).catch(() => {
+    ).then(() => {
+      // 流正常结束但消息仍非终态（如服务端提前断开未发终态事件）：兜底标 failed；主动停止除外
+      if (stoppingRef.current) return;
+      setMessages((prev) => prev.map((m) => (m.id === assistantId && (m.status === 'pending' || m.status === 'streaming')
+        ? { ...m, status: 'failed' }
+        : m)));
+    }).catch(() => {
+      // 已点停止的断开不算失败：服务端会落库 cancelled，避免误弹失败 toast
+      if (stoppingRef.current) return;
       // 请求级失败：保留占位消息标记 failed，提供"重新回答"（新 requestId 重发同一问题）
       setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
       appToast.error({
@@ -96,6 +107,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
       });
     }).finally(() => {
       activeRequestIdRef.current = null;
+      stoppingRef.current = false;
       setGenerating(false);
     });
   };
@@ -110,6 +122,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
   const handleStop = () => {
     const current = activeRequestIdRef.current;
     if (!current) return;
+    stoppingRef.current = true;
     // cancel 端点与 /chat 一样豁免 Idempotency-Key：原生 fetch 不附加该头
     void fetch(`/api/assistant/generations/${encodeURIComponent(current)}/cancel`, { method: 'POST' }).catch(() => undefined);
   };
