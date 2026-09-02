@@ -12,6 +12,17 @@ export type AssistantMessageView = {
   createdAt: string; completedAt?: string
 }
 
+// 分支会话复制的单条前缀消息：seq 由新会话从 1 重排，status 一律 completed（副本只带走已落定内容，不携带原生命周期状态）。
+export type BranchPrefixMessage = {
+  role: 'user' | 'assistant'
+  route: 'pet' | 'rag'
+  content: string
+  status: 'completed'
+  citations: RagCitation[]
+  warnings: string[]
+  createdAt: Date
+}
+
 function toView(doc: any): AssistantMessageView {
   return {
     id: String(doc._id), conversationId: String(doc.conversationId), seq: Number(doc.seq), role: doc.role, route: doc.route,
@@ -109,6 +120,32 @@ export class AssistantMessagesService {
         role: doc.role, snippet: (start > 0 ? '…' : '') + text.slice(start, start + 80) + (text.length > start + 80 ? '…' : ''),
         updatedAt: String(doc.updatedAt || doc.createdAt || new Date().toISOString()),
       }
+    })
+  }
+
+  // 分支会话取前缀：复制源会话 seq ≤ throughSeq 的可见消息（按 seq 升序），status 一律 completed（见 BranchPrefixMessage）。
+  // 链尾用 .sort().lean() 直接 await（方案 A，兼容测试内存模型的 find→sort→lean 链，与 Task 2 searchMessages 同型）。
+  async copyPrefix(userId: string, sourceConversationId: string, throughSeq: number): Promise<BranchPrefixMessage[]> {
+    const docs = await this.model.find({
+      userId: toObjectId(userId),
+      conversationId: toObjectId(sourceConversationId),
+      seq: { $lte: throughSeq },
+    }).sort({ seq: 1 }).lean() as any[]
+    return docs.map((doc) => ({
+      role: doc.role, route: doc.route, content: String(doc.content || ''),
+      status: 'completed' as const,
+      citations: Array.isArray(doc.citations) ? doc.citations : [],
+      warnings: Array.isArray(doc.warnings) ? doc.warnings : [],
+      createdAt: doc.createdAt ? new Date(doc.createdAt) : new Date(),
+    }))
+  }
+
+  // 分支会话落消息：seq 由调用方（branch）按新会话从 1 重排后显式传入，区别于 appendUser/createPlaceholder 的 nextSeq 自增。
+  async appendBranchMessage(userId: string, conversationId: string, seq: number, message: BranchPrefixMessage) {
+    await this.model.create({
+      userId: toObjectId(userId), conversationId: toObjectId(conversationId), seq,
+      role: message.role, route: message.route, content: message.content,
+      status: message.status, citations: message.citations, warnings: message.warnings, createdAt: message.createdAt,
     })
   }
 }

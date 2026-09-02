@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
+import type { AssistantMessagesService } from './assistant-messages.service'
 import { toObjectId } from './object-id.util'
 import { AssistantConversation, AssistantConversationDocument } from './schemas/assistant-conversation.schema'
 
@@ -92,5 +93,26 @@ export class AssistantConversationsService {
       userId: toObjectId(userId), status: { $ne: 'deleted' }, title: { $regex: escaped, $options: 'i' },
     }).sort({ updatedAt: -1 }).limit(20).lean() as any[]
     return docs.map((doc) => ({ id: String(doc._id), title: String(doc.title || ''), updatedAt: String(doc.updatedAt || new Date().toISOString()) }))
+  }
+
+  // 分支会话（从历史续写）：读源会话、复制 seq ≤ throughSeq 前缀消息到新会话并重排 seq，标题追加 "· 分支"，
+  // 记录 parentConversationId/forkedFromSeq 溯源。源会话不属于该用户或不存在时抛 NotFound（写操作语义与 rename/setStatus 一致）。
+  async branch(userId: string, sourceId: string, throughSeq: number, messages: AssistantMessagesService): Promise<{ id: string; parentConversationId: string; forkedFromSeq: number }> {
+    // 源会话读取不带 .lean().exec() 链：测试内存模型 findOne 同步返回 doc，await findOne 对真实 Mongoose 同样返回 doc。
+    const source = await this.model.findOne({ _id: toObjectId(sourceId), userId: toObjectId(userId) })
+    if (!source) throw new NotFoundException('conversation not found')
+    const prefix = await messages.copyPrefix(userId, sourceId, throughSeq)
+    const created = await this.model.create({
+      userId: toObjectId(userId),
+      title: `${String(source.title || '新对话')} · 分支`,
+      status: 'active',
+      defaultRoute: source.defaultRoute || 'auto',
+      parentConversationId: source._id,
+      forkedFromSeq: throughSeq,
+    })
+    for (const [index, message] of prefix.entries()) {
+      await messages.appendBranchMessage(userId, String(created._id), index + 1, message)
+    }
+    return { id: String(created._id), parentConversationId: sourceId, forkedFromSeq: throughSeq }
   }
 }

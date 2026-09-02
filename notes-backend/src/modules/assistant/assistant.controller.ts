@@ -106,6 +106,13 @@ export class AssistantController {
     return this.conversations.setStatus(userId, id, 'deleted')
   }
 
+  @Post('conversations/:id/branch')
+  async branch(@Param('id') id: string, @Body('fromSeq') fromSeq: number, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req) || ''
+    const seq = Math.max(1, Number(fromSeq) || 0)
+    return this.conversations.branch(userId, id, seq, this.messages)
+  }
+
   private userId(req?: AuthenticatedRequest): string | undefined {
     const user = req?.user
     return user?.id || user?._id || user?.userId
