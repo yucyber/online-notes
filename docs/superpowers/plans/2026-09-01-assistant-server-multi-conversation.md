@@ -225,7 +225,7 @@ await this.conversations.setActiveRequest(userId, conversation.id, null).catch((
 
 - [ ] **Step 4: 运行确认通过**
 
-Run: `node --test -r ts-node/register -r tsconfig-paths/register test/assistant-conversation-management.test.ts test/assistant-conversations-list.test.ts test/assistant-generation.test.ts; npm run build`
+Run: `node --test -r ts-node/register -r tsconfig-paths/register test/assistant-conversation-management.test.ts test/assistant-generation.test.ts; npm run build`
 Expected: PASS；编译通过
 
 - [ ] **Step 5: 提交**
@@ -1054,7 +1054,9 @@ git commit -m "feat(assistant): JSONL 会话导出"
 
 ---
 
-### Task 8: 前端会话管理 UI（重命名 / 归档 / 删除 / 搜索）
+### Task 8: 前端会话管理 UI（重命名 / 归档 / 删除 / 搜索）【延后至计划 3 组件就绪后执行】
+
+> **执行顺序决策（2026-09-02 用户确认）**：Task 8 引用的 `ConversationList`/`AssistantWorkspace` 组件由计划 3（全屏工作台）创建，本 Task 依赖计划 3 组件。决定：计划 2 先执行 Task 1-7 + Task 9（纯后端），Task 8 延后到计划 3 组件就绪后合并执行（届时按本 Task 规格在 `ConversationList`/`AssistantWorkspace` 上补齐管理交互）。
 
 **Files:**
 - Modify: `notes-frontend/src/lib/assistant-api.ts`（管理 API）
