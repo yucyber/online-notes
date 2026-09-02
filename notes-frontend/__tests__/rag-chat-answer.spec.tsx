@@ -5,6 +5,7 @@ import ChatWindow from '@/components/ai/ChatWindow'
 
 jest.mock('react-markdown', () => ({ __esModule: true, default: ({ children }: { children: string }) => <>{children}</> }))
 jest.mock('@/lib/app-toast', () => ({ appToast: { error: jest.fn(), dismiss: jest.fn() } }))
+jest.mock('next/navigation', () => ({ useRouter: () => ({ push: jest.fn() }) }))
 
 // jsdom 测试环境缺 Node 全局流 API，显式注入（与 assistant-stream-client.spec.ts 同一惯例）
 Object.assign(global, { TextDecoder, TextEncoder })

@@ -2,6 +2,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { BookOpen, Maximize2, Sparkles } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import ReactMarkdown from 'react-markdown';
 import { appToast } from '@/lib/app-toast';
 import {
@@ -24,6 +25,7 @@ type LocalMessage = AssistantMessageView;
 interface ChatWindowProps { isOpen: boolean; onClose: () => void }
 
 export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
+  const router = useRouter();
   const [messages, setMessages] = useState<LocalMessage[]>([]);
   const [forceNotes, setForceNotes] = useState(false);
   const [input, setInput] = useState('');
@@ -146,8 +148,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
       <div className="ink-head-real">
         <div className="ink-head-title"><span className="ink-head-mark"><Sparkles aria-hidden="true" /></span><div><h3>小助手</h3><p>闲聊，或从你的笔记中寻找答案</p></div></div>
         <div className="ink-head-actions">
-          {/* 全屏工作台（/dashboard/assistant）属阶段二：当前禁用，避免点空 */}
-          <button type="button" disabled title="展开全屏工作台（即将上线）" aria-label="展开全屏工作台（即将上线）"><Maximize2 aria-hidden="true" /></button>
+          {/* 全屏工作台（/dashboard/assistant）阶段二已上线：点击跳转展开 */}
+          <button type="button" title="展开全屏工作台" aria-label="展开全屏工作台" onClick={() => router.push('/dashboard/assistant')}><Maximize2 aria-hidden="true" /></button>
           <button type="button" onClick={handleNewConversation} title="新建对话">新建</button>
           <button type="button" onClick={onClose} aria-label="关闭小助手">×</button>
         </div>

@@ -9,6 +9,11 @@ const mockFetch = jest.fn()
 
 jest.mock('react-markdown', () => ({ __esModule: true, default: ({ children }: { children: string }) => <>{children}</> }))
 
+const mockRouterPush = jest.fn()
+jest.mock('next/navigation', () => ({
+  useRouter: () => ({ push: (...args: unknown[]) => mockRouterPush(...args) }),
+}))
+
 jest.mock('@/lib/app-toast', () => ({
   appToast: {
     error: (...args: unknown[]) => mockAppToastError(...args),
@@ -43,6 +48,7 @@ describe('ChatWindow 统一流式协议', () => {
     localStorage.clear()
     mockAppToastError.mockReset()
     mockAppToastDismiss.mockReset()
+    mockRouterPush.mockReset()
     mockFetch.mockReset()
     Object.defineProperty(globalThis, 'fetch', { configurable: true, value: mockFetch })
     Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: jest.fn() })
@@ -381,5 +387,15 @@ describe('ChatWindow 统一流式协议', () => {
 
     await screen.findByText('半截')
     expect(await screen.findByText('回答生成中断，请重试。')).toBeInTheDocument()
+  })
+
+  it('点击展开按钮跳转全屏工作台', () => {
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) return { ok: true, status: 200, json: async () => ({ items: [] }) } as unknown as Response
+      return sseResponse([])
+    })
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    fireEvent.click(screen.getByRole('button', { name: '展开全屏工作台' }))
+    expect(mockRouterPush).toHaveBeenCalledWith('/dashboard/assistant')
   })
 })
