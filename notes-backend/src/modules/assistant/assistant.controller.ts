@@ -3,6 +3,8 @@ import { AuthGuard } from '@nestjs/passport'
 import { Throttle } from '@nestjs/throttler'
 import { IsEnum, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator'
 import type { Request, Response } from 'express'
+import { MemoryKind, MemoryScope } from './assistant.constants'
+import { MemoryConfirmEdits, MemoryCandidatesService } from './assistant-memory-candidates.service'
 import { AssistantCheckpointService } from './assistant-checkpoint.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
@@ -39,6 +41,9 @@ export class AssistantController {
     private readonly messages: AssistantMessagesService,
     private readonly conversations: AssistantConversationsService,
     private readonly checkpoints: AssistantCheckpointService,
+    // 记忆候选服务依赖的 schema 与 provider 已在 assistant.module.ts 注册；
+    // 参数保持可选语法仅为兼容既有 4 参直接构造的 controller 测试（DI 正常注入）。
+    private readonly memoryCandidates?: MemoryCandidatesService,
   ) {}
 
   @Post('chat')
@@ -162,6 +167,38 @@ export class AssistantController {
     const userId = this.userId(req)
     if (!userId) throw new BadRequestException('Authenticated user is required.')
     return this.checkpoints.build(userId, id)
+  }
+
+  // 认知记忆候选（阶段四 Task 3）：pending 列表与确认/拒绝/批量确认。
+  // 候选确认遇同 scope 主题重叠时由 service 返回 { memoryId: '', conflict }，由前端引导冲突解决。
+  @Get('memories/candidates')
+  async listMemoryCandidates(@Query('status') status?: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    if (status !== undefined && status !== 'pending') throw new BadRequestException('仅支持 status=pending')
+    return { items: await this.memoryCandidates.listPending(userId) }
+  }
+
+  @Post('memories/candidates/:id/confirm')
+  async confirmMemoryCandidate(@Param('id') id: string, @Body('edits') edits?: MemoryConfirmEdits, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.memoryCandidates.confirm(userId, id, edits)
+  }
+
+  @Post('memories/candidates/:id/reject')
+  async rejectMemoryCandidate(@Param('id') id: string, @Body('reason') reason?: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    await this.memoryCandidates.reject(userId, id, String(reason || ''))
+    return { ok: true }
+  }
+
+  @Post('memories/candidates/batch-confirm')
+  async batchConfirmMemoryCandidates(@Body() body: { ids?: string[]; kind?: MemoryKind; scope?: MemoryScope }, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.memoryCandidates.batchConfirm(userId, Array.isArray(body?.ids) ? body.ids.map(String) : [], { kind: body?.kind, scope: body?.scope })
   }
 
   private userId(req?: AuthenticatedRequest): string | undefined {
