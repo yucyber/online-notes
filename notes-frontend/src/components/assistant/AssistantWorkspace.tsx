@@ -79,7 +79,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
         setMessages((prev) => (prev.length === 0 ? result.items : prev));
         setLoadedConversationId(activeId);
       })
-      .catch(() => { if (!cancelled) setMessages([]); });
+      // 历史拉取失败：保留当前（空态或已乐观发送的）列表，不强制清空乐观消息（评审 P3-a）
+      .catch(() => undefined);
     return () => { cancelled = true; };
   }, [activeId, loadedConversationId]);
 
@@ -285,8 +286,12 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
 
   const handleStop = () => { cancelActiveRequest(); };
 
-  // failed 回答重试：以原消息为 retryOfMessageId 重发（question 取前一条 user 消息，缺省用失败内容）。
-  // 点击即移除原消息 failed 标记：避免成功后该气泡仍可重复点击造成重复追加（评审 P3-2）
+  // failed 回答重试：question 取前一条 user 消息（缺省用失败内容）。
+  // - 服务端落库消息（id 非 local-*、已有会话）：带 retryOfMessageId 走血缘重试；
+  // - request 级失败消息仍是 local-* 占位（onStarted 未发生，服务端无此消息）：
+  //   传 local id 会让服务端 createPlaceholder 因非法 ObjectId 抛错且 appendUser 先落重复 user 消息，
+  //   故对占位消息作普通重发（同 ChatWindow send 路径，不传 retryOfMessageId）。
+  // 点击即移除原消息 failed 标记：避免成功后该气泡仍可重复点击造成重复追加（评审 P3-2/P3-c）
   const handleRetry = (messageId: string) => {
     if (generating) return;
     const index = messages.findIndex((m) => m.id === messageId);
@@ -299,7 +304,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     }
     if (!question.trim()) return;
     setMessages((prev) => prev.map((m) => (m.id === messageId ? { ...m, status: 'completed' } : m)));
-    startReply(question, failed.route, messageId);
+    const isLocalPlaceholder = failed.id.startsWith('local-') || !failed.conversationId;
+    startReply(question, failed.route, isLocalPlaceholder ? undefined : messageId);
   };
 
   const handleRename = (id: string, title: string) => {

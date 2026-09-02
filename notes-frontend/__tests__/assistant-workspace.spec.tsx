@@ -394,4 +394,101 @@ describe('AssistantWorkspace 三栏工作台', () => {
     expect(screen.getByText('新问题')).toBeInTheDocument()
     expect(screen.queryByText('历史消息')).not.toBeInTheDocument()
   })
+
+  // ==== 评审 P2 回归：request 级失败的消息是 local-* 占位，重试作普通重发（不带 retryOfMessageId） ====
+  test('request 级失败（local 占位）点重新回答作普通重发，不携带 retryOfMessageId', async () => {
+    const c1Messages = [message({ id: 'u1', conversationId: 'c1', seq: 1, content: '早' })]
+    let chatCalls = 0
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1)] })
+      if (href.includes('/messages')) return json({ items: c1Messages })
+      if (href === '/api/assistant/chat') {
+        chatCalls += 1
+        // 第一次请求级失败（onStarted 前 reject）；重试走正常 SSE
+        if (chatCalls === 1) throw new Error('network unavailable')
+        return sseResponse([
+          'event: started\ndata: {"conversationId":"c1","userMessageId":"um2","assistantMessageId":"am2","requestId":"r2"}\n\n',
+          'event: delta\ndata: {"text":"重试成功"}\n\n',
+          'event: complete\ndata: {"messageId":"am2","route":"pet","citations":[],"warnings":[]}\n\n',
+        ])
+      }
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace initialConversationId="c1" />)
+    await screen.findByText('早')
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '新问题' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    // request 级失败：占位 assistant 被标 failed（id 仍是 local-*）
+    await screen.findByText('回答生成中断，请重试。')
+    fireEvent.click(screen.getByRole('button', { name: '重新回答' }))
+    expect(await screen.findByText('重试成功')).toBeInTheDocument()
+    await waitFor(() => expect(chatCalls).toBe(2))
+    const chatBodies = fetchMock.mock.calls
+      .filter(([u]: any) => String(u) === '/api/assistant/chat')
+      .map((call: any) => JSON.parse(call[1].body))
+    expect(chatBodies[0].question).toBe('新问题')
+    expect(chatBodies[0].retryOfMessageId).toBeUndefined()
+    // 重试 body：question 为前一条 user 消息；因原失败消息是 local 占位，不带 retryOfMessageId
+    expect(chatBodies[1].question).toBe('新问题')
+    expect(chatBodies[1].retryOfMessageId).toBeUndefined()
+  })
+
+  // ==== 评审 P3-b：归档生成中的当前会话先取消在途流 ====
+  test('归档生成中的当前会话会先调用 cancel 端点再清空', async () => {
+    const convList = [conversation('c1', '会话一', 1), conversation('c2', '会话二')]
+    const c1Messages = [message({ id: 'u1', conversationId: 'c1', seq: 1, content: '早' })]
+    const encoder = new TextEncoder()
+    const chunks = [
+      'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
+      'event: delta\ndata: {"text":"流式内容"}\n\n',
+    ]
+    let index = 0
+    // 读第二段后挂起：归档后释放，模拟服务端断流（已点停止，不应再报失败）
+    let releaseBreak!: () => void
+    const breakGate = new Promise<void>((resolve) => { releaseBreak = resolve })
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: convList })
+      if (href.includes('/messages')) return json({ items: c1Messages })
+      if (href === '/api/assistant/conversations/c1/archive') return json({})
+      if (href === '/api/assistant/chat') {
+        return {
+          ok: true, status: 200, statusText: 'OK',
+          body: {
+            getReader: () => ({
+              read: async () => {
+                if (index < chunks.length) return { done: false, value: encoder.encode(chunks[index++]) }
+                await breakGate
+                throw new Error('stream interrupted')
+              },
+            }),
+          },
+        } as unknown as Response
+      }
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace initialConversationId="c1" />)
+    await screen.findByText('早')
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '生成中' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    await screen.findByText('流式内容')
+
+    // 归档生成中的当前会话：先 cancel 在途流，再 POST archive，最后清空当前选择
+    fireEvent.click(screen.getByRole('button', { name: /归档 会话一/ }))
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(
+      expect.stringContaining('/api/assistant/generations/'),
+      expect.objectContaining({ method: 'POST' }),
+    ))
+    await waitFor(() => expect(screen.queryByText('会话一')).not.toBeInTheDocument())
+    expect(screen.queryByText('流式内容')).not.toBeInTheDocument()
+
+    // 释放断流：stoppingRef 已置位，不应把消息标 failed
+    await act(async () => { releaseBreak() })
+    expect(screen.queryByText('回答生成中断，请重试。')).not.toBeInTheDocument()
+  })
 })
