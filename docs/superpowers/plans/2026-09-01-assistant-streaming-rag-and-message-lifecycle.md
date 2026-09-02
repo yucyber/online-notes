@@ -194,7 +194,8 @@ export class AssistantMessage {
 
 export const AssistantMessageSchema = SchemaFactory.createForClass(AssistantMessage)
 AssistantMessageSchema.index({ conversationId: 1, seq: 1 }, { name: 'idx_assistant_msg_conv_seq', unique: true })
-AssistantMessageSchema.index({ userId: 1, requestId: 1 }, { name: 'idx_assistant_msg_user_request', unique: true, partialFilterExpression: { requestId: { $type: 'string' } } })
+// 幂等锚点 = user 消息：同一 (userId, requestId) 只允许一条用户提问（防止重复生成）。assistant 消息的 requestId 仅用于关联/重放定位，不参与唯一。
+AssistantMessageSchema.index({ userId: 1, requestId: 1 }, { name: 'idx_assistant_msg_user_request', unique: true, partialFilterExpression: { requestId: { $type: 'string' }, role: 'user' } })
 ```
 
 - [ ] **Step 4: 运行确认通过**
