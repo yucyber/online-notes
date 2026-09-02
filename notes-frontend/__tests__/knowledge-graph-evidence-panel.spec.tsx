@@ -84,9 +84,9 @@ test('选择 node 后懒加载证据，展开后由 ChunkEvidenceViewer 实时�
 
   fireEvent.click(screen.getByRole('button', { name: '展开更多' }))
 
-  // 行内挂载的 viewer 实时拉取证据（含权限校验），正文出现即视为拉取成功
+  // 行内挂载的 viewer 实时拉取证据（含权限校验），请求带 heading query 锁定重定位
   expect(await screen.findByText('完整 Chunk 内容')).toBeInTheDocument()
-  expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/notes/note-1/chunks/chunk-1/evidence'), expect.anything())
+  expect(global.fetch).toHaveBeenCalledWith('/api/notes/note-1/chunks/chunk-1/evidence?before=1&after=1&heading=Root%3EChild', expect.anything())
 })
 
 test('选择 edge 后显示关系详情并加载 edge evidence', async () => {

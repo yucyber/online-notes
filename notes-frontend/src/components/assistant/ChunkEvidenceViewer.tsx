@@ -16,6 +16,7 @@ export default function ChunkEvidenceViewer({ noteId, chunkId, heading, onLocate
 
   useEffect(() => {
     let active = true;
+    // 竞态防护：点击邻居切换 target 后旧请求晚到、或组件已卸载时，响应不得覆盖当前 evidence（active 挡卸载，requestSeq 挡切换串号）。
     const requestSeq = ++requestSeqRef.current;
     setLoading(true);
     setError('');
