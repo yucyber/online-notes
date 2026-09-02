@@ -77,16 +77,25 @@ export class MemoryService {
     await this.memoryModel.deleteOne({ _id: memory._id, userId: toObjectId(userId) }).exec()
   }
 
-  // 记忆级解决：supersede 标记旧节点失效并给新节点补 supersedes 关系；
+  // 记忆级解决：supersede 只对仍 confirmed 的目标生效并给新节点补 supersedes 关系；
   // keep_both 校验（可选先落新范围）后放行；reject_memory 删除记忆并把来源候选退回 pending。
   private async resolveMemory(userId: string, memory: any, action: MemoryResolveAction) {
     if (action.type === 'supersede') {
       const target = await this.memoryModel.findOneAndUpdate(
-        { _id: toObjectId(action.targetMemoryId), userId: toObjectId(userId) },
+        { _id: toObjectId(action.targetMemoryId), userId: toObjectId(userId), status: 'confirmed' },
         { $set: { status: 'superseded', validTo: new Date(), supersededById: memory._id } },
         { new: true },
       ).lean().exec() as any
-      if (!target) throw new NotFoundException('target memory not found')
+      if (!target) {
+        // 目标不存在或已 superseded：若正是被本节点替代（同一 supersede 重放，如双击/候选幂等回放），
+        // 视为已解决直接返回，绝不二次写入 validTo 改写演进时间；否则目标缺失报 not found。
+        const replayed = await this.memoryModel.findOne({
+          _id: toObjectId(action.targetMemoryId), userId: toObjectId(userId),
+          status: 'superseded', supersededById: memory._id,
+        }).lean().exec() as any
+        if (!replayed) throw new NotFoundException('target memory not found')
+        return { status: 'superseded' }
+      }
       await this.memoryModel.updateOne(
         { _id: memory._id },
         { $set: { relation: { type: 'supersedes', targetMemoryId: target._id } } },
@@ -104,7 +113,14 @@ export class MemoryService {
       return { status: 'kept' }
     }
 
-    // reject_memory：删除新确认的记忆，对应候选退回 pending 供修改后重提。
+    // reject_memory：删除新确认的记忆，对应候选退回 pending 供修改后重提；
+    // 若该记忆 supersedes 了旧节点，与 delete 语义对称地恢复旧节点为 confirmed（撤销替代）。
+    if (memory.relation?.type === 'supersedes' && memory.relation.targetMemoryId) {
+      await this.memoryModel.updateOne(
+        { _id: memory.relation.targetMemoryId, userId: toObjectId(userId) },
+        { $unset: { supersededById: 1, validTo: 1 }, $set: { status: 'confirmed' } },
+      ).exec()
+    }
     if (memory.candidateId) {
       await this.candidateModel?.updateOne(
         { _id: memory.candidateId, userId: toObjectId(userId) },
@@ -149,13 +165,12 @@ export class MemoryService {
       const conflict = await this.findScopeConflict(userId, { subject: candidate.subject, scope: nextScope })
       if (conflict) throw new BadRequestException('keep_both 需先调整新结论的 scope，仍与既有认知同范围重叠')
       await this.candidateModel!.updateOne({ _id: candidate._id }, { $set: { scope: nextScope } }).exec()
-      const created = await this.memoryModel.create({
+      await this.memoryModel.create({
         userId: toObjectId(userId), conversationId: candidate.conversationId, kind: candidate.kind,
         subject: candidate.subject, statement: candidate.statement, scope: nextScope,
         status: 'confirmed', confidence: Number(candidate.confidence), evidence: candidate.evidence || [],
         evidenceStatus: 'ok', validFrom: new Date(), confirmedAt: new Date(), candidateId: candidate._id,
-      }) as any
-      void created
+      })
       return { status: 'kept' }
     }
 

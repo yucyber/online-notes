@@ -353,6 +353,81 @@ test('getTimeline 按 validFrom 升序返回该 subject+scope 的演进过程', 
   assert.deepEqual(kb.map((item) => item.id), ['m4'])
 })
 
+// ---- R1-1 幂等：同一候选/节点二次 supersede 不重复建行、不改写旧节点时间 ----
+
+test('同一挂起候选二次 supersede 幂等：转记忆级语义、不重复建行且不改写旧节点时间', async () => {
+  const memories = makeModel([memoryDoc({ _id: 'old', subject: '布局', statement: '用大侧栏' })])
+  const candidates = makeModel([candidateDoc({ _id: 'c1', subject: '布局', statement: '改用新方案' })])
+  const service = newService(memories, candidates)
+  const first = await service.resolveConflict('u1', 'c1', { type: 'supersede', targetMemoryId: 'old' })
+  assert.deepEqual(first, { status: 'superseded' })
+  const created = memories.docs.find((d: any) => d.candidateId === 'c1')
+  assert.ok(created)
+  const validToFirst = memories.docs.find((d: any) => d._id === 'old').validTo
+  const rows = memories.docs.length
+  // 二次 resolve：候选已物化 → 走记忆级语义，命中已被本节点 supersede 的目标按幂等重放返回，
+  // 不重复建行、不再写入 validTo（引用不变即未被二次改写）。
+  const second = await service.resolveConflict('u1', 'c1', { type: 'supersede', targetMemoryId: 'old' })
+  assert.deepEqual(second, { status: 'superseded' })
+  assert.equal(memories.docs.length, rows, '不应重复物化建行')
+  assert.equal(memories.docs.filter((d: any) => d.candidateId === 'c1').length, 1)
+  const old = memories.docs.find((d: any) => d._id === 'old')
+  assert.equal(old.status, 'superseded')
+  assert.equal(old.supersededById, created._id)
+  assert.equal(old.validTo, validToFirst, '二次 supersede 不得改写 validTo')
+})
+
+test('同一 memory 节点对同一目标二次 supersede 幂等重放，不改写目标时间', async () => {
+  const model = makeModel([
+    memoryDoc({ _id: 'old', subject: '布局', statement: '用大侧栏' }),
+    memoryDoc({ _id: 'new', subject: '布局', statement: '保留浮层' }),
+  ])
+  const service = newService(model)
+  await service.resolveConflict('u1', 'new', { type: 'supersede', targetMemoryId: 'old' })
+  const validToFirst = model.docs.find((d: any) => d._id === 'old').validTo
+  const second = await service.resolveConflict('u1', 'new', { type: 'supersede', targetMemoryId: 'old' })
+  assert.deepEqual(second, { status: 'superseded' })
+  const old = model.docs.find((d: any) => d._id === 'old')
+  assert.equal(old.status, 'superseded')
+  assert.equal(old.supersededById, 'new')
+  assert.equal(old.validTo, validToFirst, '二次 supersede 不得改写 validTo')
+})
+
+test('supersede 目标已被其他节点替代时抛 not found 且不改写目标', async () => {
+  const model = makeModel([
+    memoryDoc({ _id: 'old', subject: '布局', status: 'superseded', supersededById: 'other', validTo: '2026-09-01T00:00:00.000Z' }),
+    memoryDoc({ _id: 'new', subject: '布局', statement: '保留浮层' }),
+  ])
+  const service = newService(model)
+  await assert.rejects(
+    () => service.resolveConflict('u1', 'new', { type: 'supersede', targetMemoryId: 'old' }),
+    (error: any) => error instanceof NotFoundException && /target memory not found/i.test(String(error.message)),
+  )
+  const old = model.docs.find((d: any) => d._id === 'old')
+  assert.equal(old.supersededById, 'other')
+  assert.equal(old.validTo, '2026-09-01T00:00:00.000Z')
+})
+
+// ---- R1-2 reject_memory 与 delete 对称：删除 supersedes 新节点时恢复旧节点 ----
+
+test('reject_memory 删除已替代旧节点的新记忆时恢复旧节点有效（与 delete 对称）', async () => {
+  const model = makeModel([
+    memoryDoc({ _id: 'old', subject: '布局', status: 'superseded', supersededById: 'new', validTo: '2026-09-01T00:00:00.000Z' }),
+    memoryDoc({ _id: 'new', subject: '布局', relation: { type: 'supersedes', targetMemoryId: 'old' }, candidateId: 'c1' }),
+  ])
+  const candidates = makeModel([candidateDoc({ _id: 'c1', subject: '布局' })])
+  const service = newService(model, candidates)
+  const result = await service.resolveConflict('u1', 'new', { type: 'reject_memory' })
+  assert.deepEqual(result, { status: 'rejected' })
+  assert.equal(model.docs.length, 1)
+  const old = model.docs[0]
+  assert.equal(old._id, 'old')
+  assert.equal(old.status, 'confirmed')
+  assert.equal(old.supersededById, undefined)
+  assert.equal(old.validTo, undefined)
+  assert.equal(candidates.docs[0].status, 'pending')
+})
+
 // ---- controller 端点：转发 userId/参数到 MemoryService ----
 
 function controllerWith(service: any) {
