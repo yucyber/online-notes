@@ -2,6 +2,8 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
+> **执行顺序决策（2026-09-02 用户确认，计划 2 Task 8 合并）**：计划 2（`2026-09-01-assistant-server-multi-conversation.md`）的 Task 8「前端会话管理 UI（重命名/归档/删除/搜索）」原延后至计划 3 组件就绪后执行。pre-flight 发现其规格与本计划 Task 3/5/6 多处重叠（assistant-api.ts 同文件、ConversationList 同组件、AssistantWorkspace 同组件、重试按钮与 Task 6 的 onRetry 重叠）。**用户裁决：Task 8 规格拆分并入本计划各 Task，组件一次建成带完整功能**：管理 API 并入 Task 3（assistant-api.ts 一次含 fetch + 5 管理函数）、管理交互（每项操作菜单/搜索框）并入 Task 5（ConversationList 一次建成带管理）、搜索接线与重试并入 Task 6（AssistantWorkspace 一次集成）。Task 8 不再作为独立执行轮；本计划完成后计划 2 即整体完结（Task 8 勾选视为随合并完成）。
+
 **Goal:** 新增 `/dashboard/assistant` 全屏助手工作台（三栏：会话列表 / 对话 / 上下文面板），把 RAG 引用改为在工作台右侧阅读完整 Chunk 与相邻上下文，点击"定位到原文"才进入笔记编辑器；进入笔记再返回时，通过 sessionStorage 导航快照恢复原会话、消息锚点、引用与生成状态。
 
 **Architecture:** 后端在 `assistant` 模块补一个会话列表端点，在 `notes` 模块补一个"Chunk 证据 + 相邻上下文"端点（复用 NoteAccess ACL，支持按 headingPath 重定位失效 Chunk）。前端新增 `AssistantWorkspace` 页面与一组子组件，抽出与知识图谱共用的 `ChunkEvidenceViewer`；浮层 `ChatWindow` 只增加"展开"入口，消息层继续复用阶段一的 `streamAssistantReply`/`fetchConversationMessages`。导航快照存 sessionStorage，Dashboard layout 只维护轻量 UI 状态。
@@ -33,18 +35,18 @@
 前端：
 
 - Create `notes-frontend/src/app/dashboard/assistant/page.tsx`（客户端页面壳，解析 `?conversation=` 与导航快照）。
-- Create `notes-frontend/src/components/assistant/AssistantWorkspace.tsx`（三栏布局 + 抽屉/移动端切换）。
-- Create `notes-frontend/src/components/assistant/ConversationList.tsx`。
+- Create `notes-frontend/src/components/assistant/AssistantWorkspace.tsx`（三栏布局 + 抽屉/移动端切换；含搜索框、重试、管理接线——合并计划 2 Task 8）。
+- Create `notes-frontend/src/components/assistant/ConversationList.tsx`（含管理操作菜单——合并计划 2 Task 8）。
 - Create `notes-frontend/src/components/assistant/AssistantMessages.tsx`（消息流 + 流式订阅，从 ChatWindow 抽出）。
 - Create `notes-frontend/src/components/assistant/AssistantCompose.tsx`（共享输入区，浮层与全屏复用）。
 - Create `notes-frontend/src/components/assistant/AssistantContextPanel.tsx`（右栏：引用 Chunk / 会话信息）。
 - Create `notes-frontend/src/components/assistant/ChunkEvidenceViewer.tsx`（公共证据组件）。
 - Create `notes-frontend/src/components/assistant/assistant-navigation.ts`（sessionStorage 快照）。
-- Create `notes-frontend/src/lib/assistant-api.ts`（会话列表、Chunk 证据请求）。
+- Create `notes-frontend/src/lib/assistant-api.ts`（会话列表、Chunk 证据请求 + 管理 API——合并计划 2 Task 8）。
 - Create `notes-frontend/src/styles/assistant-workspace.css`。
 - Modify `notes-frontend/src/components/ai/ChatWindow.tsx`（"展开"入口跳转 `/dashboard/assistant?conversation=<id>`）。
 - Modify `notes-frontend/src/components/knowledge-bases/KnowledgeGraphEvidenceList.tsx`（改用公共 `ChunkEvidenceViewer`）。
-- Test: `notes-frontend/__tests__/assistant-navigation.spec.ts`、`chunk-evidence-viewer.spec.tsx`、`conversation-list.spec.tsx`、`assistant-workspace.spec.tsx`。
+- Test: `notes-frontend/__tests__/assistant-navigation.spec.ts`、`assistant-api.spec.ts`（管理 API，合并自计划 2 Task 8）、`chunk-evidence-viewer.spec.tsx`、`conversation-list.spec.tsx`、`assistant-workspace.spec.tsx`。
 
 ---
 
@@ -327,7 +329,7 @@ git commit -m "feat(notes): Chunk 证据与相邻上下文端点"
 **Files:**
 - Create: `notes-frontend/src/lib/assistant-api.ts`
 - Create: `notes-frontend/src/components/assistant/assistant-navigation.ts`
-- Test: `notes-frontend/__tests__/assistant-navigation.spec.ts`
+- Test: `notes-frontend/__tests__/assistant-navigation.spec.ts`、`notes-frontend/__tests__/assistant-api.spec.ts`（后者合并自计划 2 Task 8 管理 API 测试）
 
 **Interfaces:**
 - Produces（`assistant-api.ts`）：
@@ -336,6 +338,15 @@ git commit -m "feat(notes): Chunk 证据与相邻上下文端点"
   - `export type ChunkEvidence = { noteId: string; noteTitle: string; chunkId: string; headingPath: string[]; content: string; noteUpdatedAt: string; relocated: boolean; neighbors: { before: ChunkNeighbor[]; after: ChunkNeighbor[] } }`
   - `export type ChunkNeighbor = { chunkId: string; headingPath: string[]; excerpt: string }`
   - `export async function fetchChunkEvidence(noteId: string, chunkId: string, opts?: { before?: number; after?: number; heading?: string[] }): Promise<ChunkEvidence>`
+
+> **【合并自计划 2 Task 8（2026-09-02 用户裁决）】同一文件一次建成以下管理 API**（不再独立轮）：
+> - `renameConversation(id, title): Promise<void>`（PATCH `/api/assistant/conversations/:id`，body `{ title }`）
+> - `setConversationStatus(id, action: 'archive' | 'unarchive' | 'delete'): Promise<void>`（POST `/api/assistant/conversations/:id/:action`）
+> - `searchAssistant(query): Promise<AssistantSearchResult>`（GET `/api/assistant/search?q=`，解包 `data`）
+> - `export type AssistantSearchResult = { conversations: Array<{ id: string; title: string; updatedAt: string }>; messages: Array<{ conversationId: string; messageId: string; seq: number; role: string; snippet: string; updatedAt: string }> }`
+> - `branchConversation(id, fromSeq): Promise<{ id: string }>`（POST `/api/assistant/conversations/:id/branch`，body `{ fromSeq }`）
+> - `exportConversation(id): Promise<void>`（GET `/api/assistant/conversations/:id/export` → blob → `URL.createObjectURL` + `anchor.download = assistant-<id>.jsonl`——代理不透传 Content-Disposition，故用 JS anchor 自设文件名）
+> - 错误处理统一：`if (!response.ok) throw new Error('中文错误')`；解包 `payload?.data ?? payload`。
 - Produces（`assistant-navigation.ts`）：
   - `export type AssistantNavigationSnapshot = { conversationId: string; messageId?: string; citationId?: string; contextPanelTab: 'citations' | 'info'; expandedChunkIds: string[]; scrollAnchorMessageId?: string; savedAt: string }`
   - `export function saveAssistantNavigation(snapshot: AssistantNavigationSnapshot): void`
@@ -372,10 +383,55 @@ test('clear 清除快照', () => {
 })
 ```
 
-- [ ] **Step 2: 运行确认失败**
+**Step 1b（合并自计划 2 Task 8）：管理 API 失败测试**
 
-Run: `npm exec jest -- --runInBand --coverage=false __tests__/assistant-navigation.spec.ts`
-Expected: FAIL（模块不存在）
+```ts
+// notes-frontend/__tests__/assistant-api.spec.ts
+import { renameConversation, setConversationStatus, searchAssistant, branchConversation, exportConversation } from '@/lib/assistant-api'
+
+test('renameConversation 发送 PATCH', async () => {
+  global.fetch = jest.fn(async () => new Response('{}', { status: 200 })) as any
+  await renameConversation('c1', '新标题')
+  expect(fetch).toHaveBeenCalledWith('/api/assistant/conversations/c1', expect.objectContaining({ method: 'PATCH' }))
+})
+
+test('setConversationStatus 发送对应动作', async () => {
+  global.fetch = jest.fn(async () => new Response('{}', { status: 200 })) as any
+  await setConversationStatus('c1', 'delete')
+  expect(fetch).toHaveBeenCalledWith('/api/assistant/conversations/c1/delete', expect.objectContaining({ method: 'POST' }))
+})
+
+test('searchAssistant 解包 data', async () => {
+  global.fetch = jest.fn(async () => new Response(JSON.stringify({ data: { conversations: [{ id: 'c1', title: 'P3', updatedAt: '' }], messages: [] } }), { status: 200 })) as any
+  const result = await searchAssistant('P3')
+  expect(result.conversations[0].id).toBe('c1')
+})
+
+test('branchConversation 发送 POST 并解包', async () => {
+  global.fetch = jest.fn(async () => new Response(JSON.stringify({ data: { id: 'b1' } }), { status: 200 })) as any
+  const result = await branchConversation('c1', 3)
+  expect(fetch).toHaveBeenCalledWith('/api/assistant/conversations/c1/branch', expect.objectContaining({ method: 'POST' }))
+  expect(result.id).toBe('b1')
+})
+
+test('exportConversation 触发带文件名下载', async () => {
+  const create = jest.fn(() => ({ href: '', click: jest.fn() }))
+  const revoke = jest.fn()
+  URL.createObjectURL = jest.fn(() => 'blob:url')
+  URL.revokeObjectURL = revoke
+  // jsdom 无 document.createElement 拦截时用 spy
+  const anchorSpy = jest.spyOn(document, 'createElement').mockReturnValueOnce({ href: '', download: '', click: jest.fn() } as any)
+  global.fetch = jest.fn(async () => new Response(new Blob(['{}']), { status: 200 })) as any
+  await exportConversation('c1')
+  expect(anchorSpy.mock.results[0].value.download).toBe('assistant-c1.jsonl')
+  anchorSpy.mockRestore()
+})
+```
+
+- [ ] **Step 2b（合并）：运行确认管理 API 失败**
+
+Run: `npm exec jest -- --runInBand --coverage=false __tests__/assistant-api.spec.ts`
+Expected: FAIL（模块不存在或函数不存在）
 
 - [ ] **Step 3: 最小实现**
 
@@ -411,6 +467,54 @@ export async function fetchChunkEvidence(noteId: string, chunkId: string, opts?:
   if (!response.ok) throw new Error('证据加载失败');
   const payload = await response.json();
   return (payload?.data && typeof payload.data === 'object') ? payload.data : payload;
+}
+
+// ===== 管理 API（合并自计划 2 Task 8，2026-09-02 用户裁决：一次建成）=====
+
+export type AssistantSearchResult = {
+  conversations: Array<{ id: string; title: string; updatedAt: string }>;
+  messages: Array<{ conversationId: string; messageId: string; seq: number; role: string; snippet: string; updatedAt: string }>;
+};
+
+export async function renameConversation(id: string, title: string): Promise<void> {
+  const response = await fetch(`/api/assistant/conversations/${encodeURIComponent(id)}`, {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ title }),
+  });
+  if (!response.ok) throw new Error('重命名失败');
+}
+
+export async function setConversationStatus(id: string, action: 'archive' | 'unarchive' | 'delete'): Promise<void> {
+  const response = await fetch(`/api/assistant/conversations/${encodeURIComponent(id)}/${action}`, { method: 'POST' });
+  if (!response.ok) throw new Error('操作失败');
+}
+
+export async function searchAssistant(query: string): Promise<AssistantSearchResult> {
+  const response = await fetch(`/api/assistant/search?q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('搜索失败');
+  const payload = await response.json();
+  const data = payload?.data && typeof payload.data === 'object' ? payload.data : payload;
+  return { conversations: Array.isArray(data?.conversations) ? data.conversations : [], messages: Array.isArray(data?.messages) ? data.messages : [] };
+}
+
+export async function branchConversation(id: string, fromSeq: number): Promise<{ id: string }> {
+  const response = await fetch(`/api/assistant/conversations/${encodeURIComponent(id)}/branch`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fromSeq }),
+  });
+  if (!response.ok) throw new Error('分支失败');
+  const payload = await response.json();
+  return (payload?.data && typeof payload.data === 'object') ? payload.data : payload;
+}
+
+export async function exportConversation(id: string): Promise<void> {
+  const response = await fetch(`/api/assistant/conversations/${encodeURIComponent(id)}/export`, { cache: 'no-store' });
+  if (!response.ok) throw new Error('导出失败');
+  const blob = await response.blob();
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = `assistant-${id}.jsonl`; // 代理不透传 Content-Disposition，JS anchor 自设文件名
+  anchor.click();
+  URL.revokeObjectURL(url);
 }
 ```
 
@@ -469,14 +573,14 @@ function read(): AssistantNavigationSnapshot | null {
 
 - [ ] **Step 4: 运行确认通过**
 
-Run: `npm exec jest -- --runInBand --coverage=false __tests__/assistant-navigation.spec.ts`
+Run: `npm exec jest -- --runInBand --coverage=false __tests__/assistant-navigation.spec.ts __tests__/assistant-api.spec.ts; npm run type-check`
 Expected: PASS
 
 - [ ] **Step 5: 提交**
 
 ```bash
-git add notes-frontend/src/lib/assistant-api.ts notes-frontend/src/components/assistant/assistant-navigation.ts notes-frontend/__tests__/assistant-navigation.spec.ts
-git commit -m "feat(assistant): 前端助手 API 与导航快照"
+git add notes-frontend/src/lib/assistant-api.ts notes-frontend/src/components/assistant/assistant-navigation.ts notes-frontend/__tests__/assistant-navigation.spec.ts notes-frontend/__tests__/assistant-api.spec.ts
+git commit -m "feat(assistant): 前端助手 API（会话管理）、导航快照与证据请求"
 ```
 
 ---
@@ -636,23 +740,27 @@ git commit -m "feat(assistant): 公共 Chunk 证据阅读器"
 
 ---
 
-### Task 5: 共享输入区 AssistantCompose 与会话列表
+### Task 5: 共享输入区 AssistantCompose 与会话列表（含管理交互）
+
+> **【合并自计划 2 Task 8（2026-09-02 用户裁决）】**ConversationList 一次建成带管理交互（重命名/归档/删除操作菜单），不再做只读版二次修改；搜索框接线在 Task 6（AssistantWorkspace 顶栏），本 Task 只提供每项操作菜单与回调 props。
 
 **Files:**
 - Create: `notes-frontend/src/components/assistant/AssistantCompose.tsx`
-- Create: `notes-frontend/src/components/assistant/ConversationList.tsx`
+- Create: `notes-frontend/src/components/assistant/ConversationList.tsx`（含管理操作菜单）
 - Modify: `notes-frontend/src/components/ai/ChatWindow.tsx`（输入区改用 `AssistantCompose`）
-- Test: `notes-frontend/__tests__/conversation-list.spec.tsx`
+- Test: `notes-frontend/__tests__/conversation-list.spec.tsx`（含管理操作测试）
 
 **Interfaces:**
 - Produces `AssistantCompose({ value, onChange, onSend, onStop, generating, forceNotes, onToggleForceNotes, disabled }: {...})`：Enter 发送 / Shift+Enter 换行、"搜索笔记"开关、生成中显示"停止"按钮、`textarea` placeholder "问问小助手…"。
-- Produces `ConversationList({ items, activeId, onSelect, onNew }: { items: ConversationListItem[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void })`：按今天 / 最近 7 天 / 更早分组渲染，active 高亮，顶部"新建会话"按钮；标题为空显示"新对话"。
+- Produces `ConversationList({ items, activeId, onSelect, onNew, onRename, onArchive, onDelete }: { items: ConversationListItem[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void; onRename: (id: string, title: string) => void; onArchive: (id: string) => void; onDelete: (id: string) => void })`：按今天 / 最近 7 天 / 更早分组渲染，active 高亮，顶部"新建会话"按钮；标题为空显示"新对话"。
+- 每项会话行右侧操作菜单（按钮组）：重命名（`aria-label` 如 `重命名 会话标题`，弹 prompt/inline 输入改名）、归档（`aria-label` 如 `归档 会话标题`）、删除（`aria-label` 如 `删除 会话标题`）。管理动作触发回调不自动刷新（由父级 AssistantWorkspace 接线刷新列表）。
+- `AssistantCompose` 增加可选 `onRetryLabel?` 不需要——重试按钮在 AssistantMessages（Task 6）渲染，Compose 只管输入与发送/停止。
 
 - [ ] **Step 1: 写失败测试**
 
 ```tsx
 // notes-frontend/__tests__/conversation-list.spec.tsx
-import { render, screen } from '@testing-library/react'
+import { render, screen, fireEvent } from '@testing-library/react'
 import '@testing-library/jest-dom'
 import { ConversationList } from '@/components/assistant/ConversationList'
 
@@ -682,6 +790,20 @@ test('点击会话与新建按钮触发回调', () => {
   screen.getByRole('button', { name: '新建会话' }).click()
   expect(onNew).toHaveBeenCalled()
 })
+
+// 合并自计划 2 Task 8：管理操作菜单
+test('操作菜单触发重命名/归档/删除回调', () => {
+  const onRename = jest.fn()
+  const onArchive = jest.fn()
+  const onDelete = jest.fn()
+  render(<ConversationList items={items} activeId={undefined} onSelect={() => undefined} onNew={() => undefined} onRename={onRename} onArchive={onArchive} onDelete={onDelete} />)
+  fireEvent.click(screen.getByRole('button', { name: /重命名 今天会话/ }))
+  expect(onRename).toHaveBeenCalledWith('c-today', expect.any(String))
+  fireEvent.click(screen.getByRole('button', { name: /归档 今天会话/ }))
+  expect(onArchive).toHaveBeenCalledWith('c-today')
+  fireEvent.click(screen.getByRole('button', { name: /删除 今天会话/ }))
+  expect(onDelete).toHaveBeenCalledWith('c-today')
+})
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -698,7 +820,16 @@ Expected: FAIL（模块不存在）
 import { Plus } from 'lucide-react';
 import type { ConversationListItem } from '@/lib/assistant-api';
 
-type Props = { items: ConversationListItem[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void };
+type Props = {
+  items: ConversationListItem[];
+  activeId?: string;
+  onSelect: (id: string) => void;
+  onNew: () => void;
+  // 合并自计划 2 Task 8：管理操作（重命名弹 prompt；归档/删除直接触发，父级刷新）
+  onRename?: (id: string, title: string) => void;
+  onArchive?: (id: string) => void;
+  onDelete?: (id: string) => void;
+};
 
 function groupLabel(updatedAt: string, now: number): '今天' | '最近 7 天' | '更早' {
   const diff = now - Date.parse(updatedAt);
@@ -707,7 +838,13 @@ function groupLabel(updatedAt: string, now: number): '今天' | '最近 7 天' |
   return '更早';
 }
 
-export function ConversationList({ items, activeId, onSelect, onNew }: Props) {
+function handleRename(item: ConversationListItem, onRename?: (id: string, title: string) => void) {
+  if (!onRename) return;
+  const title = window.prompt('重命名会话', item.title || '')?.trim();
+  if (title) onRename(item.id, title);
+}
+
+export function ConversationList({ items, activeId, onSelect, onNew, onRename, onArchive, onDelete }: Props) {
   const now = Date.now();
   const groups: Array<['今天' | '最近 7 天' | '更早', ConversationListItem[]]> = [['今天', []], ['最近 7 天', []], ['更早', []]];
   for (const item of items) groups.find(([label]) => label === groupLabel(item.updatedAt, now))![1].push(item);
@@ -719,15 +856,24 @@ export function ConversationList({ items, activeId, onSelect, onNew }: Props) {
         <section key={label} className="assistant-conversation-group">
           <h4>{label}</h4>
           {group.map((item) => (
-            <button
-              key={item.id}
-              type="button"
-              aria-current={item.id === activeId ? 'true' : undefined}
-              onClick={() => onSelect(item.id)}
-            >
-              <span>{item.title || '新对话'}</span>
-              <small>{item.messageCount} 条</small>
-            </button>
+            <div key={item.id} className="assistant-conversation-row" data-active={item.id === activeId || undefined}>
+              <button
+                type="button"
+                className="assistant-conversation-select"
+                aria-current={item.id === activeId ? 'true' : undefined}
+                onClick={() => onSelect(item.id)}
+              >
+                <span>{item.title || '新对话'}</span>
+                <small>{item.messageCount} 条</small>
+              </button>
+              {(onRename || onArchive || onDelete) && (
+                <span className="assistant-conversation-actions">
+                  {onRename && <button type="button" aria-label={`重命名 ${item.title || '新对话'}`} onClick={() => handleRename(item, onRename)}>✎</button>}
+                  {onArchive && <button type="button" aria-label={`归档 ${item.title || '新对话'}`} onClick={() => onArchive(item.id)}>🗂</button>}
+                  {onDelete && <button type="button" aria-label={`删除 ${item.title || '新对话'}`} onClick={() => onDelete(item.id)}>🗑</button>}
+                </span>
+              )}
+            </div>
           ))}
         </section>
       ))}
@@ -788,12 +934,14 @@ Expected: PASS
 
 ```bash
 git add notes-frontend/src/components/assistant/AssistantCompose.tsx notes-frontend/src/components/assistant/ConversationList.tsx notes-frontend/src/components/ai/ChatWindow.tsx notes-frontend/__tests__/conversation-list.spec.tsx
-git commit -m "feat(assistant): 共享输入区与会话列表组件"
+git commit -m "feat(assistant): 共享输入区与会话列表（含管理操作菜单）"
 ```
 
 ---
 
-### Task 6: 全屏工作台页面与三栏布局
+### Task 6: 全屏工作台页面与三栏布局（含搜索接线与重试）
+
+> **【合并自计划 2 Task 8（2026-09-02 用户裁决）】**本 Task 一次集成：顶栏搜索框（防抖 300ms 调 `searchAssistant`，命中点击跳转对应会话并定位消息）、会话列表管理回调接线（重命名/归档/删除后刷新或移除）、失败回答"重新回答"按钮（`AssistantMessages` 的 `onRetry` 以 `retryOfMessageId` 重发）。
 
 **Files:**
 - Create: `notes-frontend/src/app/dashboard/assistant/page.tsx`
@@ -805,7 +953,7 @@ git commit -m "feat(assistant): 共享输入区与会话列表组件"
 - Test: `notes-frontend/__tests__/assistant-workspace.spec.tsx`
 
 **Interfaces:**
-- Consumes: `fetchConversations`、`fetchConversationMessages`、`streamAssistantReply`、`AssistantCompose`、`ConversationList`、`ChunkEvidenceViewer`、`assistant-navigation.ts`。
+- Consumes: `fetchConversations`、`fetchConversationMessages`、`streamAssistantReply`、`AssistantCompose`、`ConversationList`、`ChunkEvidenceViewer`、`assistant-navigation.ts`、`searchAssistant`、`renameConversation`、`setConversationStatus`、`exportConversation`（后三者合并自计划 2 Task 8，定义于 Task 3 的 assistant-api.ts）。
 - Produces:
   - `AssistantWorkspace({ initialConversationId? }: { initialConversationId?: string })`：
     - 三栏：左 `ConversationList`（260px）；中消息流 + `AssistantCompose`；右 `AssistantContextPanel`（360–440px）。
@@ -814,7 +962,10 @@ git commit -m "feat(assistant): 共享输入区与会话列表组件"
     - 发送逻辑复用阶段一契约：`streamAssistantReply` + `(userId, requestId)` 幂等；`onStarted` 写 `assistant_current_conversation_id`（localStorage）供浮层共享。
     - 引用点击：`AssistantContextPanel` 内挂载 `ChunkEvidenceViewer`；"定位到原文"前 `saveAssistantNavigation({ conversationId, messageId, citationId, contextPanelTab, expandedChunkIds, scrollAnchorMessageId, savedAt })` 再跳转。
     - 返回时从 URL/快照恢复并滚动到 `scrollAnchorMessageId`。
+    - **（合并 Task 8）搜索**：顶栏搜索框输入防抖 300ms 调 `searchAssistant(query)`；结果下拉/列表展示（标题命中与消息命中分开，消息命中标注会话标题 + snippet + seq）；点击跳转 `?conversation=<id>` 并携带消息 seq 锚点（加载后滚动定位到该消息）；清空输入收起结果。
+    - **（合并 Task 8）会话管理接线**：`ConversationList` 的 `onRename` → `renameConversation(id, title)` 成功后刷新列表；`onArchive` → `setConversationStatus(id, 'archive')` 后从列表移除；`onDelete` → `setConversationStatus(id, 'delete')` 后移除（并若为当前会话则清空当前选择）；顶栏导出按钮（当前会话）→ `exportConversation(id)`。
   - `AssistantMessages({ messages, generating, onRetry }: ...)`：渲染消息流（来源标签、ReactMarkdown、citations/warnings、failed 重试按钮）。
+    - **（合并 Task 8）重试**：failed 消息显示"重新回答"按钮（`aria-label="重新回答"`）→ `onRetry(messageId)` 以该消息为 `retryOfMessageId` 走 `streamAssistantReply` 重发；原失败消息保留。
   - `AssistantContextPanel({ tab, onTabChange, citation?, evidenceTarget? }: ...)`：`citations` 标签展示当前回答引用列表（点击某引用在面板内加载 `ChunkEvidenceViewer`）；`info` 标签展示会话信息占位（阶段三补全）。
 - `ChatWindow`"展开"按钮：`<Link href={`/dashboard/assistant${conversationId ? `?conversation=${conversationId}` : ''}`}>`（用 `useRouter().push` 亦可），保留原 `Maximize2` 图标与 `aria-label="展开全屏工作台"`。
 
@@ -974,6 +1125,14 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
 }
 ```
 
+> **（合并自计划 2 Task 8，2026-09-02 用户裁决）实现者在上述骨架上补齐以下接线与状态，测试同步补到 `assistant-workspace.spec.tsx`：**
+> - 新增状态：`searchQuery`、`searchResults: AssistantSearchResult | null`、`searchOpen`。
+> - 搜索：顶栏 `<input aria-label="搜索会话与消息" value={searchQuery} onChange={...}>`，防抖 300ms 调 `searchAssistant`（`useRef` 存 timer；空输入清结果收起）。结果区：标题命中（点击 → 设 activeId + 清输入）、消息命中（显示 `snippet` + 会话标题 + `seq`；点击 → 设 activeId + 记录 `pendingMessageSeq` → 消息加载后滚动定位）。
+> - 管理回调：`handleRename(id, title)` → `renameConversation` → 成功后 `fetchConversations().then(setConversations)`；`handleArchive(id)` → `setConversationStatus(id, 'archive')` → 列表过滤移除；`handleDelete(id)` → `setConversationStatus(id, 'delete')` → 移除，若为当前会话则 `setActiveId('')`；均 `catch` 忽略。传 `ConversationList` 的 `onRename/onArchive/onDelete`。
+> - 导出按钮（顶栏，当前会话存在时显示）：`onClick={() => exportConversation(activeId)}`。
+> - 重试：`handleRetry(messageId)` 找到对应 assistant 消息（取其前一条 user 消息内容或该消息内容作 question），`streamAssistantReply({ conversationId: activeId, requestId: 新 uuid, question, retryOfMessageId: messageId })`，乐观追加新 assistant 占位；`AssistantMessages` 的 failed 消息"重新回答"按钮 `aria-label="重新回答"` 触发 `onRetry(message.id)`，原失败消息保留。
+> - `AssistantWorkspace` 顶栏含搜索框 + 导出按钮；状态接线满足上述 Interfaces。
+
 ```tsx
 // notes-frontend/src/app/dashboard/assistant/page.tsx
 'use client';
@@ -999,13 +1158,13 @@ export default function AssistantPage() {
 - [ ] **Step 4: 运行确认通过**
 
 Run: `npm exec jest -- --runInBand --coverage=false __tests__/assistant-workspace.spec.tsx __tests__/ai-chat-window.spec.tsx; npm run type-check`
-Expected: PASS；TypeScript 通过
+Expected: PASS；TypeScript 通过（workspace 测试含搜索接线、管理回调、重试按钮用例）
 
 - [ ] **Step 5: 提交**
 
 ```bash
 git add notes-frontend/src/app/dashboard/assistant/page.tsx notes-frontend/src/components/assistant/AssistantWorkspace.tsx notes-frontend/src/components/assistant/AssistantMessages.tsx notes-frontend/src/components/assistant/AssistantContextPanel.tsx notes-frontend/src/styles/assistant-workspace.css notes-frontend/src/components/ai/ChatWindow.tsx notes-frontend/__tests__/assistant-workspace.spec.tsx
-git commit -m "feat(assistant): 全屏助手工作台三栏布局"
+git commit -m "feat(assistant): 全屏助手工作台三栏布局与搜索重试管理接线"
 ```
 
 ---
@@ -1048,6 +1207,7 @@ Expected: 工作区干净；阶段二提交均在 `master`。
 
 ## Self-Review 记录
 
-- 规格覆盖：`/dashboard/assistant` 路由（Task 6）、三栏布局与断点（Task 6 CSS）、会话列表新建/分组（Task 5/6）、引用 Chunk 阅读（Task 2/4）、相邻上下文（Task 2/4）、定位原文才进编辑器（Task 4/6/7）、导航快照与返回恢复（Task 3/6/7）、公共 `ChunkEvidenceViewer` 与知识图谱复用（Task 4）、失权不返回历史正文（Task 2/4）。会话重命名/归档/删除/搜索属阶段三，本阶段列表只读。
+- 规格覆盖：`/dashboard/assistant` 路由（Task 6）、三栏布局与断点（Task 6 CSS）、会话列表新建/分组/管理操作（Task 5/6）、搜索接线与重试（Task 6）、引用 Chunk 阅读（Task 2/4）、相邻上下文（Task 2/4）、定位原文才进编辑器（Task 4/6/7）、导航快照与返回恢复（Task 3/6/7）、公共 `ChunkEvidenceViewer` 与知识图谱复用（Task 4）、失权不返回历史正文（Task 2/4）。
+- **合并注记（2026-09-02）**：计划 2 Task 8（会话管理 UI：重命名/归档/删除/搜索 + 5 个管理 API 函数）按用户裁决拆分并入本计划——管理 API 并入 Task 3（assistant-api.ts）、管理操作菜单并入 Task 5（ConversationList）、搜索/重试/管理接线并入 Task 6（AssistantWorkspace）；Task 8 不再独立执行，本计划完成后计划 2 即整体完结。原"本阶段列表只读"描述作废。
 - 占位符扫描：无 TBD/TODO；`info` 标签的会话信息为可渲染占位内容（标题/消息数/创建时间），非"以后再说"。
 - 类型一致性：`AssistantMessageView`/`RagCitation`/`streamAssistantReply`/`fetchConversationMessages` 沿用阶段一；`ConversationListItem`（Task 3）与后端 `list()` 返回字段一致；`ChunkEvidence`/`ChunkNeighbor`（Task 3）与后端 `getChunkEvidence` 返回一致；`AssistantNavigationSnapshot`（Task 3）在 Task 6 `saveAssistantNavigation` 处按同一字段写入。
