@@ -109,10 +109,10 @@ test('GET conversations 端点返回 items 且未认证抛 400', async () => {
   const { BadRequestException } = await import('@nestjs/common')
   const list = async (userId: string) => (userId === 'u1' ? [{ id: 'c1', title: 'A', status: 'active', messageCount: 2, updatedAt: 'x' }] : [])
   const controller = new AssistantController({} as any, {} as any, { list } as any, {} as any)
-  const result = await controller.conversations({ user: { id: 'u1' } } as any)
+  const result = await controller.listConversations({ user: { id: 'u1' } } as any)
   assert.deepEqual(result.items.map((i: any) => i.id), ['c1'])
   await assert.rejects(
-    () => controller.conversations({} as any),
+    () => controller.listConversations({} as any),
     (err: any) => err instanceof BadRequestException,
   )
 })
@@ -143,7 +143,7 @@ async list(userId: string) {
 
 ```ts
 @Get('conversations')
-async conversations(@Req() req?: AuthenticatedRequest) {
+async listConversations(@Req() req?: AuthenticatedRequest) {
   const userId = this.userId(req)
   if (!userId) throw new BadRequestException('Authenticated user is required.')
   return { items: await this.conversations.list(userId) }
