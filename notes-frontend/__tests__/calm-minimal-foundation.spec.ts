@@ -159,7 +159,8 @@ describe('Calm Minimal 全局界面基础契约', () => {
     expect(entry).not.toContain('green-')
     expect(chat).toContain('小助手')
     expect(chat).toContain('帮我理清今天的想法')
-    expect(chat).toContain('搜索笔记')
+    // 输入区收敛到共享 AssistantCompose（'搜索笔记' 开关等输入区细节随组件迁移）
+    expect(chat).toContain('AssistantCompose')
     expect(chat).not.toContain("activeTab === 'pet'")
     expect(chat).not.toContain("activeTab === 'rag'")
   })
