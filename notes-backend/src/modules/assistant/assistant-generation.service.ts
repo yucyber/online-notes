@@ -94,6 +94,10 @@ export class AssistantGenerationService {
   }
 
   async cancel(requestId: string, userId: string): Promise<void> {
+    // 授权校验：仅请求归属者可取消——(userId, requestId) 查无此消息（他人请求或不存在）则静默返回，
+    // 不写取消标记、不广播、不等待（getByRequestId 本身按 userId 约束）。
+    const owned = await this.messages.getByRequestId(userId, requestId)
+    if (!owned) return
     // 未运行/已结束的请求不写取消标记：cancelKeys 只在 runGeneration 的 finally 清理，避免无界增长。
     if (!this.running.has(requestId)) return
     // 单实例内存取消标记为当前实现；跨实例取消通过 Redis 发布订阅增强（后续阶段）。
