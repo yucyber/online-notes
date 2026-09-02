@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import type { RagCitation } from '@/lib/ai-client';
+import type { RagCitation } from '@/lib/assistant-stream-client';
 
 export default function RagCitationList({ citations }: { citations: RagCitation[] }) {
   if (citations.length === 0) return null;

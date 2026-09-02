@@ -1,14 +1,23 @@
-import type { RagAnswer } from '@/lib/ai-client'
+import type { RagCitation } from '@/lib/assistant-stream-client'
 
 export const ASSISTANT_HISTORY_KEY = 'ai_assistant_history_v1'
 const HISTORY_LIMIT = 100
+
+// 旧一次性 RAG 结果的快照类型（ai-client 的 RagAnswer 已随 getRagAnswer 删除，这里内联保留历史消息兼容）
+export interface AssistantMessageResult {
+  answer: string
+  citations: RagCitation[]
+  planSummary: { intent: string; tools: string[]; graphHops: 0 | 1; rerankApplied: boolean }
+  warnings: string[]
+  runId?: string
+}
 
 export interface AssistantMessage {
   id: string
   role: 'user' | 'assistant'
   content: string
   route: 'pet' | 'rag'
-  result?: RagAnswer
+  result?: AssistantMessageResult
   createdAt: string
 }
 
