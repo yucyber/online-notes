@@ -61,20 +61,32 @@ beforeEach(() => {
   mockKnowledgeBasesAPI.getEdgeEvidence.mockResolvedValue(evidence)
 })
 
-test('选择 node 后懒加载证据，并仅在展开后显示完整 content', async () => {
+test('选择 node 后懒加载证据，展开后由 ChunkEvidenceViewer 实时拉取正文', async () => {
+  // ChunkEvidenceViewer 走 global.fetch（jsdom 无 Response）——普通对象 mock（仓库惯例，同 assistant-api.spec.ts）
+  global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ data: {
+    noteId: 'note-1', noteTitle: '证据笔记', chunkId: 'chunk-1', headingPath: ['Root', 'Child'],
+    content: '完整 Chunk 内容', noteUpdatedAt: '2026-08-28T00:00:00.000Z', relocated: false,
+    neighbors: { before: [], after: [] },
+  } }) }) as any) as any
   render(<KnowledgeGraphCanvas graph={graph} links={[]} />)
 
   fireEvent.click(screen.getByRole('button', { name: '节点 A' }))
 
   await waitFor(() => expect(mockKnowledgeBasesAPI.getNodeEvidence).toHaveBeenCalledWith('kb-1', 'node-a'))
-  expect(await screen.findByText('短预览')).toBeInTheDocument()
+  expect(await screen.findByText('证据笔记')).toBeInTheDocument()
+  // 折叠态只展示标题/heading 与定位链接，不渲染图谱快照正文
+  expect(screen.queryByText('短预览')).not.toBeInTheDocument()
   expect(screen.queryByText('完整 Chunk 内容')).not.toBeInTheDocument()
-  fireEvent.click(screen.getByRole('button', { name: '展开更多' }))
-  expect(screen.getByText('完整 Chunk 内容')).toBeInTheDocument()
   expect(screen.getByRole('link', { name: '定位到原文' })).toHaveAttribute(
     'href',
     '/dashboard/notes/note-1?chunkId=chunk-1&heading=Root%20%3E%20Child',
   )
+
+  fireEvent.click(screen.getByRole('button', { name: '展开更多' }))
+
+  // 行内挂载的 viewer 实时拉取证据（含权限校验），正文出现即视为拉取成功
+  expect(await screen.findByText('完整 Chunk 内容')).toBeInTheDocument()
+  expect(global.fetch).toHaveBeenCalledWith(expect.stringContaining('/api/notes/note-1/chunks/chunk-1/evidence'), expect.anything())
 })
 
 test('选择 edge 后显示关系详情并加载 edge evidence', async () => {
@@ -93,17 +105,17 @@ test('切换选择后旧请求晚到不能覆盖当前证据', async () => {
   mockKnowledgeBasesAPI.getNodeEvidence.mockReturnValue(oldRequest.promise)
   mockKnowledgeBasesAPI.getEdgeEvidence.mockResolvedValue({
     ...evidence,
-    items: [{ ...evidence.items[0], preview: '关系新证据', content: '关系完整证据' }],
+    items: [{ ...evidence.items[0], noteTitle: '关系证据笔记' }],
   })
   render(<KnowledgeGraphCanvas graph={graph} links={[]} />)
 
   fireEvent.click(screen.getByRole('button', { name: '节点 A' }))
   fireEvent.click(screen.getByRole('button', { name: '依赖' }))
-  expect(await screen.findByText('关系新证据')).toBeInTheDocument()
+  expect(await screen.findByText('关系证据笔记')).toBeInTheDocument()
 
   await act(async () => { oldRequest.resolve(evidence) })
-  expect(screen.queryByText('短预览')).not.toBeInTheDocument()
-  expect(screen.getByText('关系新证据')).toBeInTheDocument()
+  expect(screen.queryByText('证据笔记')).not.toBeInTheDocument()
+  expect(screen.getByText('关系证据笔记')).toBeInTheDocument()
 })
 
 function deferred<T>() {

@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import { knowledgeBasesAPI, type KnowledgeGraphEvidence, type KnowledgeGraphEvidenceResult } from '@/lib/api/knowledge-bases'
+import ChunkEvidenceViewer from '@/components/assistant/ChunkEvidenceViewer'
 
 type KnowledgeGraphEvidenceListProps = {
   knowledgeBaseId: string
@@ -79,9 +80,10 @@ function EvidenceItem({ item, expanded, onToggle }: {
   const href = `/dashboard/notes/${item.noteId}?chunkId=${encodeURIComponent(item.chunkId)}&heading=${encodeURIComponent(heading)}`
   return <article className="knowledge-evidence-item">
     <header><strong>{item.noteTitle || '无标题笔记'}</strong>{heading ? <span>{heading}</span> : null}</header>
-    <p>{expanded ? item.content : item.preview}</p>
+    {/* 图谱快照不含可信任正文：展开后由 ChunkEvidenceViewer 实时拉取原文，失权时不展示历史 excerpt */}
+    {expanded ? <ChunkEvidenceViewer noteId={item.noteId} chunkId={item.chunkId} heading={item.headingPath} /> : null}
     <footer>
-      {item.content !== item.preview ? <button type="button" onClick={onToggle}>{expanded ? '收起' : '展开更多'}</button> : <span />}
+      <button type="button" onClick={onToggle}>{expanded ? '收起' : '展开更多'}</button>
       <Link href={href}>定位到原文</Link>
     </footer>
   </article>
