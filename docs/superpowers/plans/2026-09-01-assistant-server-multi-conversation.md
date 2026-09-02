@@ -773,7 +773,7 @@ export class AssistantCheckpointService {
 }
 ```
 
-`assistant.module.ts`：`MongooseModule.forFeature` 增加 checkpoint schema；`providers` 增加 `AssistantCheckpointService`、`AssistantContextService`（Task 6 一起注册）。
+`assistant.module.ts`：`MongooseModule.forFeature` 增加 checkpoint schema；`providers` 增加 `AssistantCheckpointService`（**注意：`AssistantContextService` 由 Task 6 创建文件后在 Task 6 再注册，Task 5 注册它会因文件不存在导致编译失败**）。
 `ai-gateway.types.ts`：`AiTask` union 增加 `| 'context_summary'`。
 `assistant-generation.service.ts`：构造器末尾追加 `@Optional() private readonly checkpoints?: AssistantCheckpointService`（TS 可选参数，阶段一的 5 参构造测试无需改动），`finalize` 后调用 `checkpoint.schedule(userId, conversationId, assistantSeq)`（try/catch）。
 controller：`POST conversations/:id/checkpoint` → `return this.checkpoints.build(userId, id)`（controller 构造器追加 `AssistantCheckpointService`，并同步更新既有 `assistant-controller.test.ts` 构造调用，追加 `{} as any` 占位）。
