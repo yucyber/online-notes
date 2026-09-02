@@ -169,7 +169,8 @@ async setStatus(userId: string, id: string, status: 'active' | 'archived' | 'del
 }
 
 async setActiveRequest(userId: string, id: string, requestId: string | null) {
-  await this.model.updateOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) }, { $set: { activeRequestId: requestId || undefined } }).exec()
+  // 显式写 null 清空（$set: undefined 在 Mongoose 中不更新字段，会残留旧 requestId）
+  await this.model.updateOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) }, { $set: { activeRequestId: requestId } }).exec()
 }
 
 async getActiveRequest(userId: string, id: string) {
