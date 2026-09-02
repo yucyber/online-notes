@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, NotFoundException } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model, Types } from 'mongoose'
 import { AssistantConversation, AssistantConversationDocument } from './schemas/assistant-conversation.schema'
@@ -37,31 +37,41 @@ export class AssistantConversationsService {
   }
 
   async rename(userId: string, id: string, title: string) {
-    const filter = { _id: this.toObjectId(id), userId: this.toObjectId(userId) }
-    const doc = await this.model.findOne(filter)
-    if (!doc) throw new Error('conversation not found')
     const nextTitle = String(title || '').trim().slice(0, 80) || '新对话'
-    await this.model.updateOne(filter, { $set: { title: nextTitle } })
-    return { id: String(doc._id), title: nextTitle }
+    const doc = await this.model.findOneAndUpdate(
+      { _id: this.toObjectId(id), userId: this.toObjectId(userId) },
+      { $set: { title: nextTitle } },
+      { new: true },
+    ).lean().exec()
+    if (!doc) throw new NotFoundException('conversation not found')
+    return { id: String(doc._id), title: String(doc.title) }
   }
 
   async setStatus(userId: string, id: string, status: 'active' | 'archived' | 'deleted') {
-    const filter = { _id: this.toObjectId(id), userId: this.toObjectId(userId) }
-    const doc = await this.model.findOne(filter)
-    if (!doc) throw new Error('conversation not found')
     const update: any = { $set: { status } }
     if (status === 'deleted') update.$set.deletedAt = new Date()
     if (status === 'active') update.$set.deletedAt = null
-    await this.model.updateOne(filter, update)
-    return { id: String(doc._id), status }
+    const doc = await this.model.findOneAndUpdate(
+      { _id: this.toObjectId(id), userId: this.toObjectId(userId) },
+      update,
+      { new: true },
+    ).lean().exec()
+    if (!doc) throw new NotFoundException('conversation not found')
+    return { id: String(doc._id), status: doc.status }
   }
 
   async setActiveRequest(userId: string, id: string, requestId: string | null) {
-    // 显式写 null 清空（$set: undefined 在 Mongoose 中不更新字段，会残留旧 requestId）
-    await this.model.updateOne({ _id: this.toObjectId(id), userId: this.toObjectId(userId) }, { $set: { activeRequestId: requestId } })
+    // 显式写 null 清空（$set: undefined 在 Mongoose 中不更新字段，会残留旧 requestId）；找不到会话时抛 NotFound（管理操作与 rename/setStatus 一致）。
+    const doc = await this.model.findOneAndUpdate(
+      { _id: this.toObjectId(id), userId: this.toObjectId(userId) },
+      { $set: { activeRequestId: requestId } },
+      { new: true },
+    ).lean().exec()
+    if (!doc) throw new NotFoundException('conversation not found')
   }
 
   async getActiveRequest(userId: string, id: string) {
+    // 只读辅助：会话不存在时返回 null（cancelByConversation 据此跳过取消），与写操作抛 NotFound 区分。
     const doc = await this.model.findOne({ _id: this.toObjectId(id), userId: this.toObjectId(userId) }, 'activeRequestId')
     return doc?.activeRequestId ?? null
   }

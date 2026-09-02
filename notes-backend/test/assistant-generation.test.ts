@@ -9,14 +9,18 @@ const requestId = 'req-1'
 function fakeStore() {
   const byRequest = new Map<string, any>()
   const events: any[] = []
+  const activeRequestCalls: Array<{ userId: string; conversationId: string; requestId: string | null }> = []
   return {
     events,
+    activeRequestCalls,
     conversations: {
       ensure: async () => ({ id: 'c1', isNew: true }),
       get: async () => ({ id: 'c1', title: 't', status: 'active' }),
       touch: async () => undefined,
-      // 阶段一 fakeStore 未提供此方法时 start 会调用并抛错，补空实现保持生成测试通过。
-      setActiveRequest: async () => undefined,
+      // 记录 activeRequestId 写操作（start 写入 requestId、runGeneration finally 清空 null），供断言生成生命周期。
+      setActiveRequest: async (userId: string, conversationId: string, requestId: string | null) => {
+        activeRequestCalls.push({ userId, conversationId, requestId })
+      },
     },
     messages: {
       appendUser: async () => ({ messageId: 'um1', seq: 1 }),
@@ -166,4 +170,21 @@ test('重放只剩 user 提问（appendUser 与 createPlaceholder 之间崩溃�
   assert.equal(ragCalls, 0)
   assert.equal(emitted.some((e) => e.event === 'complete'), false, 'user-only 不得补发 complete')
   assert.ok(emitted.some((e) => e.event === 'error'))
+})
+
+test('生成结束后清空会话 activeRequestId', async () => {
+  // R=1 评审补充：start 写入 requestId、runGeneration finally 清空 null，删除会话时不会误取消已结束的生成。
+  const store = fakeStore()
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, () => undefined)
+  // 等生成到达终态：runGeneration finally 先清空 activeRequestId 再 finish，waitForTerminal resolve 后断言才稳定。
+  await service.waitForTerminal(requestId)
+  const calls = store.activeRequestCalls
+  assert.ok(calls.some((c) => c.requestId === requestId), 'start 应写入会话 activeRequestId')
+  assert.equal(calls[calls.length - 1].requestId, null, '生成结束后应清空 activeRequestId')
 })
