@@ -1256,7 +1256,19 @@ Expected: 全部通过
 Run: `npm run ci:test; npm run type-check; npm run build`
 Expected: 全部通过
 
-- [ ] **Step 3: 浏览器冒烟**
+- [ ] **Step 3: 后端 API 级冒烟（本阶段）**
+
+> 浏览器 UI 冒烟依赖 Task 8 的 `ConversationList`/`AssistantWorkspace` 组件，已延后至计划 3 完成后执行（见 Task 8 执行顺序决策）。本阶段以 REST API 级冒烟验证后端链路（验收账户直连端点）：
+
+- 会话管理：新建两个会话各发一条消息（`POST conversations` → `POST conversations/:id/stream`），`PATCH conversations/:id/rename` 改名、`POST archive`/`unarchive`、`POST delete`（删除后 `GET conversations` 列表消失、`activeRequestId` 清空停止运行中生成）。
+- 搜索：`GET conversations/search?q=<唯一关键词>` 确认标题命中与 `GET messages/search` 消息命中（结果含 conversationId/messageId/seq）。
+- 重试：`GET messages?afterSeq` 观察失败消息（模拟方式视环境）；`POST conversations/:id/stream` 传 `retryOfMessageId` 确认新回答 + 原失败消息保留。
+- 分支：`POST conversations/:id/branch { fromSeq }`，确认新会话含前缀消息、标题带"分支"、`parentConversationId` 落库。
+- 导出：`GET conversations/:id/export` 返回 `assistant-<id>.jsonl`，内容含 conversation/message/citation 行。
+- checkpoint：长会话触发 `assistant_context_checkpoints` 集合记录（`throughSeq` 推进）；环境无法真跑 20+ 轮模型时降级为直接 POST `checkpoint` 端点验证 build 链路 + 查集合。
+- 控制台与后端日志无异常。
+
+- [ ] **Step 3b: 浏览器 UI 冒烟（延后至计划 3，Task 8 完成并在计划 3 整体验证时执行）**
 
 - 全屏工作台：新建两个会话，各发一条消息；在会话列表重命名、归档、取消归档、删除（删除后从列表消失且停止运行中生成）。
 - 搜索：输入唯一关键词，确认标题命中与消息命中出现在结果中，点击跳转到对应会话并定位到消息 seq。
