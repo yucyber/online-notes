@@ -794,7 +794,7 @@ git commit -m "feat(assistant): 公共 Chunk 证据阅读器"
 
 **Interfaces:**
 - Produces `AssistantCompose({ value, onChange, onSend, onStop, generating, forceNotes, onToggleForceNotes, placeholder? }: {...})`：Enter 发送 / Shift+Enter 换行、"搜索笔记"开关、生成中显示"停止"按钮、`textarea` placeholder 默认 "问问小助手…"。
-- Produces `ConversationList({ items, activeId, onSelect, onNew, onRename, onArchive, onDelete }: { items: ConversationListItem[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void; onRename: (id: string, title: string) => void; onArchive: (id: string) => void; onDelete: (id: string) => void })`：按今天 / 最近 7 天 / 更早分组渲染，active 高亮，顶部"新建会话"按钮；标题为空显示"新对话"。
+- Produces `ConversationList({ items, activeId, onSelect, onNew, onRename?, onArchive?, onDelete? }: { items: ConversationListItem[]; activeId?: string; onSelect: (id: string) => void; onNew: () => void; onRename?: (id: string, title: string) => void; onArchive?: (id: string) => void; onDelete?: (id: string) => void })`：按今天 / 最近 7 天 / 更早分组渲染，active 高亮，顶部"新建会话"按钮；标题为空显示"新对话"。管理回调可选——存在时该行才渲染操作菜单（条件渲染）。
 - 每项会话行右侧操作菜单（按钮组）：重命名（`aria-label` 如 `重命名 会话标题`，弹 prompt/inline 输入改名）、归档（`aria-label` 如 `归档 会话标题`）、删除（`aria-label` 如 `删除 会话标题`）。管理动作触发回调不自动刷新（由父级 AssistantWorkspace 接线刷新列表）。
 - `AssistantCompose` 增加可选 `onRetryLabel?` 不需要——重试按钮在 AssistantMessages（Task 6）渲染，Compose 只管输入与发送/停止。
 
