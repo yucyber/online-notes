@@ -88,7 +88,7 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
           setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + text, status: 'streaming' } : m)));
         },
         onComplete: (data) => {
-          setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings } : m)));
+          setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings, memoryCitations: data.memoryCitations ?? [] } : m)));
         },
         onCancelled: (data) => {
           setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'cancelled', content: data.text } : m)));

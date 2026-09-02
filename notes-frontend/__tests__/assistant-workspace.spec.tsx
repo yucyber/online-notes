@@ -436,6 +436,36 @@ describe('AssistantWorkspace 三栏工作台', () => {
     expect(chatBodies[1].retryOfMessageId).toBeUndefined()
   })
 
+  // ==== 评审 R1-1：complete 事件携带 memoryCitations 应直接并入消息 state ====
+  test('complete 事件携带 memoryCitations 时立即渲染 [M1] 认知徽标（不依赖历史重载）', async () => {
+    const c1Messages = [message({ id: 'u1', conversationId: 'c1', seq: 1, content: '早' })]
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1)] })
+      if (href.includes('/messages')) return json({ items: c1Messages })
+      if (href === '/api/assistant/chat') {
+        return sseResponse([
+          'event: started\ndata: {"conversationId":"c1","userMessageId":"um2","assistantMessageId":"am2","requestId":"r2"}\n\n',
+          'event: delta\ndata: {"text":"按 [M1] 处理"}\n\n',
+          'event: complete\ndata: {"messageId":"am2","route":"rag","citations":[],"warnings":[],"memoryCitations":[{"marker":"M1","memoryId":"mem1","text":"保留现有浮层"}]}\n\n',
+        ])
+      }
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace initialConversationId="c1" />)
+    await screen.findByText('早')
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '新问题' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    // complete 到达即渲染 [M1] 徽标（onComplete 已把 memoryCitations 并入消息），与 [E1] 笔记引用区分
+    expect(await screen.findByText('[M1]')).toBeInTheDocument()
+    expect(screen.getByText('来自已确认认知')).toBeInTheDocument()
+    expect(screen.getByText('保留现有浮层')).toBeInTheDocument()
+    // 消息行内的 markdown 文本与徽标各自独立呈现，不产生重复命中
+    expect(screen.getByText('按 [M1] 处理')).toBeInTheDocument()
+  })
+
   // ==== 评审 P3-b：归档生成中的当前会话先取消在途流 ====
   test('归档生成中的当前会话会先调用 cancel 端点再清空', async () => {
     const convList = [conversation('c1', '会话一', 1), conversation('c2', '会话二')]

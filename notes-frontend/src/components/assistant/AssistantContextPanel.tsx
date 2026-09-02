@@ -45,27 +45,33 @@ export default function AssistantContextPanel({ tab, onTabChange, citations, evi
   // 时间线分组选择：subject + scope 聚合（记忆按用户维度、可能跨会话）
   const [activeGroup, setActiveGroup] = useState<string>('');
 
+  // 候选与记忆各自独立降级：一个源失败（如后端记忆端点未落地）不拖垮另一个源
   const loadCognition = useCallback(async () => {
     setCognitionLoading(true);
     setCognitionError(null);
-    try {
-      const [candidateItems, memoryItems] = await Promise.all([
-        fetchMemoryCandidates(),
-        fetchMemories(true),
-      ]);
-      setCandidates(candidateItems);
-      setMemories(memoryItems);
-    } catch {
-      setCognitionError('认知数据加载失败，请稍后重试。');
-    } finally {
-      setCognitionLoading(false);
-    }
+    const [candidateResult, memoryResult] = await Promise.all([
+      fetchMemoryCandidates()
+        .then((items): { items: MemoryCandidateView[]; error?: string } => ({ items }))
+        .catch((): { items: MemoryCandidateView[]; error?: string } => ({ items: [], error: '认知候选加载失败，请稍后重试。' })),
+      fetchMemories(true)
+        .then((items): { items: MemoryView[]; error?: string } => ({ items }))
+        .catch((): { items: MemoryView[]; error?: string } => ({ items: [], error: '认知加载失败，请稍后重试。' })),
+    ]);
+    setCandidates(candidateResult.items);
+    setMemories(memoryResult.items);
+    setCognitionError(candidateResult.error ?? memoryResult.error ?? null);
+    setCognitionLoading(false);
   }, []);
 
   // 关闭面板（或切会话由工作台关闭）后认知视图复位到引用标签
   useEffect(() => {
     if (!open) setCognitionOpen(false);
   }, [open]);
+
+  // 上层打开引用（evidence）/外部切换 tab（含导航恢复）时退出认知视图，避免认知遮蔽引用导航
+  useEffect(() => {
+    if (evidence || tab === 'info') setCognitionOpen(false);
+  }, [evidence, tab]);
 
   const openCognition = () => {
     setCognitionOpen(true);

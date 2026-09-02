@@ -104,6 +104,14 @@ export const MEMORY_KIND_LABELS: Record<string, string> = {
   open_question: '待确认问题', constraint: '约束', lesson: '经验',
 };
 
+// kind 枚举顺序（文案单一来源为 MEMORY_KIND_LABELS；徽标/表单下拉共用，避免组件内重复映射）
+export const MEMORY_KIND_ORDER: MemoryKind[] = ['decision', 'preference', 'fact', 'hypothesis', 'open_question', 'constraint', 'lesson'];
+
+export const MEMORY_KIND_OPTIONS: Array<{ value: MemoryKind; label: string }> = MEMORY_KIND_ORDER.map((kind) => ({
+  value: kind,
+  label: MEMORY_KIND_LABELS[kind] ?? kind,
+}));
+
 export const MEMORY_SCOPE_LABELS: Record<string, string> = {
   global: '全局', knowledge_base: '知识库', note: '笔记', conversation: '会话',
 };
@@ -206,7 +214,8 @@ export type ConversationMemorySettings = { memoryEnabled?: boolean; temporary?: 
 
 export async function updateConversationSettings(id: string, settings: ConversationMemorySettings): Promise<void> {
   const response = await fetch(`/api/assistant/conversations/${encodeURIComponent(id)}/settings`, {
-    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(settings),
+    // 后端 PATCH conversations/:id/settings 用 @Body('settings') 取参，body 需 { settings } 包裹
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ settings }),
   });
   if (!response.ok) throw new Error('会话设置更新失败');
 }

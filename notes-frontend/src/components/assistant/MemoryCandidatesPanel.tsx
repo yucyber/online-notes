@@ -2,7 +2,7 @@
 
 import { useState } from 'react';
 import {
-  type MemoryCandidateView, type MemoryKind, type MemoryScope, memoryKindLabel, memoryScopeLabel,
+  type MemoryCandidateView, type MemoryKind, type MemoryScope, MEMORY_KIND_OPTIONS, memoryKindLabel, memoryScopeLabel,
 } from '@/lib/assistant-api';
 
 export type CandidateEdits = {
@@ -71,11 +71,6 @@ export function MemoryCandidatesPanel({ items, onConfirm, onReject, onBatchConfi
     setEditingId(null);
   };
 
-  const kindOptions = Object.entries({
-    decision: '决策', preference: '偏好', fact: '事实', hypothesis: '假设',
-    open_question: '待确认问题', constraint: '约束', lesson: '经验',
-  });
-
   return (
     <div className="assistant-memory-candidates" data-testid="memory-candidates-panel">
       {batchGroups.map((group) => {
@@ -116,11 +111,7 @@ export function MemoryCandidatesPanel({ items, onConfirm, onReject, onBatchConfi
             const draft = drafts[item.id];
             return (
               <li key={item.id} className="assistant-memory-candidate">
-                <span className="assistant-memory-kind" style={{
-                  display: 'inline-block', padding: '1px 8px', borderRadius: 999,
-                  background: 'var(--product-accent-soft)', color: 'var(--product-accent)',
-                  fontSize: 10, fontWeight: 600, alignSelf: 'flex-start',
-                }}>{memoryKindLabel(item.kind)}</span>
+                <span className="assistant-memory-kind">{memoryKindLabel(item.kind)}</span>
                 <div className="assistant-memory-candidate-head">
                   <strong>{item.subject}</strong>
                   <span className="assistant-memory-meta">
@@ -172,7 +163,7 @@ export function MemoryCandidatesPanel({ items, onConfirm, onReject, onBatchConfi
                         value={draft.kind}
                         onChange={(event) => setDrafts((prev) => ({ ...prev, [item.id]: { ...draft, kind: event.target.value as MemoryKind } }))}
                       >
-                        {kindOptions.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                        {MEMORY_KIND_OPTIONS.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
                       </select>
                     </label>
                     <label>主题

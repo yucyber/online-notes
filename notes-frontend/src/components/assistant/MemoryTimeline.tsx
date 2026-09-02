@@ -55,11 +55,7 @@ export function MemoryTimeline({ subject, scope, items, onDelete, onRefreshEvide
                   <span className="assistant-memory-kind">{memoryKindLabel(item.kind)}</span>
                   <p className="assistant-memory-statement">{item.statement}</p>
                   {item.evidenceStatus === 'stale' && (
-                    <span className="assistant-memory-stale" style={{
-                      display: 'inline-block', padding: '1px 8px', borderRadius: 999,
-                      background: 'var(--product-danger-soft)', color: 'var(--product-danger)',
-                      fontSize: 10, fontWeight: 600,
-                    }}>证据待复核</span>
+                    <span className="assistant-memory-stale">证据待复核</span>
                   )}
                 </div>
                 <div className="assistant-memory-current-actions">
@@ -80,11 +76,7 @@ export function MemoryTimeline({ subject, scope, items, onDelete, onRefreshEvide
                 <span className="assistant-memory-kind">{memoryKindLabel(item.kind)}</span>
                 <p className="assistant-memory-statement">{item.statement}</p>
                 {item.status === 'superseded' && (
-                  <span className="assistant-memory-superseded" style={{
-                    display: 'inline-block', padding: '1px 8px', borderRadius: 999,
-                    background: 'var(--product-surface-hover)', color: 'var(--product-muted)',
-                    fontSize: 10, fontWeight: 600,
-                  }}>已被替代</span>
+                  <span className="assistant-memory-superseded">已被替代</span>
                 )}
               </div>
               <span className="assistant-memory-history-meta">

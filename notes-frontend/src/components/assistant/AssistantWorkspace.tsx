@@ -241,7 +241,7 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
       },
       onComplete: (data) => {
         setMessages((prev) => prev.map((m) => (m.id === data.messageId
-          ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings }
+          ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings, memoryCitations: data.memoryCitations ?? [] }
           : m)));
       },
       onCancelled: (data) => {
