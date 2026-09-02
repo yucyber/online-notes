@@ -28,10 +28,10 @@
 - Modify `schemas/assistant-conversation.schema.ts`：增加 `activeRequestId?`、`parentConversationId?`、`forkedFromSeq?`。
 - Create `schemas/assistant-checkpoint.schema.ts`：`assistant_context_checkpoints`。
 - Modify `assistant-conversations.service.ts`：`rename` / `setStatus` / `search` / `branch`。
-- Modify `assistant-messages.service.ts`：`searchMessages` / `page`（复用 `list`）。
+- Modify `assistant-messages.service.ts`：`searchMessages` / `listBefore`（DB 侧 seq 上限倒序取最近段，供历史召回用）。
 - Create `assistant.constants.ts`：`MEMORY_RECALL_SERVICE` symbol 与 `MemoryRecallServiceLike` 接口（阶段四扩展其余记忆类型）。
 - Create `assistant-context.service.ts`：`assemble`（Token 预算分节）。
-- Create `assistant-checkpoint.service.ts`：`build` / `getLatest` / `invalidateAfter`。
+- Create `assistant-checkpoint.service.ts`：`build` / `getLatest` / `schedule`。
 - Modify `assistant-generation.service.ts`：`activeRequestId` 维护、`retryOfMessageId`、pet 分支接入上下文、完成时触发 checkpoint 与标题。
 - Modify `assistant.controller.ts`：`PATCH conversations/:id`、`POST conversations/:id/archive|unarchive|delete`、`GET search`、`POST conversations/:id/branch`、`GET conversations/:id/export`、`POST conversations/:id/checkpoint`。
 - Modify `assistant.module.ts`：注册 checkpoint schema、`AssistantContextService`、`AssistantCheckpointService`。
@@ -832,7 +832,8 @@ export interface MemoryRecallServiceLike {
 
 - 以下接口沿用（见本计划开头契约）：
   - `AssistantContextService.assemble(input: { userId; conversationId; question; memoryRecall? })`
-  - 分区顺序固定：`[会话摘要]`（checkpoint summary + decisions/openQuestions 精简）→ `[近期对话]`（checkpoint 之后最近 12 条）→ `[历史对话召回]`（question 分词命中旧消息，最多 4 条，从 `afterSeq` 之前检索）→ `[已确认认知]`（`memoryRecall` 提供，缺省为空）。
+  - 分区顺序固定：`[会话摘要]`（checkpoint summary + decisions/openQuestions 精简）→ `[近期对话]`（checkpoint 之后最近 12 条）→ `[历史对话召回]`（question 分词命中旧消息，最多 4 条，从 `throughSeq` 之前检索）→ `[已确认认知]`（`memoryRecall` 提供，缺省为空）。
+- `AssistantMessagesService` 新增 `listBefore(userId, conversationId, { seqLte, limit })`：DB 侧 `find({ seq: { $lte } })` + `sort({ seq: -1 })` + `limit`（默认 200）+ 反序为升序返回（与 `list` 同形视图）——供历史召回扫"throughSeq 前最近一段"，避免 `list` 升序 200 上限取到最旧消息而漏掉最新压缩前历史。
   - 每节带 `label` 与 `content`；`[已确认认知]` 为空时整节省略。
   - 预算常量：摘要节 ≤ 800 字、近期对话 ≤ 3000 字、历史召回 ≤ 1200 字、认知 ≤ 800 字。
   - `buildPrompt(question, sections)`：把分区拼成模型 prompt（供 pet 与阶段四 rag 复用）。
@@ -847,15 +848,16 @@ import { AssistantContextService } from '../src/modules/assistant/assistant-cont
 
 test('按固定顺序组装分区并省略空认知节', async () => {
   const messages = {
-    list: async (_u: string, _c: string, opts?: any) => opts?.afterSeq === 8
+    list: async () => [
+      { id: 'm9', seq: 9, role: 'user', route: 'rag', content: '继续', status: 'completed', citations: [], warnings: [], createdAt: '' },
+      { id: 'm10', seq: 10, role: 'assistant', route: 'rag', content: '好的', status: 'completed', citations: [], warnings: [], createdAt: '' },
+    ],
+    // listBefore 供历史召回：返回 throughSeq 之前最近的历史（mock 简化为固定一条含 bigram 的消息）。
+    listBefore: async (_u: string, _c: string, opts?: any) => opts?.seqLte === 8
       ? [
-          { id: 'm9', seq: 9, role: 'user', route: 'rag', content: '继续', status: 'completed', citations: [], warnings: [], createdAt: '' },
-          { id: 'm10', seq: 10, role: 'assistant', route: 'rag', content: '好的', status: 'completed', citations: [], warnings: [], createdAt: '' },
-        ]
-      : [
-          // 历史召回数据：m2 须含问题的 CJK bigram（'全屏'/'尺寸'）才能命中 recallHistorical。
           { id: 'm2', seq: 2, role: 'assistant', route: 'rag', content: '结论：全屏尺寸定为 1280px', status: 'completed', citations: [], warnings: [], createdAt: '' },
-        ],
+        ]
+      : [],
   }
   const checkpoints = {
     getLatest: async () => ({ throughSeq: 8, summary: '讨论界面形态', decisions: ['保留浮层'], openQuestions: ['全屏尺寸'], referencedEntities: ['小助手'], sourceMessageIds: [], createdAt: '' }),
@@ -872,7 +874,7 @@ test('按固定顺序组装分区并省略空认知节', async () => {
 
 test('提供认知召回时加入已确认认知分区', async () => {
   const service = new AssistantContextService(
-    { list: async () => [] } as any,
+    { list: async () => [], listBefore: async () => [] } as any,
     { getLatest: async () => null } as any,
   )
   const result = await service.assemble({
@@ -913,7 +915,9 @@ export class AssistantContextService {
     const checkpoint = await this.checkpoints.getLatest(input.userId, input.conversationId)
     const throughSeq = checkpoint?.throughSeq ?? 0
 
-    const recent = await this.messages.list(input.userId, input.conversationId, { afterSeq: throughSeq })
+    const recentAll = await this.messages.list(input.userId, input.conversationId, { afterSeq: throughSeq })
+    // 只取已落定消息：pending 占位（刚创建、空内容）与 failed/cancelled 不参与上下文，与 checkpoint/分支只带 completed 的口径一致。
+    const recent = recentAll.filter((m) => m.status === 'completed')
     const recentMessages = recent.slice(-12).map((m) => ({ seq: m.seq, role: m.role, content: m.content }))
 
     const sections: Array<{ label: string; content: string }> = []
@@ -944,15 +948,18 @@ export class AssistantContextService {
 
   private async recallHistorical(userId: string, conversationId: string, question: string, throughSeq: number) {
     // 中文分词：空格 split 对 CJK 无效（整句成 1 token，历史召回必然落空）。
-    // 改为：非 CJK 段保留原词边界（英文/数字串，含空格），CJK 连续段拆 2 字滑动窗口（bigram）
-    // 命中——'全屏尺寸多少合适' → 全屏/屏尺/尺寸/寸多/多少/少合/合适；任一命中即召回，最多 6 词防正则过长。
+    // 按字符类别切分：CJK 连续段拆 2 字滑动窗口（bigram：'全屏尺寸多少合适' → 全屏/屏尺/尺寸/寸多/多少/少合/合适），
+    // 非 CJK 片段按空白与标点拆成词级 token（'React diff' → React/diff，标点不粘连）；任一命中即召回，最多 6 词防正则过长。
     const isCjk = (ch: string) => /[\u4e00-\u9fff]/.test(ch)
+    const isSep = (ch: string) => /[\s,.;:!?，。；：！？、（）()[\]{}"'“”‘’—…]/.test(ch)
     const words: string[] = []
     const cjkChars: string[] = []
     let buf = ''
     for (const ch of question) {
       if (isCjk(ch)) {
         cjkChars.push(ch)
+        if (buf.trim()) { words.push(buf.trim()); buf = '' }
+      } else if (isSep(ch)) {
         if (buf.trim()) { words.push(buf.trim()); buf = '' }
       } else buf += ch
     }
@@ -961,9 +968,11 @@ export class AssistantContextService {
     const tokens = [...new Set(words)].filter((t) => t.length >= 2).slice(0, 6)
     if (tokens.length === 0) return []
     const pattern = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
-    const all = await this.messages.list(userId, conversationId, {})
-    return all
-      .filter((m) => m.seq <= throughSeq && new RegExp(pattern, 'i').test(m.content))
+    // P2 契约修复：list({}) 取最旧 200 条，长会话（>200 条）会漏掉 throughSeq 前最新的历史；
+    // 改用 messages.listBefore（DB 侧 seq desc 取最近 limit 条）扫描最近一段压缩前历史。
+    const recentPool = await this.messages.listBefore(userId, conversationId, { seqLte: throughSeq, limit: 200 })
+    return recentPool
+      .filter((m) => m.status === 'completed' && new RegExp(pattern, 'i').test(m.content))
       .slice(-4)
       .map((m) => `${m.role}: ${m.content.slice(0, 200)}`)
   }
@@ -973,12 +982,15 @@ export class AssistantContextService {
 > 说明：`MEMORY_RECALL_SERVICE` 在 `assistant.constants.ts` 声明；阶段三不注册 provider，注入为 undefined，阶段四注册 `MemoryRecallService` 实现。`assistant-generation.service.ts` pet 分支：
 
 ```ts
-const context = await this.context.assemble({ userId, conversationId: input.conversationId, question: input.question })
-const prompt = this.context.buildPrompt(input.question, context.sections)
-const stream = await this.aiService.chatPet({ message: prompt }, { userId })
+if (this.context) {
+  // assemble 失败（如 DB 读异常）时降级为直接提问，不阻塞回答——与 renameIfDefault/checkpoint 的静默降级惯例一致。
+  const context = await this.context.assemble({ userId, conversationId: input.conversationId, question: input.question }).catch((e) => { this.logger?.warn?.(`assemble 失败，降级为直接提问: ${String(e)}`); return null })
+  const prompt = context ? this.context.buildPrompt(input.question, context.sections) : input.question
+  const stream = await this.aiService.chatPet({ message: prompt }, { userId })
+}
 ```
 
-（`AssistantContextService` 以构造器末尾 `@Optional() private readonly context?: AssistantContextService` 注入，TS 可选参数保证阶段一的 5 参构造测试无需改动；阶段三未注册 provider 时注入为 undefined。）
+（`AssistantContextService` 以构造器末尾 `@Optional() private readonly context?: AssistantContextService` 注入，TS 可选参数保证阶段一的 5 参构造测试无需改动；单测直构/未注册 provider 时注入为 undefined——pet 分支加空守卫，未注入时 prompt 退化为原问题。）
 
 - [ ] **Step 4: 运行确认通过**
 
