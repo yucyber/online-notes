@@ -853,7 +853,8 @@ test('按固定顺序组装分区并省略空认知节', async () => {
           { id: 'm10', seq: 10, role: 'assistant', route: 'rag', content: '好的', status: 'completed', citations: [], warnings: [], createdAt: '' },
         ]
       : [
-          { id: 'm2', seq: 2, role: 'assistant', route: 'rag', content: '结论：保留浮层', status: 'completed', citations: [], warnings: [], createdAt: '' },
+          // 历史召回数据：m2 须含问题的 CJK bigram（'全屏'/'尺寸'）才能命中 recallHistorical。
+          { id: 'm2', seq: 2, role: 'assistant', route: 'rag', content: '结论：全屏尺寸定为 1280px', status: 'completed', citations: [], warnings: [], createdAt: '' },
         ],
   }
   const checkpoints = {
@@ -942,7 +943,22 @@ export class AssistantContextService {
   }
 
   private async recallHistorical(userId: string, conversationId: string, question: string, throughSeq: number) {
-    const tokens = question.split(/\s+/).map((t) => t.trim()).filter((t) => t.length >= 2).slice(0, 3)
+    // 中文分词：空格 split 对 CJK 无效（整句成 1 token，历史召回必然落空）。
+    // 改为：非 CJK 段保留原词边界（英文/数字串，含空格），CJK 连续段拆 2 字滑动窗口（bigram）
+    // 命中——'全屏尺寸多少合适' → 全屏/屏尺/尺寸/寸多/多少/少合/合适；任一命中即召回，最多 6 词防正则过长。
+    const isCjk = (ch: string) => /[\u4e00-\u9fff]/.test(ch)
+    const words: string[] = []
+    const cjkChars: string[] = []
+    let buf = ''
+    for (const ch of question) {
+      if (isCjk(ch)) {
+        cjkChars.push(ch)
+        if (buf.trim()) { words.push(buf.trim()); buf = '' }
+      } else buf += ch
+    }
+    if (buf.trim()) words.push(buf.trim())
+    for (let i = 0; i + 1 < cjkChars.length; i++) words.push(cjkChars[i] + cjkChars[i + 1])
+    const tokens = [...new Set(words)].filter((t) => t.length >= 2).slice(0, 6)
     if (tokens.length === 0) return []
     const pattern = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')
     const all = await this.messages.list(userId, conversationId, {})
