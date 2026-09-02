@@ -40,10 +40,14 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     if (!conversationId) return;
     void fetchConversationMessages(conversationId)
       .then((result) => {
-        // 恢复期间用户已开始新会话（onStarted 已设置 ref）：丢弃旧会话快照，避免覆盖新消息
-        if (!active || conversationIdRef.current !== null) return;
-        conversationIdRef.current = conversationId;
-        setMessages(result.items);
+        if (!active) return;
+        // 只在消息列表仍为空时填充恢复快照（函数式更新）：发送已乐观追加消息时
+        // 不覆盖，覆盖"发送后、onStarted 到达前"ref 仍为 null 的窗口
+        setMessages((prev) => (prev.length === 0 ? result.items : prev));
+        // 无活动发送且未建立会话时才记录恢复的会话 ID，避免改回用户新会话
+        if (conversationIdRef.current === null && activeRequestIdRef.current === null) {
+          conversationIdRef.current = conversationId;
+        }
       })
       .catch(() => { /* 服务端不可用时保持空态 */ });
     return () => { active = false; };

@@ -226,6 +226,68 @@ describe('ChatWindow 统一流式协议', () => {
     expect(localStorage.getItem('assistant_current_conversation_id')).toBe('c2')
   })
 
+  it('恢复在发送后、onStarted 前 resolve 时不覆盖乐观消息', async () => {
+    // 恢复 GET 与 chat POST 并发：恢复在"用户已发送、chat started 事件到达前"resolve，
+    // 此时 ref 仍为 null——旧会话快照不得覆盖刚乐观追加的消息，流式内容需正常呈现
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    let releaseRestore!: () => void
+    const restoreGate = new Promise<void>((resolve) => { releaseRestore = resolve })
+    let restoreStarted = false
+    let releaseStarted!: () => void
+    const startedGate = new Promise<void>((resolve) => { releaseStarted = resolve })
+    const encoder = new TextEncoder()
+    const chatChunks = [
+      'event: started\ndata: {"conversationId":"c2","userMessageId":"um2","assistantMessageId":"am2","requestId":"r2"}\n\n',
+      'event: delta\ndata: {"text":"新会话回答"}\n\n',
+      'event: complete\ndata: {"messageId":"am2","route":"pet","citations":[],"warnings":[]}\n\n',
+    ]
+    let chatIndex = 0
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) {
+        restoreStarted = true
+        await restoreGate
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [{ id: 'm1', conversationId: 'c1', seq: 1, role: 'assistant', route: 'pet', content: '旧会话消息', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' }],
+          }),
+        } as unknown as Response
+      }
+      return {
+        ok: true, status: 200, statusText: 'OK',
+        body: {
+          getReader: () => ({
+            read: async () => {
+              // 首个 chunk（started）等恢复 resolve 后再发，确保恢复落在发送后、onStarted 前
+              if (chatIndex === 0) await startedGate
+              return chatIndex < chatChunks.length
+                ? { done: false, value: encoder.encode(chatChunks[chatIndex++]) }
+                : { done: true, value: undefined }
+            },
+          }),
+        },
+      } as unknown as Response
+    })
+
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    await waitFor(() => expect(restoreStarted).toBe(true))
+    const input = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(input, { target: { value: '你好' } })
+    fireEvent.keyDown(input, { key: 'Enter' })
+    expect(screen.getByText('你好')).toBeInTheDocument()
+
+    // 恢复此刻 resolve：乐观消息不得被旧会话快照覆盖
+    await act(async () => { releaseRestore() })
+    expect(screen.getByText('你好')).toBeInTheDocument()
+    expect(screen.queryByText('旧会话消息')).not.toBeInTheDocument()
+
+    // started 随后到达：占位消息被替换为新会话消息，流式内容正常呈现
+    await act(async () => { releaseStarted() })
+    await screen.findByText('新会话回答')
+    expect(localStorage.getItem('assistant_current_conversation_id')).toBe('c2')
+  })
+
   it('停止后 SSE 断开不再误报失败或弹 Toast', async () => {
     const encoder = new TextEncoder()
     const chunks = [
