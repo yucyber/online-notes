@@ -1043,6 +1043,19 @@ test('导出按会话、消息、引用顺序生成 JSONL 行', () => {
   assert.ok(lines[3].startsWith('{"type":"citation"'))
   assert.ok(lines[3].includes('"messageSeq":2'))
 })
+
+test('时间统一归一化为 ISO 8601（本地化串输入 → UTC ISO 输出，无效日期回退原值）', () => {
+  const lines = buildExportLines(
+    { id: 'c1', title: 't', createdAt: 'Tue Sep 01 2026 10:00:00 GMT+0800 (中国标准时间)' },
+    [
+      { seq: 1, role: 'user', route: 'rag', content: 'q', status: 'completed', citations: [], createdAt: 'not-a-date' },
+    ],
+  )
+  const conv = JSON.parse(lines[0])
+  assert.equal(conv.createdAt, '2026-09-01T02:00:00.000Z')
+  const msg = JSON.parse(lines[1])
+  assert.equal(msg.createdAt, 'not-a-date') // 无效日期回退原值，不抛错
+})
 ```
 
 - [ ] **Step 2: 运行确认失败**
@@ -1056,11 +1069,19 @@ Expected: FAIL（模块不存在）
 // notes-backend/src/modules/assistant/assistant-export.ts
 import { RagCitation } from '../ai/rag/rag.types'
 
+// 导出为机器消费边界：时间统一归一化为 ISO 8601。service 层 Date 值经 String() 会产生
+// 本地化格式（"Tue Sep 01 2026 10:00:00 GMT+0800 (中国标准时间)"），对严格 ISO 解析器不友好；
+// 此处 new Date(...).toISOString() 对已是 ISO 的输入幂等，对本地化串统一转标准 UTC。
+function isoDate(value: string): string {
+  const d = new Date(value)
+  return Number.isNaN(d.getTime()) ? value : d.toISOString()
+}
+
 export function buildExportLines(conversation: { id: string; title: string; createdAt: string }, messages: Array<{ seq: number; role: string; route: string; content: string; status: string; citations: RagCitation[]; createdAt: string }>): string[] {
   const lines: string[] = []
-  lines.push(JSON.stringify({ type: 'conversation', id: conversation.id, title: conversation.title, createdAt: conversation.createdAt }))
+  lines.push(JSON.stringify({ type: 'conversation', id: conversation.id, title: conversation.title, createdAt: isoDate(conversation.createdAt) }))
   for (const message of messages) {
-    lines.push(JSON.stringify({ type: 'message', seq: message.seq, role: message.role, route: message.route, content: message.content, status: message.status, createdAt: message.createdAt }))
+    lines.push(JSON.stringify({ type: 'message', seq: message.seq, role: message.role, route: message.route, content: message.content, status: message.status, createdAt: isoDate(message.createdAt) }))
     for (const citation of message.citations) {
       lines.push(JSON.stringify({ type: 'citation', messageSeq: message.seq, evidenceId: citation.evidenceId, noteId: citation.noteId, chunkId: citation.chunkId, headingPath: citation.headingPath }))
     }
