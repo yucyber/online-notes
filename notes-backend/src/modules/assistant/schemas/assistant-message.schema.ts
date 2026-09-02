@@ -24,7 +24,8 @@ export class AssistantMessage {
   @Prop({ required: true, enum: ['pet', 'rag'] })
   route: 'pet' | 'rag'
 
-  @Prop({ required: true, default: '' })
+  // content 不设 required：占位/流式中消息为空内容合法（Mongoose required 校验拒绝空串，会阻塞 createPlaceholder）。
+  @Prop({ default: '' })
   content: string
 
   @Prop({ required: true, enum: ['pending', 'streaming', 'completed', 'failed', 'cancelled'], default: 'pending', index: true })
