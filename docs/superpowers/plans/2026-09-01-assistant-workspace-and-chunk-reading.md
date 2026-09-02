@@ -196,14 +196,23 @@ function fakeDeps(chunks: any[], notes: any[]) {
     if (Array.isArray(v)) return Array.isArray(doc[k]) && v.length === doc[k].length && v.every((x, i) => String(x) === String(doc[k][i]))
     return String(doc[k]) === String(v)
   })
+  // 链形 mock：sort/select/lean 返回自身链对象、exec 解出值（同既有 note-chunk-location-access.test.ts 的 queryResult 惯例）。
+  // findOne/find 必须非 async（async 返回 Promise 会断链），直接返回链对象。
+  const queryResult = (value: any) => ({ sort: () => queryResult(value), select: () => queryResult(value), lean: () => queryResult(value), exec: async () => value })
   const chunkModel = {
-    findOne: async (filter: any) => chunks.find((c) => matches(c, filter)) ?? null,
-    find: async (filter: any) => ({
-      select: () => ({ sort: () => ({ lean: async () => [...chunks].filter((c) => matches(c, filter)).sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0)) }) }),
+    findOne: (filter: any) => queryResult(chunks.find((c) => matches(c, filter)) ?? null),
+    find: (filter: any) => ({
+      select: () => ({
+        sort: () => ({
+          lean: () => ({
+            exec: async () => [...chunks].filter((c) => matches(c, filter)).sort((a, b) => (a.chunkIndex ?? 0) - (b.chunkIndex ?? 0)),
+          }),
+        }),
+      }),
     }),
   }
   const noteModel = {
-    findOne: async (filter: any) => notes.find((n) => matches(n, filter)) ?? null,
+    findOne: (filter: any) => queryResult(notes.find((n) => matches(n, filter)) ?? null),
   }
   return { noteAccess, chunkModel, noteModel }
 }
@@ -241,7 +250,9 @@ test('Chunk 失效时按 headingPath 重定位并标记 relocated', async () => 
   ]
   const notes = [{ _id: 'n1', title: '笔记', updatedAt: '2026-09-01T00:00:00.000Z' }]
   const service = newNotesService(fakeDeps(chunks, notes))
-  const result = await service.getChunkEvidence('n1', 'stale-c1', 'u1', { headingPath: ['结论'] })
+  // 真实失效场景：citation 里的 chunkId 是合法 ObjectId 但文档已被重新索引删除（非非法字符串）——
+  // 用合法 hex 形态的 '0000000000000000000000aa'（不在 seeds）模拟，避免触发 objectId 校验抛错掩盖重定位路径。
+  const result = await service.getChunkEvidence('n1', '0000000000000000000000aa', 'u1', { headingPath: ['结论'] })
   assert.equal(result.relocated, true)
   assert.equal(result.chunkId, 'c1')
   assert.equal(result.content, '最新结论')
