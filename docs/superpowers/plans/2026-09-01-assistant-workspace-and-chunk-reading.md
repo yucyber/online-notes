@@ -660,7 +660,8 @@ const evidence = {
 }
 
 test('展示完整正文、标题路径、重定位徽标与定位链接', async () => {
-  global.fetch = jest.fn(async () => new Response(JSON.stringify({ data: evidence }), { status: 200 })) as any
+  // jsdom 无 Node Fetch API（Response 未定义）——用普通对象 mock（仓库惯例，同 assistant-api.spec.ts）
+  global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ data: evidence }) } as any)) as any
   const onLocated = jest.fn()
   render(<ChunkEvidenceViewer noteId="n1" chunkId="c2" heading={['React', 'Diff']} onLocated={onLocated} />)
   await screen.findByText('React 笔记')
@@ -673,7 +674,7 @@ test('展示完整正文、标题路径、重定位徽标与定位链接', async
 })
 
 test('展开上下文显示相邻 Chunk 摘要', async () => {
-  global.fetch = jest.fn(async () => new Response(JSON.stringify({ data: evidence }), { status: 200 })) as any
+  global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ data: evidence }) } as any)) as any
   render(<ChunkEvidenceViewer noteId="n1" chunkId="c2" heading={['React', 'Diff']} />)
   await screen.findByText('React 笔记')
   screen.getByRole('button', { name: '展开上下文' }).click()
@@ -682,7 +683,7 @@ test('展开上下文显示相邻 Chunk 摘要', async () => {
 })
 
 test('失权时显示权限提示而不是历史正文', async () => {
-  global.fetch = jest.fn(async () => new Response(JSON.stringify({ error: '笔记不存在' }), { status: 404 })) as any
+  global.fetch = jest.fn(async () => ({ ok: false, status: 404, json: async () => ({ error: '笔记不存在' }) } as any)) as any
   render(<ChunkEvidenceViewer noteId="n1" chunkId="c2" heading={[]} />)
   await screen.findByText('证据加载失败，请稍后重试。')
   expect(screen.queryByText(/完整 Chunk 正文/)).not.toBeInTheDocument()
@@ -1019,10 +1020,12 @@ import '@testing-library/jest-dom'
 import { AssistantWorkspace } from '@/components/assistant/AssistantWorkspace'
 
 test('加载会话列表并选中当前会话，三栏均渲染', async () => {
+  // jsdom 无 Node Fetch API（Response 未定义）——普通对象 mock（仓库惯例，同 assistant-api.spec.ts）
+  const json = (body: any, status = 200) => ({ ok: status >= 200 && status < 300, status, json: async () => body } as any)
   const fetchMock = jest.fn(async (url: string) => {
-    if (String(url).includes('/conversations?')) return new Response(JSON.stringify({ items: [{ id: 'c1', title: '会话一', status: 'active', messageCount: 2, updatedAt: new Date().toISOString() }] }), { status: 200 })
-    if (String(url).includes('/messages')) return new Response(JSON.stringify({ items: [] }), { status: 200 })
-    return new Response('{}', { status: 200 })
+    if (String(url).includes('/conversations?')) return json({ items: [{ id: 'c1', title: '会话一', status: 'active', messageCount: 2, updatedAt: new Date().toISOString() }] })
+    if (String(url).includes('/messages')) return json({ items: [] })
+    return json({})
   }) as any
   global.fetch = fetchMock
   render(<AssistantWorkspace initialConversationId="c1" />)
@@ -1033,7 +1036,7 @@ test('加载会话列表并选中当前会话，三栏均渲染', async () => {
 })
 
 test('空会话显示空态文案', async () => {
-  global.fetch = jest.fn(async () => new Response(JSON.stringify({ items: [] }), { status: 200 })) as any
+  global.fetch = jest.fn(async () => ({ ok: true, status: 200, json: async () => ({ items: [] }) } as any)) as any
   render(<AssistantWorkspace />)
   await screen.findByText(/今天想聊点什么/)
 })
