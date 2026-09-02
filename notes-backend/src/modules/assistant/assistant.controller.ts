@@ -67,6 +67,13 @@ export class AssistantController {
     return this.generation.cancel(requestId, userId)
   }
 
+  @Get('conversations')
+  async listConversations(@Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return { items: await this.conversations.list(userId) }
+  }
+
   @Get('conversations/:id/messages')
   async listMessages(@Param('id') id: string, @Query('afterSeq') afterSeq?: string, @Query('limit') limit?: string, @Req() req?: AuthenticatedRequest) {
     const userId = this.userId(req)

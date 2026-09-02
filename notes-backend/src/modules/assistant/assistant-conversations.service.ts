@@ -29,6 +29,18 @@ export class AssistantConversationsService {
     return { id: String(doc._id), title: String(doc.title || ''), status: doc.status, updatedAt: String(doc.updatedAt || doc.createdAt || new Date().toISOString()) }
   }
 
+  // 会话列表：排除软删除（archived 仍列出，供侧栏分组），按 updatedAt 倒序；
+  // updatedAt/createdAt 由 schema timestamps 落库、未声明在类上，lean 结果 cast any 访问（与 get/searchByTitle 同型）。
+  async list(userId: string): Promise<Array<{ id: string; title: string; status: 'active' | 'archived' | 'deleted'; lastMessageAt?: string; messageCount: number; updatedAt: string }>> {
+    const docs = await this.model.find({ userId: toObjectId(userId), status: { $ne: 'deleted' } })
+      .sort({ updatedAt: -1 }).lean().exec() as any[]
+    return docs.map((doc) => ({
+      id: String(doc._id), title: String(doc.title || '新对话'), status: doc.status,
+      lastMessageAt: doc.lastMessageAt ? String(doc.lastMessageAt) : undefined,
+      messageCount: Number(doc.messageCount || 0), updatedAt: String(doc.updatedAt || doc.createdAt || new Date().toISOString()),
+    }))
+  }
+
   async touch(userId: string, id: string, delta: { lastMessageAt: Date; messageCount: number; knowledgeBaseId?: string | null }) {
     const update: any = { $set: { lastMessageAt: delta.lastMessageAt, messageCount: delta.messageCount } }
     if (delta.knowledgeBaseId !== undefined) update.$set.knowledgeBaseId = delta.knowledgeBaseId ? new Types.ObjectId(delta.knowledgeBaseId) : null
