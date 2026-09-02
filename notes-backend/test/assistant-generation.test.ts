@@ -26,7 +26,7 @@ function fakeStore() {
       appendDelta: async (u: string, id: string, content: string) => { events.push({ type: 'delta', content }) },
       finalize: async (u: string, id: string, payload: any) => { events.push({ type: 'finalize', ...payload }) },
       markCancelled: async (u: string, id: string, content: string) => { events.push({ type: 'cancelled', content }) },
-      markFailed: async () => undefined,
+      markFailed: async (u: string, id: string, content: string) => { events.push({ type: 'failed', content }) },
       list: async () => [],
       // (userId, requestId) 联合查询：requestId 命中但 userId 不匹配视为不存在（跨用户不可见）。
       getByRequestId: async (u: string, r: string) => {
@@ -144,6 +144,8 @@ test('重放残留非终态消息（服务重启后）标记 failed 并补发 er
   assert.equal(ragCalls, 0, 'stale 消息不得重新生成')
   assert.ok(emitted.some((e) => e.event === 'error' && e.data.code === 'GENERATION_INTERRUPTED'))
   assert.equal(emitted.some((e) => e.event === 'complete'), false)
+  // DB 消息必须被落库标记 failed（保留已流内容），不再永久 streaming。
+  assert.equal(store.events.some((e) => e.type === 'failed' && e.content === '半截内容'), true)
 })
 
 test('重放只剩 user 提问（appendUser 与 createPlaceholder 之间崩溃）不把提问当回答', async () => {

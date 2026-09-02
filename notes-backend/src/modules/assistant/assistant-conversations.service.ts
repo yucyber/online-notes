@@ -19,7 +19,8 @@ export class AssistantConversationsService {
   }
 
   async get(userId: string, id: string) {
-    const doc = await this.model.findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId) }).lean().exec()
+    // 只认 active 会话：archived/deleted 会话命中视为不存在（调用方回退新建），避免新消息写入失效会话。
+    const doc = await this.model.findOne({ _id: new Types.ObjectId(id), userId: new Types.ObjectId(userId), status: 'active' }).lean().exec()
     if (!doc) return null
     return { id: String(doc._id), title: String(doc.title || ''), status: doc.status }
   }
