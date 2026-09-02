@@ -72,8 +72,9 @@ export class AssistantMessagesService {
     return docs.map(toView)
   }
 
+  // 幂等判断：任何角色存在即已生成；返回 seq 最大（通常为 assistant）用于补发终态。
   async getByRequestId(userId: string, requestId: string): Promise<AssistantMessageView | null> {
-    const doc = await this.model.findOne({ userId: new Types.ObjectId(userId), requestId }).lean().exec()
+    const doc = await this.model.find({ userId: new Types.ObjectId(userId), requestId }).sort({ seq: -1 }).limit(1).lean().exec().then((rows) => rows[0] ?? null)
     return doc ? toView(doc) : null
   }
 }
