@@ -728,14 +728,32 @@ export class AssistantCheckpointService {
       // 没有新消息时保留现有 checkpoint；不存在则返回空摘要，避免无谓的模型调用。
       return latest ?? { conversationId, throughSeq: 0, summary: '', decisions: [], openQuestions: [], referencedEntities: [], sourceMessageIds: [], createdAt: new Date().toISOString() }
     }
-    const transcript = recent.map((m) => `${m.role}: ${m.content}`).join('\n')
+    // 只取 completed 消息做摘要（失败/取消/占位不参与"已明确结论"），与分支复制策略一致。
+    const completed = recent.filter((m) => m.status === 'completed')
+    if (completed.length === 0) {
+      // 窗口内无有效消息时保留现有 checkpoint；不存在则返回空摘要，避免无谓的模型调用。
+      return latest ?? { conversationId, throughSeq: 0, summary: '', decisions: [], openQuestions: [], referencedEntities: [], sourceMessageIds: [], createdAt: new Date().toISOString() }
+    }
+    // 按字符预算逐条累积 transcript：预算耗尽即停，throughSeq 只推进到实际纳入最后一条，
+    // 避免截断尾部消息被计入已压缩范围而永久漏压（content boundary 修复）。
+    const MAX_CHARS = 12000
+    const lines: string[] = []
+    let used = 0
+    let coveredSeq = completed[0].seq - 1
+    for (const m of completed) {
+      const line = `${m.role}: ${m.content}`
+      if (used + line.length > MAX_CHARS && lines.length > 0) break
+      lines.push(line)
+      used += line.length
+      coveredSeq = m.seq
+    }
+    const throughSeq = Math.max(latest?.throughSeq ?? 0, coveredSeq)
     const result = await this.gateway.chatTask({
       task: 'context_summary', responseFormat: { type: 'json_object' }, maxTokens: 512, temperature: 0,
       system: 'Summarize a conversation for continuity. Return JSON only: {"summary":"...","decisions":["..."],"openQuestions":["..."],"referencedEntities":["..."]}. Only state what was explicitly agreed; do not invent facts.',
-      prompt: transcript.slice(0, 12000),
+      prompt: lines.join('\n'),
     })
     const value = JSON.parse(result.content)
-    const throughSeq = recent[recent.length - 1].seq
     const doc = await this.model.findOneAndUpdate(
       { conversationId: new Types.ObjectId(conversationId), userId: new Types.ObjectId(userId) },
       {
@@ -745,7 +763,7 @@ export class AssistantCheckpointService {
           decisions: Array.isArray(value?.decisions) ? value.decisions.map(String).slice(0, 20) : [],
           openQuestions: Array.isArray(value?.openQuestions) ? value.openQuestions.map(String).slice(0, 20) : [],
           referencedEntities: Array.isArray(value?.referencedEntities) ? value.referencedEntities.map(String).slice(0, 20) : [],
-          sourceMessageIds: recent.map((m) => new Types.ObjectId(m.id)),
+          sourceMessageIds: completed.filter((m) => m.seq <= throughSeq).map((m) => new Types.ObjectId(m.id)),
         },
       },
       { upsert: true, new: true, setDefaultsOnInsert: true },
