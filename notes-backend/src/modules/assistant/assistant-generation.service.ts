@@ -171,12 +171,13 @@ export class AssistantGenerationService {
         emitter.emit('event', { event: 'complete', data: { messageId: assistantMessageId, route: 'rag', citations: result.citations, warnings: result.warnings, planSummary: result.planSummary, runId: result.runId } })
       } else {
         emitter.emit('event', { event: 'status', data: { stage: 'routing', message: '小助手正在回复' } })
-        // pet 分支也携带分区上下文：先按 Token 预算组装（摘要/近期/历史/认知）再提问，
-        // 避免长会话下小助手丢失前面讨论的结论；context 未注入（单测直构/早期阶段）时退化为原问题。
+        // pet 分支也携带分区上下文（摘要/近期/历史/认知）再提问；context 未注入（单测直构/未注册时）
+        // 或 assemble 失败（如 DB 读异常）时降级为直接提问，不阻塞回答——与 checkpoint 的静默降级惯例一致。
         let prompt = input.question
         if (this.context) {
           const context = await this.context.assemble({ userId, conversationId: input.conversationId, question: input.question })
-          prompt = this.context.buildPrompt(input.question, context.sections)
+            .catch((error) => { this.logger.warn(`assemble 失败，降级为直接提问: ${error?.message ?? error}`); return null })
+          prompt = context ? this.context.buildPrompt(input.question, context.sections) : input.question
         }
         const stream = await this.aiService.chatPet({ message: prompt }, { userId })
         const reader = stream.getReader()

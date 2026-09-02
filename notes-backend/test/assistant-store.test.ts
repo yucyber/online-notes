@@ -6,6 +6,7 @@ import { AssistantMessagesService } from '../src/modules/assistant/assistant-mes
 function matches(d: any, filter: any): boolean {
   return Object.entries(filter).every(([k, v]) => {
     if (v && typeof v === 'object' && '$gt' in v) return Number(d[k]) > (v as { $gt: number }).$gt
+    if (v && typeof v === 'object' && '$lte' in v) return Number(d[k]) <= (v as { $lte: number }).$lte
     return String(d[k]) === String(v)
   })
 }
@@ -57,6 +58,23 @@ test('消息按 seq 升序返回并支持 afterSeq 游标', async () => {
   assert.deepEqual(all.map((m) => m.seq), [1, 2])
   const after = await service.list('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc', { afterSeq: 1 })
   assert.deepEqual(after.map((m) => m.seq), [2])
+})
+
+test('listBefore 取 seq ≤ seqLte 的最近段并按 seq 升序返回', async () => {
+  // P2 契约：历史召回需要 throughSeq 之前最近一段（而非 list 升序封顶 200 的最旧消息），
+  // DB 侧倒序取再反序回升序——seqLte 过滤 + limit 取最近 N 条 + 升序返回。
+  const model = new MemoryModel([
+    { _id: 'm1', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 1, role: 'user', route: 'pet', content: 'a', status: 'completed' },
+    { _id: 'm2', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 2, role: 'assistant', route: 'pet', content: 'b', status: 'completed' },
+    { _id: 'm3', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 3, role: 'assistant', route: 'pet', content: 'c', status: 'completed' },
+    { _id: 'm4', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 4, role: 'assistant', route: 'pet', content: 'd', status: 'completed' },
+    { _id: 'm5', conversationId: 'cccccccccccccccccccccccc', userId: 'aaaaaaaaaaaaaaaaaaaaaaaa', seq: 5, role: 'assistant', route: 'pet', content: 'e', status: 'completed' },
+  ])
+  const service = new AssistantMessagesService(model as any)
+  const before = await service.listBefore('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc', { seqLte: 3 })
+  assert.deepEqual(before.map((m) => m.seq), [1, 2, 3])
+  const limited = await service.listBefore('aaaaaaaaaaaaaaaaaaaaaaaa', 'cccccccccccccccccccccccc', { seqLte: 5, limit: 2 })
+  assert.deepEqual(limited.map((m) => m.seq), [4, 5])
 })
 
 test('getByRequestId 按用户与 requestId 精确查询', async () => {

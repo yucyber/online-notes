@@ -84,6 +84,15 @@ export class AssistantMessagesService {
     return docs.map(toView)
   }
 
+  // 历史召回专用：取 seq ≤ seqLte 的最近 limit 条（DB 侧倒序取再反序回升序）。list 升序封顶 200 会取到最旧 200 条，
+  // 长会话（>200 条）时 throughSeq 前的最新压缩前历史永远扫不到；此处按 seqLte 上限倒序取最近段，避免静默漏召回。
+  async listBefore(userId: string, conversationId: string, opts?: { seqLte?: number; limit?: number }): Promise<AssistantMessageView[]> {
+    const filter: any = { conversationId: new Types.ObjectId(conversationId), userId: new Types.ObjectId(userId) }
+    if (opts?.seqLte !== undefined) filter.seq = { $lte: opts.seqLte }
+    const docs = await this.model.find(filter).sort({ seq: -1 }).limit(Math.min(200, opts?.limit ?? 200)).lean().exec()
+    return docs.reverse().map(toView)
+  }
+
   // 幂等判断：任何角色存在即已生成；返回 seq 最大（通常为 assistant）用于补发终态。
   async getByRequestId(userId: string, requestId: string): Promise<AssistantMessageView | null> {
     const doc = await this.model.find({ userId: new Types.ObjectId(userId), requestId }).sort({ seq: -1 }).limit(1).lean().exec().then((rows) => rows[0] ?? null)
