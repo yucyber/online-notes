@@ -7,6 +7,7 @@ import { AssistantController } from './assistant.controller'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
 import { MemoryCandidatesService } from './assistant-memory-candidates.service'
+import { MemoryService } from './assistant-memory.service'
 import { AssistantMemoryExtractorService } from './assistant-memory-extractor.service'
 import { AssistantMessagesService } from './assistant-messages.service'
 import { AssistantConversation, AssistantConversationSchema } from './schemas/assistant-conversation.schema'
@@ -33,7 +34,7 @@ import { AssistantMemory, AssistantMemorySchema } from './schemas/assistant-memo
   providers: [
     AssistantConversationsService, AssistantMessagesService, AssistantGenerationService,
     AssistantCheckpointService, AssistantContextService, AssistantMemoryExtractorService,
-    MemoryCandidatesService,
+    MemoryCandidatesService, MemoryService,
   ],
   exports: [AssistantConversationsService, AssistantMessagesService],
 })

@@ -1,10 +1,11 @@
-import { BadRequestException, Body, Controller, Get, NotFoundException, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
+import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Patch, Post, Query, Req, Res, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { Throttle } from '@nestjs/throttler'
 import { IsEnum, IsMongoId, IsOptional, IsString, MaxLength } from 'class-validator'
 import type { Request, Response } from 'express'
 import { MemoryKind, MemoryScope } from './assistant.constants'
 import { MemoryConfirmEdits, MemoryCandidatesService } from './assistant-memory-candidates.service'
+import { MemoryResolveAction, MemoryService } from './assistant-memory.service'
 import { AssistantCheckpointService } from './assistant-checkpoint.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantGenerationService } from './assistant-generation.service'
@@ -44,6 +45,9 @@ export class AssistantController {
     // 记忆候选服务依赖的 schema 与 provider 已在 assistant.module.ts 注册；
     // 参数保持可选语法仅为兼容既有 4 参直接构造的 controller 测试（DI 正常注入）。
     private readonly memoryCandidates?: MemoryCandidatesService,
+    // 长期记忆服务：候选确认冲突时返回的 memoryId 为空串、无记忆行，前端用候选 id 兜底调用 resolve；
+    // 因此 resolve 入口需同时覆盖记忆与 confirmed 挂起候选（见 assistant-memory.service 注释）。
+    private readonly memories?: MemoryService,
   ) {}
 
   @Post('chat')
@@ -199,6 +203,52 @@ export class AssistantController {
     const userId = this.userId(req)
     if (!userId) throw new BadRequestException('Authenticated user is required.')
     return this.memoryCandidates.batchConfirm(userId, Array.isArray(body?.ids) ? body.ids.map(String) : [], { kind: body?.kind, scope: body?.scope })
+  }
+
+  // 认知长期记忆（Task 4）：列表默认只返回当前有效，includeSuperseded=1 打开演进视图。
+  @Get('memories')
+  async listMemories(@Query('includeSuperseded') includeSuperseded?: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    const opts = ['1', 'true'].includes(String(includeSuperseded || '')) ? { includeSuperseded: true } : undefined
+    return { items: await this.memories.list(userId, opts) }
+  }
+
+  // 冲突解决：body 即动作（supersede 需 targetMemoryId；keep_both 可选 scope 由前端先调整新结论范围）。
+  // :id 可能是长期记忆，也可能是候选确认冲突后挂起的候选（confirm 返回 memoryId=''，前端以候选 id 兜底）。
+  @Post('memories/:id/resolve')
+  async resolveMemoryConflict(@Param('id') id: string, @Body() body: { type?: string; targetMemoryId?: string; scope?: MemoryScope }, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    const type = String(body?.type || '')
+    if (type === 'supersede') {
+      if (!body?.targetMemoryId) throw new BadRequestException('supersede 需要 targetMemoryId')
+      return this.memories.resolveConflict(userId, id, { type: 'supersede', targetMemoryId: String(body.targetMemoryId) })
+    }
+    if (type === 'keep_both') {
+      const action: MemoryResolveAction = body?.scope ? { type: 'keep_both', scope: body.scope } : { type: 'keep_both' }
+      return this.memories.resolveConflict(userId, id, action)
+    }
+    if (type === 'reject_memory') return this.memories.resolveConflict(userId, id, { type: 'reject_memory' })
+    throw new BadRequestException('不支持的冲突解决动作')
+  }
+
+  @Delete('memories/:id')
+  async deleteMemory(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    await this.memories.delete(userId, id)
+    return { ok: true }
+  }
+
+  // 演进过程视图：同 subject + scope 的全部节点按 validFrom 升序（含已替代，前端展示历史）。
+  @Get('memories/timeline')
+  async getMemoryTimeline(@Query('subject') subject?: string, @Query('scopeType') scopeType?: string, @Query('scopeId') scopeId?: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    const scope: MemoryScope = { type: scopeType === 'global' || scopeType === 'knowledge_base' || scopeType === 'note' || scopeType === 'conversation' ? scopeType : 'global' }
+    if (scopeId) scope.id = scopeId
+    return { items: await this.memories.getTimeline(userId, String(subject || ''), scope) }
   }
 
   private userId(req?: AuthenticatedRequest): string | undefined {
