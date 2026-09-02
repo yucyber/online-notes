@@ -132,3 +132,35 @@
   - `notes-frontend/next.config.js`（rewrite 代理，早先已用 127.0.0.1）
 - **修复方案**：新增 `src/lib/server/api-url.ts` 导出 `SERVER_API_URL`（默认 `http://127.0.0.1:3001/api`，可用 `SERVER_API_URL` 环境变量覆盖以支持远程部署）；`server-notes.ts` 与 `_proxy.ts` 改用该常量。浏览器侧的 `NEXT_PUBLIC_API_URL` 保持不变（浏览器必须用 localhost 才能与页面同 site，保证 SameSite=Lax 登录 cookie 随请求发送）。
 - **经验教训**：Node 侧（SSR、route handler、proxy）解析 `localhost` 在 Windows 下会优先 IPv6 `::1`，直连后端必须显式用 `127.0.0.1`；`NEXT_PUBLIC_*` 变量是给浏览器的，不要在后端进程内复用来直连后端，Node 侧应单独维护 baseURL 常量。
+
+---
+
+## 小助手 chat 端点 500：占位消息 content required 校验 + user/assistant 共用 requestId 撞唯一索引
+
+- **日期**：2026-09-02（T10 冒烟发现）
+- **现象**：小助手发送"你好"，前端提示"小助手请求失败/请检查网络后重试"，后端 `POST /api/assistant/chat` 返回 500 `Internal Server Error`（无日志堆栈）。`nest start` 直调 `AssistantGenerationService.start` 报 `ValidationError: AssistantMessage validation failed: content: Path 'content' is required.`；改掉 content 后又报 `MongoServerError: E11000 duplicate key ... idx_assistant_msg_user_request`。
+- **根因**（两处叠加）：
+  1. schema `@Prop({ required: true, default: '' }) content`：Mongoose 的 `required` 校验用 `!value` 判断，空串 `''` 是 falsy → 校验失败；而 `createPlaceholder` 建占位 assistant 消息时内容本就为空（pending/streaming 状态），校验必然失败。
+  2. 唯一索引 `idx_assistant_msg_user_request`（userId + requestId）无 role 条件：一次生成会落两条消息（user 提问 + assistant 回复）共用同一 requestId → 第二条 create 必撞唯一索引。幂等锚点应只在 **user 消息**（同一提问只生成一次）。
+- **修复方案**：schema `content` 去掉 `required: true`（保留 `default: ''`，占位/流中空内容合法）；唯一索引 partialFilterExpression 增加 `role: 'user'`（assistant 消息的 requestId 仅关联、不参与唯一）；`getByRequestId` 幂等重放定位按 `seq` 降序返回（终态在 assistant 消息上）；删除 Atlas 旧索引（无 role 条件）后由 Mongoose autoIndex 重建。
+- **相关文件**：
+  - `notes-backend/src/modules/assistant/schemas/assistant-message.schema.ts`（content 去 required + 索引加 role）
+  - `notes-backend/src/modules/assistant/assistant-messages.service.ts`（getByRequestId 排序）
+  - `docs/superpowers/plans/2026-09-01-assistant-streaming-rag-and-message-lifecycle.md`（计划 Task 1 schema 代码同步）
+- **经验教训**：
+  1. Mongoose `required` 校验会拒绝空字符串，`default: ''` 不豁免——"占位即空内容"的字段（pending 消息）不能设 required。
+  2. `(userId, requestId)` 唯一索引做幂等锚点时，必须想清楚**一条生成对应几条文档**；同一 requestId 关联多条消息（user + assistant）时必须用 partialFilterExpression 限定锚点角色。
+  3. T1/T4 用 MemoryModel/假模型写测试跑不出真实 Mongo 校验与索引约束——schema 层的 required/unique 必须用真实 Mongoose 连接验证（本次 500 正是测试盲区放过的）。
+
+---
+
+## RAG 引用卡片缺失：Qwen3-14B 未输出 [E1] 引用标记（provider/model 行为，非代码 bug）
+
+- **日期**：2026-09-02（T10 冒烟发现）
+- **现象**：小助手 RAG 路由回答正确引用了笔记内容（"蓝色海豚"等），但 `complete` 事件 `citations: []`、warning `回答未附带可验证引用`，前端无引用卡片、路由标签仍显示 pet 的"轻松聊聊"。
+- **根因**：`rag_answer` 任务走 siliconflow_standard（Qwen3-14B），system prompt 要求 `Cite note-supported claims using only [E1] style IDs`，但该模型输出未包含任何 `[E1]` 标记 → sanitizer 提取不到 → citations 空。代码链路（buildRagAnswerTaskOptions → createRagCitationSanitizer）与设计一致（测试 rag-answer-grounding 已覆盖"有证据但回答未引用时提示"）。属**上游模型指令遵循问题**，一次性 RAG 路径同样受影响（非计划 1 引入的回归）。
+- **相关文件**：
+  - `notes-backend/src/modules/ai/rag/rag-task-builder.ts`（prompt 要求 [E1] 标记，模型未遵循）
+  - `notes-backend/src/modules/ai/rag/rag-stream.service.ts`（citations 提取链路）
+- **修复方案**：未修复（超出计划 1 范围）。已记录为已知限制：引用卡片依赖模型遵循 [E1] 指令，当前 Qwen3-14B 不遵循；可选后续调优（prompt 加 few-shot 示例 / 换 model / 二次提取）。
+- **经验教训**：RAG 引用体验强依赖模型输出标记；验收时应区分"检索正确性"（代码链路）与"引用标记产出"（provider 行为），后者不是代码缺陷但影响功能验收。
