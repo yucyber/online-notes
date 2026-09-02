@@ -51,6 +51,22 @@ export class NotesController {
     return this.notesService.getChunkLocation(noteId, chunkId, req.user.id);
   }
 
+  @Get(':noteId/chunks/:chunkId/evidence')
+  async chunkEvidence(
+    @Param('noteId') noteId: string,
+    @Param('chunkId') chunkId: string,
+    @Request() req,
+    @Query('before') before?: string,
+    @Query('after') after?: string,
+    @Query('heading') heading?: string,
+  ) {
+    return this.notesService.getChunkEvidence(noteId, chunkId, req.user.id, {
+      ...(before !== undefined ? { before: Number(before) } : {}),
+      ...(after !== undefined ? { after: Number(after) } : {}),
+      ...(heading ? { headingPath: heading.split('>').map((part) => part.trim()).filter(Boolean) } : {}),
+    });
+  }
+
   @Get(':id')
   async findOne(@Param('id') id: string, @Request() req) {
     return this.notesService.findOne(id, req.user.id);

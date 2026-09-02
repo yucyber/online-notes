@@ -255,6 +255,81 @@ export class NotesService {
     }
   }
 
+  async getChunkEvidence(
+    noteId: string,
+    chunkId: string,
+    userId: string,
+    opts?: { before?: number; after?: number; headingPath?: string[] },
+  ): Promise<{
+    noteId: string
+    noteTitle: string
+    chunkId: string
+    headingPath: string[]
+    content: string
+    noteUpdatedAt: string
+    relocated: boolean
+    neighbors: {
+      before: Array<{ chunkId: string; headingPath: string[]; excerpt: string }>
+      after: Array<{ chunkId: string; headingPath: string[]; excerpt: string }>
+    }
+  }> {
+    const noteIdObj = this.noteAccess.objectId(noteId, 'note id')
+    // 先收窄到 NoteAccess 再取 Note 元数据，避免跨 Note 暴露正文存在性。
+    const readableNote = await this.noteModel
+      .findOne(this.noteAccess.readScope(noteId, userId))
+      .select('_id title updatedAt')
+      .lean()
+      .exec() as any
+    if (!readableNote) throw new NotFoundException('笔记不存在')
+    if (!this.noteChunkModel) throw new NotFoundException('证据不可用')
+
+    let chunk = await this.noteChunkModel
+      .findOne({ _id: this.noteAccess.objectId(chunkId, 'chunk id'), noteId: noteIdObj })
+      .select('_id chunkIndex headingPath content')
+      .lean()
+      .exec()
+    let relocated = false
+    if (!chunk && opts?.headingPath?.length) {
+      // Chunk 因重新索引失效：按 headingPath 定位同笔记下的最新 Chunk，并明确标记已重定位。
+      chunk = await this.noteChunkModel
+        .findOne({ noteId: noteIdObj, headingPath: opts.headingPath })
+        .sort({ chunkIndex: -1, _id: -1 })
+        .select('_id chunkIndex headingPath content')
+        .lean()
+        .exec()
+      relocated = Boolean(chunk)
+    }
+    if (!chunk) throw new NotFoundException('证据位置不存在')
+
+    const before = Math.max(0, Math.min(3, Number(opts?.before ?? 1)))
+    const after = Math.max(0, Math.min(3, Number(opts?.after ?? 1)))
+    const siblings = await this.noteChunkModel
+      .find({ noteId: noteIdObj })
+      .select('_id chunkIndex headingPath content')
+      .sort({ chunkIndex: 1, _id: 1 })
+      .lean()
+      .exec() as any[]
+    const index = siblings.findIndex((c: any) => String(c._id) === String(chunk._id))
+    const pick = (list: any[]) => list.map((c: any) => ({
+      chunkId: String(c._id),
+      headingPath: Array.isArray(c.headingPath) ? c.headingPath.map(String) : [],
+      excerpt: String(c.content || '').replace(/\s+/g, ' ').trim().slice(0, 200),
+    }))
+    return {
+      noteId: String(readableNote._id),
+      noteTitle: String(readableNote.title || '无标题笔记'),
+      chunkId: String(chunk._id),
+      headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [],
+      content: String(chunk.content || ''),
+      noteUpdatedAt: String(readableNote.updatedAt || new Date().toISOString()),
+      relocated,
+      neighbors: {
+        before: index > 0 ? pick(siblings.slice(Math.max(0, index - before), index)) : [],
+        after: index >= 0 ? pick(siblings.slice(index + 1, index + 1 + after)) : [],
+      },
+    }
+  }
+
   async update(id: string, updateNoteDto: UpdateNoteDto, userId: string): Promise<Note> {
     // 可见性影响所有读者，只有 owner 能改；正文等普通内容仍允许 editor 修改。
     const noteScope = updateNoteDto.visibility !== undefined
