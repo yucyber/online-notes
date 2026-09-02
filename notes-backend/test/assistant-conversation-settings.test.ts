@@ -21,3 +21,13 @@ test('会话设置读写且默认开启记忆', async () => {
   assert.deepEqual(await service.getSettings('u1', 'c1'), { memoryEnabled: false, temporary: true })
   await assert.rejects(() => service.getSettings('u2', 'c1'), /not found/i)
 })
+
+test('设置更新只改显式传入字段，未传开关保持原值', async () => {
+  // R1-4：PATCH settings 是部分更新——只传 memoryEnabled 时 temporary 不被重置回默认。
+  const model = new ConvModel([{ _id: 'c1', userId: 'u1', title: 't', status: 'active' }])
+  const service = new AssistantConversationsService(model as any)
+  await service.updateSettings('u1', 'c1', { memoryEnabled: false })
+  assert.deepEqual(await service.getSettings('u1', 'c1'), { memoryEnabled: false, temporary: false })
+  await service.updateSettings('u1', 'c1', { temporary: true })
+  assert.deepEqual(await service.getSettings('u1', 'c1'), { memoryEnabled: false, temporary: true })
+})

@@ -36,15 +36,19 @@ export class AssistantMemoryExtractorService {
       }
     }
 
-    const recent = await this.messages.list(userId, conversationId, {})
+    // 长会话必须取最近一轮：messages.list 按 seq 升序且封顶 200 条（= 最旧 200 条），再取尾部会让窗口
+    // 卡死在旧消息、最新轮次永不提取；改用 listBefore 由 DB 侧按 seq 倒序取最近 EXTRACT_WINDOW 条（已反序回升序）。
+    const recent = (await this.messages.listBefore(userId, conversationId, { limit: EXTRACT_WINDOW })).slice(-EXTRACT_WINDOW)
     if (recent.length === 0) return { created: 0, skipped: 0 }
 
     // assistant 消息的 citations 转成 note_chunk 证据行，供模型据此判断候选是否立足笔记内容。
-    const transcript = recent.slice(-EXTRACT_WINDOW).map((m) => {
+    // 每行前缀 [m:<id>] 暴露消息 id：模型在 messageIds 里只能引用它真实见过的 id，否则 evidence 反查
+    // m.id 恒空、note_chunk 转换与降级规则全部不可达（R1-1 修复）。
+    const transcript = recent.map((m) => {
       const citeNote = m.citations.length > 0
         ? `\n引用笔记片段：${m.citations.map((c) => `[${c.evidenceId}] ${c.noteTitle} ${c.excerpt}`).join('；')}`
         : ''
-      return `${m.role}: ${m.content}${citeNote}`
+      return `[m:${m.id}] ${m.role}: ${m.content}${citeNote}`
     }).join('\n')
 
     let parsed: any
@@ -54,7 +58,7 @@ export class AssistantMemoryExtractorService {
         responseFormat: { type: 'json_object' },
         maxTokens: 512,
         temperature: 0,
-        system: `Extract durable memory candidates from this conversation. Allowed kinds: ${MEMORY_KINDS.join(', ')}. Return JSON only: {"candidates":[{"kind":"...","subject":"short topic","statement":"one-sentence fact/decision","confidence":0-1,"messageIds":["..."]}]}. Rules: ignore small talk, emotions, and speculation. A suggestion made only by the assistant and not confirmed by the user must use kind "hypothesis". Do not invent facts.`,
+        system: `Extract durable memory candidates from this conversation. Each transcript line starts with its message id as [m:<message-id>]. Allowed kinds: ${MEMORY_KINDS.join(', ')}. Return JSON only: {"candidates":[{"kind":"...","subject":"short topic","statement":"one-sentence fact/decision","confidence":0-1,"messageIds":["..."]}]}, where "messageIds" must contain exactly the [m:<message-id>] values of the lines that support the candidate. Rules: ignore small talk, emotions, and speculation. A suggestion made only by the assistant and not confirmed by the user must use kind "hypothesis". Do not invent facts.`,
         prompt: transcript.slice(0, 12000),
       })
       parsed = JSON.parse(result.content)

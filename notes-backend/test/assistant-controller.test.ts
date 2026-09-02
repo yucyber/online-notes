@@ -92,7 +92,7 @@ test('export 端点会话不存在或不属于该用户时抛 404', async () => 
   )
 })
 
-test('管理端点无认证用户时抛 400（rename/archive/unarchive/delete/branch/checkpoint/cancel 同守门）', async () => {
+test('管理端点无认证用户时抛 400（rename/archive/unarchive/delete/branch/checkpoint/cancel/settings 同守门）', async () => {
   const controller = new AssistantController({} as any, {} as any, {} as any, {} as any)
   const noUser = undefined as any
   await assert.rejects(() => controller.renameConversation('c1', '新标题', noUser), BadRequestException)
@@ -103,4 +103,22 @@ test('管理端点无认证用户时抛 400（rename/archive/unarchive/delete/br
   await assert.rejects(() => controller.checkpoint('c1', noUser), BadRequestException)
   await assert.rejects(() => controller.cancel('r1', noUser), BadRequestException)
   await assert.rejects(() => controller.listMessages('c1', undefined, undefined, noUser), BadRequestException)
+  await assert.rejects(() => controller.updateConversationSettings('c1', { memoryEnabled: false }, noUser), BadRequestException)
+})
+
+test('settings 端点把 PATCH body 的 settings 透传给会话设置更新', async () => {
+  // R1-4：正常路径断言——controller 不做多余加工，settings 未提供（undefined body）时按空对象透传。
+  const calls: Array<{ id: string; settings: any }> = []
+  const conversations = {
+    updateSettings: async (_userId: string, id: string, settings: any) => {
+      calls.push({ id, settings })
+      return { memoryEnabled: settings.memoryEnabled !== false, temporary: Boolean(settings.temporary) }
+    },
+  }
+  const controller = new AssistantController({} as any, {} as any, conversations as any, {} as any)
+  const user = { user: { id: 'u1' } } as any
+  const result = await controller.updateConversationSettings('c1', { memoryEnabled: false, temporary: true } as any, user)
+  assert.deepEqual(result, { memoryEnabled: false, temporary: true })
+  await controller.updateConversationSettings('c1', undefined as any, user)
+  assert.deepEqual(calls[1].settings, {}, 'settings 缺省时透传空对象，由 service 保持原值')
 })

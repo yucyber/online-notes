@@ -4,7 +4,7 @@ import { test } from 'node:test'
 import { AI_TASKS, resolveAiModelPolicy } from '../src/modules/ai/ai-model-policy'
 
 test('maps every AI task to one explicit policy', () => {
-  assert.equal(AI_TASKS.length, 17)
+  assert.equal(AI_TASKS.length, 18)
   for (const task of AI_TASKS) {
     const policy = resolveAiModelPolicy(task)
     assert.ok(policy.primary)
