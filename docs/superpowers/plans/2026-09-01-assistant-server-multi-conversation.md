@@ -460,7 +460,7 @@ git commit -m "feat(assistant): 重试追溯与自动标题"
 
 **Interfaces:**
 - Produces:
-  - `AssistantMessagesService.copyPrefix(userId, sourceConversationId, throughSeq): Promise<Array<{ role; route; content; status; citations; warnings; createdAt }>>`（seq ≤ throughSeq 的可见消息副本，status 一律 `completed`）。
+  - `AssistantMessagesService.copyPrefix(userId, sourceConversationId, throughSeq): Promise<Array<{ role; route; content; status; citations; warnings; createdAt }>>`（seq ≤ throughSeq 且 `status: 'completed'` 的消息副本——**分支只继承有效对话，失败/取消/未完成的回答（含 pending/streaming 占位）一律排除**，避免"幽灵气泡"或把失败伪装成成功；产品决策 2026-09-02 用户确认）。
   - `AssistantConversationsService.branch(userId, sourceId, throughSeq): Promise<{ id: string; parentConversationId: string; forkedFromSeq: number }>`：创建新会话（`status: 'active'`，标题 `原标题 · 分支`，`parentConversationId`/`forkedFromSeq`），复制前缀消息，`seq` 重排。
   - `POST /api/assistant/conversations/:id/branch` body `{ fromSeq: number }`。
 
@@ -515,6 +515,7 @@ async copyPrefix(userId: string, sourceConversationId: string, throughSeq: numbe
     userId: new Types.ObjectId(userId),
     conversationId: new Types.ObjectId(sourceConversationId),
     seq: { $lte: throughSeq },
+    status: 'completed', // 只复制成功回答：失败/取消/未完成（pending/streaming）不进入分支会话
   }).sort({ seq: 1 }).lean().exec() as any[]
   return docs.map((doc) => ({
     role: doc.role, route: doc.route, content: String(doc.content || ''),
