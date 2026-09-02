@@ -95,13 +95,15 @@ export class AssistantConversationsService {
     return docs.map((doc) => ({ id: String(doc._id), title: String(doc.title || ''), updatedAt: String(doc.updatedAt || new Date().toISOString()) }))
   }
 
-  // 分支会话（从历史续写）：读源会话、复制 seq ≤ throughSeq 前缀消息到新会话并重排 seq，标题追加 "· 分支"，
-  // 记录 parentConversationId/forkedFromSeq 溯源。源会话不属于该用户或不存在时抛 NotFound（写操作语义与 rename/setStatus 一致）。
+  // 分支会话（从历史续写）：读源会话、复制 seq ≤ throughSeq 的成功问答前缀（copyPrefix 已限 completed）到新会话并重排 seq，
+  // 标题追加 "· 分支"，记录 parentConversationId/forkedFromSeq 溯源。源会话不属于该用户或不存在时抛 NotFound（写操作语义与 rename/setStatus 一致）。
   async branch(userId: string, sourceId: string, throughSeq: number, messages: AssistantMessagesService): Promise<{ id: string; parentConversationId: string; forkedFromSeq: number }> {
     // 源会话读取不带 .lean().exec() 链：测试内存模型 findOne 同步返回 doc，await findOne 对真实 Mongoose 同样返回 doc。
     const source = await this.model.findOne({ _id: toObjectId(sourceId), userId: toObjectId(userId) })
     if (!source) throw new NotFoundException('conversation not found')
     const prefix = await messages.copyPrefix(userId, sourceId, throughSeq)
+    // messageCount/lastMessageAt 在 create 时携带（而非 create 后 touch）：与 generation 的 touch 语义一致——
+    // messageCount = 复制消息总数，lastMessageAt = 最后一条前缀的 createdAt；少一次写且字段随会话同生；空前缀时不写 lastMessageAt。
     const created = await this.model.create({
       userId: toObjectId(userId),
       title: `${String(source.title || '新对话')} · 分支`,
@@ -109,9 +111,17 @@ export class AssistantConversationsService {
       defaultRoute: source.defaultRoute || 'auto',
       parentConversationId: source._id,
       forkedFromSeq: throughSeq,
+      messageCount: prefix.length,
+      ...(prefix.length ? { lastMessageAt: prefix[prefix.length - 1].createdAt } : {}),
     })
-    for (const [index, message] of prefix.entries()) {
-      await messages.appendBranchMessage(userId, String(created._id), index + 1, message)
+    try {
+      for (const [index, message] of prefix.entries()) {
+        await messages.appendBranchMessage(userId, String(created._id), index + 1, message)
+      }
+    } catch (error) {
+      // 复制中途失败：删除刚创建的空壳会话避免孤儿会话（部分已复制消息随之不可达）；删除本身失败不掩盖原始错误。
+      await this.model.deleteOne({ _id: created._id }).exec().catch(() => undefined)
+      throw error
     }
     return { id: String(created._id), parentConversationId: sourceId, forkedFromSeq: throughSeq }
   }

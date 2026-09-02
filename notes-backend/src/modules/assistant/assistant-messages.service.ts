@@ -123,13 +123,15 @@ export class AssistantMessagesService {
     })
   }
 
-  // 分支会话取前缀：复制源会话 seq ≤ throughSeq 的可见消息（按 seq 升序），status 一律 completed（见 BranchPrefixMessage）。
+  // 分支会话取前缀：分支只继承有效对话——仅复制源会话 seq ≤ throughSeq 且 status='completed' 的消息（成功问答），
+  // 排除 pending/streaming 占位（含空内容）与 failed/cancelled，避免幽灵气泡、失败伪装成成功。按 seq 升序返回。
   // 链尾用 .sort().lean() 直接 await（方案 A，兼容测试内存模型的 find→sort→lean 链，与 Task 2 searchMessages 同型）。
   async copyPrefix(userId: string, sourceConversationId: string, throughSeq: number): Promise<BranchPrefixMessage[]> {
     const docs = await this.model.find({
       userId: toObjectId(userId),
       conversationId: toObjectId(sourceConversationId),
       seq: { $lte: throughSeq },
+      status: 'completed',
     }).sort({ seq: 1 }).lean() as any[]
     return docs.map((doc) => ({
       role: doc.role, route: doc.route, content: String(doc.content || ''),
@@ -141,6 +143,8 @@ export class AssistantMessagesService {
   }
 
   // 分支会话落消息：seq 由调用方（branch）按新会话从 1 重排后显式传入，区别于 appendUser/createPlaceholder 的 nextSeq 自增。
+  // 不复制 requestId/retryOfMessageId 是有意为之：(userId, requestId) 在源会话已占用（全局唯一索引，role=user 部分），
+  // 复制必然唯一键冲突；retryOf 复制会造成跨会话悬垂追溯（指向源会话消息）。
   async appendBranchMessage(userId: string, conversationId: string, seq: number, message: BranchPrefixMessage) {
     await this.model.create({
       userId: toObjectId(userId), conversationId: toObjectId(conversationId), seq,
