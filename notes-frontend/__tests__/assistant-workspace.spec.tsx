@@ -7,8 +7,10 @@ import { AssistantWorkspace } from '@/components/assistant/AssistantWorkspace'
 jest.mock('react-markdown', () => ({ __esModule: true, default: ({ children }: { children: string }) => <>{children}</> }))
 
 // useSearchParams 只在挂载初读一次 ?conversation；测试统一走 initialConversationId
+const mockRouterReplace = jest.fn()
 jest.mock('next/navigation', () => ({
   useSearchParams: () => ({ get: () => null }),
+  useRouter: () => ({ replace: (...args: unknown[]) => mockRouterReplace(...args) }),
 }))
 
 // jsdom 测试环境缺 Node 全局流 API，显式注入（与 ai-chat-window.spec 同一惯例）
@@ -57,6 +59,7 @@ describe('AssistantWorkspace 三栏工作台', () => {
   beforeEach(() => {
     localStorage.clear()
     sessionStorage.clear()
+    mockRouterReplace.mockClear()
     promptSpy?.mockRestore()
     promptSpy = undefined
     scrolled.length = 0
@@ -111,6 +114,36 @@ describe('AssistantWorkspace 三栏工作台', () => {
     expect(await screen.findByText('第二问')).toBeInTheDocument()
     expect(screen.queryByText('第一问')).not.toBeInTheDocument()
     expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('/c2/messages'), expect.anything())
+  })
+
+  test('切换会话后地址栏 URL 同步为当前会话（?conversation=）', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1), conversation('c2', '会话二', 1)] })
+      if (href.includes('/messages')) return json({ items: [] })
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace initialConversationId="c1" />)
+    await screen.findByText('会话一')
+    // 挂载后首个 replace 应同步为初始会话（与 URL 定位语义一致）
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/dashboard/assistant?conversation=c1'))
+    fireEvent.click(screen.getByRole('button', { name: /会话二 \d+ 条/ }))
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenLastCalledWith('/dashboard/assistant?conversation=c2'))
+  })
+
+  test('新建（清空当前会话）后地址栏移除 ?conversation 参数', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1)] })
+      if (href.includes('/messages')) return json({ items: [] })
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace initialConversationId="c1" />)
+    await screen.findByText('会话一')
+    fireEvent.click(screen.getByRole('button', { name: '新建会话' }))
+    await waitFor(() => expect(mockRouterReplace).toHaveBeenLastCalledWith('/dashboard/assistant'))
   })
 
   // ==== 合并 Task 8：搜索接线 ====

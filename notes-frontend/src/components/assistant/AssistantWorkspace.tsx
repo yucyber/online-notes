@@ -1,7 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { Download, PanelRight, Search } from 'lucide-react';
 import {
   type AssistantSearchResult, type ConversationListItem, exportConversation, fetchConversations, renameConversation, searchAssistant, setConversationStatus,
@@ -32,6 +32,7 @@ type SearchHitMessage = AssistantSearchResult['messages'][number];
 
 export function AssistantWorkspace({ initialConversationId }: { initialConversationId?: string }) {
   const searchParams = useSearchParams();
+  const router = useRouter();
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [activeId, setActiveId] = useState<string>(() => initialConversationId || searchParams?.get('conversation') || '');
   const [messages, setMessages] = useState<AssistantMessageView[]>([]);
@@ -66,6 +67,13 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   }, []);
 
   useEffect(() => { refreshConversations(); }, [refreshConversations]);
+
+  // 当前会话与地址栏双向一致：切换/新建/清除会话都 replace（不 push，避免历史栈膨胀），
+  // 使刷新、复制链接、从浮层"展开"均落到正在查看的会话；空会话去掉 ?conversation 参数。
+  // 首次挂载也执行一次，把 initialConversationId 归一进 URL（浮层展开带参进入时参数本就一致，replace 幂等）。
+  useEffect(() => {
+    router.replace(activeId ? `/dashboard/assistant?conversation=${encodeURIComponent(activeId)}` : '/dashboard/assistant');
+  }, [activeId, router]);
 
   // 会话消息加载：仅在 activeId 变化且未加载过该会话时拉取。
   // 历史快照只在列表仍为空时应用：切会话后若已乐观发送，晚到的历史不得覆盖乐观消息（评审 P2-2）
