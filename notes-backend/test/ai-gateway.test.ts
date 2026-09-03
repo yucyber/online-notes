@@ -209,6 +209,41 @@ test('AiGatewayClient may use provider fallback before the first stream content 
   assert.equal(calls, 2)
 })
 
+test('AiGatewayClient does not block streaming on usage json() when a capacity lease exists', async () => {
+  // 回归：requestProviderAttempt 里 lease 存在时会 response.clone().json() 取 usage，
+  // 对 SSE 流式响应 json() 会阻塞到整流 EOF，导致回答被攒成整段、前端失去打字机效果。
+  // 修复后流式请求跳过 usage 采集，streamTask 应在首块到达后立即返回流（不等待 EOF）。
+  const encoder = new TextEncoder()
+  const fetchImpl = async () => {
+    const stream = new ReadableStream<Uint8Array>({
+      async start(controller) {
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"early"}}]}\n\n'))
+        // 首块后延迟 800ms 才发 EOF：若代码误读 usage，streamTask 会在此阻塞至流读完。
+        await new Promise((resolve) => setTimeout(resolve, 800))
+        controller.enqueue(encoder.encode('data: {"choices":[{"delta":{"content":"late"}}]}\n\n'))
+        controller.enqueue(encoder.encode('data: [DONE]\n\n'))
+        controller.close()
+      },
+    })
+    return streamResponse(stream)
+  }
+  const capacity = {
+    estimateTokens: () => 100,
+    reserve: async () => ({ provider: 'siliconflow', granted: true, retryAfterMs: 0, reservedTokens: 100, activeKey: 'k', tpmKey: 't', reservationId: 'r', reservedAt: Date.now() }),
+    reconcile: async () => undefined,
+    release: async () => undefined,
+  }
+  const client = new AiGatewayClient(createConfig() as any, fetchImpl as any, undefined, capacity as any)
+
+  const startedAt = Date.now()
+  const stream = await client.streamTask({ task: 'pet_chat', prompt: 'hello' })
+  const resolvedIn = Date.now() - startedAt
+
+  // 不应等到 800ms 后的 EOF 才返回流（真实网络首块即达，阻塞即 bug）
+  assert.ok(resolvedIn < 500, `streamTask resolved after ${resolvedIn}ms (expected < 500ms, usage json() blocked the stream)`)
+  assert.equal(await readTextStream(stream), 'earlylate')
+})
+
 test('AiGatewayClient never appends fallback output after stream content starts', async () => {
   let calls = 0
   const encoder = new TextEncoder()

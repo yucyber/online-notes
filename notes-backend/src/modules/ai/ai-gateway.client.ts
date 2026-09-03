@@ -849,12 +849,16 @@ export class AiGatewayClient {
       throw providerError
     }
 
-    const parsedBody = audit?.parseJson
+    // usage 采集只对非流式响应有意义：SSE 响应体不是 JSON，clone().json() 会阻塞到整个流 EOF
+    // 才 resolve（读完所有 token），导致流式回答被攒成整段才交给下游，前端表现为非打字机一次性出现。
+    // 流式请求跳过 usage 采集，reconcile 用空 usage 保留保守预约并立即 release（与 usage 缺失同语义）。
+    const isStreaming = body.stream === true
+    const parsedBody = !isStreaming && audit?.parseJson
       ? await response.clone?.().json?.().catch(() => ({}))
       : undefined
     if (audit?.parseJson) Object.defineProperty(response, '__aiParsedBody', { value: parsedBody ?? {}, configurable: true })
     if (lease) {
-      const usage = parsedBody?.usage ?? await response.clone?.().json?.().then((data: any) => data?.usage).catch(() => undefined)
+      const usage = isStreaming ? undefined : (parsedBody?.usage ?? await response.clone?.().json?.().then((data: any) => data?.usage).catch(() => undefined))
       await this.capacity?.reconcile(lease, usage ? {
         promptTokens: usage.prompt_tokens,
         completionTokens: usage.completion_tokens,
