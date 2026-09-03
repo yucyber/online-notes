@@ -333,12 +333,12 @@ interface RagPlan {
 }
 ```
 
-- [ ] 本地规则先处理空问题、精确标题、普通解释、比较/冲突、用户经历和整理请求。
-- [ ] 普通解释默认 `chunk_vector + rerank`；出现“我的笔记/当时踩坑”同时检索关键词；跨概念关系才启用一跳图谱。
-- [ ] 禁止默认每次执行图谱扩展；首版 `graphHops` 上限固定为 1。
-- [ ] 只有比较、冲突和高风险整理意图使用 deep。
-- [ ] 低置信度才调用 economy Query Planner；调用失败使用固定安全工具组。
-- [ ] 运行测试并提交：`feat(rag): 实现轻量查询规划`。
+- [x] 本地规则先处理空问题、精确标题、普通解释、比较/冲突、用户经历和整理请求。
+- [x] 普通解释默认 `chunk_vector + rerank`；出现“我的笔记/当时踩坑”同时检索关键词；跨概念关系才启用一跳图谱。
+- [x] 禁止默认每次执行图谱扩展；首版 `graphHops` 上限固定为 1。
+- [x] 只有比较、冲突和高风险整理意图使用 deep。
+- [x] 低置信度才调用 economy Query Planner；调用失败使用固定安全工具组。
+- [x] 运行测试并提交：`feat(rag): 实现轻量查询规划`。
 
 ## Task 3.2：编排 Chunk 检索、图谱扩展和 rerank
 
@@ -350,13 +350,13 @@ interface RagPlan {
 
 **Produces:** 去重后的 `RagEvidence[]`，包含 note、chunk、headingPath、score、graphPath。
 
-- [ ] Query rewrite 仅为检索生成 1 个规范问题和最多 3 个关键词，不改变用户原问题。
-- [ ] 首轮获取有界 Chunk；图谱扩展只从命中 Chunk 对应节点出发取一跳邻居证据。
-- [ ] 所有扩展证据重新校验 ACL 与 knowledgeBase 边界。
-- [ ] 去重后最多向 reranker 提交 30 条，最终上下文最多 8～12 条；不得把整个知识库塞进 prompt。
-- [ ] reranker 失败退回 RRF/原始分数；不得让问答整体失败。
-- [ ] 同一 Agent 请求内按工具参数去重，不增加跨请求 Chunk 结果缓存。
-- [ ] 运行权限与预算测试并提交：`feat(rag): 编排图谱增强检索`。
+- [x] Query rewrite 仅为检索生成 1 个规范问题和最多 3 个关键词，不改变用户原问题。
+- [x] 首轮获取有界 Chunk；图谱扩展只从命中 Chunk 对应节点出发取一跳邻居证据。
+- [x] 所有扩展证据重新校验 ACL 与 knowledgeBase 边界。
+- [x] 去重后最多向 reranker 提交 30 条，最终上下文最多 8～12 条；不得把整个知识库塞进 prompt。
+- [x] reranker 失败退回 RRF/原始分数；不得让问答整体失败。
+- [x] 同一 Agent 请求内按工具参数去重，不增加跨请求 Chunk 结果缓存。
+- [x] 运行权限与预算测试并提交：`feat(rag): 编排图谱增强检索`。
 
 ## Task 3.3：生成带可验证引用的回答
 
@@ -369,12 +369,12 @@ interface RagPlan {
 
 **Produces:** `{ answer, citations, planSummary, warnings }` 的非流式首版响应。
 
-- [ ] prompt 明确区分通用知识和“用户笔记经历”；用户经历只能来自证据。
-- [ ] 模型引用使用内部 evidence ID，服务端映射成 noteId/chunkId；无效引用剔除并产生 warning。
-- [ ] 普通回答使用 standard/off；证据冲突分析使用 deep。
-- [ ] 没有足够证据时回答“笔记中未找到”，不得编造标题、坑或解决方式。
-- [ ] 首版先使用非流式响应保证引用与正文原子一致；通过后再设计流式事件协议。
-- [ ] 运行 grounding、权限和模型 fallback 测试并提交：`feat(rag): 生成带笔记引用的回答`。
+- [x] prompt 明确区分通用知识和“用户笔记经历”；用户经历只能来自证据。
+- [x] 模型引用使用内部 evidence ID，服务端映射成 noteId/chunkId；无效引用剔除并产生 warning。
+- [x] 普通回答使用 standard/off；证据冲突分析使用 deep。
+- [x] 没有足够证据时回答“笔记中未找到”，不得编造标题、坑或解决方式。
+- [x] 首版先使用非流式响应保证引用与正文原子一致；通过后再设计流式事件协议。
+- [x] 运行 grounding、权限和模型 fallback 测试并提交：`feat(rag): 生成带笔记引用的回答`。
 
 ## Task 3.4：实现知识助手 UI 与引用定位
 
@@ -384,20 +384,22 @@ interface RagPlan {
 - Create: `notes-frontend/src/components/ai/RagCitationList.tsx`
 - Create: `notes-frontend/__tests__/rag-chat-answer.spec.tsx`
 
-- [ ] 明确显示“基于你的笔记”与“通用补充”，引用展示笔记标题和 headingPath。
-- [ ] 点击引用打开现有笔记页面并携带 chunk/heading 定位参数；定位失败仍能打开笔记。
-- [ ] 展示检索不足、图谱未启用、rerank 降级等用户可理解提示，不暴露 provider 错误详情。
-- [ ] 宠物聊天保持独立；知识型问题可显式转到知识助手，不让宠物组件直接读取 Chunk。
-- [ ] 运行组件测试、type-check、build，并完成窄屏/暗色视觉检查。
-- [ ] 提交：`feat(frontend): 展示 GraphRAG 回答引用`。
+- [x] 明确显示“基于你的笔记”与“通用补充”，引用展示笔记标题和 headingPath。
+- [x] 点击引用打开现有笔记页面并携带 chunk/heading 定位参数；定位失败仍能打开笔记。
+- [x] 展示检索不足、图谱未启用、rerank 降级等用户可理解提示，不暴露 provider 错误详情。
+- [x] 宠物聊天保持独立；知识型问题可显式转到知识助手，不让宠物组件直接读取 Chunk。
+- [x] 运行组件测试、type-check、build，并完成窄屏/暗色视觉检查。
+- [x] 提交：`feat(frontend): 展示 GraphRAG 回答引用`。
 
 **P3 Exit Gate:**
 
-- [ ] “React Diff 是什么”能命中相关 Chunk 并引用正确笔记。
-- [ ] “我当时踩了什么坑”只回答真实记录，没有证据时明确说明。
-- [ ] 普通问题不必走图谱；关系/比较问题最多一跳扩展。
-- [ ] 任何引用都能追溯到当前用户可读的原文 Chunk。
-- [ ] P95、上下文条数和 token 使用进入 AI run 评测报告。
+- [x] “React Diff 是什么”能命中相关 Chunk 并引用正确笔记。
+- [x] “我当时踩了什么坑”只回答真实记录，没有证据时明确说明。
+- [x] 普通问题不必走图谱；关系/比较问题最多一跳扩展。
+- [x] 任何引用都能追溯到当前用户可读的原文 Chunk。
+- [x] P95、上下文条数和 token 使用进入 AI run 评测报告。
+
+2026-09-03：P3 已由用户确认收口。代码含 RAG 编排、引用清洗与流式回答，浏览器验收报告见 `docs/qa/p3-browser-acceptance/report.md`；后端全量单测通过（457 passed / 0 failed）。
 
 ---
 
@@ -413,12 +415,12 @@ interface RagPlan {
 
 **Produces:** 版本化 proposal，action 类型固定为 `create_knowledge_base | move_note | add_tag | set_category | merge_notes | split_note | rewrite_note`。
 
-- [ ] proposal 保存输入 noteId、expectedUpdatedAt、证据 Chunk、reason、riskLevel、状态和模型审计 ID。
-- [ ] 建库/归属/标签属于低风险；merge/split/rewrite 属于高风险且使用 deep。
-- [ ] 生成阶段只写 proposal 集合，不修改任何 Note、Tag、Category 或 KnowledgeBase。
-- [ ] 每个 action 的 noteId、category/tag 和证据均重新应用用户权限。
-- [ ] 笔记在 proposal 后更新时 action 标记 stale，执行前必须返工。
-- [ ] 运行 schema、权限、陈旧检测测试并提交：`feat(organizer): 生成只读整理提案`。
+- [x] proposal 保存输入 noteId、expectedUpdatedAt、证据 Chunk、reason、riskLevel、状态和模型审计 ID。
+- [x] 建库/归属/标签属于低风险；merge/split/rewrite 属于高风险且使用 deep。
+- [x] 生成阶段只写 proposal 集合，不修改任何 Note、Tag、Category 或 KnowledgeBase。
+- [x] 每个 action 的 noteId、category/tag 和证据均重新应用用户权限。
+- [x] 笔记在 proposal 后更新时 action 标记 stale，执行前必须返工。
+- [x] 运行 schema、权限、陈旧检测测试并提交：`feat(organizer): 生成只读整理提案`。
 
 ## Task 4.2：支持全局批量建议与增量归属
 
@@ -426,12 +428,12 @@ interface RagPlan {
 - Create: `notes-backend/src/modules/organizer/organizer-planning.service.ts`
 - Create: `notes-backend/test/organizer-planning.test.ts`
 
-- [ ] 达到配置阈值才生成首次全局组织提案；不要求用户手工选一批笔记。
-- [ ] 初次提案基于主题向量聚类、标题/summary 和现有分类标签，建议创建哪些知识库及归属。
-- [ ] 新笔记优先比较已有知识库主题；只有低于归属阈值时才建议新建知识库。
-- [ ] 保存提案历史和采用结果，后续增量判断使用已确认结构，不把被拒绝建议当事实。
-- [ ] 阈值只放配置，不在首版引入自动学习。
-- [ ] 运行全局/增量/拒绝历史测试并提交：`feat(organizer): 支持增量知识库规划`。
+- [x] 达到配置阈值才生成首次全局组织提案；不要求用户手工选一批笔记。
+- [x] 初次提案基于主题向量聚类、标题/summary 和现有分类标签，建议创建哪些知识库及归属。
+- [x] 新笔记优先比较已有知识库主题；只有低于归属阈值时才建议新建知识库。
+- [x] 保存提案历史和采用结果，后续增量判断使用已确认结构，不把被拒绝建议当事实。
+- [x] 阈值只放配置，不在首版引入自动学习。
+- [x] 运行全局/增量/拒绝历史测试并提交：`feat(organizer): 支持增量知识库规划`。
 
 ## Task 4.3：实现审核、改名、勾选和返工 UI
 
@@ -440,17 +442,19 @@ interface RagPlan {
 - Create: `notes-frontend/src/components/organizer/OrganizerActionDiff.tsx`
 - Create: `notes-frontend/__tests__/organizer-proposal.spec.tsx`
 
-- [ ] 用户可逐条勾选、修改知识库名称、查看证据和风险等级。
-- [ ] 内容修改展示 diff；split 显示每段去向；merge 显示来源、去重和目标结构。
-- [ ] 用户修改意见生成新 revision，旧 revision 保留只读，不能覆盖历史。
-- [ ] P4 页面没有“一键自动执行”入口，只提供确认清单，为 P5 准备。
-- [ ] 运行测试、type-check、build 和视觉验收并提交。
+- [x] 用户可逐条勾选、修改知识库名称、查看证据和风险等级。
+- [x] 内容修改展示 diff；split 显示每段去向；merge 显示来源、去重和目标结构。
+- [x] 用户修改意见生成新 revision，旧 revision 保留只读，不能覆盖历史。
+- [x] P4 页面没有“一键自动执行”入口，只提供确认清单，为 P5 准备。
+- [x] 运行测试、type-check、build 和视觉验收并提交。
 
 **P4 Exit Gate:**
 
-- [ ] 用户能审阅并返工 proposal，但数据库业务实体没有被 AI 自动修改。
-- [ ] 所有高风险 action 有 diff、证据和 stale 检查。
+- [x] 用户能审阅并返工 proposal，但数据库业务实体没有被 AI 自动修改。
+- [x] 所有高风险 action 有 diff、证据和 stale 检查。
 - [ ] 用户完成“U4 高风险执行策略确认”后才能进入 P5。
+
+2026-09-03：P4 后端 proposal schema/service/module、全局/增量规划服务与前端审阅组件已完成；后端新测试与前端组件测试通过。 U4 尚未确认，P5 不开始。
 
 ---
 

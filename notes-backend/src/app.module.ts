@@ -27,6 +27,7 @@ import { MindmapsModule } from './modules/mindmaps/mindmaps.module';
 import { AiModule } from './modules/ai/ai.module';
 import { AssistantModule } from './modules/assistant/assistant.module';
 import { KnowledgeBasesModule } from './modules/knowledge-bases/knowledge-bases.module';
+import { OrganizerModule } from './modules/organizer/organizer.module';
 import { QueueMonitorModule } from './modules/queue-monitor/queue-monitor.module';
 
 @Module({
@@ -70,6 +71,7 @@ import { QueueMonitorModule } from './modules/queue-monitor/queue-monitor.module
     AiModule,
     AssistantModule,
     KnowledgeBasesModule,
+    OrganizerModule,
     QueueMonitorModule,
   ],
   providers: [

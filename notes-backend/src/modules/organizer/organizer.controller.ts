@@ -1,0 +1,38 @@
+import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common'
+import { AuthGuard } from '@nestjs/passport'
+import { OrganizerPlanningService } from './organizer-planning.service'
+import { OrganizerProposalService } from './organizer-proposal.service'
+
+@UseGuards(AuthGuard('jwt'))
+@Controller('organizer')
+export class OrganizerController {
+  constructor(
+    private readonly proposals: OrganizerProposalService,
+    private readonly planning: OrganizerPlanningService,
+  ) {}
+
+  @Get('proposals')
+  listProposals(@Request() req) {
+    return this.proposals.findAll(req.user.id)
+  }
+
+  @Get('proposals/:id')
+  getProposal(@Param('id') id: string, @Request() req) {
+    return this.proposals.findOne(id, req.user.id)
+  }
+
+  @Post('proposals/:id/refresh-stale')
+  refreshStale(@Param('id') id: string, @Request() req) {
+    return this.proposals.refreshStale(id, req.user.id)
+  }
+
+  @Post('planning/global')
+  createGlobal(@Request() req) {
+    return this.planning.createGlobalProposal(req.user.id)
+  }
+
+  @Post('planning/incremental/:noteId')
+  createIncremental(@Param('noteId') noteId: string, @Request() req) {
+    return this.planning.createIncrementalProposal(req.user.id, noteId)
+  }
+}
