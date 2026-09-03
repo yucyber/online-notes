@@ -478,7 +478,7 @@ test('AiGatewayClient does not retry empty content when finish_reason is not len
   assert.equal(calls.length, 1)
 })
 
-test('AiService keeps Pet chat lightweight and disables reasoning', async () => {
+test('AiService keeps Pet chat on economy tier with long-form headroom and disables reasoning', async () => {
   const calls: any[] = []
   const gateway = {
     describeTaskRoute: () => ({ provider: 'siliconflow', model: 'Qwen/Qwen3.5-4B' }),
@@ -492,7 +492,8 @@ test('AiService keeps Pet chat lightweight and disables reasoning', async () => 
   await service.chatPet({ message: '你好' }, { userId: 'user-1' })
 
   assert.equal(calls[0].task, 'pet_chat')
-  assert.equal(calls[0].maxTokens, 400)
+  // 与 pet_chat 策略上限一致：小助手承担长文诉求，上限过低会把回答截断在半句
+  assert.equal(calls[0].maxTokens, 1800)
 })
 
 test('AiGatewayClient reports missing config without leaking existing secrets', async () => {

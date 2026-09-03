@@ -47,7 +47,7 @@ const policies = {
   search_hit_explanation: policy('economy', 'off', 256, 'siliconflow_economy', 'show_chunk'),
   writer: policy('standard', 'off', 1200, 'siliconflow_standard', undefined, 'bai_deepseek'),
   topic_name: policy('economy', 'off', 64, 'siliconflow_economy', 'local_topic'),
-  pet_chat: policy('economy', 'off', 400, 'siliconflow_economy', undefined, 'bai_deepseek'),
+  pet_chat: policy('economy', 'off', 1800, 'siliconflow_economy', undefined, 'bai_deepseek'),
   mindmap: policy('standard', 'off', 2000, 'siliconflow_standard', 'siliconflow_deep', 'bai_deepseek'),
   mermaid: policy('deep', 'deep', 4096, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),
   destructive_reorganization: policy('deep', 'deep', 6000, 'siliconflow_deep', 'ar_expert', 'bai_deepseek'),

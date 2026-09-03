@@ -209,7 +209,8 @@ export class AiService {
   }
 
   async chatPet(input: AiPetInput, context?: AiWorkflowContext): Promise<ReadableStream<Uint8Array>> {
-    return this.gateway.streamTask({ task: 'pet_chat', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 400, temperature: 0.6, audit: { graphName: 'PetChatGraph', userId: context?.userId } })
+    // maxTokens 与 pet_chat 策略上限（1800）保持一致：小助手承担长文/写作诉求，400 token 会截断在 ~700 字半句。
+    return this.gateway.streamTask({ task: 'pet_chat', system: 'You are a friendly assistant inside an online notes app. Be concise, useful, and warm.', prompt: input.message || 'Hello', maxTokens: 1800, temperature: 0.6, audit: { graphName: 'PetChatGraph', userId: context?.userId } })
   }
 
   async answerRag(question: string, knowledgeBaseId: string | undefined, context?: AiWorkflowContext) {
