@@ -1,5 +1,5 @@
-// 阶段四实现记忆召回服务时注册 provider；本阶段只提供 symbol 与接口，
-// @Optional 注入为 undefined，assemble 缺省不输出 [已确认认知] 分区。
+// 认知召回注入令牌：assistant.module 注册 provider（MemoryRecallService 实现），context/generation 均按需 @Optional 注入。
+// 未注册/未注入时为 undefined，assemble 缺省不输出 [已确认认知] 分区；注册后分区与 [M1] 引用按召回结果生效。
 export const MEMORY_RECALL_SERVICE = Symbol('MEMORY_RECALL_SERVICE')
 
 export interface MemoryRecallServiceLike {

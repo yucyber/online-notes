@@ -193,7 +193,7 @@ export class AssistantGenerationService {
         if (cancelled()) throw new Error('CANCELLED')
         await flush(true)
         await this.messages.finalize(userId, assistantMessageId, { content, citations: result.citations, warnings: result.warnings })
-        emitter.emit('event', { event: 'complete', data: { messageId: assistantMessageId, route: 'rag', citations: result.citations, warnings: result.warnings, planSummary: result.planSummary, runId: result.runId } })
+        emitter.emit('event', { event: 'complete', data: { messageId: assistantMessageId, route: 'rag', citations: result.citations, memoryCitations: result.memoryCitations, warnings: result.warnings, planSummary: result.planSummary, runId: result.runId } })
       } else {
         emitter.emit('event', { event: 'status', data: { stage: 'routing', message: '小助手正在回复' } })
         // pet 分支也携带分区上下文（摘要/近期/历史/认知）再提问；context 未注入（单测直构/未注册时）

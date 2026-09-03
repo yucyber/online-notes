@@ -298,9 +298,10 @@ function genStore(settings: { memoryEnabled: boolean; temporary: boolean }) {
   }
 }
 
-test('rag 分支：memoryEnabled=false 时 streamRagAnswer 收到 memoryRecall undefined', async () => {
+test('rag 分支：memoryEnabled=false 时 streamRagAnswer 收到 memoryRecall undefined，complete 事件补发空 memoryCitations', async () => {
   const store = genStore({ memoryEnabled: false, temporary: false })
   const captured: any[] = []
+  const emitted: any[] = []
   const service = new AssistantGenerationService(
     store.conversations as any, store.messages as any,
     { streamRagAnswer: async (input: any) => { captured.push(input); return { route: 'rag', citations: [], memoryCitations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } } } } as any,
@@ -308,24 +309,32 @@ test('rag 分支：memoryEnabled=false 时 streamRagAnswer 收到 memoryRecall u
     undefined as any, undefined as any, undefined as any, undefined as any,
     recallStub as any,
   )
-  await service.start({ userId: 'u1', conversationId: 'c1', requestId: 'req-rag-off', question: '布局怎么改', forceRoute: 'rag' }, () => undefined)
+  await service.start({ userId: 'u1', conversationId: 'c1', requestId: 'req-rag-off', question: '布局怎么改', forceRoute: 'rag' }, (e) => emitted.push(e))
   await service.waitForTerminal('req-rag-off')
   assert.equal(captured[0].memoryRecall, undefined, '关闭召回时 rag 不得注入认知节')
+  const complete = emitted.find((e) => e.event === 'complete')
+  assert.ok(complete, 'rag 完成时应发 complete 事件')
+  assert.deepEqual(complete.data.memoryCitations, [], 'complete 事件应携带 memoryCitations（关闭召回时为空）')
 })
 
-test('rag 分支：memoryEnabled 缺省（旧数据按 true）时透传注入的 memoryRecall', async () => {
+test('rag 分支：memoryEnabled 缺省（旧数据按 true）时透传注入的 memoryRecall，complete 事件补发认知引用', async () => {
   const store = genStore({ memoryEnabled: true, temporary: false })
   const captured: any[] = []
+  const emitted: any[] = []
+  const memoryCitations = [{ marker: 'M1', memoryId: 'm1', text: '保留浮层' }]
   const service = new AssistantGenerationService(
     store.conversations as any, store.messages as any,
-    { streamRagAnswer: async (input: any) => { captured.push(input); return { route: 'rag', citations: [], memoryCitations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } } } } as any,
+    { streamRagAnswer: async (input: any) => { captured.push(input); return { route: 'rag', citations: [], memoryCitations, warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } } } } as any,
     { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
     undefined as any, undefined as any, undefined as any, undefined as any,
     recallStub as any,
   )
-  await service.start({ userId: 'u1', conversationId: 'c1', requestId: 'req-rag-on', question: '布局怎么改', forceRoute: 'rag' }, () => undefined)
+  await service.start({ userId: 'u1', conversationId: 'c1', requestId: 'req-rag-on', question: '布局怎么改', forceRoute: 'rag' }, (e) => emitted.push(e))
   await service.waitForTerminal('req-rag-on')
   assert.equal(captured[0].memoryRecall, recallStub, '开启召回时透传注入的 recall')
+  const complete = emitted.find((e) => e.event === 'complete')
+  assert.ok(complete, 'rag 完成时应发 complete 事件')
+  assert.deepEqual(complete.data.memoryCitations, memoryCitations, 'complete 事件携带 streamRagAnswer 返回的认知引用')
 })
 
 test('设置读取失败时保持默认召回，不影响回答', async () => {
