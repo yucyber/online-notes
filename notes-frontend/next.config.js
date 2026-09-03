@@ -38,7 +38,11 @@ const nextConfig = {
     const backendOrigin = 'http://127.0.0.1:3001'
     return [
       {
-        source: '/api/:path*',
+        // assistant 有独立的 app route handler（app/api/assistant/[...path]/route.ts），负责 SSE 流式透传、
+        // JSON 信封解包与 cookie→Bearer 认证。这里用负向前瞻排除 /api/assistant 前缀，避免被下面的
+        // catch-all rewrite 接管——否则 Next dev 下 rewrite 会把后端 SSE 缓冲成整块，小助手回答整段跳出。
+        // 其余 /api/* 仍走 rewrite 直连后端。
+        source: '/api/:path((?!assistant(?:/|$)).*)',
         destination: `${backendOrigin}/api/:path*`,
       },
     ]

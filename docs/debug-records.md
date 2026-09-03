@@ -211,13 +211,34 @@
 - **日期**：2026-09-03
 - **现象**：小助手 RAG 回答从未体现知识图谱扩展——全笔记检索（compare 类问题）时 warnings 恒出现「未指定知识库，已跳过图谱扩展」。直调后端时若带 `knowledgeBaseId`（项目测试库2）则扩图链路完全可用（`planSummary.tools` 含 graph_expand、回答引用到函数调用开销/栈溢出/提前终止等邻居节点内容）。
 - **根因**：两层叠加导致**结构性不可达**：
-  1. 小助手前端从不发送 `knowledgeBaseId`：输入区只有“搜索笔记”二元开关，spec（2026-09-01-assistant-workspace…-design）中的“选择知识库范围”从未实现 → UI 路径必然无库。
+  1. 小助手前端从不发送 `knowledgeBaseId`：输入区只有"搜索笔记"二元开关，spec（2026-09-01-assistant-workspace…-design）中的"选择知识库范围"从未实现 → UI 路径必然无库。
   2. 后端 `RagRetrievalService.retrieve()` 对「无 knowledgeBaseId + plan 含 graph_expand」直接跳过扩图并提示，缺少全笔记范围自动反查自有库图谱的能力。
-  - 附带发现：用户拥有的“项目测试库”图节点/边**均未绑定 evidenceChunkIds**（12 节点/10 边 0 证据），即使显式选该库扩图也为空；只有“项目测试库2”证据完整（14/14 节点、15/15 边）。验收扩图必须用证据完整的库。
+  - 附带发现：用户拥有的"项目测试库"图节点/边**均未绑定 evidenceChunkIds**（12 节点/10 边 0 证据），即使显式选该库扩图也为空；只有"项目测试库2"证据完整（14/14 节点、15/15 边）。验收扩图必须用证据完整的库。
 - **相关文件**：
   - `notes-backend/src/modules/knowledge-bases/knowledge-bases.service.ts`（新增 `expandGraphEvidenceAuto`）
   - `notes-backend/src/modules/ai/rag/rag-retrieval.service.ts`（无库分支改为自动扩图）
   - `notes-backend/test/knowledge-base-auto-graph-expand.test.ts`、`notes-backend/test/rag-retrieval-orchestration.test.ts`（回归测试）
 - **修复方案**：后端在 ACL 边界内自动反查——`expandGraphEvidenceAuto(userId, seeds)` 由命中 chunk 的 noteId 经 `knowledge_base_notes`（带 userId 过滤）反查用户**自有且链接这些笔记**的知识库（上限 5，按 _id 升序），逐库复用 `expandGraphEvidence`（内部含 KB 归属 + NoteAccess + chunk 归属三重校验）做一跳扩展并按 chunkId 去重合并。`retrieve()` 仅在 `attemptedKbs === 0`（无自有库可扩）时提示「未找到可用的知识库图谱，已跳过图谱扩展」。
 - **验证**：不带 knowledgeBaseId 直调 `/api/assistant/chat`（compare 问题），`complete` 事件 `warnings: []` 且 `planSummary.tools` 含 `graph_expand`/`graphHops:1`（修复前同调用 warnings 为「未指定知识库，已跳过图谱扩展」）。
-- **经验教训**：功能在 API 层可用不代表 UI 可达——验收要覆盖“用户真实入口”的全链路；图谱证据质量（节点是否绑定 evidenceChunkIds）决定扩图是否真的产出，排查时应先查数据再怀疑代码。UI 缺知识库范围入口时，后端可在 ACL 边界内自动反查，避免结构性不可达，不必强推 UI 改动。
+- **经验教训**：功能在 API 层可用不代表 UI 可达——验收要覆盖"用户真实入口"的全链路；图谱证据质量（节点是否绑定 evidenceChunkIds）决定扩图是否真的产出，排查时应先查数据再怀疑代码。UI 缺知识库范围入口时，后端可在 ACL 边界内自动反查，避免结构性不可达，不必强推 UI 改动。
+
+---
+
+## 小助手回答整块跳出、非打字机流式（前端 Next rewrite 屏蔽 route handler 并缓冲 SSE）
+
+- **日期**：2026-09-03
+- **现象**：小助手（pet/rag）回答不是逐字打字机，而是一整块跳出来。开发环境 `next dev`（3000）下复现。
+- **根因**：分层定位确认，后端并非元凶，瓶颈在前端 Next 的代理层：
+  1. 直连后端 `127.0.0.1:3001` 的 `/api/assistant/chat` **逐块流式正常**（SSE 每 delta 间隔几十~几百 ms），说明后端生成链路（generation service、rag-stream、ai-gateway，含 HEAD 上修复的 usage 采集阻塞点）都没问题。
+  2. 经前端 Next `3000`（页面实际路径）**全部 delta + complete 同一时间点一次性到达**——Next 的转发层把 SSE 攒成整块。
+  3. `next.config.js` 的 `rewrites()`（`/api/:path*`）在 Next 16 下**屏蔽了 `app/api/assistant/[...path]/route.ts` 与 `app/api/ai/[...path]/route.ts`**（route handler 全是死代码）：实测 assistant JSON 端点返回完整后端信封（route.ts 本应解包）、ai 未知路径也返回后端 404 信封，证明全走 rewrite 直连后端。Next dev(Turbopack) 的 rewrite 把后端 SSE 缓冲到 EOF 才交给客户端。
+- **相关文件**：
+  - `notes-frontend/next.config.js`（rewrites 排除 assistant 前缀）
+  - `notes-frontend/src/app/api/assistant/[...path]/route.ts`（此前从未生效的 SSE 透传 + JSON 解包 + cookie→Bearer 的 route handler）
+- **修复方案**：让 `/api/assistant/*` 不被 catch-all rewrite 接管，落到它自己的 route handler，route handler 内 `new NextResponse(response.body)` 的 SSE 透传在 route 层不会像 rewrite 那样缓冲。next.config 的 rewrite source 加负向前瞻排除 assistant 前缀：
+  ```js
+  { source: '/api/:path((?!assistant(?:/|$)).*)', destination: `${backendOrigin}/api/:path*` }
+  ```
+  其余 `/api/*` 仍走 rewrite 直连后端，不受影响。
+- **验证**：重启 `next dev` 后，经 Next `3000` 的 `/api/assistant/chat`（pet）delta 由 +745ms 起逐块到达（+745/+746/+764/+784…），打字机恢复；assistant conversations 返回解包后的 `{items:[...]}`（route handler 生效）；`/api/ai/foobar` 仍返回后端信封（rewrite 对非 assistant 路径行为不变）。rag 请求经 route handler 事件序列正确逐步到达（pet/rag 走同一透传层，有笔记证据时同样逐块流式）。
+- **经验教训**：① Next 16 的 `rewrites('/api/:path*')` 会屏蔽同前缀的 App Router route handler——新增 `/api` 下 route handler 前先确认它不会被已有 rewrite 拦截（用「JSON 端点是否被解包」或「命中率」实测判定，别信"route handler 应优先"的直觉）。② Next dev(Turbopack) 的 rewrite 对后端 SSE 会整块缓冲，需流式的端点应走 route handler（route 层 SSE 透传正常）而非 rewrite。③ 排查"非流式/整块"类问题，先分层直连后端验证流式粒度，能快速把瓶颈圈定在后端还是前端转发层。
