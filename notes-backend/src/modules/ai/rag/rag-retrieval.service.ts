@@ -19,8 +19,13 @@ export class RagRetrievalService {
     if (plan.tools.includes('graph_expand') && knowledgeBaseId) {
       const graph = await this.knowledgeBases.expandGraphEvidence(knowledgeBaseId, userId, candidates.map((item) => item.chunkId))
       candidates.push(...graph.map((item: any) => ({ ...item, excerpt: item.content.slice(0, 700), content: item.content.slice(0, 1200), score: 0.35, source: 'graph_expand' as RagTool })))
-    } else if (plan.tools.includes('graph_expand')) warnings.push('未指定知识库，已跳过图谱扩展')
-    else warnings.push('本次未使用知识图谱扩展')
+    } else if (plan.tools.includes('graph_expand')) {
+      // 全笔记 RAG：planner 判定可扩图但未指定知识库时，自动反查自有库扩图（见 expandGraphEvidenceAuto），
+      // 让 compare 类问题在全笔记范围也能用上图谱邻居证据；仅当无自有库可扩时才提示跳过。
+      const auto = await this.knowledgeBases.expandGraphEvidenceAuto(userId, candidates.map((item) => ({ chunkId: item.chunkId, noteId: item.noteId })))
+      if (auto.attemptedKbs === 0) warnings.push('未找到可用的知识库图谱，已跳过图谱扩展')
+      else candidates.push(...auto.evidence.map((item: any) => ({ ...item, excerpt: item.content.slice(0, 700), content: item.content.slice(0, 1200), score: 0.35, source: 'graph_expand' as RagTool })))
+    } else warnings.push('本次未使用知识图谱扩展')
     const unique = this.mergeEvidence(candidates).slice(0, 30)
     let rerankApplied = false
     if (plan.tools.includes('rerank') && unique.length > 1) {
