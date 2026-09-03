@@ -19,6 +19,9 @@ import { KnowledgeBaseNote, KnowledgeBaseNoteDocument } from './schemas/knowledg
 import { KnowledgeGraphEdge, KnowledgeGraphEdgeDocument } from './schemas/knowledge-graph-edge.schema'
 import { KnowledgeGraphNode, KnowledgeGraphNodeDocument } from './schemas/knowledge-graph-node.schema'
 
+// 自动图谱扩展的候选库上限：一次全笔记检索最多反查扩图的库数，控制额外延迟与结果噪声。
+const AUTO_GRAPH_EXPAND_KB_CAP = 5
+
 @Injectable()
 export class KnowledgeBasesService {
   constructor(
@@ -411,6 +414,35 @@ export class KnowledgeBasesService {
       noteId: { $in: [...titleById.keys()].map((value) => new Types.ObjectId(value)) },
     }).select('_id noteId headingPath content').lean().exec()
     return chunks.map((chunk: any) => ({ chunkId: String(chunk._id), noteId: String(chunk.noteId), noteTitle: titleById.get(String(chunk.noteId)) || 'Untitled', headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [], content: this.graphEvidenceContent(chunk.content), graphPath: [...nodeIds, ...neighborNodeIds] }))
+  }
+
+  // 无知识库 RAG（全笔记检索）的自动扩图入口：由命中 chunk 的 noteId 经 knowledge_base_notes 反查
+  // 当前用户自有、且链接了这些笔记的知识库（distinct 过滤带 userId，他人/共享库不参与），
+  // 每库复用 expandGraphEvidence 做一跳扩展（内部含 KB 归属 + NoteAccess + chunk 归属校验）。
+  // 候选超过上限按 _id 升序取前 AUTO_GRAPH_EXPAND_KB_CAP；扩图为空静默，仅无候选库可扩时由调用方提示。
+  async expandGraphEvidenceAuto(userId: string, seeds: Array<{ chunkId: string; noteId: string }>) {
+    const userObjectId = this.objectId(userId, 'user id')
+    const validSeeds = seeds
+      .map((seed) => ({ chunkId: String(seed?.chunkId || ''), noteId: String(seed?.noteId || '') }))
+      .filter((seed) => Types.ObjectId.isValid(seed.chunkId) && Types.ObjectId.isValid(seed.noteId))
+    const noteIds = uniqueStrings(validSeeds.map((seed) => seed.noteId))
+    if (noteIds.length === 0) return { evidence: [], attemptedKbs: 0 }
+    const candidateKbIds = (await this.kbNoteModel
+      .distinct('knowledgeBaseId', { userId: userObjectId, noteId: { $in: noteIds.map((value) => new Types.ObjectId(value)) } })
+      .exec()) as Types.ObjectId[]
+    if (candidateKbIds.length === 0) return { evidence: [], attemptedKbs: 0 }
+    const capped = candidateKbIds
+      .sort((left, right) => String(left).localeCompare(String(right)))
+      .slice(0, AUTO_GRAPH_EXPAND_KB_CAP)
+    const seedChunkIds = uniqueStrings(validSeeds.map((seed) => seed.chunkId))
+    const expanded: Array<Awaited<ReturnType<typeof this.expandGraphEvidence>>[number]> = []
+    for (const kbId of capped) {
+      // 候选库已由 kbNote 行 userId 保证自有；库被删等竞态下防御性跳过单个库，避免拖垮整次检索。
+      expanded.push(...(await this.expandGraphEvidence(String(kbId), userId, seedChunkIds).catch(() => [])))
+    }
+    const byChunkId = new Map<string, (typeof expanded)[number]>()
+    for (const item of expanded) if (!byChunkId.has(item.chunkId)) byChunkId.set(item.chunkId, item)
+    return { evidence: [...byChunkId.values()], attemptedKbs: capped.length }
   }
 
   private async loadValidEvidence(input: SaveKnowledgeGraphDto, userId: Types.ObjectId, allowedNoteIds: Types.ObjectId[]) {
