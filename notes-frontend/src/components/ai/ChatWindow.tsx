@@ -32,6 +32,8 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
   const [generating, setGenerating] = useState(false);
   const activeRequestIdRef = useRef<string | null>(null);
   const conversationIdRef = useRef<string | null>(null);
+  // 挂载恢复正在/已完成 fetch 的会话 id：重开 effect 对同一会话跳过，避免并发 fetch 覆盖重连内容。
+  const restoringRef = useRef<string | null>(null);
   // 用户已点停止：后续 SSE 断开/报错不算失败，不标 failed、不弹 toast（服务端会落库 cancelled）
   const stoppingRef = useRef(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -41,6 +43,9 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     let active = true;
     const conversationId = localStorage.getItem(CURRENT_CONVERSATION_KEY);
     if (!conversationId) return;
+    // 标记恢复中的会话：重开 effect（isOpen false→true）不得对同一会话并发 fetch，
+    // 避免旧 DB 快照覆盖恢复触发的重连实时内容（两个 fetch 竞态）。
+    restoringRef.current = conversationId;
     void fetchConversationMessages(conversationId)
       .then((result) => {
         if (!active) return;
@@ -106,7 +111,10 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
           setGenerating(false);
         });
       })
-      .catch(() => { /* 服务端不可用时保持空态 */ });
+      .catch(() => { /* 服务端不可用时保持空态 */ })
+      .finally(() => {
+        if (restoringRef.current === conversationId) restoringRef.current = null;
+      });
     return () => { active = false; };
   }, []);
 
@@ -122,10 +130,15 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
     if (activeRequestIdRef.current !== null) return;
     const conversationId = localStorage.getItem(CURRENT_CONVERSATION_KEY);
     if (!conversationId || conversationId === conversationIdRef.current) return;
+    // 挂载恢复正在/已完成同一会话的 fetch（含触发重连）：不重复拉取，避免旧快照覆盖实时内容。
+    if (restoringRef.current === conversationId) return;
     let active = true;
     void fetchConversationMessages(conversationId)
       .then((result) => {
         if (!active) return;
+        // 挂载恢复可能已在此途中发起重连（同会话 streaming 消息）：此时以重连实时更新为准，
+        // 不再用 DB 旧快照覆盖——无条件覆盖会把 resume/delta 已写入的内容打回旧值（表现为内容倒退/断流）。
+        if (activeRequestIdRef.current !== null) return;
         setMessages(result.items);
         conversationIdRef.current = conversationId;
       })

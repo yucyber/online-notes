@@ -526,4 +526,60 @@ describe('ChatWindow 统一流式协议', () => {
     // 最终状态：completed（无"回答生成中断"）
     expect(screen.queryByText('回答生成中断，请重试。')).not.toBeInTheDocument()
   })
+
+  it('挂载恢复在途时重开浮窗不重复 fetch 同一会话（防旧快照覆盖实时重连）', async () => {
+    // 场景：浮窗问答生成中刷新页面（浮窗收起态挂载）→ 用户立即点开浮窗。
+    // 挂载恢复 effect 已在 fetch（恢复中标记 restoringRef=c1），重开 effect 对同一会话应跳过，
+    // 否则并发第二次 fetch 返回的 DB 旧快照可能覆盖恢复触发的重连实时内容（表现为内容倒退/断流）。
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    const encoder = new TextEncoder()
+    const reconnectChunks = [
+      'event: resume\ndata: {"assistantMessageId":"am1","content":"实时续接的完整内容"}\n\n',
+      'event: delta\ndata: {"text":"尾巴"}\n\n',
+      'event: complete\ndata: {"messageId":"am1","route":"pet","citations":[],"warnings":[]}\n\n',
+    ]
+    let reconnectIdx = 0
+    const streamingItems = {
+      items: [
+        { id: 'um1', conversationId: 'c1', seq: 1, role: 'user', route: 'pet', content: '问题', status: 'completed', citations: [], warnings: [], requestId: 'r1', createdAt: '2026-09-01T00:00:00.000Z' },
+        { id: 'am1', conversationId: 'c1', seq: 2, role: 'assistant', route: 'pet', content: '旧半截', status: 'streaming', citations: [], warnings: [], requestId: 'r1', createdAt: '2026-09-01T00:00:00.000Z' },
+      ],
+    }
+    let messagesFetchCount = 0
+    let releaseMessages!: () => void
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) {
+        messagesFetchCount++
+        // 恢复 fetch 挂起：模拟慢响应，期间用户点开浮窗
+        return await new Promise<Response>((resolve) => {
+          releaseMessages = () => resolve({
+            ok: true, status: 200,
+            json: async () => streamingItems,
+          } as unknown as Response)
+        })
+      }
+      // POST chat 重连
+      return {
+        ok: true, status: 201, statusText: 'Created',
+        body: {
+          getReader: () => ({
+            read: async () => reconnectIdx < reconnectChunks.length
+              ? { done: false, value: encoder.encode(reconnectChunks[reconnectIdx++]) }
+              : { done: true, value: undefined },
+          }),
+        },
+      } as unknown as Response
+    })
+
+    const { rerender } = render(<ChatWindow isOpen={false} onClose={() => undefined} />)
+    await waitFor(() => expect(messagesFetchCount).toBe(1))
+    // 点开浮窗：恢复仍在途（restoringRef=c1），重开 effect 必须跳过，不再发第二个 /messages
+    rerender(<ChatWindow isOpen onClose={() => undefined} />)
+    await new Promise((r) => setTimeout(r, 30))
+    expect(messagesFetchCount).toBe(1)
+    // 放行恢复响应 → streaming 消息 → 自动重连 → resume 写入实时内容
+    await act(async () => { releaseMessages(); await Promise.resolve() })
+    await waitFor(() => expect(screen.getAllByText('实时续接的完整内容尾巴').length).toBeGreaterThan(0))
+    expect(screen.queryByText('旧半截')).not.toBeInTheDocument()
+  })
 })
