@@ -67,3 +67,31 @@ P3 核心交互与 RAG 检索链路均已通过。修复笔记派生任务调度
 - 开发环境存在 Next.js HMR、React DevTools 提示和部分被取消的重复列表请求，不影响本次核心流程。
 - agent-browser 录屏依赖 ffmpeg，本机未安装，因此本次采用逐步截图作为证据。
 - Playwright MCP 已加入 Codex 全局配置；当前任务需重载后才能直接显示 MCP 工具，本轮已用 Playwright CLI 验证 Chromium、认证状态加载及桌面/移动端访问能力。
+
+## 计划 4 认知记忆浏览器验收（2026-09-03 追加）
+
+> 四阶段（工作台 / 多会话 / 记忆）收尾时对计划 4 认知记忆链路做浏览器 + API 双层冒烟。
+> 截图目录同 `screenshots/`（`p4-memory-*.png`）。
+
+| 场景 | 结果 | 证据/说明 |
+|---|---|---|
+| 决策对话 → 待确认候选出 pending | 通过 | 中文决策「前端组件库统一用 Ant Design」提取为候选（kind=decision，evidence 锚定消息） |
+| 认知面板「确认」→ 写入长期记忆 | 通过 | confirm 不再 500（relation 可选子文档修复后），记忆 status=confirmed、evidenceStatus=ok |
+| 相反决策 → 冲突对话框 → supersede 演进 | 通过 | UI 弹「既有结论 vs 新结论 + 用新结论替代旧结论/两者适用不同场景/修改新结论/拒绝新候选」；supersede 后旧节点 superseded + validTo + supersededById，新节点 relation.supersedes |
+| 搜索笔记回答出现 `[M1]`/`[E1]` 双徽标 | 通过 | 回答文本含 `[M1]`，消息底部「来自已确认认知」chip（`.assistant-memory-citation`）可点；历史消息含 10+ 处 `[E1]` 笔记引用（`p4-memory-m1chip.png`） |
+| 临时会话不产候选 / 关「记忆召回」不注入认知 | 通过 | temporary=true 对话无新候选；memoryEnabled=false 后 rag 回答无 `[M1]` 注入 |
+| refresh-evidence 标 stale + 复核候选 / 导出 JSONL | 通过 | note_chunk chunk 存在→ok；chunk 缺失→stale + `review-<memoryId>` hypothesis 候选（confidence×0.8）；`GET /memories/export` 返回合法 JSONL |
+| 认知面板渲染演进链 | 通过 | 「当前有效 / 演进过程」分组 + 记忆删除按钮（`p4-memory-cognition.png`、`p4-memory-cognition-final.png`） |
+| 回归 | 通过 | 后端全量 442/442 + build；前端 type-check + build；既有对话/RAG 无回归 |
+
+### 冒烟修复 3 连（真实链路缺陷，均带回归测试提交）
+
+1. **提取器剥离 `m:` 前缀消息 id**（`1106b0e`）——模型把 transcript 行首 `[m:<id>]` 整标记（含前缀）当 messageId 返回，evidence 反查恒空 → 候选全被跳过；单测 mock 回填纯 id 掩盖。
+2. **记忆 relation 改独立子 Schema**（`c1cb7b2`）——mongoose 8 对嵌套 type 字面量在 create 不带 relation 时误报 `relation.type required` → confirm 写记忆恒 500；单测 mock 无真实校验掩盖。
+3. **提取器按对话语言输出记忆**（`9cdc0fc`）——模型用英文写 subject/statement，中文问题 bigram 召回恒 0 命中 → `[M1]` 永不注入；修后中文决策可被中文问题召回。
+
+### 记录不修的已知遗留（既有产品边界）
+
+- `memoryCitations` 不落库：刷新/重载历史消息丢 `[M1]` chip（SSE 实时回答正常渲染）。
+- confirm 冲突响应不含 existing 节点 scope（对话框对 global 误判）；confirm-with-edits 冲突时 edits 未随挂起持久化。
+- 浏览器冒烟偶发页面 fetch 挂起（导航/刷新可恢复），判定为长会话页面状态问题，非后端缺陷。

@@ -164,3 +164,42 @@
   - `notes-backend/src/modules/ai/rag/rag-stream.service.ts`（citations 提取链路）
 - **修复方案**：未修复（超出计划 1 范围）。已记录为已知限制：引用卡片依赖模型遵循 [E1] 指令，当前 Qwen3-14B 不遵循；可选后续调优（prompt 加 few-shot 示例 / 换 model / 二次提取）。
 - **经验教训**：RAG 引用体验强依赖模型输出标记；验收时应区分"检索正确性"（代码链路）与"引用标记产出"（provider 行为），后者不是代码缺陷但影响功能验收。
+
+---
+
+## 记忆候选零产出：模型把 `[m:<id>]` 整标记当 messageId 返回
+
+- **日期**：2026-09-03（计划 4 浏览器冒烟发现）
+- **现象**：决策对话完成（消息落库、无任何 warn 日志），但 `assistant_memory_candidates` 恒空。逐层排查：extract 被触发（加日志确认 recent=6）、AI 调用成功返回 candidates——模型返回的 `messageIds` 是 `["m:6a98e…"]`（带 `m:` 前缀，即把 transcript 行首的 `[m:<id>]` 整标记当值返回）。代码 `recent.find(m => m.id === id)` 用纯 id 反查恒空 → evidence 空 → 全部候选被跳过（`created` 恒 0）。
+- **根因**：system prompt 让模型引用 `[m:<message-id>]` 值，模型如实返回含前缀整值；单测 mock 用正则从 prompt 解析纯 id 回填，掩盖了真实模型的输出形态。
+- **相关文件**：
+  - `notes-backend/src/modules/assistant/assistant-memory-extractor.service.ts`（messageIds 剥 `^m:` 前缀 + prompt 明示只回填 24 位原始 id）
+  - `notes-backend/test/assistant-memory-extractor.test.ts`（带前缀输出回归测试）
+- **修复方案**：`messageIds.map(s => s.replace(/^m:/, ''))` 统一清洗；prompt 注明 messageIds 须为不含前缀的 24-hex id。
+- **经验教训**：让模型输出"引用 token"时，模型常把包含前后缀的**完整标记**当值返回——消费侧必须剥前缀防御；测试 mock 若从 prompt 回填解析值会掩盖模型真实输出形态，应显式模拟带噪声的输出。
+
+---
+
+## 确认记忆恒 500：mongoose 8 嵌套 type 字面量子文档 create 误报 required
+
+- **日期**：2026-09-03（计划 4 浏览器冒烟发现）
+- **现象**：`POST /memories/candidates/:id/confirm` 返回 500（无日志堆栈——ApiExceptionFilter 不打印），候选被置 confirmed 挂起（先置后写）。临时给 filter 加日志定位：`ValidationError: AssistantMemory validation failed: relation.type: Path 'relation.type' is required.`——create 时根本没传 relation。
+- **根因**：mongoose 8 对 `@Prop({ type: { type: String, required: true }, ... })` 这类嵌套 type 字面量子文档，create 不带该字段时会**实例化空子文档并校验其 required 字段**（T1 scope 坑的 relation 变体——scope 靠 `default: 'global'` 填充掩盖，relation 无 default 而暴露）。单测用内存 mock 模型无真实校验，跑不出此错误。
+- **相关文件**：
+  - `notes-backend/src/modules/assistant/schemas/assistant-memory.schema.ts`（relation 改独立子 Schema `MemoryRelationSubSchema`）
+  - `notes-backend/test/assistant-memory-schema.test.ts`（真实 mongoose `doc.validate()` 回归测试）
+- **修复方案**：relation 改用独立 `new MongooseSchema(...)` 子文档声明（须定义在 class 前供装饰器参数引用）——不传即 undefined、传了才校验。
+- **经验教训**：mongoose 8 的可选嵌套子文档必须用独立子 Schema 声明，嵌套 type 字面量 + required 内层字段会在 create 时被实例化校验；schema 层缺陷单测必须用真实 mongoose validate/create 覆盖（mock 模型全盲区）。
+
+---
+
+## [M1] 认知引用从不注入：记忆语言与召回分词错配
+
+- **日期**：2026-09-03（计划 4 浏览器冒烟发现）
+- **现象**：RAG 搜索提问的回答 `memoryCitations` 恒空（无 `[M1]`），只有 `[E1]` 笔记引用。已确认记忆（React/Vue3 决策）存在且 global scope 应恒兼容召回。
+- **根因**：extractor system prompt 全英文书写，模型对中文对话也输出英文 subject/statement（如 "Frontend framework"）；而 `MemoryRecallService.recall` 用**中文问题 bigram 分词**做 `$regex` 匹配英文记忆文本——"前端框架"等中文词对英文文本 0 命中 → 召回空 → 无记忆注入。
+- **相关文件**：
+  - `notes-backend/src/modules/assistant/assistant-memory-extractor.service.ts`（prompt 要求 subject/statement 用对话同语言输出，保留技术术语原文）
+  - `notes-backend/test/assistant-memory-extractor.test.ts`（断言 system prompt 含 SAME LANGUAGE 要求）
+- **修复方案**：extractor system prompt 增加语言约束——中文对话产中文记忆（React/Vue/NestJS 等技术词保留原文）；修复后中文决策可被中文问题召回，`[M1]` 注入链路打通。
+- **经验教训**：跨语言链路（英文 prompt 提取 → 中文检索召回）必须显式对齐语言；模型输出语言由 prompt 语言主导，提取 prompt 应要求记忆用**用户对话的语言**输出，否则下游检索（按用户语言分词）必然落空。
