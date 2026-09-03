@@ -68,10 +68,11 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
           { conversationId, requestId: reconnectRequestId, question },
           {
             onResume: (data) => {
+              // resume 快照：只按 assistantMessageId 精确匹配，避免误匹配列表里其他带同 requestId 的消息造成重复 key。
               assistantId = data.assistantMessageId;
               setMessages((prev) => prev.map((m) =>
-                m.id === assistantId || m.requestId === reconnectRequestId
-                  ? { ...m, id: data.assistantMessageId, content: data.content, status: 'streaming' }
+                m.id === data.assistantMessageId
+                  ? { ...m, content: data.content, status: 'streaming' }
                   : m,
               ));
             },
