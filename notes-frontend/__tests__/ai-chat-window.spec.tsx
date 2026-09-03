@@ -156,6 +156,78 @@ describe('ChatWindow 统一流式协议', () => {
     await waitFor(() => expect(screen.queryByLabelText('停止生成')).not.toBeInTheDocument())
   })
 
+  it('恢复历史消息后打开浮窗滚动到底部而非停在首条', async () => {
+    // 浮窗常驻 layout（AIPet 仅靠 isOpen 显隐）：历史消息在打开前就已恢复进 state，
+    // 打开瞬间 messages 无变化，滚动若只依赖 messages 会停在顶部首条。回归：打开（isOpen true）须触发一次滚动到底部。
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => ({
+            items: [
+              { id: 'm1', conversationId: 'c1', seq: 1, role: 'assistant', route: 'pet', content: '第一条旧消息', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' },
+              { id: 'm2', conversationId: 'c1', seq: 2, role: 'user', content: '第二条', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' },
+              { id: 'm3', conversationId: 'c1', seq: 3, role: 'assistant', route: 'pet', content: '最新一条', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' },
+            ],
+          }),
+        } as unknown as Response
+      }
+      throw new Error('unexpected call')
+    })
+    const scrolled: Element[] = []
+    Object.defineProperty(HTMLElement.prototype, 'scrollIntoView', { configurable: true, value: function (this: Element) { scrolled.push(this) } })
+    const { rerender } = render(<ChatWindow isOpen={false} onClose={() => undefined} />)
+    // 等恢复请求发出并冲刷微任务：消息已进 state 但浮窗隐藏（return null）不渲染，滚动 effect 的 ref 为空不应滚动
+    await waitFor(() => expect(mockFetch).toHaveBeenCalledWith(expect.stringContaining('/messages'), expect.anything()))
+    await act(async () => {})
+    expect(scrolled.length).toBe(0)
+    rerender(<ChatWindow isOpen onClose={() => undefined} />)
+    // 打开后应滚到底部锚点（messagesEndRef 空 div，位于消息列表末尾，非消息元素本身）
+    await waitFor(() => expect(scrolled.length).toBeGreaterThan(0))
+    const lastScrolled = scrolled.at(-1)
+    expect(lastScrolled?.classList.contains('ink-message-real')).toBe(false)
+    expect(lastScrolled?.parentElement?.classList.contains('ink-body-real')).toBe(true)
+  })
+
+  it('重新打开浮窗时跟随 localStorage 的最新会话而非停留在旧会话', async () => {
+    // 浮窗常驻 layout：首次打开展示 A；期间去工作台对 B 对话（localStorage 更新为 B），再打开浮窗应切到 B。
+    // 回归：恢复只发生一次（挂载），再次打开若不复查 localStorage 会永远停在 A。
+    const fetchMessages = jest.fn(async (url: string) => {
+      const id = String(url).match(/\/conversations\/([^/]+)\/messages/)?.[1]
+      if (id === 'c1') {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            items: [{ id: 'a1', conversationId: 'c1', seq: 1, role: 'assistant', route: 'pet', content: '会话A的消息', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' }],
+          }),
+        } as unknown as Response
+      }
+      if (id === 'c2') {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            items: [{ id: 'b1', conversationId: 'c2', seq: 1, role: 'assistant', route: 'pet', content: '会话B的消息', status: 'completed', citations: [], warnings: [], createdAt: '2026-09-01T00:00:00.000Z' }],
+          }),
+        } as unknown as Response
+      }
+      throw new Error(`unexpected messages url: ${url}`)
+    })
+    mockFetch.mockImplementation(fetchMessages)
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    const { rerender } = render(<ChatWindow isOpen onClose={() => undefined} />)
+    await screen.findByText('会话A的消息')
+    // 收起浮窗（模拟去工作台操作期间浮窗隐藏），期间 localStorage 被工作台更新为 B
+    rerender(<ChatWindow isOpen={false} onClose={() => undefined} />)
+    localStorage.setItem('assistant_current_conversation_id', 'c2')
+    await act(async () => {})
+    // 再次打开浮窗：应重新加载最新会话 B 而不是停留在 A
+    rerender(<ChatWindow isOpen onClose={() => undefined} />)
+    expect(await screen.findByText('会话B的消息')).toBeInTheDocument()
+    expect(screen.queryByText('会话A的消息')).not.toBeInTheDocument()
+  })
+
   it('新建对话清空界面并删除本地会话键', async () => {
     localStorage.setItem('assistant_current_conversation_id', 'c1')
     mockFetch.mockImplementation(async (url: string) => {
@@ -389,8 +461,9 @@ describe('ChatWindow 统一流式协议', () => {
     expect(await screen.findByText('回答生成中断，请重试。')).toBeInTheDocument()
   })
 
-  it('恢复既有会话后点击展开按钮携带 conversation 参数', async () => {
+  it('恢复既有会话后点击展开按钮携带 conversation 参数并关闭浮窗', async () => {
     // 展开全屏工作台应带当前会话 id：工作台挂载只认 initialConversationId||URL，不读 localStorage
+    // 展开后浮窗应收起：dashboard layout 共享 AIPet，跳转不卸载浮窗，需显式 onClose 避免与全屏工作台并存
     localStorage.setItem('assistant_current_conversation_id', 'c1')
     mockFetch.mockImplementation(async (url: string) => {
       if (String(url).includes('/messages')) {
@@ -403,10 +476,54 @@ describe('ChatWindow 统一流式协议', () => {
       }
       return sseResponse([])
     })
-    render(<ChatWindow isOpen onClose={() => undefined} />)
+    const onClose = jest.fn()
+    render(<ChatWindow isOpen onClose={onClose} />)
     // 恢复完成（消息渲染）后 conversationIdRef 已赋值
     await screen.findByText('早')
     fireEvent.click(screen.getByRole('button', { name: '展开全屏工作台' }))
     expect(mockRouterPush).toHaveBeenCalledWith('/dashboard/assistant?conversation=c1')
+    expect(onClose).toHaveBeenCalled()
+  })
+
+  it('挂载时检测 streaming 消息并自动重连：resume 覆盖气泡，后续 delta 续接打字机', async () => {
+    // C 方案：刷新后历史消息 API 返回 status=streaming 的消息 → 自动用原 requestId 重连 → resume 覆盖 → delta 追加
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    const encoder = new TextEncoder()
+    const reconnectChunks = [
+      // 重连走 attach 路径：后端发 resume 快照（已生成部分）再续送 delta
+      'event: resume\ndata: {"assistantMessageId":"am1","content":"已生成的部分"}\n\n',
+      'event: delta\ndata: {"text":"续接新增内容"}\n\n',
+      'event: complete\ndata: {"messageId":"am1","route":"pet","citations":[],"warnings":[]}\n\n',
+    ]
+    let reconnectIdx = 0
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            items: [
+              { id: 'um1', conversationId: 'c1', seq: 1, role: 'user', route: 'pet', content: '问题', status: 'completed', citations: [], warnings: [], requestId: 'r1', createdAt: '2026-09-01T00:00:00.000Z' },
+              { id: 'am1', conversationId: 'c1', seq: 2, role: 'assistant', route: 'pet', content: '已生', status: 'streaming', citations: [], warnings: [], requestId: 'r1', createdAt: '2026-09-01T00:00:00.000Z' },
+            ],
+          }),
+        } as unknown as Response
+      }
+      // 重连请求（POST chat，携带原 requestId）
+      return {
+        ok: true, status: 201, statusText: 'Created',
+        body: {
+          getReader: () => ({
+            read: async () => reconnectIdx < reconnectChunks.length
+              ? { done: false, value: encoder.encode(reconnectChunks[reconnectIdx++]) }
+              : { done: true, value: undefined },
+          }),
+        },
+      } as unknown as Response
+    })
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    // 等 resume 生效：气泡内容应被覆盖为快照 content 并追加后续 delta
+    await waitFor(() => expect(screen.getAllByText('已生成的部分续接新增内容').length).toBeGreaterThan(0))
+    // 最终状态：completed（无"回答生成中断"）
+    expect(screen.queryByText('回答生成中断，请重试。')).not.toBeInTheDocument()
   })
 })

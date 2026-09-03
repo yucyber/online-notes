@@ -130,6 +130,8 @@ describe('AssistantWorkspace 三栏工作台', () => {
     await waitFor(() => expect(mockRouterReplace).toHaveBeenCalledWith('/dashboard/assistant?conversation=c1'))
     fireEvent.click(screen.getByRole('button', { name: /会话二 \d+ 条/ }))
     await waitFor(() => expect(mockRouterReplace).toHaveBeenLastCalledWith('/dashboard/assistant?conversation=c2'))
+    // 工作台切会话也要同步 localStorage：浮窗常驻 layout，下次打开复查 localStorage 才能跟随同一会话
+    expect(localStorage.getItem('assistant_current_conversation_id')).toBe('c2')
   })
 
   test('新建（清空当前会话）后地址栏移除 ?conversation 参数', async () => {

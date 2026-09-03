@@ -51,12 +51,93 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
         if (conversationIdRef.current === null && activeRequestIdRef.current === null) {
           conversationIdRef.current = conversationId;
         }
+        // 检测进行中的生成并自动重连（C 方案）：同 AssistantWorkspace 的重连逻辑
+        if (!active) return;
+        const inflight = result.items.find(
+          (m) => m.role === 'assistant' && (m.status === 'streaming' || m.status === 'pending') && m.requestId,
+        );
+        if (!inflight || !inflight.requestId || activeRequestIdRef.current !== null) return;
+        const reconnectRequestId = inflight.requestId;
+        const idx = result.items.indexOf(inflight);
+        const userMsg = idx > 0 ? result.items[idx - 1] : null;
+        const question = userMsg?.role === 'user' ? userMsg.content : '';
+        let assistantId = inflight.id;
+        activeRequestIdRef.current = reconnectRequestId;
+        setGenerating(true);
+        void streamAssistantReply(
+          { conversationId, requestId: reconnectRequestId, question },
+          {
+            onResume: (data) => {
+              assistantId = data.assistantMessageId;
+              setMessages((prev) => prev.map((m) =>
+                m.id === assistantId || m.requestId === reconnectRequestId
+                  ? { ...m, id: data.assistantMessageId, content: data.content, status: 'streaming' }
+                  : m,
+              ));
+            },
+            onDelta: (text) => {
+              setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + text, status: 'streaming' } : m)));
+            },
+            onComplete: (data) => {
+              setMessages((prev) => prev.map((m) => (m.id === data.messageId
+                ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings, memoryCitations: data.memoryCitations ?? [] }
+                : m)));
+            },
+            onCancelled: (data) => {
+              setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'cancelled', content: data.text } : m)));
+            },
+            onError: (code) => {
+              if (code === 'CANCELLED') return;
+              setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
+            },
+          },
+        ).then(() => {
+          if (!active) return;
+          setMessages((prev) => prev.map((m) => (
+            m.id === assistantId && (m.status === 'pending' || m.status === 'streaming')
+              ? { ...m, status: 'failed' } : m
+          )));
+        }).catch(() => {
+          if (!active) return;
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
+        }).finally(() => {
+          if (activeRequestIdRef.current === reconnectRequestId) activeRequestIdRef.current = null;
+          setGenerating(false);
+        });
       })
       .catch(() => { /* 服务端不可用时保持空态 */ });
     return () => { active = false; };
   }, []);
 
-  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages, generating]);
+  // 每次从收起状态重新打开（isOpen false→true）复查 localStorage 的最新会话：
+  // 浮窗常驻 dashboard layout，去全屏工作台切会话/对话后 localStorage 已更新，但浮窗恢复只发生一次（挂载），
+  // 不复查会永远停在旧会话。生成中（activeRequestIdRef 非空）不切换，避免打断进行中的回答。
+  const prevOpenRef = useRef(isOpen);
+  useEffect(() => {
+    const wasOpen = prevOpenRef.current;
+    prevOpenRef.current = isOpen;
+    if (!isOpen || wasOpen) return;
+    // 首挂即打开（isOpen=true）由上面的挂载恢复负责，这里只处理关闭后再打开
+    if (activeRequestIdRef.current !== null) return;
+    const conversationId = localStorage.getItem(CURRENT_CONVERSATION_KEY);
+    if (!conversationId || conversationId === conversationIdRef.current) return;
+    let active = true;
+    void fetchConversationMessages(conversationId)
+      .then((result) => {
+        if (!active) return;
+        setMessages(result.items);
+        conversationIdRef.current = conversationId;
+      })
+      .catch(() => { /* 服务端不可用时保持空态 */ });
+    return () => { active = false; };
+  }, [isOpen]);
+
+  // 消息变化（发送/流式/恢复）时滚到底部；isOpen 变化也要触发：组件常驻 layout（AIPet 仅靠 isOpen 显隐），
+  // 历史消息常在浮窗打开前就恢复进 state，打开瞬间 messages 无变化、滚动不触发，会停在顶部首条而非底部最新。
+  useEffect(() => {
+    if (!isOpen) return;
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [messages, generating, isOpen]);
 
   const send = (content: string, route: AssistantRoute) => {
     const currentRequestId = requestId();
@@ -148,12 +229,16 @@ export default function ChatWindow({ isOpen, onClose }: ChatWindowProps) {
       <div className="ink-head-real">
         <div className="ink-head-title"><span className="ink-head-mark"><Sparkles aria-hidden="true" /></span><div><h3>小助手</h3><p>闲聊，或从你的笔记中寻找答案</p></div></div>
         <div className="ink-head-actions">
-          {/* 全屏工作台（/dashboard/assistant）：带当前会话 id 展开，工作台按 ?conversation 直接定位该会话 */}
+          {/* 全屏工作台（/dashboard/assistant）：带当前会话 id 展开，工作台按 ?conversation 直接定位该会话。
+              展开前先收起浮窗：dashboard layout 共享 AIPet，路由跳转不会卸载浮窗，不关闭会与全屏工作台并存。 */}
           <button
             type="button"
             title="展开全屏工作台"
             aria-label="展开全屏工作台"
-            onClick={() => router.push(`/dashboard/assistant${conversationIdRef.current ? `?conversation=${encodeURIComponent(conversationIdRef.current)}` : ''}`)}
+            onClick={() => {
+              onClose();
+              router.push(`/dashboard/assistant${conversationIdRef.current ? `?conversation=${encodeURIComponent(conversationIdRef.current)}` : ''}`);
+            }}
           >
             <Maximize2 aria-hidden="true" />
           </button>

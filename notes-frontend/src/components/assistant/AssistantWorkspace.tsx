@@ -92,7 +92,67 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     return () => { cancelled = true; };
   }, [activeId, loadedConversationId]);
 
-  // 导航快照恢复：首次进入消费；会话消息就绪后应用面板标签/引用/滚动锚点
+  // 消息加载完成后检测进行中的生成并自动重连续接（C 方案最小实现：进程内刷新重连）。
+  // 场景：用户在生成进行中刷新页面/离开再回来，历史消息 API 返回 status=streaming/pending 的 assistant 消息
+  // + requestId → 后端仍在运行（running 未清）时用同 requestId 重新发起 POST chat 命中 attach，
+  // 收到 resume 快照覆盖气泡后续收剩余 delta，恢复打字机；若生成已结束则命中 stale 路径补发 complete，状态收敛。
+  useEffect(() => {
+    if (!loadedConversationId) return;
+    const inflight = messages.find(
+      (m) => m.role === 'assistant' && (m.status === 'streaming' || m.status === 'pending') && m.requestId,
+    );
+    if (!inflight || !inflight.requestId) return;
+    if (generating) return; // 已有进行中的生成（如用户主动发送），不重复重连
+    const reconnectRequestId = inflight.requestId;
+    // 找对应的 user 提问（紧挨着 inflight 消息的前一条）
+    const idx = messages.indexOf(inflight);
+    const userMsg = idx > 0 ? messages[idx - 1] : null;
+    const question = userMsg?.role === 'user' ? userMsg.content : '';
+    let assistantId = inflight.id;
+    activeRequestIdRef.current = reconnectRequestId;
+    setGenerating(true);
+    void streamAssistantReply(
+      { conversationId: loadedConversationId, requestId: reconnectRequestId, question },
+      {
+        onResume: (data) => {
+          // resume 快照：用全量已生成 content 覆盖气泡（非追加），作为后续 delta 的起点
+          assistantId = data.assistantMessageId;
+          setMessages((prev) => prev.map((m) =>
+            m.id === assistantId || m.requestId === reconnectRequestId
+              ? { ...m, id: data.assistantMessageId, content: data.content, status: 'streaming' }
+              : m,
+          ));
+        },
+        onDelta: (text) => {
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + text, status: 'streaming' } : m)));
+        },
+        onComplete: (data) => {
+          setMessages((prev) => prev.map((m) => (m.id === data.messageId
+            ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings, memoryCitations: data.memoryCitations ?? [] }
+            : m)));
+          refreshConversations();
+        },
+        onCancelled: (data) => {
+          setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'cancelled', content: data.text } : m)));
+        },
+        onError: (code) => {
+          if (code === 'CANCELLED') return;
+          setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
+        },
+      },
+    ).then(() => {
+      setMessages((prev) => prev.map((m) => (
+        m.id === assistantId && (m.status === 'pending' || m.status === 'streaming')
+          ? { ...m, status: 'failed' } : m
+      )));
+    }).catch(() => {
+      setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, status: 'failed' } : m)));
+    }).finally(() => {
+      if (activeRequestIdRef.current === reconnectRequestId) activeRequestIdRef.current = null;
+      setGenerating(false);
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loadedConversationId]); // 仅在消息加载完成时检测一次，不依赖 messages 避免重复触发
   useEffect(() => {
     const snapshot = consumeAssistantNavigation();
     if (snapshot) navSnapshotRef.current = snapshot;
@@ -157,6 +217,9 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
     if (id === activeId) return;
     setActiveId(id);
     setLoadedConversationId(null);
+    // 切换会话同步 localStorage：浮窗（ChatWindow）常驻 layout、只在重新打开时复查 localStorage，
+    // 不同步会让浮窗下次打开仍停在旧会话而不是刚切换的这个。
+    localStorage.setItem(CURRENT_CONVERSATION_KEY, id);
   };
 
   const handleNewConversation = () => {
@@ -232,6 +295,11 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
       forceRoute: route,
       ...(retryOfMessageId ? { retryOfMessageId } : {}),
     };
+    // 是否本次才新建会话：发送时无归属会话（activeId 为空 → payload.conversationId 为 undefined）才会让后端
+    // 新建会话并返回新 conversationId。只有在新建场景才需要 onStarted 刷新侧栏让新会话出现；在既有会话续聊时
+    // 标题/最后消息仍在生成中，此刻刷新拿不到新值，是多余请求，故用发送时的值在闭包内快照，避免 onStarted
+    // 里读已 setActiveId 后的最新值导致误判为新建。
+    const isNewConversation = !payload.conversationId
     void streamAssistantReply(payload, {
       onStarted: (data) => {
         setActiveId(data.conversationId);
@@ -241,8 +309,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
         setMessages((prev) => prev.map((m) => (m.id === localAssistantId
           ? { ...m, id: data.assistantMessageId, conversationId: data.conversationId, status: 'streaming' }
           : m)));
-        // 新建会话已落库：刷新列表让侧栏出现新会话
-        refreshConversations();
+        // 新建会话已落库：刷新列表让侧栏出现新会话（既有会话续聊不刷，见 isNewConversation）
+        if (isNewConversation) refreshConversations();
       },
       onDelta: (text) => {
         setMessages((prev) => prev.map((m) => (m.id === assistantId ? { ...m, content: m.content + text, status: 'streaming' } : m)));
@@ -251,6 +319,10 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
         setMessages((prev) => prev.map((m) => (m.id === data.messageId
           ? { ...m, status: 'completed', citations: data.citations, warnings: data.warnings, memoryCitations: data.memoryCitations ?? [] }
           : m)));
+        // 回答完成：后端已重命名标题（renameIfDefault）并更新 lastMessageAt/messageCount，
+        // 此刻刷新侧栏才能拿到准确的最新元数据（onStarted 时标题仍是"新对话"占位）。
+        // 取消/失败（onCancelled/onError）后端不重命名，无需在此刷新。
+        refreshConversations();
       },
       onCancelled: (data) => {
         setMessages((prev) => prev.map((m) => (m.id === data.messageId ? { ...m, status: 'cancelled', content: data.text } : m)));
