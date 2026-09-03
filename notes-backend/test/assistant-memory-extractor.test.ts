@@ -21,8 +21,12 @@ test('提取合法候选并跳过重复证据', async () => {
       { id: 'am1', seq: 2, role: 'assistant', route: 'rag', content: '好的，已记录', status: 'completed', citations: [{ evidenceId: 'E1', noteId: 'n1', noteTitle: 't', chunkId: 'c1', headingPath: [], excerpt: 'x' }], warnings: [], createdAt: '' },
     ],
   }
+  let systemPrompt = ''
   const gateway = {
-    chatTask: async () => ({ content: JSON.stringify({ candidates: [{ kind: 'decision', subject: '界面形态', statement: '保留现有浮层', confidence: 0.9, messageIds: ['um1'] }] }) }),
+    chatTask: async (opts: any) => {
+      systemPrompt = String(opts.system || '')
+      return { content: JSON.stringify({ candidates: [{ kind: 'decision', subject: '界面形态', statement: '保留现有浮层', confidence: 0.9, messageIds: ['um1'] }] }) }
+    },
   }
   const service = new AssistantMemoryExtractorService(model as any, gateway as any, messages as any)
   const first = await service.extract('u1', 'c1')
@@ -30,6 +34,9 @@ test('提取合法候选并跳过重复证据', async () => {
   const second = await service.extract('u1', 'c1')
   assert.equal(second.created, 0)
   assert.equal(second.skipped, 1)
+  // 冒烟回归：system prompt 必须要求记忆用对话语言输出（中文对话产中文记忆），
+  // 否则中文问题按 bigram 词匹配英文 subject/statement 恒 0 命中，[M1] 认知引用永不注入。
+  assert.ok(systemPrompt.includes('SAME LANGUAGE'), 'system 应要求 subject/statement 用对话语言')
 })
 
 test('仅来自助手建议且无笔记证据的候选强制为 hypothesis', async () => {
