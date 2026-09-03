@@ -1,10 +1,11 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common'
+import { BadRequestException, Injectable, NotFoundException, Optional } from '@nestjs/common'
 import { InjectModel } from '@nestjs/mongoose'
 import { Model } from 'mongoose'
 import { MemoryEvidence, MemoryKind, MemoryScope } from './assistant.constants'
 import { toObjectId } from './object-id.util'
 import { AssistantMemory, AssistantMemoryDocument } from './schemas/assistant-memory.schema'
 import { AssistantMemoryCandidate, AssistantMemoryCandidateDocument } from './schemas/assistant-memory-candidate.schema'
+import { NoteChunk, NoteChunkDocument } from '../notes/schemas/note-chunk.schema'
 
 // 长期记忆对外视图：scope/relation 等嵌套字段保留结构，ObjectId 统一转字符串。
 export type MemoryView = {
@@ -28,6 +29,9 @@ export class MemoryService {
     // 本服务注入候选模型回溯该状态完成闭环：supersede 物化候选为记忆、reject_memory 退回 pending、
     // keep_both 换范围后物化。参数可选仅为兼容单模型直构测试（DI 正常注入）。
     @InjectModel(AssistantMemoryCandidate.name) private readonly candidateModel?: Model<AssistantMemoryCandidateDocument>,
+    // refreshEvidence 校验 note_chunk 证据仍存在（笔记删除/重新索引后 chunk 消失即 stale）。
+    // NoteChunk 未在本模块 forFeature 注册时为 undefined（guard 短路返回现状），直构测试注入 mock；@Optional 兼容缺失。
+    @Optional() @InjectModel(NoteChunk.name) private readonly chunkModel?: Model<NoteChunkDocument>,
   ) {}
 
   async list(userId: string, opts?: { includeSuperseded?: boolean }) {
@@ -75,6 +79,50 @@ export class MemoryService {
       ).exec()
     }
     await this.memoryModel.deleteOne({ _id: memory._id, userId: toObjectId(userId) }).exec()
+  }
+
+  // 证据复核：note_chunk 证据逐一校验对应 chunk 是否仍存在（笔记被删/重新索引后 chunk 会消失）。
+  // 任一缺失 → 该记忆证据链已断，置 stale 并生成一条 hypothesis 复核候选（指向原节点，供用户重新确认）；
+  // message 类型证据无法离线验证，保持现状；已 stale 的记忆复核不重复生成候选（evidenceKey review-<memoryId> 幂等）。
+  async refreshEvidence(userId: string, memoryId: string): Promise<{ evidenceStatus: 'ok' | 'stale'; reviewCreated: boolean }> {
+    const memory = await this.memoryModel.findOne({ _id: toObjectId(memoryId), userId: toObjectId(userId) }).lean().exec() as any
+    if (!memory) throw new NotFoundException('memory not found')
+    // chunkModel/candidateModel 未注入（模块未注册 NoteChunk / 单模型直构测试）时无法核验，返回现状不误报 stale。
+    if (!this.chunkModel || !this.candidateModel) return { evidenceStatus: memory.evidenceStatus, reviewCreated: false }
+
+    let stale = false
+    for (const evidence of memory.evidence || []) {
+      if (evidence.type !== 'note_chunk') continue
+      const chunk = await this.chunkModel.findOne({
+        _id: toObjectId(String(evidence.chunkId)), noteId: toObjectId(String(evidence.noteId)),
+      }).select('_id').lean().exec() as any
+      if (!chunk) stale = true
+    }
+    const evidenceStatus: 'ok' | 'stale' = stale ? 'stale' : 'ok'
+    if (stale && memory.evidenceStatus !== 'stale') {
+      await this.memoryModel.updateOne({ _id: memory._id }, { $set: { evidenceStatus: 'stale' } }).exec()
+      await this.candidateModel.create({
+        userId: memory.userId, conversationId: memory.conversationId || memory.userId,
+        kind: 'hypothesis', subject: memory.subject, statement: `复核认知：${memory.statement}（原证据可能已变化）`,
+        scope: memory.scope, confidence: Math.max(0.1, Number(memory.confidence) * 0.8),
+        evidence: [{ type: 'message', messageId: memory.candidateId || memory._id, excerpt: memory.statement.slice(0, 160) }],
+        evidenceKey: `review-${memory._id}`,
+      })
+      return { evidenceStatus: 'stale', reviewCreated: true }
+    }
+    return { evidenceStatus, reviewCreated: false }
+  }
+
+  // 认知导出：全部记忆（含 superseded）按 createdAt 升序输出 NDJSON 行（evidence 一并序列化）。
+  async exportJsonl(userId: string): Promise<string> {
+    const docs = await this.memoryModel.find({ userId: toObjectId(userId) }).sort({ createdAt: 1 }).lean().exec() as any[]
+    return docs.map((doc) => JSON.stringify({
+      id: String(doc._id), kind: doc.kind, subject: doc.subject, statement: doc.statement, scope: doc.scope,
+      status: doc.status, evidenceStatus: doc.evidenceStatus, evidence: doc.evidence || [],
+      validFrom: doc.validFrom ? String(doc.validFrom) : undefined,
+      validTo: doc.validTo ? String(doc.validTo) : undefined,
+      confirmedAt: doc.confirmedAt ? String(doc.confirmedAt) : undefined,
+    })).join('\n')
   }
 
   // 记忆级解决：supersede 只对仍 confirmed 的目标生效并给新节点补 supersedes 关系；

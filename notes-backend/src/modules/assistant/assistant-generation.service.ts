@@ -10,8 +10,13 @@ import { AssistantContextService } from './assistant-context.service'
 import { AssistantConversationsService } from './assistant-conversations.service'
 import { AssistantMemoryExtractorService } from './assistant-memory-extractor.service'
 import { AssistantMessagesService } from './assistant-messages.service'
+import { MEMORY_RECALL_SERVICE, MemoryRecallServiceLike } from './assistant.constants'
 
 const NOTE_INTENT = /(我的笔记|笔记里|之前|当时|踩坑|查找|找到|搜索|哪篇|比较|区别|差异|冲突|矛盾|知识库)/i
+
+// 关闭记忆召回时的空召回占位：truthy 才能覆盖 context.assemble 的 `input.memoryRecall ?? this.memoryRecall`
+// 回退（rag 分支按 falsy 判断、置 undefined 即关闭，无需占位），recall 恒返回空数组 → 不再注入 [已确认认知]。
+const DISABLED_RECALL: MemoryRecallServiceLike = { recall: async () => [] }
 
 @Injectable()
 export class AssistantGenerationService {
@@ -34,6 +39,9 @@ export class AssistantGenerationService {
     @Optional() private readonly context?: AssistantContextService,
     // 认知记忆候选提取在阶段四接入；未接线（本阶段构造无该参）时注入为 undefined，触发路径走可选调用。
     @Optional() private readonly memoryExtractor?: AssistantMemoryExtractorService,
+    // 会话级记忆召回（Task 6）：注入 MEMORY_RECALL_SERVICE 供 rag/pet 分支透传；关闭记忆召回（memoryEnabled=false）
+    // 时置 undefined（rag）/DISABLED_RECALL 占位（pet），回答不再注入 [已确认认知]。可选参数仅为兼容阶段一 5 参直构测试（DI 正常注入）。
+    @Optional() @Inject(MEMORY_RECALL_SERVICE) private readonly memoryRecall?: MemoryRecallServiceLike,
   ) {}
 
   isRunning(requestId: string): boolean { return this.running.has(requestId) }
@@ -140,6 +148,20 @@ export class AssistantGenerationService {
 
   private async runGeneration(input: { userId: string; conversationId: string; assistantMessageId: string; assistantSeq: number; requestId: string; question: string; knowledgeBaseId?: string; route: 'pet' | 'rag'; retryOfMessageId?: string }, emitter: EventEmitter): Promise<void> {
     const { userId, assistantMessageId, requestId, route } = input
+    // 会话级召回 gating：memoryEnabled=false 时关闭（回答不再注入 [已确认认知]）。
+    // rag 置 undefined（rag-stream 按 falsy 跳过召回）；pet 置 DISABLED_RECALL 空实现（truthy 覆盖
+    // context.assemble 的 `?? this.memoryRecall` DI 回退）。读取设置失败保持默认召回，不影响回答。
+    let memoryRecall: MemoryRecallServiceLike | undefined = this.memoryRecall
+    let petMemoryRecall: MemoryRecallServiceLike | undefined = this.memoryRecall
+    if (memoryRecall) {
+      try {
+        const settings = await this.conversations.getSettings(userId, input.conversationId)
+        if (settings.memoryEnabled === false) {
+          memoryRecall = undefined
+          petMemoryRecall = DISABLED_RECALL
+        }
+      } catch { /* 设置读取失败时保持默认召回 */ }
+    }
     let content = ''
     let completed = false
     let flushedAt = 0
@@ -162,7 +184,7 @@ export class AssistantGenerationService {
       if (route === 'rag') {
         emitter.emit('event', { event: 'status', data: { stage: 'routing', message: '正在检索你的笔记' } })
         const result = await this.ragStream.streamRagAnswer(
-          { question: input.question, knowledgeBaseId: input.knowledgeBaseId, userId },
+          { question: input.question, knowledgeBaseId: input.knowledgeBaseId, userId, memoryRecall },
           {
             onStatus: async (stage, message) => { if (cancelled()) throw new Error('CANCELLED'); emitter.emit('event', { event: 'status', data: { stage, message } }) },
             onDelta: async (text) => { if (cancelled()) throw new Error('CANCELLED'); await emitDelta(text) },
@@ -178,7 +200,7 @@ export class AssistantGenerationService {
         // 或 assemble 失败（如 DB 读异常）时降级为直接提问，不阻塞回答——与 checkpoint 的静默降级惯例一致。
         let prompt = input.question
         if (this.context) {
-          const context = await this.context.assemble({ userId, conversationId: input.conversationId, question: input.question })
+          const context = await this.context.assemble({ userId, conversationId: input.conversationId, question: input.question, memoryRecall: petMemoryRecall })
             .catch((error) => { this.logger.warn(`assemble 失败，降级为直接提问: ${error?.message ?? error}`); return null })
           prompt = context ? this.context.buildPrompt(input.question, context.sections) : input.question
         }

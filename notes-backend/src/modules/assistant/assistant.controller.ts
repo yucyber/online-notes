@@ -233,6 +233,25 @@ export class AssistantController {
     throw new BadRequestException('不支持的冲突解决动作')
   }
 
+  // 证据复核：重新校验 note_chunk 证据是否仍存在，缺失即置 stale 并生成复核候选（message 证据无法验证保持现状）。
+  @Post('memories/:id/refresh-evidence')
+  async refreshMemoryEvidence(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    return this.memories.refreshEvidence(userId, id)
+  }
+
+  // 认知导出：全部记忆（含已替代）以 NDJSON 附件下载；走 @Res 直写流（与会话导出一致，绕过 JSON 信封）。
+  @Get('memories/export')
+  async exportMemories(@Res() res: Response, @Req() req?: AuthenticatedRequest) {
+    const userId = this.userId(req)
+    if (!userId) throw new BadRequestException('Authenticated user is required.')
+    res.setHeader('Content-Type', 'application/x-ndjson; charset=utf-8')
+    res.setHeader('Content-Disposition', 'attachment; filename="assistant-memories.jsonl"')
+    res.write(await this.memories.exportJsonl(userId))
+    res.end()
+  }
+
   @Delete('memories/:id')
   async deleteMemory(@Param('id') id: string, @Req() req?: AuthenticatedRequest) {
     const userId = this.userId(req)
