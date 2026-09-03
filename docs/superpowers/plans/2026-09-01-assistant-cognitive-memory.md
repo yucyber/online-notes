@@ -1335,36 +1335,35 @@ git commit -m "feat(assistant): 认知候选面板时间线与冲突解决 UI"
 **Files:**
 - 无新增
 
-- [ ] **Step 1: 后端全量单测与编译**
+- [x] **Step 1: 后端全量单测与编译**
 
 Run: `npm run test:unit; npm run build`
 Expected: 全部通过
+实际：442/442 + build 绿（冒烟 3 修复后回归）。
 
-- [ ] **Step 2: 前端全量测试与类型检查**
+- [x] **Step 2: 前端全量测试与类型检查**
 
 Run: `npm run ci:test; npm run type-check; npm run build`
 Expected: 全部通过
+实际：ci:test 323/324（editor.tiptap「延迟 apply 只读」偶发脆性，单跑 34/34 绿非回归）+ type-check + build 绿。
 
-- [ ] **Step 3: 浏览器冒烟（使用已有验收账户）**
+- [x] **Step 3: 浏览器冒烟（使用已有验收账户）**
 
-- 对话中包含明确决策（如"我决定以后用 X 方案"），等待提取完成（`assistant_memory_candidates` 出现 pending 记录）。
-- 全屏工作台认知标签：确认候选 → 出现在"当前有效"；拒绝候选 → 记录拒绝原因且同一证据不重复生成候选。
-- 再在另一会话提出相反结论 → 确认时出现冲突对话框 → 选择"用新结论替代旧结论" → 旧节点在"演进过程"中显示"已被替代"，新节点带 `supersedes` 关系。
-- 开启"搜索笔记"提问，回答中出现 `[M1]` 与 `[E1]`，UI 分别用不同徽标；点击 `[M1]` 能查看认知依据。
-- 会话设置：临时会话开启后，新对话不产生候选；关闭"记忆召回"后，回答不再注入 `[已确认认知]`。
-- 删除一条记忆的源会话后，`refresh-evidence`（或再次查看）把无证据节点标记 stale 并生成复核候选；导出认知 JSONL 成功。
-- 控制台与后端日志无异常；p3 既有功能（引用跳转、历史恢复、多会话）无回归。
+- 决策对话 → `assistant_memory_candidates` 出 pending ✅（中文决策「前端组件库统一用 Ant Design」）
+- 认知标签确认 → 「当前有效」；拒绝记录原因 ✅
+- 另一会话相反结论 → 冲突对话框（既有 vs 新结论 + 4 选项）→ 「用新结论替代旧结论」→ 旧节点 superseded（validTo/supersededById）+ 新节点 `supersedes` 关系 ✅
+- 「搜索笔记」提问出现 `[M1]` + `[E1]` 双徽标（`[M1]` chip 可点查认知依据）✅
+- 会话设置：临时会话不产候选；关闭「记忆召回」回答不再注入认知 ✅
+- refresh-evidence 标 stale + 生成复核候选；导出 JSONL 成功 ✅
+- 控制台/后端日志无异常；p3 既有功能无回归 ✅
 
-- [ ] **Step 4: 提交收尾（如无代码变更则跳过）**
+- [x] **Step 4: 提交收尾（如无代码变更则跳过）**
 
-```bash
-git status --short
-git log --oneline -10
-```
+冒烟发现 3 个真实链路缺陷并修复：1106b0e（m: 前缀 messageIds）/ c1cb7b2（relation 子 Schema 500）/ 9cdc0fc（记忆语言与召回分词错配），均带回归测试。
 
-- [ ] **Step 5: 更新 debug 记录与验收报告**
+- [x] **Step 5: 更新 debug 记录与验收报告**
 
-如发现新坑，按 `project-debug` 规范追加 `docs/debug-records.md`；确认全部验收通过后，在 `docs/qa/p3-browser-acceptance/report.md` 追加四个阶段的浏览器验收结论（引用截图路径必须实际存在）。
+`docs/debug-records.md` 追加 3 条 debug 记录；`docs/qa/p3-browser-acceptance/report.md` 追加计划 4 认知记忆验收结论（截图 `screenshots/p4-memory-*.png` 实际存在）。提交 6a0ff33。
 
 ---
 
