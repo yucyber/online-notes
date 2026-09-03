@@ -201,12 +201,14 @@ test('exportJsonl 输出全部记忆（含 superseded）且按 createdAt 升序'
     memoryDoc({
       _id: 'm2', subject: '布局', statement: '改用新方案', status: 'confirmed', evidenceStatus: 'ok',
       evidence: [{ type: 'note_chunk', noteId: 'n1', chunkId: 'c1', excerpt: 'x' }],
-      createdAt: '2026-09-02T00:00:00.000Z', validFrom: '2026-09-02T00:00:00.000Z', confirmedAt: '2026-09-02T00:00:00.000Z',
+      // 生产 lean 文档里时间字段是 Date 实例：导出须归一化为 ISO 8601（String(Date) 会输出本地化串）。
+      createdAt: '2026-09-02T00:00:00.000Z',
+      validFrom: new Date('2026-09-02T00:00:00.000Z'), confirmedAt: new Date('2026-09-02T08:00:00.000Z'),
     }),
     memoryDoc({
       _id: 'm1', subject: '布局', statement: '旧方案', status: 'superseded', evidenceStatus: 'stale', supersededById: 'm2',
       evidence: [], createdAt: '2026-09-01T00:00:00.000Z', validFrom: '2026-09-01T00:00:00.000Z',
-      validTo: '2026-09-02T00:00:00.000Z', confirmedAt: '2026-09-01T00:00:00.000Z',
+      validTo: new Date('2026-09-02T00:00:00.000Z'), confirmedAt: new Date('2026-09-01T00:00:00.000Z'),
     }),
   ])
   const service = newService(memories)
@@ -217,7 +219,9 @@ test('exportJsonl 输出全部记忆（含 superseded）且按 createdAt 升序'
   assert.deepEqual(rows.map((r) => r.id), ['m1', 'm2'], '按 createdAt 升序')
   assert.equal(rows[0].status, 'superseded')
   assert.equal(rows[0].evidenceStatus, 'stale')
-  assert.equal(rows[0].validTo, '2026-09-02T00:00:00.000Z')
+  assert.equal(rows[0].validTo, '2026-09-02T00:00:00.000Z', 'Date 实例导出为 ISO 8601（UTC）')
+  assert.equal(rows[1].validFrom, '2026-09-02T00:00:00.000Z', 'validFrom Date 归一化为 ISO 8601')
+  assert.equal(rows[1].confirmedAt, '2026-09-02T08:00:00.000Z', 'confirmedAt 携带偏移的 Date 归一化为 UTC ISO 8601')
   assert.deepEqual(Object.keys(rows[1]).sort(), ['confirmedAt', 'evidence', 'evidenceStatus', 'id', 'kind', 'scope', 'statement', 'status', 'subject', 'validFrom'])
   assert.equal(rows[1].evidence[0].chunkId, 'c1')
 })

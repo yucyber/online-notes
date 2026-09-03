@@ -114,14 +114,21 @@ export class MemoryService {
   }
 
   // 认知导出：全部记忆（含 superseded）按 createdAt 升序输出 NDJSON 行（evidence 一并序列化）。
+  // 时间字段统一归一化为 ISO 8601：lean 文档里是 Date 实例，String(Date) 会输出本地化串
+  // （"Tue Sep 01 2026 08:00:00 GMT+0800"），对机器消费的 NDJSON 解析不友好（与 assistant-export 同一惯例）。
   async exportJsonl(userId: string): Promise<string> {
     const docs = await this.memoryModel.find({ userId: toObjectId(userId) }).sort({ createdAt: 1 }).lean().exec() as any[]
+    const iso = (value: any): string | undefined => {
+      if (value == null) return undefined
+      const d = value instanceof Date ? value : new Date(value)
+      return Number.isNaN(d.getTime()) ? String(value) : d.toISOString()
+    }
     return docs.map((doc) => JSON.stringify({
       id: String(doc._id), kind: doc.kind, subject: doc.subject, statement: doc.statement, scope: doc.scope,
       status: doc.status, evidenceStatus: doc.evidenceStatus, evidence: doc.evidence || [],
-      validFrom: doc.validFrom ? String(doc.validFrom) : undefined,
-      validTo: doc.validTo ? String(doc.validTo) : undefined,
-      confirmedAt: doc.confirmedAt ? String(doc.confirmedAt) : undefined,
+      validFrom: iso(doc.validFrom),
+      validTo: iso(doc.validTo),
+      confirmedAt: iso(doc.confirmedAt),
     })).join('\n')
   }
 

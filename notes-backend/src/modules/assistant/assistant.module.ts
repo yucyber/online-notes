@@ -17,6 +17,7 @@ import { AssistantMessage, AssistantMessageSchema } from './schemas/assistant-me
 import { AssistantContextCheckpoint, AssistantCheckpointSchema } from './schemas/assistant-checkpoint.schema'
 import { AssistantMemoryCandidate, AssistantMemoryCandidateSchema } from './schemas/assistant-memory-candidate.schema'
 import { AssistantMemory, AssistantMemorySchema } from './schemas/assistant-memory.schema'
+import { NoteChunk, NoteChunkSchema } from '../notes/schemas/note-chunk.schema'
 
 @Module({
   imports: [
@@ -26,6 +27,9 @@ import { AssistantMemory, AssistantMemorySchema } from './schemas/assistant-memo
       { name: AssistantContextCheckpoint.name, schema: AssistantCheckpointSchema },
       { name: AssistantMemoryCandidate.name, schema: AssistantMemoryCandidateSchema },
       { name: AssistantMemory.name, schema: AssistantMemorySchema },
+      // 证据复核需校验 note_chunk 证据是否仍存在：NoteChunk 已由 notes/semantic/knowledge-bases 注册
+      // （@nestjs/mongoose 按 connection.models 缓存复用），此处再注册幂等，MemoryService 的 @InjectModel 才在生产 DI 解析。
+      { name: NoteChunk.name, schema: NoteChunkSchema },
     ]),
     // forwardRef：AiModule 不反向依赖 assistant，此处预防未来阶段双向依赖（RagStreamService 从 AiModule 注入）。
     forwardRef(() => AiModule),
