@@ -378,3 +378,45 @@ test('生成已结束后重连：走 stale 路径补发 complete（而非重新�
   assert.ok(emitted2.some((e) => e.event === 'complete'), '终态重连应补发 complete')
   assert.equal(emitted2.some((e) => e.event === 'resume'), false, '终态重连不应发 resume')
 })
+
+test('complete 已广播但 finish 未执行时 attach 补发终态，不因错过 complete 而断流', async () => {
+  // 「连续刷新两次断掉」根因回归：runGeneration 终态 emit 后、finish() 前仍有 DB 收尾 await
+  // （finally 里 setActiveRequest(null)），此窗口 running 仍为 true。新 attach 订阅已错过 complete →
+  // 连接随 finish 关闭但前端没收到终态 → 兜底标 failed。修复：终态先记录进 terminalEvents，attach 优先补发。
+  const store = fakeStore()
+  // 挂住 finally 的 setActiveRequest(null)：让 runGeneration 停在终态已广播、finish 未执行的窗口。
+  let releaseCleanup!: () => void
+  const cleanupGate = new Promise<void>((resolve) => { releaseCleanup = resolve })
+  const conversations = {
+    ...store.conversations,
+    setActiveRequest: async (_u: string, _c: string, requestId: string | null) => {
+      // 首次写入 requestId（start 内）不挂；finally 清空（null）时挂住制造窗口。
+      if (requestId === null) await cleanupGate
+    },
+  }
+  const service = new AssistantGenerationService(
+    conversations as any, store.messages as any,
+    { streamRagAnswer: async (_input: any, hooks: any) => {
+      await hooks.onDelta('内容一')
+      await hooks.onDelta('内容二')
+      return { route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }
+    } } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted1: any[] = []
+  const done = service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted1.push(e))
+  // 等 runGeneration 走完 finalize + complete 广播，停在 finally 的 cleanupGate（窗口开启）
+  await new Promise((r) => setTimeout(r, 60))
+
+  // 窗口内 attach（模拟刷新重连撞进竞态）：应补发已广播的 complete，而非只发 resume 后断流
+  const emitted2: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted2.push(e))
+  assert.ok(emitted2.some((e) => e.event === 'complete'), '窗口内 attach 应补发已广播的 complete')
+  assert.equal(emitted2.some((e) => e.event === 'resume'), false, '终态已广播时不应再发 resume')
+
+  // 放行清理：生成完整收尾
+  releaseCleanup()
+  await done
+  assert.equal(emitted1.filter((e) => e.event === 'complete').length, 1, '原订阅者只收一次 complete')
+})

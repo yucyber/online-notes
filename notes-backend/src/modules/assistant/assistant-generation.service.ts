@@ -31,6 +31,9 @@ export class AssistantGenerationService {
   private readonly currentContent = new Map<string, string>()
   // requestId -> assistantMessageId：attach 补发 resume 时标识消息，前端据此覆盖正确的气泡。
   private readonly currentMeta = new Map<string, string>()
+  // requestId -> 已广播的终态事件（complete/cancelled/error）：终态 emit 到 finish（含 DB 收尾 await）之间
+  // running 仍为 true，此时新 attach 会订阅到已错过的终态之前——补发记录避免前端等不到终态而兜底标 failed。
+  private readonly terminalEvents = new Map<string, AssistantStreamEvent>()
 
   constructor(
     private readonly conversations: AssistantConversationsService,
@@ -76,6 +79,7 @@ export class AssistantGenerationService {
       this.stops.delete(requestId)
       this.currentContent.delete(requestId)
       this.currentMeta.delete(requestId)
+      this.terminalEvents.delete(requestId)
       resolveStop()
     }
     try {
@@ -132,6 +136,12 @@ export class AssistantGenerationService {
   attach(requestId: string, emit: (event: AssistantStreamEvent) => void): void {
     const emitter = this.emitters.get(requestId)
     if (!emitter) return
+    // 终态已广播、finish 未执行的窗口（complete emit 后仍有 DB 收尾 await）：直接补发记录，避免订阅错过。
+    const terminal = this.terminalEvents.get(requestId)
+    if (terminal) {
+      try { emit(terminal) } catch { /* 连接断开 */ }
+      return
+    }
     // 重连快照：先把当前已生成全量 content 以 resume 事件补发给重连者，再订阅后续 delta。
     // 前端收到 resume 后用 content 覆盖（而非 append）气泡内容，之后 delta 事件正常追加，
     // 从而消除"DB 落库间隔内（≤500ms）可能缺失的 delta"导致的内容断裂。
@@ -215,7 +225,10 @@ export class AssistantGenerationService {
         if (cancelled()) throw new Error('CANCELLED')
         await flush(true)
         await this.messages.finalize(userId, assistantMessageId, { content, citations: result.citations, warnings: result.warnings })
-        emitter.emit('event', { event: 'complete', data: { messageId: assistantMessageId, route: 'rag', citations: result.citations, memoryCitations: result.memoryCitations, warnings: result.warnings, planSummary: result.planSummary, runId: result.runId } })
+        const ragComplete: AssistantStreamEvent = { event: 'complete', data: { messageId: assistantMessageId, route: 'rag', citations: result.citations, memoryCitations: result.memoryCitations, warnings: result.warnings, planSummary: result.planSummary, runId: result.runId } }
+        // 先记录终态再广播：finish 前（DB 收尾 await 中）新 attach 靠 terminalEvents 补发，不会错过。
+        this.terminalEvents.set(requestId, ragComplete)
+        emitter.emit('event', ragComplete)
       } else {
         emitter.emit('event', { event: 'status', data: { stage: 'routing', message: '小助手正在回复' } })
         // pet 分支也携带分区上下文（摘要/近期/历史/认知）再提问；context 未注入（单测直构/未注册时）
@@ -241,17 +254,23 @@ export class AssistantGenerationService {
         } finally { decoder.decode() }
         await flush(true)
         await this.messages.finalize(userId, assistantMessageId, { content, citations: [], warnings: [] })
-        emitter.emit('event', { event: 'complete', data: { messageId: assistantMessageId, route: 'pet', citations: [], warnings: [] } })
+        const petComplete: AssistantStreamEvent = { event: 'complete', data: { messageId: assistantMessageId, route: 'pet', citations: [], warnings: [] } }
+        this.terminalEvents.set(requestId, petComplete)
+        emitter.emit('event', petComplete)
       }
       completed = true
     } catch (error: any) {
       if (cancelled() || String(error?.message) === 'CANCELLED') {
         await flush(true)
         await this.messages.markCancelled(userId, assistantMessageId, content)
-        emitter.emit('event', { event: 'cancelled', data: { messageId: assistantMessageId, text: content, reason: 'user_stopped' } })
+        const cancelledEvent: AssistantStreamEvent = { event: 'cancelled', data: { messageId: assistantMessageId, text: content, reason: 'user_stopped' } }
+        this.terminalEvents.set(requestId, cancelledEvent)
+        emitter.emit('event', cancelledEvent)
       } else {
         await this.messages.markFailed(userId, assistantMessageId, content || '回答生成中断')
-        emitter.emit('event', { event: 'error', data: { code: 'PROVIDER_UNAVAILABLE', message: '回答生成中断，请稍后重试。', retryable: true } })
+        const errorEvent: AssistantStreamEvent = { event: 'error', data: { code: 'PROVIDER_UNAVAILABLE', message: '回答生成中断，请稍后重试。', retryable: true } }
+        this.terminalEvents.set(requestId, errorEvent)
+        emitter.emit('event', errorEvent)
         this.logger.warn(`assistant generation failed: ${error?.message}`)
       }
     } finally {
