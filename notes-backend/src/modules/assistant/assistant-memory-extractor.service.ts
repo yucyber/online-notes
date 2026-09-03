@@ -58,7 +58,7 @@ export class AssistantMemoryExtractorService {
         responseFormat: { type: 'json_object' },
         maxTokens: 512,
         temperature: 0,
-        system: `Extract durable memory candidates from this conversation. Each transcript line starts with its message id as [m:<message-id>]. Allowed kinds: ${MEMORY_KINDS.join(', ')}. Return JSON only: {"candidates":[{"kind":"...","subject":"short topic","statement":"one-sentence fact/decision","confidence":0-1,"messageIds":["..."]}]}, where "messageIds" must contain exactly the [m:<message-id>] values of the lines that support the candidate. Rules: ignore small talk, emotions, and speculation. A suggestion made only by the assistant and not confirmed by the user must use kind "hypothesis". Do not invent facts.`,
+        system: `Extract durable memory candidates from this conversation. Each transcript line starts with its message id as [m:<message-id>]. Allowed kinds: ${MEMORY_KINDS.join(', ')}. Return JSON only: {"candidates":[{"kind":"...","subject":"short topic","statement":"one-sentence fact/decision","confidence":0-1,"messageIds":["..."]}]}, where "messageIds" must contain exactly the raw <message-id> values (24-hex ids, WITHOUT the "m:" prefix) of the lines that support the candidate. Rules: ignore small talk, emotions, and speculation. A suggestion made only by the assistant and not confirmed by the user must use kind "hypothesis". Do not invent facts.`,
         prompt: transcript.slice(0, 12000),
       })
       parsed = JSON.parse(result.content)
@@ -77,7 +77,9 @@ export class AssistantMemoryExtractorService {
       const subject = String(raw?.subject || '').trim().slice(0, 80)
       const statement = String(raw?.statement || '').trim().slice(0, 500)
       if (!subject || !statement) { skipped += 1; continue }
-      const messageIds = Array.isArray(raw?.messageIds) ? raw.messageIds.map(String).slice(0, 8) : []
+      // 模型常把 transcript 行首的 [m:<id>] 整标记当作 messageId 返回（含 "m:" 前缀）；
+      // 这里剥掉前缀再反查，避免 evidence 恒空导致全部候选被跳过（R1-1 测试 mock 回填纯 id 掩盖了该真实行为）。
+      const messageIds = Array.isArray(raw?.messageIds) ? raw.messageIds.map(String).map((s) => s.replace(/^m:/, '')).slice(0, 8) : []
       // 证据权重：候选只来自 assistant 建议、又无对应 note_chunk 笔记证据时，用户并未确认，强制降级为 hypothesis。
       const assistantOnly = messageIds.every((id: string) => !recent.some((m) => m.id === id && m.role === 'user'))
       const hasNoteEvidence = recent.some((m) => m.citations.length > 0 && messageIds.includes(m.id))

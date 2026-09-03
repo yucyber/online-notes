@@ -158,3 +158,32 @@ test('长会话（>200 条）提取最新一轮而非卡在最旧窗口', async 
   assert.ok(transcriptLineIds(prompt).includes('m249'), '最新轮次的 id 应出现在 transcript')
   assert.equal(prompt.includes('第 1 条内容'), false, '不得从最旧 200 条里取窗口')
 })
+
+test('模型把 [m:<id>] 整标记当 messageId 返回时剥离前缀后仍落库', async () => {
+  // 冒烟回归：真实模型常把 transcript 行首的 [m:<id>] 整值（含 "m:" 前缀）作为 messageId 返回；
+  // 旧实现不剥前缀，recent.find(m => m.id === 'm:xxx') 恒空 → evidence 空 → 全部候选被跳过（created 恒 0）。
+  // 单测 mock 从 prompt 解析纯 id 回填掩盖了该真实行为，此用例直接模拟带前缀的输出。
+  const model = new MemoryCandidateModel()
+  const messages = {
+    listBefore: async () => [
+      { id: 'um1', seq: 1, role: 'user', route: 'rag', content: '我决定保留现有浮层', status: 'completed', citations: [], warnings: [], createdAt: '' },
+      { id: 'am1', seq: 2, role: 'assistant', route: 'rag', content: '好的，已记录', status: 'completed', citations: [], warnings: [], createdAt: '' },
+    ],
+  }
+  const gateway = {
+    chatTask: async () => ({ content: JSON.stringify({ candidates: [
+      { kind: 'decision', subject: '界面形态', statement: '保留现有浮层', confidence: 0.9, messageIds: ['m:um1'] },
+      { kind: 'preference', subject: '助手回复', statement: '助手确认了', confidence: 0.7, messageIds: ['m:am1'] },
+    ] }) }),
+  }
+  const service = new AssistantMemoryExtractorService(model as any, gateway as any, messages as any)
+  const result = await service.extract('u1', 'c1')
+  assert.equal(result.created, 2, '带 m: 前缀的 messageIds 应被剥离并匹配落库')
+  assert.equal(result.skipped, 0)
+  const decision = model.docs.find((d) => d.subject === '界面形态')
+  assert.deepEqual(decision.evidence[0], { type: 'message', messageId: 'um1', excerpt: '我决定保留现有浮层' })
+  const preference = model.docs.find((d) => d.subject === '助手回复')
+  // 助手建议且无笔记证据 → 强制降级 hypothesis；前缀剥离后证据可达，降级规则才真正生效。
+  assert.equal(preference.kind, 'hypothesis')
+  assert.equal(preference.evidence[0].messageId, 'am1')
+})
