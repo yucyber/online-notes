@@ -29,7 +29,7 @@ export default function AssistantCompose({ value, onChange, onSend, onStop, gene
           placeholder={placeholder}
         />
         {generating && onStop
-          ? <button type="button" onClick={onStop} aria-label="停止生成"><Square aria-hidden="true" /></button>
+          ? <button type="button" className="ink-stop-btn" onClick={onStop} aria-label="停止生成"><Square aria-hidden="true" /></button>
           : <button type="button" onClick={onSend} disabled={!value.trim()} aria-label="发送">↑</button>}
       </div>
     </div>
