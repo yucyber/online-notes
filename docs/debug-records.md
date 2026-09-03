@@ -242,3 +242,18 @@
   其余 `/api/*` 仍走 rewrite 直连后端，不受影响。
 - **验证**：重启 `next dev` 后，经 Next `3000` 的 `/api/assistant/chat`（pet）delta 由 +745ms 起逐块到达（+745/+746/+764/+784…），打字机恢复；assistant conversations 返回解包后的 `{items:[...]}`（route handler 生效）；`/api/ai/foobar` 仍返回后端信封（rewrite 对非 assistant 路径行为不变）。rag 请求经 route handler 事件序列正确逐步到达（pet/rag 走同一透传层，有笔记证据时同样逐块流式）。
 - **经验教训**：① Next 16 的 `rewrites('/api/:path*')` 会屏蔽同前缀的 App Router route handler——新增 `/api` 下 route handler 前先确认它不会被已有 rewrite 拦截（用「JSON 端点是否被解包」或「命中率」实测判定，别信"route handler 应优先"的直觉）。② Next dev(Turbopack) 的 rewrite 对后端 SSE 会整块缓冲，需流式的端点应走 route handler（route 层 SSE 透传正常）而非 rewrite。③ 排查"非流式/整块"类问题，先分层直连后端验证流式粒度，能快速把瓶颈圈定在后端还是前端转发层。
+
+---
+
+## 小助手长文回答截断在半句，刷新后误判为"断流"（pet_chat maxTokens 400 硬截断）
+
+- **日期**：2026-09-03
+- **现象**：浮窗问答要求写长文（三千/五千/八千字）时，回答停在 ~700 字且结尾为半句话（如「…从美索不达米亚平原上最早出现的」）；刷新页面后无打字机、无失败提示、内容不再增长，用户误判为"连续刷新两次断流"。用户实测**不刷新也会截断**，排除了续接链路问题。
+- **根因**：浮窗/小助手默认走 pet 路线，`pet_chat` 策略 `maxTokens: 400`（≈700 中文字）。回答到达 400 token 后 `finish_reason=length` 被服务端当**正常收尾**：消息标 completed、停在半句、无任何截断提示——前端恢复时 fetch 到 completed 正确地不重连，看起来像"第二次刷新后断了"。DB 多条 pet 回复均 ~700 字半句结尾，与 400 token 截断吻合。浮窗与全屏工作台走同一 `/api/assistant/chat` + 同一 `routeAssistantMessage` 判定，**输出上限无 UI 差异**，差异只在 route：pet=400 vs rag（检索笔记）=1800。
+- **相关文件**：
+  - `notes-backend/src/modules/ai/ai-model-policy.ts`（pet_chat maxTokens 400→1800）
+  - `notes-backend/src/modules/ai/ai.service.ts`（chatPet 显式 maxTokens 同步 400→1800）
+  - `notes-backend/test/ai-gateway.test.ts`（对应断言更新）
+- **修复方案**：pet_chat 策略与 chatPet 显式值同步提到 1800（与 rag_answer 对齐），小助手可覆盖 ~3000 字长文。
+- **验证**：真实 API 长文输出由 ~700 字截断变为 ~1900 字自然收尾；浏览器"生成中连续刷新两次"场景内容正常续接到结尾。
+- **经验教训**：①「回答停在半截不再增长」先查**输出长度上限**（task 的 maxTokens），别只盯刷新/续接链路——截断是 `finish_reason=length` 正常收尾，消息 completed 无失败标记，极易伪装成断流。② 同一问题在浮窗/全屏表现不同时，先确认两者是否同 route：上限绑定 route（task）而非 UI 入口。③ 修截断类问题时对照 DB 中多条回复的长度是否都恰好卡在同一量级，能快速定位是上限截断还是偶发异常。
