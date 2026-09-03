@@ -2,6 +2,18 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose'
 import { Document, Schema as MongooseSchema, Types } from 'mongoose'
 import { MemoryEvidence, MemoryKind, MemoryRelationType, MemoryScope } from '../assistant.constants'
 
+// 关联子文档用独立 Schema 声明：mongoose 8 对 @Prop 嵌套 type 字面量会在 create 时实例化空子文档
+// 并校验其 required 字段——不带 relation 的 create 会误报 relation.type required（T1 scope 坑的 relation 变体），
+// 独立子 Schema 才按可选子文档处理（不传即 undefined，传了才校验）。须定义在 AssistantMemory class 前
+// 供其装饰器参数引用（装饰器在 class 定义时求值）。
+const MemoryRelationSubSchema = new MongooseSchema(
+  {
+    type: { type: String, enum: ['supports', 'contradicts', 'supersedes', 'refines'], required: true },
+    targetMemoryId: { type: MongooseSchema.Types.ObjectId },
+  },
+  { _id: false },
+)
+
 export type AssistantMemoryDocument = AssistantMemory & Document
 
 @Schema({ collection: 'assistant_memories', timestamps: true })
@@ -45,12 +57,8 @@ export class AssistantMemory {
   })
   evidence: MemoryEvidence[]
 
-  // 关联到被本节点 supersedes/supports 的既有节点；无则缺省。
-  @Prop({
-    type: { type: String, enum: ['supports', 'contradicts', 'supersedes', 'refines'], required: true },
-    targetMemoryId: { type: MongooseSchema.Types.ObjectId },
-    _id: false,
-  })
+  // 关联到被本节点 supersedes/supports 的既有节点；无则缺省（可选子文档，声明见文件顶部 MemoryRelationSubSchema）。
+  @Prop({ type: MemoryRelationSubSchema })
   relation?: { type: MemoryRelationType; targetMemoryId: Types.ObjectId }
 
   @Prop({ required: true, enum: ['ok', 'stale'], default: 'ok' })
