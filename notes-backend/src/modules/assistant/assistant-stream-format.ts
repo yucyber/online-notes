@@ -5,6 +5,9 @@ export type AssistantStreamEvent =
   | { event: 'started'; data: { conversationId: string; userMessageId: string; assistantMessageId: string; requestId: string } }
   | { event: 'status'; data: { stage: 'routing' | 'retrieving' | 'answering'; message: string } }
   | { event: 'delta'; data: { text: string } }
+  // 重连快照：刷新/重新订阅同一 requestId 时，attach 先补发一条 resume 事件携带当前已生成全量 content，
+  // 前端用它覆盖气泡（而非 append），之后续收 delta 事件追加，保证无缝衔接、无缺失、无重复。
+  | { event: 'resume'; data: { assistantMessageId: string; content: string } }
   | { event: 'complete'; data: { messageId: string; route: 'pet' | 'rag'; citations: RagCitation[]; memoryCitations?: MemoryCitation[]; warnings: string[]; planSummary?: RagPlanSummary; runId?: string } }
   | { event: 'cancelled'; data: { messageId: string; text: string; reason: 'user_stopped' } }
   | { event: 'error'; data: { code: string; message: string; retryable: boolean } }

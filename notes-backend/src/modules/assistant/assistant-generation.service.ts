@@ -26,6 +26,11 @@ export class AssistantGenerationService {
   private readonly cancelKeys = new Set<string>()
   // requestId -> 生成停止时 resolve 的 promise：cancel 等待它，保证返回时 cancelled 已落库并广播。
   private readonly stops = new Map<string, Promise<void>>()
+  // requestId -> 运行中已生成全量 content 的实时内存快照：attach 重连时补发 resume 事件作为无缝续接起点。
+  // emitDelta 逐 token 同步更新，finish 时删除；仅进程内有效（跨实例/服务重启降级为 stale→failed）。
+  private readonly currentContent = new Map<string, string>()
+  // requestId -> assistantMessageId：attach 补发 resume 时标识消息，前端据此覆盖正确的气泡。
+  private readonly currentMeta = new Map<string, string>()
 
   constructor(
     private readonly conversations: AssistantConversationsService,
@@ -69,6 +74,8 @@ export class AssistantGenerationService {
       this.running.delete(requestId)
       this.emitters.delete(requestId)
       this.stops.delete(requestId)
+      this.currentContent.delete(requestId)
+      this.currentMeta.delete(requestId)
       resolveStop()
     }
     try {
@@ -106,6 +113,9 @@ export class AssistantGenerationService {
       await this.conversations.touch(userId, conversation.id, { lastMessageAt: new Date(), messageCount: userMessage.seq + 1, knowledgeBaseId: input.knowledgeBaseId ?? null })
       // 记录会话当前运行的生成 requestId：删除/归档会话时可据此取消正在进行的生成。
       await this.conversations.setActiveRequest(userId, conversation.id, requestId)
+      // 记录运行态元信息：attach 重连时补发 resume 快照用（进程内有效）。
+      this.currentContent.set(requestId, '')
+      this.currentMeta.set(requestId, assistantMessage.messageId)
       emitter.emit('event', { event: 'started', data: { conversationId: conversation.id, userMessageId: userMessage.messageId, assistantMessageId: assistantMessage.messageId, requestId } })
 
       // 后台继续生成：HTTP 断开不中止，订阅者通过 attach 重连。
@@ -121,7 +131,16 @@ export class AssistantGenerationService {
 
   attach(requestId: string, emit: (event: AssistantStreamEvent) => void): void {
     const emitter = this.emitters.get(requestId)
-    if (emitter) emitter.on('event', (event: AssistantStreamEvent) => { try { emit(event) } catch { /* ignore */ } })
+    if (!emitter) return
+    // 重连快照：先把当前已生成全量 content 以 resume 事件补发给重连者，再订阅后续 delta。
+    // 前端收到 resume 后用 content 覆盖（而非 append）气泡内容，之后 delta 事件正常追加，
+    // 从而消除"DB 落库间隔内（≤500ms）可能缺失的 delta"导致的内容断裂。
+    const snapshot = this.currentContent.get(requestId) ?? ''
+    const assistantMessageId = this.currentMeta.get(requestId) ?? ''
+    if (assistantMessageId) {
+      try { emit({ event: 'resume', data: { assistantMessageId, content: snapshot } }) } catch { /* 连接断开 */ }
+    }
+    emitter.on('event', (event: AssistantStreamEvent) => { try { emit(event) } catch { /* ignore */ } })
   }
 
   async cancel(requestId: string, userId: string): Promise<{ cancelled: boolean; reason?: 'not_found' | 'not_running' }> {
@@ -178,6 +197,8 @@ export class AssistantGenerationService {
     const cancelled = () => this.cancelKeys.has(requestId)
     const emitDelta = async (text: string) => {
       content += text
+      // 实时同步内存快照：attach 重连时补发 resume 用当前全量 content，精确到每个 token，无 DB 落库间隔误差。
+      this.currentContent.set(requestId, content)
       await flush(false)
       emitter.emit('event', { event: 'delta', data: { text } })
     }

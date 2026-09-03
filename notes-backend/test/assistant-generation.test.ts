@@ -317,3 +317,64 @@ test('conversationId 失效（get 返回 null）时新建会话而非复用最�
   assert.equal(ensureCalled, false, '不得走 ensure 复用最近会话')
   assert.ok(emitted.some((e) => e.event === 'started' && e.data.conversationId === 'c2'))
 })
+
+test('生成进行中重连：attach 补发 resume 快照（全量 content）后续收后续 delta', async () => {
+  // C 方案核心：刷新页面后用同 requestId 重新 POST chat，running.has 命中 attach，
+  // attach 补发 resume 事件携带当前已生成全量 content，重连者以此为起点续收后续 delta，无内容断裂。
+  const store = fakeStore()
+  let releaseDelta2!: () => void
+  const delta2Gate = new Promise<void>((resolve) => { releaseDelta2 = resolve })
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async (_input: any, hooks: any) => {
+      await hooks.onDelta('hello ')
+      await delta2Gate
+      await hooks.onDelta('world')
+      return { route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }
+    } } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+
+  const emitted1: any[] = []
+  const done = service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted1.push(e))
+  // 等第一个 delta 流出（onDelta('hello ') 完成）
+  await new Promise((r) => setTimeout(r, 30))
+
+  // 重连：同 requestId 重新 start，命中 running → attach
+  const emitted2: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted2.push(e))
+
+  // 重连者应收到 resume 快照（全量已生成 content）
+  const resumeEvent = emitted2.find((e) => e.event === 'resume')
+  assert.ok(resumeEvent, '重连应补发 resume 快照事件')
+  assert.equal(resumeEvent.data.content, 'hello ', 'resume 应含当前全量已生成 content')
+  assert.equal(resumeEvent.data.assistantMessageId, 'am1', 'resume 应携带 assistantMessageId')
+
+  // 放行第二个 delta：重连者应收到后续 delta
+  releaseDelta2()
+  // waitForTerminal 等生成真正结束（包含 runGeneration 内 onDelta world 的全部异步路径）
+  await service.waitForTerminal(requestId)
+  const deltaEvents2 = emitted2.filter((e: any) => e.event === 'delta')
+  assert.ok(deltaEvents2.some((e) => e.data.text === 'world'), '重连者应续收 resume 后的 delta')
+  assert.ok(emitted2.some((e) => e.event === 'complete'), '重连者应收到 complete')
+})
+
+test('生成已结束后重连：走 stale 路径补发 complete（而非重新生成）', async () => {
+  // 生成结束后 running 已清，重连命中 getByRequestId → 终态消息 → 补发 complete，不重复生成。
+  const store = fakeStore()
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, () => undefined)
+  await service.waitForTerminal(requestId)
+  // 模拟 DB 里该消息已是 completed（finalize 落库后的状态）
+  store.byRequest.set(requestId, { id: 'am1', userId, role: 'assistant', status: 'completed', content: '完整回答', conversationId: 'c1', route: 'rag', citations: [], warnings: [] })
+  const emitted2: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted2.push(e))
+  assert.ok(emitted2.some((e) => e.event === 'complete'), '终态重连应补发 complete')
+  assert.equal(emitted2.some((e) => e.event === 'resume'), false, '终态重连不应发 resume')
+})

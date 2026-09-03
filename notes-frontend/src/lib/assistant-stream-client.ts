@@ -23,6 +23,9 @@ export type AssistantStreamEvents = {
   onStarted?(data: { conversationId: string; userMessageId: string; assistantMessageId: string; requestId: string }): void;
   onStatus?(stage: 'routing' | 'retrieving' | 'answering', message: string): void;
   onDelta?(text: string): void;
+  // 重连快照：刷新后用同 requestId 重新发起请求，若后端仍在生成则触发此回调；
+  // content 为当前全量已生成内容，前端应覆盖（而非追加）气泡内容，后续 onDelta 再追加。
+  onResume?(data: { assistantMessageId: string; content: string }): void;
   onComplete?(data: { messageId: string; route: AssistantRoute; citations: RagCitation[]; warnings: string[]; planSummary?: RagPlanSummary; runId?: string; memoryCitations?: MemoryCitation[] }): void;
   onCancelled?(data: { messageId: string; text: string; reason: string }): void;
   onError?(code: string, message: string, retryable: boolean): void;
@@ -87,6 +90,7 @@ export async function streamAssistantReply(
           case 'started': events.onStarted?.(parsed.data); break;
           case 'status': events.onStatus?.(parsed.data.stage, parsed.data.message); break;
           case 'delta': events.onDelta?.(parsed.data.text); break;
+          case 'resume': events.onResume?.(parsed.data); break;
           case 'complete': events.onComplete?.(parsed.data); break;
           case 'cancelled': events.onCancelled?.(parsed.data); break;
           case 'error': events.onError?.(parsed.data.code, parsed.data.message, parsed.data.retryable); break;
