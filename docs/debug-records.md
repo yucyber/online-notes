@@ -203,3 +203,21 @@
   - `notes-backend/test/assistant-memory-extractor.test.ts`（断言 system prompt 含 SAME LANGUAGE 要求）
 - **修复方案**：extractor system prompt 增加语言约束——中文对话产中文记忆（React/Vue/NestJS 等技术词保留原文）；修复后中文决策可被中文问题召回，`[M1]` 注入链路打通。
 - **经验教训**：跨语言链路（英文 prompt 提取 → 中文检索召回）必须显式对齐语言；模型输出语言由 prompt 语言主导，提取 prompt 应要求记忆用**用户对话的语言**输出，否则下游检索（按用户语言分词）必然落空。
+
+---
+
+## 小助手回答从不使用知识图谱扩展（结构性不可达）
+
+- **日期**：2026-09-03
+- **现象**：小助手 RAG 回答从未体现知识图谱扩展——全笔记检索（compare 类问题）时 warnings 恒出现「未指定知识库，已跳过图谱扩展」。直调后端时若带 `knowledgeBaseId`（项目测试库2）则扩图链路完全可用（`planSummary.tools` 含 graph_expand、回答引用到函数调用开销/栈溢出/提前终止等邻居节点内容）。
+- **根因**：两层叠加导致**结构性不可达**：
+  1. 小助手前端从不发送 `knowledgeBaseId`：输入区只有“搜索笔记”二元开关，spec（2026-09-01-assistant-workspace…-design）中的“选择知识库范围”从未实现 → UI 路径必然无库。
+  2. 后端 `RagRetrievalService.retrieve()` 对「无 knowledgeBaseId + plan 含 graph_expand」直接跳过扩图并提示，缺少全笔记范围自动反查自有库图谱的能力。
+  - 附带发现：用户拥有的“项目测试库”图节点/边**均未绑定 evidenceChunkIds**（12 节点/10 边 0 证据），即使显式选该库扩图也为空；只有“项目测试库2”证据完整（14/14 节点、15/15 边）。验收扩图必须用证据完整的库。
+- **相关文件**：
+  - `notes-backend/src/modules/knowledge-bases/knowledge-bases.service.ts`（新增 `expandGraphEvidenceAuto`）
+  - `notes-backend/src/modules/ai/rag/rag-retrieval.service.ts`（无库分支改为自动扩图）
+  - `notes-backend/test/knowledge-base-auto-graph-expand.test.ts`、`notes-backend/test/rag-retrieval-orchestration.test.ts`（回归测试）
+- **修复方案**：后端在 ACL 边界内自动反查——`expandGraphEvidenceAuto(userId, seeds)` 由命中 chunk 的 noteId 经 `knowledge_base_notes`（带 userId 过滤）反查用户**自有且链接这些笔记**的知识库（上限 5，按 _id 升序），逐库复用 `expandGraphEvidence`（内部含 KB 归属 + NoteAccess + chunk 归属三重校验）做一跳扩展并按 chunkId 去重合并。`retrieve()` 仅在 `attemptedKbs === 0`（无自有库可扩）时提示「未找到可用的知识库图谱，已跳过图谱扩展」。
+- **验证**：不带 knowledgeBaseId 直调 `/api/assistant/chat`（compare 问题），`complete` 事件 `warnings: []` 且 `planSummary.tools` 含 `graph_expand`/`graphHops:1`（修复前同调用 warnings 为「未指定知识库，已跳过图谱扩展」）。
+- **经验教训**：功能在 API 层可用不代表 UI 可达——验收要覆盖“用户真实入口”的全链路；图谱证据质量（节点是否绑定 evidenceChunkIds）决定扩图是否真的产出，排查时应先查数据再怀疑代码。UI 缺知识库范围入口时，后端可在 ACL 边界内自动反查，避免结构性不可达，不必强推 UI 改动。
