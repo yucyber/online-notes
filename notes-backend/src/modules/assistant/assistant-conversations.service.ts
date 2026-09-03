@@ -9,15 +9,23 @@ import { AssistantConversation, AssistantConversationDocument } from './schemas/
 export class AssistantConversationsService {
   constructor(@InjectModel(AssistantConversation.name) private readonly model: Model<AssistantConversationDocument>) {}
 
-  async ensure(userId: string, opts?: { knowledgeBaseId?: string; title?: string }): Promise<{ id: string; isNew: boolean }> {
-    const existing = await this.model.findOne({ userId: new Types.ObjectId(userId), status: 'active' }).sort({ updatedAt: -1 }).select('_id').lean().exec()
-    if (existing) return { id: String(existing._id), isNew: false }
+  // 恒新建一个 active 会话：用户从"新建会话"空白态发第一条消息、或指定会话 id 已失效时开启新会话，
+  // 不再静默复用最近 active 会话（旧 ensure 语义曾让新问题全部落入第一段会话）。
+  async create(userId: string, opts?: { knowledgeBaseId?: string; title?: string }): Promise<{ id: string; isNew: boolean }> {
     const created = await this.model.create({
       userId: new Types.ObjectId(userId),
       title: opts?.title || '新对话',
       ...(opts?.knowledgeBaseId ? { knowledgeBaseId: new Types.ObjectId(opts.knowledgeBaseId) } : {}),
     })
     return { id: String(created._id), isNew: true }
+  }
+
+  // 复用 active 状态最近会话；无则新建。chat 发消息路径已不再调用（无会话或会话失效时直接 create 开新会话），
+  // 保留此"找最近会话否则新建"兜底契约，供未来真正需要续接最近会话的调用方使用。
+  async ensure(userId: string, opts?: { knowledgeBaseId?: string; title?: string }): Promise<{ id: string; isNew: boolean }> {
+    const existing = await this.model.findOne({ userId: new Types.ObjectId(userId), status: 'active' }).sort({ updatedAt: -1 }).select('_id').lean().exec()
+    if (existing) return { id: String(existing._id), isNew: false }
+    return this.create(userId, opts)
   }
 
   async get(userId: string, id: string) {

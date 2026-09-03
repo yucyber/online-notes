@@ -281,7 +281,8 @@ function genStore(settings: { memoryEnabled: boolean; temporary: boolean }) {
   return {
     events,
     conversations: {
-      ensure: async () => ({ id: 'c1', isNew: true }),
+      // 无会话 / id 失效时走 create 新建（本组测试始终带 conversationId 走 get 路径，ensure 已随 send 语义移除）。
+      create: async () => ({ id: 'c1', isNew: true }),
       get: async (_u: string, id: string) => ({ id, title: '新对话', status: 'active' }),
       touch: async () => undefined,
       renameIfDefault: async () => undefined,

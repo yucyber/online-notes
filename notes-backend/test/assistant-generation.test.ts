@@ -13,13 +13,17 @@ function fakeStore() {
   const renameCalls: Array<{ userId: string; conversationId: string; title: string }> = []
   // 会话标题登记：模拟 renameIfDefault 的原子条件——仅标题仍为默认"新对话"时自动标题才生效。
   const titles: Record<string, string> = { c1: '新对话' }
+  // create 调用次数：新建会话语义（无 conversationId / id 失效）断言用。
+  let createCalls = 0
   return {
     events,
     activeRequestCalls,
     renameCalls,
     titles,
+    get createCalls() { return createCalls },
     conversations: {
-      ensure: async () => ({ id: 'c1', isNew: true }),
+      // 新建会话语义：start 无 conversationId 或 id 失效时走 create（不复用最近 active 会话）。
+      create: async () => { createCalls += 1; return { id: 'c1', isNew: true } },
       get: async (_u: string, id: string) => ({ id, title: titles[id] ?? '新对话', status: 'active' }),
       touch: async () => undefined,
       // 模拟服务端 renameIfDefault：标题已非默认（如用户手动改名）时不记录、不覆盖。
@@ -259,4 +263,57 @@ test('会话已有标题时自动标题不覆盖（get 路径成功也不改名�
   await service.waitForTerminal('req-titled')
   assert.equal(store.renameCalls.length, 0, '标题已非默认时不自动改名')
   assert.equal(store.titles.c1, '用户手动改的标题')
+})
+
+test('无 conversationId（新建会话空白态）时每次发消息都新建会话而非复用最近会话', async () => {
+  // 回归：旧实现无 conversationId 走 ensure 复用最近 active，导致"新建会话"后的消息全部落入第一段会话，
+  // 会话记录永远只有一段。修复后 start 应走 conversations.create 开启独立新会话。
+  const store = fakeStore()
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  await service.start({ userId, requestId: 'req-fresh-1', question: 'q1', forceRoute: 'rag' }, () => undefined)
+  await service.start({ userId, requestId: 'req-fresh-2', question: 'q2', forceRoute: 'rag' }, () => undefined)
+  await service.waitForTerminal('req-fresh-2')
+  assert.equal(store.createCalls, 2, '无会话连续发消息应各自新建独立会话')
+})
+
+test('conversationId 失效（get 返回 null）时新建会话而非复用最近会话', async () => {
+  // 回归：id 指向已归档/删除/无权限会话时不得静默回退到最新 active（否则新消息落入无关旧会话），应开启新会话。
+  let ensureCalled = false
+  let createCalls = 0
+  const conversations = {
+    // ensure 若被调用说明仍走旧"复用最近会话"语义：置 throw 显式暴露回归。
+    ensure: async () => { ensureCalled = true; throw new Error('ensure should not be used') },
+    create: async () => { createCalls += 1; return { id: 'c2', isNew: true } },
+    get: async () => null,
+    touch: async () => undefined,
+    renameIfDefault: async () => undefined,
+    setActiveRequest: async () => undefined,
+  }
+  const messages = {
+    appendUser: async () => ({ messageId: 'um1', seq: 1 }),
+    createPlaceholder: async () => ({ messageId: 'am1', seq: 2 }),
+    appendDelta: async () => undefined,
+    finalize: async () => undefined,
+    markCancelled: async () => undefined,
+    markFailed: async () => undefined,
+    list: async () => [],
+    getByRequestId: async () => null,
+  }
+  const service = new AssistantGenerationService(
+    conversations as any, messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted: any[] = []
+  await service.start({ userId, conversationId: 'c-stale', requestId: 'req-stale', question: 'q', forceRoute: 'rag' }, (e) => emitted.push(e))
+  await service.waitForTerminal('req-stale')
+  assert.equal(createCalls, 1, 'conversationId 失效时应新建会话')
+  assert.equal(ensureCalled, false, '不得走 ensure 复用最近会话')
+  assert.ok(emitted.some((e) => e.event === 'started' && e.data.conversationId === 'c2'))
 })

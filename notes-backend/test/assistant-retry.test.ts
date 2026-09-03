@@ -9,7 +9,8 @@ test('retry 占位消息携带 retryOfMessageId', async () => {
       // brief 原 fakeStore 缺 get/setActiveRequest：当前 start 在指定 conversationId 时会调 get，
       // start 与 runGeneration finally 分别写/清空会话 activeRequestId，按 assistant-generation.test.ts 的 fakeStore 补齐。
       get: async () => ({ id: 'c1', title: 't', status: 'active' }),
-      ensure: async () => ({ id: 'c1', isNew: false }),
+      // 无会话 / id 失效时走 create 新建（本测试始终带 conversationId，仅保证 mock 形状与 start 调用面一致）。
+      create: async () => ({ id: 'c1', isNew: false }),
       touch: async () => undefined,
       renameIfDefault: async (u: string, id: string, title: string) => { calls.push({ type: 'renameIfDefault', title }) },
       setActiveRequest: async () => undefined,

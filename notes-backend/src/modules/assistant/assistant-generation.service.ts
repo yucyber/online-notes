@@ -95,10 +95,11 @@ export class AssistantGenerationService {
       const route: 'pet' | 'rag' = input.forceRoute === 'pet' || input.forceRoute === 'rag'
         ? input.forceRoute
         : (input.forceRoute === 'rag' || NOTE_INTENT.test(input.question) ? 'rag' : 'pet')
-      // 尊重前端指定的会话：带 userId 归属校验；id 失效（已删除/无权限）时回退到最新 active 会话，避免新消息落入不存在会话。
+      // 会话归属解析：带 id 时 get 校验 userId/status（归属）；id 缺失（新建会话空白态发消息）或已失效
+      // （归档/删除/无权限）一律新建会话，不复用"最近 active"——旧 ensure 复用会让新问题被写进无关旧会话。
       const conversation = input.conversationId
-        ? (await this.conversations.get(userId, input.conversationId)) ?? (await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined))
-        : await this.conversations.ensure(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
+        ? (await this.conversations.get(userId, input.conversationId)) ?? (await this.conversations.create(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined))
+        : await this.conversations.create(userId, input.knowledgeBaseId ? { knowledgeBaseId: input.knowledgeBaseId } : undefined)
       const userMessage = await this.messages.appendUser(userId, conversation.id, route, input.question, requestId)
       // 重试追溯：占位消息记录被重试的原始回答消息 id（retryOf），供前端定位来源与历史链。
       const assistantMessage = await this.messages.createPlaceholder(userId, conversation.id, route, requestId, input.retryOfMessageId)
