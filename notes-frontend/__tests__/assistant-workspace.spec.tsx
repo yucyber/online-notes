@@ -13,6 +13,19 @@ jest.mock('next/navigation', () => ({
   useRouter: () => ({ replace: (...args: unknown[]) => mockRouterReplace(...args) }),
 }))
 
+// 整理代理轮询/弹窗依赖的 organizer API：默认静默，个别用例覆盖返回值
+const mockOrganizerListProposals = jest.fn()
+const mockOrganizerListExecutions = jest.fn()
+jest.mock('@/lib/api/organizer', () => ({
+  organizerAPI: {
+    listProposals: (...args: unknown[]) => mockOrganizerListProposals(...args),
+    listExecutions: (...args: unknown[]) => mockOrganizerListExecutions(...args),
+    runAgent: jest.fn(),
+    executeProposal: jest.fn(),
+    undoExecution: jest.fn(),
+  },
+}))
+
 // jsdom 测试环境缺 Node 全局流 API，显式注入（与 ai-chat-window.spec 同一惯例）
 Object.assign(global, { TextDecoder, TextEncoder })
 
@@ -60,6 +73,8 @@ describe('AssistantWorkspace 三栏工作台', () => {
     localStorage.clear()
     sessionStorage.clear()
     mockRouterReplace.mockClear()
+    mockOrganizerListProposals.mockReset()
+    mockOrganizerListExecutions.mockReset()
     promptSpy?.mockRestore()
     promptSpy = undefined
     scrolled.length = 0
@@ -326,6 +341,38 @@ describe('AssistantWorkspace 三栏工作台', () => {
     render(<AssistantWorkspace />)
     await screen.findByText('会话一')
     expect(screen.queryByRole('button', { name: '导出会话' })).not.toBeInTheDocument()
+  })
+
+  test('定时发现新的 pending 提案时自动弹出整理确认弹窗', async () => {
+    jest.useFakeTimers()
+    try {
+      const fetchMock = jest.fn(async (url: string) => {
+        const href = String(url)
+        if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1)] })
+        return json({})
+      }) as any
+      global.fetch = fetchMock
+      let pollCount = 0
+      mockOrganizerListProposals.mockImplementation(async () => {
+        pollCount += 1
+        return pollCount === 1
+          ? [{ id: 'p1', status: 'pending' }]
+          : [{ id: 'p2', status: 'pending' }]
+      })
+      mockOrganizerListExecutions.mockResolvedValue([])
+      render(<AssistantWorkspace />)
+      await act(async () => { await Promise.resolve() })
+      // 首次轮询只建立基线，不弹窗
+      act(() => { jest.advanceTimersByTime(60_000) })
+      await act(async () => { await Promise.resolve() })
+      expect(screen.queryByText('小助手整理提案')).not.toBeInTheDocument()
+      // 第二次轮询出现新提案 id，自动打开整理确认
+      act(() => { jest.advanceTimersByTime(60_000) })
+      await act(async () => { await Promise.resolve() })
+      expect(screen.getByText('小助手整理提案')).toBeInTheDocument()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   test('顶栏提供小助手整理提案入口', async () => {

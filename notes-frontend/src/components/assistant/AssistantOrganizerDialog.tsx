@@ -56,7 +56,8 @@ export default function AssistantOrganizerDialog({ open, onOpenChange }: { open:
         organizerAPI.listProposals(),
         organizerAPI.listExecutions(),
       ])
-      setProposals(proposalList)
+      // 兼容旧数据/异常数据：actions 缺失时归一为空数组，避免渲染崩溃。
+      setProposals((proposalList || []).map((proposal) => ({ ...proposal, actions: proposal.actions || [] })))
       setExecutions(executionList)
       const currentId = activeProposalIdRef.current
       const nextActive = currentId && proposalList.some((item) => item.id === currentId)
@@ -84,7 +85,7 @@ export default function AssistantOrganizerDialog({ open, onOpenChange }: { open:
   // 提案里只有 noteId，按 ids 拉标题，界面上显示笔记名称而不是裸 ID。
   useEffect(() => {
     const wanted = new Set<string>()
-    proposals.forEach((proposal) => proposal.actions.forEach((action) => {
+    proposals.forEach((proposal) => (proposal.actions || []).forEach((action) => {
       action.noteIds.forEach((id) => wanted.add(id))
       if (action.targetNoteId) wanted.add(action.targetNoteId)
       if (action.sourceNoteId) wanted.add(action.sourceNoteId)
@@ -102,7 +103,7 @@ export default function AssistantOrganizerDialog({ open, onOpenChange }: { open:
   }, [proposals, noteTitles])
 
   const activeProposal = proposals.find((item) => item.id === activeProposalId)
-  const selectedActions = activeProposal?.actions.filter((action) => selectedActionIds.includes(action.actionId)) || []
+  const selectedActions = activeProposal?.actions?.filter((action) => selectedActionIds.includes(action.actionId)) || []
   const selectedHasHighRisk = selectedActions.some((action) => action.riskLevel === 'high')
 
   const runAgentNow = async () => {

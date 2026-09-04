@@ -16,6 +16,7 @@ import AssistantContextPanel, { type EvidenceTarget } from './AssistantContextPa
 import { ConversationList } from './ConversationList';
 import AssistantMessages from './AssistantMessages';
 import AssistantOrganizerDialog from './AssistantOrganizerDialog';
+import { organizerAPI } from '@/lib/api/organizer';
 
 const CURRENT_CONVERSATION_KEY = 'assistant_current_conversation_id';
 const SEARCH_DEBOUNCE_MS = 300;
@@ -53,6 +54,9 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   const [searchOpen, setSearchOpen] = useState(false);
   // 小助手整理代理入口：提案生成/确认/执行/撤销全部在工作台内完成，不必跳转整理页。
   const [organizerOpen, setOrganizerOpen] = useState(false);
+  // 待确认提案数量（角标）：定时器发现新 pending 提案时自动弹出整理确认。
+  const [pendingProposalCount, setPendingProposalCount] = useState(0);
+  const seenPendingProposalIdsRef = useRef<Set<string> | null>(null);
   // 搜索消息命中 / 导航快照恢复：消息行渲染后滚动定位
   const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
@@ -70,6 +74,27 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   }, []);
 
   useEffect(() => { refreshConversations(); }, [refreshConversations]);
+
+  // 整理代理轮询：每 60s 检查一次 pending 提案；出现“新”提案（首拉只记录不弹窗）时自动打开确认弹窗。
+  useEffect(() => {
+    const ORGANIZER_POLL_MS = 60_000;
+    const timer = window.setInterval(() => {
+      if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return;
+      organizerAPI.listProposals().then((items) => {
+        const pending = (items || []).filter((item) => item.status === 'pending');
+        setPendingProposalCount(pending.length);
+        const ids = new Set(pending.map((item) => item.id));
+        if (seenPendingProposalIdsRef.current === null) {
+          seenPendingProposalIdsRef.current = ids;
+          return;
+        }
+        const fresh = [...ids].filter((id) => !seenPendingProposalIdsRef.current!.has(id));
+        seenPendingProposalIdsRef.current = ids;
+        if (fresh.length > 0) setOrganizerOpen(true);
+      }).catch(() => undefined);
+    }, ORGANIZER_POLL_MS);
+    return () => window.clearInterval(timer);
+  }, []);
 
   // 当前会话与地址栏双向一致：切换/新建/清除会话都 replace（不 push，避免历史栈膨胀），
   // 使刷新、复制链接、从浮层"展开"均落到正在查看的会话；空会话去掉 ?conversation 参数。
@@ -487,6 +512,9 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
             onClick={() => setOrganizerOpen(true)}
           >
             <Sparkles aria-hidden="true" />
+            {pendingProposalCount > 0 && (
+              <span className="assistant-organizer-badge" data-testid="assistant-organizer-badge">{pendingProposalCount}</span>
+            )}
           </button>
           <button
             type="button"
