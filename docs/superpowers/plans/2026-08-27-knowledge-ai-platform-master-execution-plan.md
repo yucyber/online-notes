@@ -498,9 +498,11 @@ interface RagPlan {
 - [x] 高风险动作要求二次确认，显示会创建/修改/归档哪些笔记。
 - [x] 执行完成展示 execution 摘要和撤销截止时间。
 - [x] 冲突时展示需要人工处理的笔记，不用模型自动覆盖。
-- [ ] 完成 E2E、窄屏、暗色和异常恢复验收。
+- [x] 完成 E2E、窄屏、暗色和异常恢复验收。
 
-2026-09-04：P5 主体完成。后端新增 organizer_executions 与 undo journal；执行、幂等、整批撤销、冲突检测单测通过；前端开放执行与撤销入口，执行/撤销均使用公共 Dialog 二次确认。E2E 与人工视觉验收尚未完成，待发布检查点 Release D 前补齐。
+2026-09-04：P5 主体完成。后端新增 organizer_executions 与 undo journal；执行、幂等、整批撤销、冲突检测单测通过；前端开放执行与撤销入口，执行/撤销均使用公共 Dialog 二次确认。
+
+2026-09-04：P5 验收补强完成。执行前按 expectedUpdatedAt 复检、无事务时明确报错而非静默降级；merge undo 快照改为执行前捕获，undo 已撤销统一返回 `{ ok: true }`；新增 `organizer-undo.test.ts` 及页面级流程测试（勾选 → 二次确认 → 执行 → 冲突阻止）、窄屏/暗色 CSS 契约测试。后端全量 481 passed，前端全量 341 passed，前后端 type-check 均通过。浏览器人工视觉验收仍建议在 Release D 检查点补做。
 
 ---
 
