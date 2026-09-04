@@ -227,7 +227,7 @@ test('undo restores a rewritten note when user did not edit it afterwards', asyn
       actionId: 'a1',
       type: 'rewrite_note',
       noteIds: [new Types.ObjectId(noteOne)],
-      result: { noteId: noteOne, afterUpdatedAts: { [noteOne]: String(afterUpdated) } },
+      result: { noteId: noteOne, afterUpdatedAts: { [noteOne]: afterUpdated.toISOString() } },
       inverse: {
         previous: {
           noteId: noteOne,
@@ -292,7 +292,7 @@ test('undo returns conflicts when a changed note was edited after execution', as
       actionId: 'a1',
       type: 'rewrite_note',
       noteIds: [new Types.ObjectId(noteOne)],
-      result: { noteId: noteOne, afterUpdatedAts: { [noteOne]: String(afterUpdated) } },
+      result: { noteId: noteOne, afterUpdatedAts: { [noteOne]: afterUpdated.toISOString() } },
       inverse: {},
     }],
   })
@@ -351,6 +351,60 @@ test('execute rejects action when note updatedAt no longer matches proposal expe
   )
   assert.equal(proposal.status, 'stale')
   assert.equal(proposalSaved, true)
+})
+
+test('execute keeps millisecond precision when comparing expectedUpdatedAt', async () => {
+  // 回归：String(Date) 会丢毫秒，曾导致刚生成的提案也永远被判 stale（40010）。
+  const stamp = new Date('2026-08-21T03:24:02.283Z')
+  const proposal = proposalWithAction({
+    type: 'create_knowledge_base',
+    knowledgeBaseName: '毫秒基线库',
+    expectedUpdatedAt: [{ noteId: new Types.ObjectId(noteOne), updatedAt: stamp }],
+  })
+  const createdKb = doc({ _id: new Types.ObjectId(kbId), userId: new Types.ObjectId(userId), name: '毫秒基线库' })
+  let executionCreated: any = null
+  const service = makeService({
+    proposalModel: { findOne: () => chain(proposal) },
+    noteModel: {
+      findById: () => ({
+        session: () => ({
+          select: () => ({
+            lean: () => ({
+              exec: async () => ({ _id: new Types.ObjectId(noteOne), updatedAt: stamp }),
+            }),
+          }),
+        }),
+      }),
+    },
+    kbModel: {
+      findOne: () => chain(null),
+      create: async (rows: any[]) => [createdKb],
+    },
+    kbNoteModel: {
+      exists: () => ({ session: async () => null }),
+      create: async () => {},
+      find: () => ({ session: () => ({ exec: async () => [] }) }),
+      countDocuments: () => ({ session: async () => 0 }),
+    },
+    executionModel: {
+      findOne: () => chain(null),
+      create: async (rows: any[]) => {
+        executionCreated = rows[0]
+        return [createdExec({
+          userId: new Types.ObjectId(userId),
+          proposalId: new Types.ObjectId(proposalId),
+          proposalRevision: 1,
+          status: 'executed',
+          undoDeadline: new Date('2026-10-04T00:00:00.000Z'),
+        })]
+      },
+      find: () => ({ sort: () => chain([]) }),
+    },
+  })
+
+  const result = await service.execute(userId, proposalId, ['a1'], 'req-ms')
+  assert.equal(result.status, 'executed')
+  assert.equal(executionCreated.actions.length, 1)
 })
 
 test('execute fails loudly when MongoDB transaction is unavailable', async () => {

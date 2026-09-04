@@ -142,7 +142,7 @@ test('undo merge with existing target restores target snapshot and unarchives so
     result: {
       targetNoteId: targetId,
       createdTarget: false,
-      afterUpdatedAts: { [sourceOne]: String(after), [sourceTwo]: String(after), [targetId]: String(after) },
+      afterUpdatedAts: { [sourceOne]: after.toISOString(), [sourceTwo]: after.toISOString(), [targetId]: after.toISOString() },
     },
     inverse: {
       targetNoteId: targetId,
@@ -192,7 +192,7 @@ test('undo split deletes created notes and restores archived source', async () =
     result: {
       sourceNoteId: noteOne,
       createdNoteIds: [createdOne, createdTwo],
-      afterUpdatedAts: { [noteOne]: String(after), [createdOne]: String(after), [createdTwo]: String(after) },
+      afterUpdatedAts: { [noteOne]: after.toISOString(), [createdOne]: after.toISOString(), [createdTwo]: after.toISOString() },
     },
     inverse: {
       sourceNoteId: noteOne,
@@ -231,7 +231,7 @@ test('undo create knowledge base keeps kb when execution-external links exist', 
     actionId: 'a3',
     type: 'create_knowledge_base',
     noteIds: [new Types.ObjectId(noteOne)],
-    result: { knowledgeBaseId: kbId, createdKb: true, addedNoteIds: [noteOne], afterUpdatedAts: { [noteOne]: String(after) } },
+    result: { knowledgeBaseId: kbId, createdKb: true, addedNoteIds: [noteOne], afterUpdatedAts: { [noteOne]: after.toISOString() } },
     inverse: { knowledgeBaseId: kbId, createdKb: true, noteIds: [noteOne] },
   }])
   let kbDeleted = false
@@ -263,7 +263,7 @@ test('undo create knowledge base deletes kb when it has no execution-external li
     actionId: 'a4',
     type: 'create_knowledge_base',
     noteIds: [new Types.ObjectId(noteOne)],
-    result: { knowledgeBaseId: kbId, createdKb: true, addedNoteIds: [noteOne], afterUpdatedAts: { [noteOne]: String(after) } },
+    result: { knowledgeBaseId: kbId, createdKb: true, addedNoteIds: [noteOne], afterUpdatedAts: { [noteOne]: after.toISOString() } },
     inverse: { knowledgeBaseId: kbId, createdKb: true, noteIds: [noteOne] },
   }])
   let kbDeleted = false

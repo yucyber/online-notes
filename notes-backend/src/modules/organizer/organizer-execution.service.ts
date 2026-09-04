@@ -187,7 +187,8 @@ export class OrganizerExecutionService {
       for (const entry of entries) {
         if (!entry?.noteId) continue
         const noteId = String(entry.noteId)
-        const expected = new Date(String(entry.updatedAt))
+        // 直接用 Date 构造保留毫秒；String(Date) 会走本地格式丢毫秒，导致永远 mismatch。
+        const expected = new Date(entry.updatedAt as any)
         if (!Number.isNaN(expected.getTime())) expectedByNote.set(noteId, expected)
       }
     }
@@ -211,7 +212,7 @@ export class OrganizerExecutionService {
     const output: Record<string, string> = {}
     for (const id of ids) {
       const note = await this.noteModel.findById(new Types.ObjectId(id)).session(session).select('updatedAt').lean().exec()
-      if (note) output[id] = String((note as any).updatedAt)
+      if (note) output[id] = new Date((note as any).updatedAt).toISOString()
     }
     return output
   }
@@ -567,7 +568,7 @@ export class OrganizerExecutionService {
       const note = await this.noteModel.findById(new Types.ObjectId(noteId)).session(session).select('updatedAt').lean().exec()
       if (!note) {
         conflicts.push({ noteId, message: '笔记已被删除，无法自动撤销' })
-      } else if (String((note as any).updatedAt) !== expected) {
+      } else if (new Date((note as any).updatedAt).toISOString() !== expected) {
         conflicts.push({ noteId, message: '笔记在执行后被编辑过，已阻止自动覆盖' })
       }
     }
@@ -606,7 +607,7 @@ export class OrganizerExecutionService {
       content: String(note.content || ''),
       tags: (note.tags || []).map((id) => String(id)),
       categoryId: note.categoryId ? String(note.categoryId) : null,
-      archivedAt: (note as any)[ARCHIVED_AT_FIELD] ? String((note as any)[ARCHIVED_AT_FIELD]) : null,
+      archivedAt: (note as any)[ARCHIVED_AT_FIELD] ? new Date((note as any)[ARCHIVED_AT_FIELD]).toISOString() : null,
     }
   }
 
