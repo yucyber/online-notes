@@ -118,3 +118,18 @@ test('disables execute button for stale proposal', () => {
   expect(screen.getByRole('button', { name: '执行所选建议' })).toBeDisabled()
   expect(screen.getByText(/提案已过期需先返工/)).toBeInTheDocument()
 })
+
+test('disables execute button for confirmed (already executed) proposal', () => {
+  render(
+    <OrganizerProposalPanel
+      proposal={{ ...baseProposal, status: 'confirmed' }}
+      selectedActionIds={['a1']}
+      onToggleAction={() => undefined}
+      onRenameKnowledgeBase={() => undefined}
+      onExecute={() => undefined}
+    />,
+  )
+
+  expect(screen.getByRole('button', { name: '执行所选建议' })).toBeDisabled()
+  expect(screen.getByText(/该提案已执行过，不能再执行/)).toBeInTheDocument()
+})

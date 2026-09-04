@@ -64,6 +64,8 @@ export class OrganizerExecutionService {
     const proposal = await this.proposalModel.findOne({ _id: proposalObjectId, userId: userObjectId }).exec()
     if (!proposal) throw new NotFoundException('Proposal not found')
     if (proposal.status === 'stale') throw new BadRequestException('Proposal is stale, please refresh before executing')
+    // 已执行的提案不允许再次执行（即使只执行过部分动作也算整批已完成）；需要继续整理应生成新提案。
+    if (proposal.status === 'confirmed') throw new BadRequestException('Proposal already executed')
 
     const selected = new Set(actionIds || [])
     const actions = (proposal.actions || []).filter((action) => selected.has(String(action.actionId)))
@@ -137,6 +139,16 @@ export class OrganizerExecutionService {
       execution.status = 'undone'
       execution.undoneAt = new Date()
       await execution.save({ session })
+      // 撤销会把笔记恢复到执行前状态，updatedAt 随之变化；原提案即使重新执行也会被复检拦截，
+      // 这里显式落 stale，前端能直接提示“需刷新/重新生成”。
+      const undoneProposal = await this.proposalModel
+        .findOne({ _id: (execution as any).proposalId, userId: userObjectId })
+        .session(session)
+        .exec()
+      if (undoneProposal) {
+        undoneProposal.status = 'stale'
+        await undoneProposal.save({ session })
+      }
       await this.audit.record('organizer_undone', userId, 'note', String(executionObjectId), { requestId })
       return { ok: true, execution: this.serialize(execution) }
     })

@@ -54,6 +54,10 @@ function makeUndoService(overrides: Record<string, any> = {}) {
     findOne: () => chain(null),
     ...(overrides.executionModel || {}),
   }
+  const proposalModel = {
+    findOne: () => chain(null),
+    ...(overrides.proposalModel || {}),
+  }
   const noteModel = {
     db: dbStub,
     findById: () => ({
@@ -93,7 +97,7 @@ function makeUndoService(overrides: Record<string, any> = {}) {
 
   return new OrganizerExecutionService(
     executionModel as any,
-    { findOne: () => chain(null) } as any,
+    proposalModel as any,
     noteModel as any,
     noteVersionModel as any,
     tagModel as any,
@@ -282,6 +286,61 @@ test('undo create knowledge base deletes kb when it has no execution-external li
   const result = await service.undo(userId, String(execution._id), 'undo-kb-delete')
   assert.equal(result.ok, true)
   assert.equal(kbDeleted, true)
+})
+
+test('undo marks the source proposal as stale after success', async () => {
+  const after = new Date('2026-09-04T12:00:00.000Z')
+  const execution = executedDoc([{
+    actionId: 'a1',
+    type: 'rewrite_note',
+    noteIds: [new Types.ObjectId(noteOne)],
+    result: { noteId: noteOne, afterUpdatedAts: { [noteOne]: after.toISOString() } },
+    inverse: {
+      previous: { noteId: noteOne, title: '旧标题', content: '旧正文', tags: [], categoryId: null, archivedAt: null },
+    },
+  }])
+  const proposal = doc({
+    _id: new Types.ObjectId(proposalId),
+    userId: new Types.ObjectId(userId),
+    status: 'confirmed',
+    revision: 1,
+    actions: [],
+  })
+  let proposalSaved = false
+  proposal.save = async function () { proposalSaved = true; return this }
+  const currentNote = doc({
+    _id: new Types.ObjectId(noteOne),
+    title: '新标题',
+    content: '新正文',
+    tags: [],
+    categoryId: null,
+    archivedAt: null,
+    updatedAt: after,
+    save: async function () { return this },
+  })
+  const service = makeUndoService({
+    executionModel: { findOne: () => chain(execution) },
+    proposalModel: { findOne: () => chain(proposal) },
+    noteModel: {
+      findById: () => ({
+        session: () => ({
+          select: () => ({
+            lean: () => ({ exec: async () => ({ _id: new Types.ObjectId(noteOne), updatedAt: after }) }),
+          }),
+        }),
+      }),
+      findOne: () => ({
+        session: () => ({
+          exec: async () => currentNote,
+        }),
+      }),
+    },
+  })
+
+  const result = await service.undo(userId, String(execution._id), 'undo-mark-stale')
+  assert.equal(result.ok, true)
+  assert.equal(proposal.status, 'stale')
+  assert.equal(proposalSaved, true)
 })
 
 test('undo past undo deadline rejects', async () => {

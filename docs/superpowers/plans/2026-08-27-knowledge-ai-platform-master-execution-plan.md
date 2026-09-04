@@ -504,7 +504,7 @@ interface RagPlan {
 
 2026-09-04：P5 验收补强完成。执行前按 expectedUpdatedAt 复检、无事务时明确报错而非静默降级；merge undo 快照改为执行前捕获，undo 已撤销统一返回 `{ ok: true }`；新增 `organizer-undo.test.ts` 及页面级流程测试（勾选 → 二次确认 → 执行 → 冲突阻止）、窄屏/暗色 CSS 契约测试。后端全量 481 passed，前端全量 341 passed，前后端 type-check 均通过。浏览器人工视觉验收仍建议在 Release D 检查点补做。
 
-2026-09-04：P5 线上反馈修复。定位 40010 误判根因：`assertNoStaleNotes` 先 `String(Date)` 再解析，`toString` 不含毫秒，任何毫秒非 0 的笔记都会被判 stale；改为直接 `new Date(entry.updatedAt)` 保留毫秒，撤销冲突与 afterUpdatedAts 日志统一 ISO 字符串。执行被拦截时自动把提案标记为 stale；执行/撤销失败在确认弹窗内透出后端 message；涉及笔记展示标题而非裸 ID。同日新增“小助手整理代理”：`OrganizerAgentService` 周期生成全局提案（`ORGANIZER_AGENT_ENABLED` 默认关闭，最小间隔 1 小时），`POST /organizer/agent/run` 支持手动触发；小助手工作台顶栏新增整理入口，提案确认/执行/撤销全部在弹窗内完成，外部整理页保留。后端全量 482+5 passed，前端 347 passed，前后端 type-check 通过。工作台另以 60s 轮询 pending 提案，发现新提案自动弹出整理确认并显示待确认角标。
+2026-09-04：P5 线上反馈修复。定位 40010 误判根因：`assertNoStaleNotes` 先 `String(Date)` 再解析，`toString` 不含毫秒，任何毫秒非 0 的笔记都会被判 stale；改为直接 `new Date(entry.updatedAt)` 保留毫秒，撤销冲突与 afterUpdatedAts 日志统一 ISO 字符串。执行被拦截时自动把提案标记为 stale；执行/撤销失败在确认弹窗内透出后端 message；涉及笔记展示标题而非裸 ID。同日新增“小助手整理代理”：`OrganizerAgentService` 周期生成全局提案（`ORGANIZER_AGENT_ENABLED` 默认关闭，最小间隔 1 小时），`POST /organizer/agent/run` 支持手动触发；小助手工作台顶栏新增整理入口，提案确认/执行/撤销全部在弹窗内完成，外部整理页保留。后端全量 482+5 passed，前端 347 passed，前后端 type-check 通过。工作台另以 60s 轮询 pending 提案，发现新提案自动弹出整理确认并显示待确认角标。同日收紧重复执行：`confirmed` 提案后端直接拒绝执行、前端按钮禁用并提示“已执行过”；成功撤销后将原提案标记为 `stale`，需重新生成后再执行。
 
 ---
 

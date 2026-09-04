@@ -149,6 +149,18 @@ test('execute rejects stale proposal without writing data', async () => {
   )
 })
 
+test('execute rejects an already executed proposal', async () => {
+  const proposal = proposalWithAction({ type: 'add_tag', tagId: new Types.ObjectId('507f1f77bcf86cd799439032') })
+  proposal.status = 'confirmed'
+  const service = makeService({
+    proposalModel: { findOne: () => chain(proposal) },
+  })
+  await assert.rejects(
+    () => service.execute(userId, proposalId, ['a1']),
+    /already executed/,
+  )
+})
+
 test('execute creates knowledge base and persists execution journal', async () => {
   const proposal = proposalWithAction({ type: 'create_knowledge_base', knowledgeBaseName: 'AI 整理库' })
   let proposalSaved = false

@@ -80,7 +80,7 @@ export default function OrganizerProposalPanel({
           <button
             type="button"
             className="prototype-button prototype-button--primary"
-            disabled={executing || proposal.status === 'stale' || selectedActions.length === 0}
+            disabled={executing || proposal.status !== 'pending' || selectedActions.length === 0}
             onClick={onExecute}
           >
             {executing ? '执行中...' : '执行所选建议'}
@@ -89,6 +89,7 @@ export default function OrganizerProposalPanel({
             已选 {selectedActions.length} 条
             {highRiskCount > 0 ? `，其中 ${highRiskCount} 条高风险需二次确认` : ''}
             {proposal.status === 'stale' ? '，提案已过期需先返工' : ''}
+            {proposal.status === 'confirmed' ? '，该提案已执行过，不能再执行' : ''}
           </span>
         </div>
       ) : proposal.actions.length > 0 && !onRework && (
