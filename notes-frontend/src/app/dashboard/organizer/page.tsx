@@ -83,10 +83,14 @@ export default function OrganizerPage() {
     setMessage('')
     try {
       const result = await organizerAPI.createIncremental(selectedNoteId)
-      await reload()
-      setActiveProposalId(result.proposal.id)
-      setSelectedActionIds(result.proposal.actions.map((action) => action.actionId))
-      setMessage('已生成增量提案')
+      if (result.generated && result.proposal) {
+        await reload()
+        setActiveProposalId(result.proposal.id)
+        setSelectedActionIds(result.proposal.actions.map((action) => action.actionId))
+        setMessage('已生成增量提案')
+      } else {
+        setMessage(result.reason === 'already_organized' ? '该笔记已有知识库归属，无需生成增量提案' : '没有可生成的建议')
+      }
     } catch (error: any) {
       setMessage(error?.message || '生成增量提案失败')
     } finally {

@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common'
 import { MongooseModule } from '@nestjs/mongoose'
 import { Category, CategorySchema } from '../categories/schemas/category.schema'
 import { KnowledgeBase, KnowledgeBaseSchema } from '../knowledge-bases/schemas/knowledge-base.schema'
+import { KnowledgeBaseNote, KnowledgeBaseNoteSchema } from '../knowledge-bases/schemas/knowledge-base-note.schema'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
 import { NoteChunk, NoteChunkSchema } from '../notes/schemas/note-chunk.schema'
 import { NotesModule } from '../notes/notes.module'
@@ -20,6 +21,7 @@ import { OrganizerProposal, OrganizerProposalSchema } from './schemas/organizer-
       { name: Tag.name, schema: TagSchema },
       { name: Category.name, schema: CategorySchema },
       { name: KnowledgeBase.name, schema: KnowledgeBaseSchema },
+      { name: KnowledgeBaseNote.name, schema: KnowledgeBaseNoteSchema },
     ]),
     NotesModule,
   ],

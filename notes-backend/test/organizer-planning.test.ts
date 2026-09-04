@@ -134,3 +134,20 @@ test('incremental proposal creates new knowledge base when no matching topic exi
   assert.equal(capturedDraft.actions[0].type, 'create_knowledge_base')
   assert.equal(capturedDraft.actions[0].knowledgeBaseName, '新主题')
 })
+
+test('incremental proposal skips when note already belongs to a knowledge base', async () => {
+  let proposalCalls = 0
+  const service = makePlanning({
+    proposalService: { create: async () => { proposalCalls += 1; return { id: 'should-not-create' } } },
+    noteModel: {
+      findOne: () => ({ select: () => ({ lean: () => ({ exec: async () => noteDoc(0) }) }) }),
+    },
+    kbNoteModel: {
+      distinct: () => ({ exec: async () => [new Types.ObjectId(kbId)] }),
+    },
+  })
+
+  const result = await service.createIncrementalProposal(userId, noteIds[0])
+  assert.deepEqual(result, { generated: false, reason: 'already_organized', noteId: noteIds[0] })
+  assert.equal(proposalCalls, 0)
+})

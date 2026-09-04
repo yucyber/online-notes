@@ -71,9 +71,17 @@ export class OrganizerPlanningService {
     if (!note) throw new NotFoundException('Note not found or not readable')
 
     const noteValue = note as unknown as NoteForPlanning
+    const userObjectId = this.noteAccess.objectId(userId, 'user id')
+    const linkedKbIds = this.kbNoteModel
+      ? await this.kbNoteModel.distinct('knowledgeBaseId', { userId: userObjectId, noteId: noteValue._id }).exec()
+      : []
+    if (Array.isArray(linkedKbIds) && linkedKbIds.length > 0) {
+      return { generated: false, reason: 'already_organized', noteId }
+    }
+
     const maps = await this.loadTaxonomyMaps(userId, [noteValue])
     const existingKbs = this.kbModel
-      ? await this.kbModel.find({ userId: this.noteAccess.objectId(userId, 'user id') }).select('_id name').lean().exec()
+      ? await this.kbModel.find({ userId: userObjectId }).select('_id name').lean().exec()
       : []
     const kbNames = (existingKbs || []).map((kb: any) => String(kb.name || '').trim())
     const topic = this.noteTopicName(noteValue, maps)
@@ -97,7 +105,7 @@ export class OrganizerPlanningService {
       summary: `增量整理建议：${String(noteValue.title || 'Untitled')}`,
       actions,
     })
-    return { proposal, noteId }
+    return { generated: true, proposal, noteId }
   }
 
   private async buildGlobalActions(userId: string, notes: NoteForPlanning[]): Promise<OrganizerActionDraft[]> {

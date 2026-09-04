@@ -16,6 +16,6 @@ export const organizerAPI = {
       .then((res) => res as unknown as { generated: boolean; reason?: string; proposal?: OrganizerProposal }),
 
   createIncremental: (noteId: string) =>
-    api.post<{ noteId: string; proposal: OrganizerProposal }>(`/organizer/planning/incremental/${noteId}`)
-      .then((res) => res as unknown as { noteId: string; proposal: OrganizerProposal }),
+    api.post<{ noteId: string; generated: boolean; reason?: string; proposal?: OrganizerProposal }>(`/organizer/planning/incremental/${noteId}`)
+      .then((res) => res as unknown as { noteId: string; generated: boolean; reason?: string; proposal?: OrganizerProposal }),
 }
