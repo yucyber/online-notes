@@ -19,6 +19,11 @@ import AssistantOrganizerDialog from './AssistantOrganizerDialog';
 import { organizerAPI } from '@/lib/api/organizer';
 
 const CURRENT_CONVERSATION_KEY = 'assistant_current_conversation_id';
+
+// 对话式整理入口：命中后不走 RAG 问答，而是生成/复用整理提案并打开确认弹窗。
+// 刻意收紧条件：需要“整理/归类/归档/归纳”与“笔记/提案/知识库”在短距离内同时出现，
+// 避免把“我的笔记里关于海豚的结论”这类普通检索提问误路由到整理代理。
+const ORGANIZER_INTENT = /(整理|归类|归档|归纳)[^。！？!?\n]{0,10}(笔记|提案|知识库)|(笔记|提案|知识库)[^。！？!?\n]{0,10}(整理|归类|归档|归纳)|自动整理/
 const SEARCH_DEBOUNCE_MS = 300;
 
 function requestId() {
@@ -54,6 +59,9 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   const [searchOpen, setSearchOpen] = useState(false);
   // 小助手整理代理入口：提案生成/确认/执行/撤销全部在工作台内完成，不必跳转整理页。
   const [organizerOpen, setOrganizerOpen] = useState(false);
+  // 从聊天输入框触发整理时自增：弹窗打开后会自动执行一次“立即生成提案”。
+  const [organizerAutoRunToken, setOrganizerAutoRunToken] = useState(0);
+  const [organizerIntentLabel, setOrganizerIntentLabel] = useState('');
   // 待确认提案数量（角标）：定时器发现新 pending 提案时自动弹出整理确认。
   const [pendingProposalCount, setPendingProposalCount] = useState(0);
   const seenPendingProposalIdsRef = useRef<Set<string> | null>(null);
@@ -381,6 +389,14 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   const handleSend = () => {
     const content = input.trim();
     if (!content || generating) return;
+    // 整理意图：不在聊天流里回答，直接唤起整理代理（生成提案 → 弹窗确认 → 执行/撤销）。
+    if (ORGANIZER_INTENT.test(content)) {
+      setInput('');
+      setOrganizerIntentLabel(content.slice(0, 24));
+      setOrganizerAutoRunToken((token) => token + 1);
+      setOrganizerOpen(true);
+      return;
+    }
     setInput('');
     startReply(content, routeAssistantMessage(content, forceNotes));
   };
@@ -594,7 +610,7 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
           onLocate={handleLocate}
         />
       </div>
-      <AssistantOrganizerDialog open={organizerOpen} onOpenChange={setOrganizerOpen} />
+      <AssistantOrganizerDialog open={organizerOpen} onOpenChange={setOrganizerOpen} autoRunToken={organizerAutoRunToken} autoRunLabel={organizerIntentLabel} />
     </div>
   );
 }

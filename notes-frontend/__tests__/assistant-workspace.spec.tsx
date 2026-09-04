@@ -16,11 +16,12 @@ jest.mock('next/navigation', () => ({
 // 整理代理轮询/弹窗依赖的 organizer API：默认静默，个别用例覆盖返回值
 const mockOrganizerListProposals = jest.fn()
 const mockOrganizerListExecutions = jest.fn()
+const mockOrganizerRunAgent = jest.fn()
 jest.mock('@/lib/api/organizer', () => ({
   organizerAPI: {
     listProposals: (...args: unknown[]) => mockOrganizerListProposals(...args),
     listExecutions: (...args: unknown[]) => mockOrganizerListExecutions(...args),
-    runAgent: jest.fn(),
+    runAgent: (...args: unknown[]) => mockOrganizerRunAgent(...args),
     executeProposal: jest.fn(),
     undoExecution: jest.fn(),
   },
@@ -75,6 +76,7 @@ describe('AssistantWorkspace 三栏工作台', () => {
     mockRouterReplace.mockClear()
     mockOrganizerListProposals.mockReset()
     mockOrganizerListExecutions.mockReset()
+    mockOrganizerRunAgent.mockReset()
     promptSpy?.mockRestore()
     promptSpy = undefined
     scrolled.length = 0
@@ -341,6 +343,29 @@ describe('AssistantWorkspace 三栏工作台', () => {
     render(<AssistantWorkspace />)
     await screen.findByText('会话一')
     expect(screen.queryByRole('button', { name: '导出会话' })).not.toBeInTheDocument()
+  })
+
+  test('输入整理意图时不走问答，直接打开整理弹窗并自动生成提案', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1)] })
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    mockOrganizerListProposals.mockResolvedValue([])
+    mockOrganizerRunAgent.mockResolvedValue({ generated: true, proposal: { id: 'p-new', status: 'pending', actions: [] } })
+
+    render(<AssistantWorkspace />)
+    await screen.findByText('会话一')
+
+    const textarea = screen.getByPlaceholderText('问问小助手…')
+    fireEvent.change(textarea, { target: { value: '帮我整理笔记' } })
+    fireEvent.click(screen.getByRole('button', { name: '发送' }))
+
+    expect(await screen.findByText('小助手整理提案')).toBeInTheDocument()
+    await waitFor(() => expect(mockOrganizerRunAgent).toHaveBeenCalled())
+    // 整理意图不应发起 RAG 聊天流
+    expect(fetchMock).not.toHaveBeenCalledWith('/api/assistant/chat', expect.anything())
   })
 
   test('定时发现新的 pending 提案时自动弹出整理确认弹窗', async () => {

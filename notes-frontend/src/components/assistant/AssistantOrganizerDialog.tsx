@@ -29,7 +29,7 @@ function requestIdOf(prefix: string) {
 
 type DialogStep = 'review' | 'execute-confirm' | 'undo-confirm'
 
-export default function AssistantOrganizerDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+export default function AssistantOrganizerDialog({ open, onOpenChange, autoRunToken = 0, autoRunLabel = '' }: { open: boolean; onOpenChange: (open: boolean) => void; autoRunToken?: number; autoRunLabel?: string }) {
   const [step, setStep] = useState<DialogStep>('review')
   const [proposals, setProposals] = useState<OrganizerProposal[]>([])
   const [activeProposalId, setActiveProposalId] = useState('')
@@ -46,6 +46,8 @@ export default function AssistantOrganizerDialog({ open, onOpenChange }: { open:
   const [error, setError] = useState('')
   const fetchedTitleIdsRef = useRef<Set<string>>(new Set())
   const activeProposalIdRef = useRef('')
+  // 记录已消费的 autoRunToken，避免同一次触发重复调用 runAgent。
+  const lastAutoRunTokenRef = useRef(0)
 
   useEffect(() => { activeProposalIdRef.current = activeProposalId }, [activeProposalId])
 
@@ -58,7 +60,7 @@ export default function AssistantOrganizerDialog({ open, onOpenChange }: { open:
       ])
       // 兼容旧数据/异常数据：actions 缺失时归一为空数组，避免渲染崩溃。
       setProposals((proposalList || []).map((proposal) => ({ ...proposal, actions: proposal.actions || [] })))
-      setExecutions(executionList)
+      setExecutions(executionList || [])
       const currentId = activeProposalIdRef.current
       const nextActive = currentId && proposalList.some((item) => item.id === currentId)
         ? currentId
@@ -127,6 +129,15 @@ export default function AssistantOrganizerDialog({ open, onOpenChange }: { open:
       setGenerating(false)
     }
   }
+
+  // 对话式整理入口：从聊天输入框唤起时，自动执行一次“立即生成提案”。
+  useEffect(() => {
+    if (!open || autoRunToken <= 0 || autoRunToken === lastAutoRunTokenRef.current) return
+    lastAutoRunTokenRef.current = autoRunToken
+    setMessage(autoRunLabel ? `已收到「${autoRunLabel}」，正在生成整理提案…` : '正在生成整理提案…')
+    void runAgentNow()
+    // runAgentNow 为组件内闭包，依赖仅取 token/label，避免重复触发。
+  }, [open, autoRunToken, autoRunLabel])
 
   const toggleAction = (actionId: string, checked: boolean) => {
     setSelectedActionIds((current) => checked
