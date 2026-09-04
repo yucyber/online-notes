@@ -328,6 +328,8 @@ test('execute rejects action when note updatedAt no longer matches proposal expe
     tagId: new Types.ObjectId('507f1f77bcf86cd799439032'),
     expectedUpdatedAt: [{ noteId: new Types.ObjectId(noteOne), updatedAt: new Date('2026-09-01T00:00:00.000Z') }],
   })
+  let proposalSaved = false
+  proposal.save = async function () { proposalSaved = true; return this }
   const service = makeService({
     proposalModel: { findOne: () => chain(proposal) },
     noteModel: {
@@ -347,6 +349,8 @@ test('execute rejects action when note updatedAt no longer matches proposal expe
     () => service.execute(userId, proposalId, ['a1']),
     /updated after proposal/,
   )
+  assert.equal(proposal.status, 'stale')
+  assert.equal(proposalSaved, true)
 })
 
 test('execute fails loudly when MongoDB transaction is unavailable', async () => {

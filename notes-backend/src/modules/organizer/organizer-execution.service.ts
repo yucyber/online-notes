@@ -74,6 +74,15 @@ export class OrganizerExecutionService {
       if (existing) return this.serialize(existing)
     }
 
+    // 事务外先复检一次；命中过期时落 stale 状态，前端刷新后能立刻禁用执行按钮。
+    try {
+      await this.assertNoStaleNotes(actions, undefined)
+    } catch (error: any) {
+      proposal.status = 'stale'
+      await proposal.save()
+      throw error
+    }
+
     return this.withTransaction(async (session) => {
       await this.assertNoStaleNotes(actions, session)
       const journal: JournalAction[] = []
