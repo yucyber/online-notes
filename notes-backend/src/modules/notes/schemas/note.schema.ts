@@ -48,6 +48,9 @@ export class Note {
   @Prop([{ userId: { type: Types.ObjectId, ref: 'User' }, role: { type: String, enum: ['editor', 'viewer'] } }])
   acl?: { userId: Types.ObjectId; role: string }[];
 
+  @Prop({ type: Date })
+  archivedAt?: Date;
+
   @Prop({ type: [Number], index: true })
   embedding?: number[];
 

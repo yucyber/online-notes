@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '
 import { AuthGuard } from '@nestjs/passport'
 import { OrganizerPlanningService } from './organizer-planning.service'
 import { OrganizerProposalService } from './organizer-proposal.service'
+import { OrganizerExecutionService } from './organizer-execution.service'
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('organizer')
@@ -9,6 +10,7 @@ export class OrganizerController {
   constructor(
     private readonly proposals: OrganizerProposalService,
     private readonly planning: OrganizerPlanningService,
+    private readonly execution: OrganizerExecutionService,
   ) {}
 
   @Get('proposals')
@@ -24,6 +26,22 @@ export class OrganizerController {
   @Delete('proposals/:id')
   deleteProposal(@Param('id') id: string, @Request() req) {
     return this.proposals.remove(id, req.user.id)
+  }
+
+
+  @Post('proposals/:id/execute')
+  executeProposal(@Param('id') id: string, @Body() body: { actionIds?: string[]; requestId?: string }, @Request() req) {
+    return this.execution.execute(req.user.id, id, body?.actionIds || [], body?.requestId)
+  }
+
+  @Get('executions')
+  listExecutions(@Request() req) {
+    return this.execution.list(req.user.id)
+  }
+
+  @Post('executions/:id/undo')
+  undoExecution(@Param('id') id: string, @Body() body: { requestId?: string }, @Request() req) {
+    return this.execution.undo(req.user.id, id, body?.requestId)
   }
 
   @Post('proposals/:id/refresh-stale')
