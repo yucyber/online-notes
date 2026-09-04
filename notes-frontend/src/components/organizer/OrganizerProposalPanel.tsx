@@ -4,6 +4,22 @@ import { useId } from 'react';
 import type { OrganizerProposal, OrganizerProposalAction } from './organizer-types';
 import OrganizerActionDiff from './OrganizerActionDiff';
 
+const ACTION_TYPE_LABELS: Record<OrganizerProposalAction['type'], string> = {
+  create_knowledge_base: '创建知识库',
+  move_note: '移入知识库',
+  add_tag: '添加标签',
+  set_category: '设置分类',
+  merge_notes: '合并笔记',
+  split_note: '拆分笔记',
+  rewrite_note: '改写内容',
+};
+
+const PROPOSAL_STATUS_LABELS: Record<OrganizerProposal['status'], string> = {
+  pending: '待处理',
+  stale: '需刷新',
+  confirmed: '已确认',
+};
+
 export interface OrganizerProposalPanelProps {
   proposal: OrganizerProposal;
   selectedActionIds?: string[];
@@ -28,7 +44,7 @@ export default function OrganizerProposalPanel({
         <h2 id={titleId}>{proposal.summary || '整理提案'}</h2>
         <div className="organizer-proposal-meta">
           <span>Revision {proposal.revision}</span>
-          <span className={`proposal-status-${proposal.status}`} data-testid="proposal-status">{proposal.status}</span>
+          <span className={`proposal-status proposal-status-${proposal.status}`} data-testid="proposal-status"><span className="organizer-status-raw">{proposal.status}</span>{PROPOSAL_STATUS_LABELS[proposal.status]}</span>
         </div>
       </header>
 
@@ -80,7 +96,8 @@ function OrganizerProposalActionRow({
           onChange={(event) => onToggle?.(action.actionId, event.target.checked)}
           disabled={!onToggle}
         />
-        <label htmlFor={checkboxId}>{action.actionId}</label>
+        <label htmlFor={checkboxId} className="organizer-action-id">{action.actionId}</label>
+        <span className="organizer-action-kind">{ACTION_TYPE_LABELS[action.type]}</span>
         {action.type === 'create_knowledge_base' && onRename && (
           <input
             aria-label="知识库名称"
