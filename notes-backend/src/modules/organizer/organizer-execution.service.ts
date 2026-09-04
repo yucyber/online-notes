@@ -75,6 +75,7 @@ export class OrganizerExecutionService {
     }
 
     return this.withTransaction(async (session) => {
+      await this.assertNoStaleNotes(actions, session)
       const journal: JournalAction[] = []
       const deadline = new Date(Date.now() + UNDO_DAYS * 24 * 60 * 60 * 1000)
       for (const action of actions) {
@@ -107,7 +108,9 @@ export class OrganizerExecutionService {
     const executionObjectId = this.noteAccess.objectId(executionId, 'execution id')
     const execution = await this.executionModel.findOne({ _id: executionObjectId, userId: userObjectId }).exec()
     if (!execution) throw new NotFoundException('Execution not found')
-    if (execution.status === 'undone') return this.serialize(execution)
+    if (execution.status === 'undone') {
+      return { ok: true, execution: this.serialize(execution) }
+    }
     if (new Date(execution.undoDeadline) < new Date()) {
       throw new BadRequestException('Undo deadline has passed')
     }
@@ -165,6 +168,27 @@ export class OrganizerExecutionService {
     const afterUpdatedAts = await this.captureAfterUpdatedAts(journal, session)
     journal.result = { ...journal.result, afterUpdatedAts }
     return journal
+  }
+
+  private async assertNoStaleNotes(actions: any[], session: any) {
+    const expectedByNote = new Map<string, Date>()
+    for (const raw of actions) {
+      const action = this.toPlain(raw)
+      const entries = Array.isArray(action?.expectedUpdatedAt) ? action.expectedUpdatedAt : []
+      for (const entry of entries) {
+        if (!entry?.noteId) continue
+        const noteId = String(entry.noteId)
+        const expected = new Date(String(entry.updatedAt))
+        if (!Number.isNaN(expected.getTime())) expectedByNote.set(noteId, expected)
+      }
+    }
+    for (const [noteId, expected] of expectedByNote.entries()) {
+      const note = await this.noteModel.findById(new Types.ObjectId(noteId)).session(session).select('updatedAt').lean().exec()
+      if (!note) throw new BadRequestException(`Note not found for execution: ${noteId}`)
+      if (new Date((note as any).updatedAt).getTime() !== expected.getTime()) {
+        throw new BadRequestException('Note was updated after proposal generation, please refresh before executing')
+      }
+    }
   }
 
   private async captureAfterUpdatedAts(journal: JournalAction, session: any) {
@@ -381,6 +405,7 @@ export class OrganizerExecutionService {
     }
     const targetTitle = String(action.payload?.targetTitle || sources[0]?.state?.title || '合并笔记')
     const mergedContent = this.firstText(action.payload?.body, action.payload?.suggestion) || sources.map((s) => s.state.content).filter(Boolean).join('\n\n---\n\n')
+    let previousTarget: any
     if (!target) {
       target = await this.noteModel.create([{
         title: targetTitle,
@@ -394,6 +419,8 @@ export class OrganizerExecutionService {
       }], { session }).then((rows) => rows[0])
       createdTarget = true
     } else {
+      // 目标笔记已有版本历史，执行前先快照，undo 才可能恢复到合并前状态。
+      previousTarget = this.snapshotNoteState(target)
       await this.createNoteVersion(target, session)
       target.title = targetTitle
       target.content = mergedContent
@@ -410,7 +437,7 @@ export class OrganizerExecutionService {
         targetNoteId: String(target._id),
         createdTarget,
         sourceStates: sources,
-        previousTarget: createdTarget ? undefined : this.snapshotNoteState(target),
+        previousTarget: createdTarget ? undefined : previousTarget,
       },
     }
   }
@@ -600,8 +627,14 @@ export class OrganizerExecutionService {
 
   private async withTransaction<T>(fn: (session: any) => Promise<T>): Promise<T> {
     const db: any = (this.noteModel as any).db
-    if (!db?.startSession) return fn(null)
+    if (typeof db?.startSession !== 'function') {
+      throw new Error('Organizer execution requires MongoDB transaction support')
+    }
     const session = await db.startSession()
+    if (typeof session?.withTransaction !== 'function') {
+      await session?.endSession?.()
+      throw new Error('Organizer execution requires MongoDB transaction support')
+    }
     try {
       return await session.withTransaction(() => fn(session))
     } finally {

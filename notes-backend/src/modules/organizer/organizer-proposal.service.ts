@@ -195,6 +195,14 @@ export class OrganizerProposalService {
           updatedAt: new Date(noteValue?.updatedAt || new Date(0)),
         }
       })
+      // merge 复用已有目标笔记时同样需要版本基线，否则执行无法发现目标已被用户改过。
+      if (actionType === 'merge_notes' && draft?.targetNoteId && !noteIds.includes(String(draft.targetNoteId)) && readableById.has(String(draft.targetNoteId))) {
+        const targetValue = readableById.get(String(draft.targetNoteId)) as any
+        expectations.push({
+          noteId: new Types.ObjectId(String(draft.targetNoteId)),
+          updatedAt: new Date(targetValue?.updatedAt || new Date(0)),
+        })
+      }
 
       result.push({
         actionId: this.actionId(actionType, index),

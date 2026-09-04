@@ -52,8 +52,13 @@ function makeService(overrides: Record<string, any> = {}) {
     find: () => ({ sort: () => chain([]) }),
     ...(overrides.executionModel || {}),
   }
+  const sessionStub = {
+    withTransaction: async (work: () => unknown) => work(),
+    endSession: async () => undefined,
+  }
+  const dbStub = { startSession: async () => sessionStub }
   const noteModel = {
-    db: undefined,
+    db: dbStub,
     findOne: () => chain(null),
     findById: () => ({
       session: () => ({
@@ -70,6 +75,8 @@ function makeService(overrides: Record<string, any> = {}) {
     deleteOne: () => ({ session: () => ({ exec: async () => ({ deletedCount: 1 }) }) }),
     ...(overrides.noteModel || {}),
   }
+  // 测试默认走内存版事务；显式提供 db 的用例可以模拟不支持事务的连接。
+  if (noteModel.db === undefined) noteModel.db = dbStub
   const noteVersionModel = {
     findOne: () => ({ sort: () => ({ session: () => ({ exec: async () => null }) }) }),
     create: async () => {},
@@ -314,3 +321,151 @@ test('undo returns conflicts when a changed note was edited after execution', as
   assert.equal(result.conflicts.length, 1)
   assert.equal(executionSaved, false)
 })
+
+test('execute rejects action when note updatedAt no longer matches proposal expectation', async () => {
+  const proposal = proposalWithAction({
+    type: 'add_tag',
+    tagId: new Types.ObjectId('507f1f77bcf86cd799439032'),
+    expectedUpdatedAt: [{ noteId: new Types.ObjectId(noteOne), updatedAt: new Date('2026-09-01T00:00:00.000Z') }],
+  })
+  const service = makeService({
+    proposalModel: { findOne: () => chain(proposal) },
+    noteModel: {
+      findById: () => ({
+        session: () => ({
+          select: () => ({
+            lean: () => ({
+              exec: async () => ({ _id: new Types.ObjectId(noteOne), updatedAt: new Date('2026-09-05T00:00:00.000Z') }),
+            }),
+          }),
+        }),
+      }),
+    },
+  })
+
+  await assert.rejects(
+    () => service.execute(userId, proposalId, ['a1']),
+    /updated after proposal/,
+  )
+})
+
+test('execute fails loudly when MongoDB transaction is unavailable', async () => {
+  const proposal = proposalWithAction({ type: 'add_tag', tagId: new Types.ObjectId('507f1f77bcf86cd799439032') })
+  const service = makeService({
+    proposalModel: { findOne: () => chain(proposal) },
+    noteModel: { db: {} },
+  })
+
+  await assert.rejects(
+    () => service.execute(userId, proposalId, ['a1']),
+    /transaction support/,
+  )
+})
+
+test('undo of an already undone execution is idempotent and returns ok', async () => {
+  const execution = createdExec({
+    userId: new Types.ObjectId(userId),
+    proposalId: new Types.ObjectId(proposalId),
+    proposalRevision: 1,
+    status: 'undone',
+    undoneAt: new Date('2026-09-04T13:00:00.000Z'),
+    undoDeadline: new Date('2026-10-04T00:00:00.000Z'),
+    actions: [],
+  })
+  let inverseCalled = false
+  const service = makeService({
+    executionModel: { findOne: () => chain(execution) },
+    noteModel: {
+      findById: () => ({
+        session: () => ({
+          select: () => ({
+            lean: () => ({
+              exec: async () => ({ _id: new Types.ObjectId(noteOne), updatedAt: new Date('2026-09-04T12:00:00.000Z') }),
+            }),
+          }),
+        }),
+      }),
+    },
+  })
+  service.applyInverse = async () => { inverseCalled = true }
+
+  const result = await service.undo(userId, String(execution._id), 'undo-again')
+  assert.equal(result.ok, true)
+  assert.equal(result.execution.status, 'undone')
+  assert.equal(inverseCalled, false)
+})
+test('execute merge creates new target and records source states for undo', async () => {
+  const noteTwo = '507f1f77bcf86cd799439015'
+  const targetCreated = '507f1f77bcf86cd799439020'
+  const proposal = proposalWithAction({
+    type: 'merge_notes',
+    noteIds: [new Types.ObjectId(noteOne), new Types.ObjectId(noteTwo)],
+    payload: { targetTitle: '合并目标', body: '合并正文' },
+  })
+  const sourceA = doc({
+    _id: new Types.ObjectId(noteOne),
+    title: '来源A',
+    content: 'A内容',
+    tags: [],
+    categoryId: null,
+    userId: new Types.ObjectId(userId),
+    save: async function () { return this },
+  })
+  const sourceB = doc({
+    _id: new Types.ObjectId(noteTwo),
+    title: '来源B',
+    content: 'B内容',
+    tags: [],
+    categoryId: null,
+    userId: new Types.ObjectId(userId),
+    save: async function () { return this },
+  })
+  const sources: Record<string, any> = { [noteOne]: sourceA, [noteTwo]: sourceB }
+  const after = new Date('2026-09-04T12:00:00.000Z')
+  let executionCreated: any = null
+  const executionValue = {
+    userId: new Types.ObjectId(userId),
+    proposalId: new Types.ObjectId(proposalId),
+    proposalRevision: 1,
+    status: 'executed',
+    undoDeadline: new Date('2026-10-04T00:00:00.000Z'),
+  }
+  const service = makeService({
+    proposalModel: { findOne: () => chain(proposal) },
+    executionModel: {
+      findOne: () => chain(null),
+      create: async (rows: any[]) => {
+        executionCreated = rows[0]
+        return [createdExec(executionValue)]
+      },
+      find: () => ({ sort: () => chain([]) }),
+    },
+    noteModel: {
+      findOne: (query: any) => ({
+        session: () => ({
+          exec: async () => sources[String(query._id)],
+        }),
+      }),
+      findById: (id: any) => ({
+        session: () => ({
+          select: () => ({
+            lean: () => ({
+              exec: async () => ({ _id: id, updatedAt: after }),
+            }),
+          }),
+        }),
+      }),
+      create: async (rows: any[]) => [doc({ _id: new Types.ObjectId(targetCreated), title: rows[0].title, content: rows[0].content, tags: [], categoryId: null, userId: new Types.ObjectId(userId) })],
+    },
+  })
+
+  const result = await service.execute(userId, proposalId, ['a1'], 'req-merge')
+  const journal = executionCreated.actions[0]
+  assert.equal(journal.type, 'merge_notes')
+  assert.equal(journal.result.createdTarget, true)
+  assert.equal(journal.result.targetNoteId, targetCreated)
+  assert.equal(journal.inverse.sourceStates.length, 2)
+  assert.equal(journal.inverse.previousTarget, undefined)
+  assert.equal(result.status, 'executed')
+})
+
