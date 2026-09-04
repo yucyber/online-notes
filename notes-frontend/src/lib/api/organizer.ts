@@ -1,5 +1,5 @@
 import api from './client'
-import type { OrganizerProposal } from '@/components/organizer/organizer-types'
+import type { OrganizerExecution, OrganizerProposal } from '@/components/organizer/organizer-types'
 
 export const organizerAPI = {
   listProposals: () =>
@@ -21,4 +21,15 @@ export const organizerAPI = {
   createIncremental: (noteId: string) =>
     api.post<{ noteId: string; generated: boolean; reason?: string; proposal?: OrganizerProposal }>(`/organizer/planning/incremental/${noteId}`)
       .then((res) => res as unknown as { noteId: string; generated: boolean; reason?: string; proposal?: OrganizerProposal }),
+
+  executeProposal: (proposalId: string, actionIds: string[], requestId?: string) =>
+    api.post<OrganizerExecution>(`/organizer/proposals/${proposalId}/execute`, { actionIds, requestId })
+      .then((res) => res as unknown as OrganizerExecution),
+
+  listExecutions: () =>
+    api.get<OrganizerExecution[]>('/organizer/executions').then((res) => res as unknown as OrganizerExecution[]),
+
+  undoExecution: (executionId: string, requestId?: string) =>
+    api.post<{ ok: boolean; conflicts?: Array<{ noteId: string; message: string }>; execution?: OrganizerExecution }>(`/organizer/executions/${executionId}/undo`, { requestId })
+      .then((res) => res as unknown as { ok: boolean; conflicts?: Array<{ noteId: string; message: string }>; execution?: OrganizerExecution }),
 }

@@ -26,6 +26,8 @@ export interface OrganizerProposalPanelProps {
   onToggleAction?: (actionId: string, checked: boolean) => void;
   onRenameKnowledgeBase?: (actionId: string, name: string) => void;
   onRework?: (actionId: string) => void;
+  onExecute?: () => void;
+  executing?: boolean;
 }
 
 export default function OrganizerProposalPanel({
@@ -34,9 +36,13 @@ export default function OrganizerProposalPanel({
   onToggleAction,
   onRenameKnowledgeBase,
   onRework,
+  onExecute,
+  executing = false,
 }: OrganizerProposalPanelProps) {
   const titleId = useId();
   const selected = new Set(selectedActionIds);
+  const selectedActions = proposal.actions.filter((action) => selected.has(action.actionId));
+  const highRiskCount = selectedActions.filter((action) => action.riskLevel === 'high').length;
 
   return (
     <section className="organizer-proposal-panel" aria-labelledby={titleId} data-testid="organizer-proposal-panel">
@@ -65,7 +71,23 @@ export default function OrganizerProposalPanel({
         ))}
       </div>
 
-      {proposal.actions.length > 0 && !onRework && (
+      {onExecute && proposal.actions.length > 0 ? (
+        <div className="organizer-execute-bar">
+          <button
+            type="button"
+            className="prototype-button prototype-button--primary"
+            disabled={executing || proposal.status === 'stale' || selectedActions.length === 0}
+            onClick={onExecute}
+          >
+            {executing ? '执行中...' : '执行所选建议'}
+          </button>
+          <span className="organizer-execute-meta">
+            已选 {selectedActions.length} 条
+            {highRiskCount > 0 ? `，其中 ${highRiskCount} 条高风险需二次确认` : ''}
+            {proposal.status === 'stale' ? '，提案已过期需先返工' : ''}
+          </span>
+        </div>
+      ) : proposal.actions.length > 0 && !onRework && (
         <p className="organizer-readonly-hint" data-testid="no-execute-hint">此页面只生成确认清单，不会自动执行任何修改。</p>
       )}
     </section>

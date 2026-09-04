@@ -84,3 +84,37 @@ test('stale proposal shows rework warning and rework callback', () => {
   fireEvent.click(reworkButtons[0])
   expect(reworked).toEqual(['a1'])
 })
+
+test('shows execute bar with selected summary when execute is enabled', () => {
+  let executed = false
+  render(
+    <OrganizerProposalPanel
+      proposal={baseProposal}
+      selectedActionIds={['a1', 'a2']}
+      onToggleAction={() => undefined}
+      onRenameKnowledgeBase={() => undefined}
+      onExecute={() => { executed = true }}
+    />,
+  )
+
+  const executeButton = screen.getByRole('button', { name: '执行所选建议' })
+  expect(executeButton).toBeEnabled()
+  expect(screen.getByText(/其中 1 条高风险需二次确认/)).toBeInTheDocument()
+  fireEvent.click(executeButton)
+  expect(executed).toBe(true)
+})
+
+test('disables execute button for stale proposal', () => {
+  render(
+    <OrganizerProposalPanel
+      proposal={{ ...baseProposal, status: 'stale' }}
+      selectedActionIds={['a1']}
+      onToggleAction={() => undefined}
+      onRenameKnowledgeBase={() => undefined}
+      onExecute={() => undefined}
+    />,
+  )
+
+  expect(screen.getByRole('button', { name: '执行所选建议' })).toBeDisabled()
+  expect(screen.getByText(/提案已过期需先返工/)).toBeInTheDocument()
+})

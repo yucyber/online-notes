@@ -727,6 +727,77 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
   font-size: 12px;
   line-height: 1.5;
 }
+.organizer-execute-bar {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 14px;
+  padding: 12px;
+  border: 1px solid var(--product-line);
+  border-radius: 10px;
+  background: var(--product-panel-soft);
+}
+.organizer-execute-meta {
+  color: var(--product-muted);
+  font-size: 12px;
+}
+
+.organizer-execution-history {
+  margin-top: 18px;
+  overflow: hidden;
+}
+.organizer-execution-list {
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+}
+.organizer-execution-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--product-line);
+  border-radius: 10px;
+  background: var(--product-surface);
+}
+.organizer-execution-item--undone {
+  opacity: .72;
+}
+.organizer-execution-summary {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 2px;
+}
+.organizer-execution-summary b {
+  overflow: hidden;
+  color: var(--product-text);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.organizer-execution-summary small {
+  color: var(--product-muted);
+  font-size: 11px;
+}
+.organizer-execution-status {
+  justify-self: end;
+}
+.organizer-conflict-list {
+  margin: 4px 0 8px;
+  max-height: 220px;
+  overflow: auto;
+  padding: 8px;
+  border-radius: 8px;
+  background: var(--product-danger-soft);
+}
+.organizer-conflict-item {
+  margin: 4px 0;
+  color: var(--product-danger);
+  font-size: 12px;
+}
 
 .organizer-empty.prototype-empty-focus { margin-top: 24px; }
 
@@ -750,4 +821,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
   .organizer-proposal-panel { padding: 16px; }
   .organizer-proposal-panel > header { align-items: flex-start; flex-direction: column; }
   .organizer-diff-heading { align-items: flex-start; }
+  .organizer-execution-item {
+    grid-template-columns: 1fr;
+  }
+  .organizer-execution-status { justify-self: start; }
 }

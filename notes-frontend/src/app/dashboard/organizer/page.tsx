@@ -4,7 +4,7 @@ import { useCallback, useEffect, useState } from 'react'
 import OrganizerProposalPanel from '@/components/organizer/OrganizerProposalPanel'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
-import type { OrganizerProposal } from '@/components/organizer/organizer-types'
+import type { OrganizerExecution, OrganizerProposal } from '@/components/organizer/organizer-types'
 import type { Note } from '@/types'
 import { notesAPI } from '@/lib/api/notes'
 import { organizerAPI } from '@/lib/api/organizer'
@@ -20,6 +20,12 @@ export default function OrganizerPage() {
   const [message, setMessage] = useState('')
   const [deletingProposalId, setDeletingProposalId] = useState('')
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
+  const [executions, setExecutions] = useState<OrganizerExecution[]>([])
+  const [executeDialogOpen, setExecuteDialogOpen] = useState(false)
+  const [executing, setExecuting] = useState(false)
+  const [pendingUndoId, setPendingUndoId] = useState<string | null>(null)
+  const [undoingExecutionId, setUndoingExecutionId] = useState('')
+  const [undoConflicts, setUndoConflicts] = useState<Array<{ noteId: string; message: string }>>([])
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -51,10 +57,20 @@ export default function OrganizerPage() {
     }
   }, [])
 
+  const loadExecutions = useCallback(async () => {
+    try {
+      const data = await organizerAPI.listExecutions()
+      setExecutions(data)
+    } catch (error: any) {
+      setMessage(error?.message || '加载执行记录失败')
+    }
+  }, [])
+
   useEffect(() => {
     void reload()
     void loadNotes()
-  }, [reload, loadNotes])
+    void loadExecutions()
+  }, [reload, loadNotes, loadExecutions])
 
   const activeProposal = proposals.find((item) => item.id === activeProposalId)
 
@@ -136,6 +152,47 @@ export default function OrganizerPage() {
     }
   }
 
+  const executeSelected = async () => {
+    const proposal = activeProposal
+    const actionIds = selectedActionIds
+    if (!proposal || actionIds.length === 0) return
+    setExecuting(true)
+    setMessage('')
+    try {
+      await organizerAPI.executeProposal(proposal.id, actionIds, `organizer-exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+      setExecuteDialogOpen(false)
+      setMessage('执行完成，可在 30 天内整批撤销')
+      await Promise.all([loadExecutions(), reload()])
+    } catch (error: any) {
+      setMessage(error?.message || '执行失败')
+    } finally {
+      setExecuting(false)
+    }
+  }
+
+  const undoExecution = async () => {
+    const id = pendingUndoId
+    if (!id) return
+    setUndoingExecutionId(id)
+    setMessage('')
+    setUndoConflicts([])
+    try {
+      const result = await organizerAPI.undoExecution(id, `organizer-undo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
+      if (result.ok) {
+        setPendingUndoId(null)
+        setMessage('已整批撤销该次执行')
+      } else {
+        setUndoConflicts(result.conflicts || [])
+        setMessage(`撤销被阻止，共 ${result.conflicts?.length || 0} 个冲突需要人工处理`)
+      }
+      await Promise.all([loadExecutions(), reload()])
+    } catch (error: any) {
+      setMessage(error?.message || '撤销失败')
+    } finally {
+      setUndoingExecutionId('')
+    }
+  }
+
   const toggleAction = (actionId: string, checked: boolean) => {
     setSelectedActionIds((current) => checked
       ? Array.from(new Set([...current, actionId]))
@@ -149,6 +206,9 @@ export default function OrganizerPage() {
     } : proposal))
   }
 
+  const selectedActions = activeProposal?.actions.filter((action) => selectedActionIds.includes(action.actionId)) || []
+  const selectedHasHighRisk = selectedActions.some((action) => action.riskLevel === 'high')
+
   if (loading && proposals.length === 0) {
     return <div className="prototype-loading">加载中...</div>
   }
@@ -159,7 +219,7 @@ export default function OrganizerPage() {
         <div>
           <p className="product-eyebrow">AI ORGANIZER</p>
           <h1 className="page-heading">只读整理提案</h1>
-          <p className="page-description">审阅 AI 建议；此页面不会自动修改笔记、分类或知识库。</p>
+          <p className="page-description">审阅 AI 建议；确认后可逐条执行，并支持在 30 天内整批撤销。</p>
         </div>
       </header>
 
@@ -189,6 +249,48 @@ export default function OrganizerPage() {
       </div>
 
       {message && <p className={`organizer-message ${/失败|错误/.test(message) ? 'organizer-message--error' : ''}`} role="status">{message}</p>}
+
+      {executions.length > 0 && (
+        <div className="organizer-execution-history prototype-panel">
+          <header className="prototype-panel-head padded">
+            <h2>执行记录</h2>
+            <span>{executions.length} 条</span>
+          </header>
+          <div className="organizer-execution-list">
+            {executions.map((execution) => {
+              const canUndo = execution.status === 'executed' && Boolean(execution.undoDeadline) && new Date(execution.undoDeadline as string) > new Date()
+              const undoDisabled = Boolean(undoingExecutionId) || !canUndo
+              return (
+                <div key={execution.id} className={`organizer-execution-item organizer-execution-item--${execution.status}`}>
+                  <div className="organizer-execution-summary">
+                    <b>执行 #{execution.id.slice(-6)}</b>
+                    <small>提案 #{execution.proposalId.slice(-6)} · Revision {execution.proposalRevision} · {execution.actions.length} 条动作</small>
+                  </div>
+                  <div className="organizer-execution-status">
+                    {execution.status === 'undone' ? (
+                      <em className="proposal-status proposal-status-confirmed">已撤销</em>
+                    ) : execution.undoDeadline ? (
+                      <em className="proposal-status proposal-status-pending">可撤销至 {new Date(execution.undoDeadline).toLocaleString()}</em>
+                    ) : (
+                      <em className="proposal-status proposal-status-pending">已执行</em>
+                    )}
+                  </div>
+                  {canUndo && (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={undoDisabled}
+                      onClick={() => setPendingUndoId(execution.id)}
+                    >
+                      {undoingExecutionId === execution.id ? '撤销中...' : '整批撤销'}
+                    </Button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {proposals.length === 0 ? (
         <div className="organizer-empty prototype-empty-focus">
@@ -245,6 +347,8 @@ export default function OrganizerPage() {
                 selectedActionIds={selectedActionIds}
                 onToggleAction={toggleAction}
                 onRenameKnowledgeBase={renameAction}
+                onExecute={() => setExecuteDialogOpen(true)}
+                executing={executing}
               />
             ) : (
               <div className="organizer-empty prototype-empty-focus">
@@ -255,6 +359,46 @@ export default function OrganizerPage() {
           </main>
         </div>
       )}
+
+      <Dialog open={executeDialogOpen} onOpenChange={(open) => { if (!open && !executing) setExecuteDialogOpen(false) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认执行所选建议</DialogTitle>
+            <DialogDescription>
+              将执行 {selectedActions.length} 条建议
+              {selectedHasHighRisk ? '，其中包含高风险动作，执行后可在 30 天内整批撤销。' : '，执行后可在 30 天内整批撤销。'}
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" disabled={executing} onClick={() => setExecuteDialogOpen(false)}>取消</Button>
+            <Button disabled={executing || selectedActions.length === 0} onClick={() => void executeSelected()}>
+              {executing ? '执行中...' : '确认执行'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={Boolean(pendingUndoId)} onOpenChange={(open) => { if (!open && !undoingExecutionId) setPendingUndoId(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>确认整批撤销</DialogTitle>
+            <DialogDescription>会撤销该次执行涉及的全部动作。如果相关笔记在这之后被你编辑过，系统会阻止覆盖并提示冲突。</DialogDescription>
+          </DialogHeader>
+          {undoConflicts.length > 0 && (
+            <div className="organizer-conflict-list">
+              {undoConflicts.map((conflict) => (
+                <p key={conflict.noteId} className="organizer-conflict-item">笔记 {conflict.noteId}：{conflict.message}</p>
+              ))}
+            </div>
+          )}
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" disabled={Boolean(undoingExecutionId)} onClick={() => { setPendingUndoId(null); setUndoConflicts([]) }}>取消</Button>
+            <Button disabled={Boolean(undoingExecutionId) || undoConflicts.length > 0} onClick={() => void undoExecution()}>
+              {undoingExecutionId ? '撤销中...' : '确认撤销'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       <Dialog open={Boolean(pendingDeleteId)} onOpenChange={(open) => { if (!open && !deletingProposalId) setPendingDeleteId(null) }}>
         <DialogContent className="max-w-md">

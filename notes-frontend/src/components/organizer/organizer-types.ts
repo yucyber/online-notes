@@ -30,3 +30,21 @@ export interface OrganizerProposal {
   updatedAt?: string
   actions: OrganizerProposalAction[]
 }
+
+export interface OrganizerExecutionActionSummary {
+  actionId: string
+  type: OrganizerActionType
+  noteIds: string[]
+}
+
+export interface OrganizerExecution {
+  id: string
+  proposalId: string
+  proposalRevision: number
+  status: 'executed' | 'undone'
+  undoDeadline?: string
+  undoneAt?: string
+  createdAt?: string
+  updatedAt?: string
+  actions: OrganizerExecutionActionSummary[]
+}
