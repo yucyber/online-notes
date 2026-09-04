@@ -206,8 +206,14 @@ export default function OrganizerPage() {
       await Promise.all([loadExecutions(), reload()])
     } catch (error: any) {
       const errText = apiErrorMessage(error, '执行失败')
-      setExecuteError(`${errText}。请点击“刷新过期状态”后重试，或取消本次执行。`)
-      setMessage(errText)
+      const staleBlocked = /updated after proposal|stale/i.test(errText)
+      setExecuteError(staleBlocked
+        ? `${errText}。相关笔记在提案生成后已被编辑，提案已标记为过期；请重新生成全局/增量提案后再执行。`
+        : errText)
+      setMessage(staleBlocked ? '执行被阻止：提案中的笔记已更新，请重新生成提案' : errText)
+      if (staleBlocked) {
+        await reload()
+      }
     } finally {
       setExecuting(false)
     }
