@@ -96,6 +96,15 @@ export class OrganizerProposalService {
     return this.serialize(doc)
   }
 
+  async remove(id: string, userId: string) {
+    const doc = await this.proposalModel.findOneAndDelete({
+      _id: this.objectId(id, 'proposal id'),
+      userId: this.objectId(userId),
+    }).exec()
+    if (!doc) throw new NotFoundException('Proposal not found')
+    return { ok: true }
+  }
+
   async refreshStale(id: string, userId: string) {
     const doc = await this.proposalModel.findOne({
       _id: this.objectId(id, 'proposal id'),

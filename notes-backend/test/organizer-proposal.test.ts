@@ -184,3 +184,34 @@ test('refreshStale marks proposal stale when note updatedAt changed', async () =
   assert.equal(result.status, 'stale')
   assert.equal(savedDoc.status, 'stale')
 })
+
+test('remove deletes only current user proposal and returns ok', async () => {
+  const proposalId = new Types.ObjectId()
+  let deletedQuery: any = null
+  const service = makeService({
+    proposalModel: {
+      findOneAndDelete: (query: any) => {
+        deletedQuery = query
+        return execResult(doc({ _id: proposalId, userId: new Types.ObjectId(userId) }))
+      },
+    },
+  })
+
+  const result = await service.remove(String(proposalId), userId)
+  assert.deepEqual(result, { ok: true })
+  assert.equal(String(deletedQuery._id), String(proposalId))
+  assert.equal(String(deletedQuery.userId), userId)
+})
+
+test('remove rejects when proposal does not exist', async () => {
+  const service = makeService({
+    proposalModel: {
+      findOneAndDelete: () => execResult(null),
+    },
+  })
+
+  await assert.rejects(
+    () => service.remove('507f1f77bcf86cd799439099', userId),
+    /Proposal not found/,
+  )
+})

@@ -376,9 +376,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
   overflow: auto;
   padding: 8px;
 }
-.organizer-proposal-list__items button {
+.organizer-proposal-list__item { display: flex; align-items: center; gap: 4px; }
+.organizer-proposal-list__select {
   position: relative;
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
@@ -391,8 +393,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
   text-align: left;
   transition: background .15s, box-shadow .15s;
 }
-.organizer-proposal-list__items button:hover { background: var(--product-surface-muted); }
-.organizer-proposal-list__items button.is-active {
+.organizer-proposal-list__select:hover { background: var(--product-surface-muted); }
+.organizer-proposal-list__select.is-active {
   background: var(--product-accent-soft);
   box-shadow: inset 0 0 0 1px var(--product-accent-line);
 }
@@ -410,6 +412,28 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
 }
 .organizer-proposal-list__summary small { color: var(--product-muted); font-size: 10px; }
 .organizer-proposal-list__items .proposal-status { justify-self: end; min-height: 20px; padding: 0 7px; font-size: 9px; }
+.organizer-proposal-delete {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--product-muted);
+  font-size: 18px;
+  line-height: 1;
+  opacity: .72;
+  transition: background .15s, color .15s, opacity .15s;
+}
+.organizer-proposal-delete:hover {
+  background: var(--product-danger-soft);
+  color: var(--product-danger);
+  opacity: 1;
+}
+.organizer-proposal-delete:disabled { opacity: .35; cursor: not-allowed; }
 
 .organizer-proposal-detail { min-width: 0; }
 .organizer-proposal-panel {
@@ -721,7 +745,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
     overflow-x: auto;
     padding: 8px;
   }
-  .organizer-proposal-list__items button { min-width: 240px; width: auto; }
+  .organizer-proposal-list__item { display: flex; align-items: center; gap: 4px; }
+.organizer-proposal-list__select { min-width: 240px; width: auto; }
   .organizer-proposal-panel { padding: 16px; }
   .organizer-proposal-panel > header { align-items: flex-start; flex-direction: column; }
   .organizer-diff-heading { align-items: flex-start; }

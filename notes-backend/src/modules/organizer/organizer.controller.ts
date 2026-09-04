@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, Post, Request, UseGuards } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Param, Post, Request, UseGuards } from '@nestjs/common'
 import { AuthGuard } from '@nestjs/passport'
 import { OrganizerPlanningService } from './organizer-planning.service'
 import { OrganizerProposalService } from './organizer-proposal.service'
@@ -19,6 +19,11 @@ export class OrganizerController {
   @Get('proposals/:id')
   getProposal(@Param('id') id: string, @Request() req) {
     return this.proposals.findOne(id, req.user.id)
+  }
+
+  @Delete('proposals/:id')
+  deleteProposal(@Param('id') id: string, @Request() req) {
+    return this.proposals.remove(id, req.user.id)
   }
 
   @Post('proposals/:id/refresh-stale')

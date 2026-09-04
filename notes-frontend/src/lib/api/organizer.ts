@@ -11,6 +11,9 @@ export const organizerAPI = {
   refreshStale: (id: string) =>
     api.post<OrganizerProposal>(`/organizer/proposals/${id}/refresh-stale`).then((res) => res as unknown as OrganizerProposal),
 
+  deleteProposal: (id: string) =>
+    api.delete<{ ok: boolean }>(`/organizer/proposals/${id}`).then((res) => res as unknown as { ok: boolean }),
+
   createGlobal: () =>
     api.post<{ generated: boolean; reason?: string; proposal?: OrganizerProposal }>('/organizer/planning/global')
       .then((res) => res as unknown as { generated: boolean; reason?: string; proposal?: OrganizerProposal }),

@@ -16,6 +16,7 @@ export default function OrganizerPage() {
   const [notes, setNotes] = useState<Note[]>([])
   const [selectedNoteId, setSelectedNoteId] = useState('')
   const [message, setMessage] = useState('')
+  const [deletingProposalId, setDeletingProposalId] = useState('')
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -109,6 +110,27 @@ export default function OrganizerPage() {
     }
   }
 
+  const deleteProposal = async (id: string) => {
+    if (!window.confirm('删除后不可恢复，确定要删除该提案吗？')) return
+    setDeletingProposalId(id)
+    setMessage('')
+    try {
+      await organizerAPI.deleteProposal(id)
+      const next = proposals.filter((item) => item.id !== id)
+      setProposals(next)
+      if (activeProposalId === id) {
+        const first = next[0]
+        setActiveProposalId(first?.id || '')
+        setSelectedActionIds(first?.actions?.map((action) => action.actionId) || [])
+      }
+      setMessage('已删除提案')
+    } catch (error: any) {
+      setMessage(error?.message || '删除提案失败')
+    } finally {
+      setDeletingProposalId('')
+    }
+  }
+
   const toggleAction = (actionId: string, checked: boolean) => {
     setSelectedActionIds((current) => checked
       ? Array.from(new Set([...current, actionId]))
@@ -179,22 +201,33 @@ export default function OrganizerPage() {
               {proposals.map((proposal) => {
                 const active = proposal.id === activeProposalId
                 return (
-                  <button
-                    key={proposal.id}
-                    type="button"
-                    className={active ? 'is-active' : ''}
-                    aria-current={active ? 'true' : undefined}
-                    onClick={() => {
-                      setActiveProposalId(proposal.id)
-                      setSelectedActionIds(proposal.actions.map((action) => action.actionId))
-                    }}
-                  >
-                    <span className="organizer-proposal-list__summary">
-                      <b>{proposal.summary || proposal.id}</b>
-                      <small>Revision {proposal.revision}</small>
-                    </span>
-                    <em className={`proposal-status proposal-status-${proposal.status}`}>{proposal.status === 'stale' ? '需刷新' : proposal.status === 'confirmed' ? '已确认' : '待处理'}</em>
-                  </button>
+                  <div key={proposal.id} className="organizer-proposal-list__item">
+                    <button
+                      type="button"
+                      className={`organizer-proposal-list__select ${active ? 'is-active' : ''}`}
+                      aria-current={active ? 'true' : undefined}
+                      onClick={() => {
+                        setActiveProposalId(proposal.id)
+                        setSelectedActionIds(proposal.actions.map((action) => action.actionId))
+                      }}
+                    >
+                      <span className="organizer-proposal-list__summary">
+                        <b>{proposal.summary || proposal.id}</b>
+                        <small>Revision {proposal.revision}</small>
+                      </span>
+                      <em className={`proposal-status proposal-status-${proposal.status}`}>{proposal.status === 'stale' ? '需刷新' : proposal.status === 'confirmed' ? '已确认' : '待处理'}</em>
+                    </button>
+                    <button
+                      type="button"
+                      className="organizer-proposal-delete"
+                      aria-label={`删除提案：${proposal.summary || proposal.id}`}
+                      title="删除提案"
+                      disabled={deletingProposalId === proposal.id}
+                      onClick={() => void deleteProposal(proposal.id)}
+                    >
+                      ×
+                    </button>
+                  </div>
                 )
               })}
             </div>
