@@ -472,13 +472,13 @@ interface RagPlan {
 - Create: `notes-backend/src/modules/organizer/organizer-execution.service.ts`
 - Create: `notes-backend/test/organizer-execution.test.ts`
 
-- [ ] 执行请求只接受已确认 action ID，不接受客户端重传任意修改内容。
-- [ ] 执行前再次检查 ACL、expectedUpdatedAt、引用实体和 proposal revision。
-- [ ] 建库、归属、标签分类按 MongoDB transaction 执行，并保存反向操作。
-- [ ] rewrite/split/merge 先创建 NoteVersion 或完整快照，再创建/更新目标笔记；任何一步失败整批回滚。
-- [ ] journal 记录执行者、时间、proposal revision、前后 ID 映射和可撤销截止时间，不保存 reasoning。
-- [ ] 重复提交使用 idempotency key 返回同一 execution，不重复写数据。
-- [ ] 运行事务、并发、幂等和权限测试并提交：`feat(organizer): 执行已确认整理动作`。
+- [x] 执行请求只接受已确认 action ID，不接受客户端重传任意修改内容。
+- [x] 执行前再次检查 ACL、expectedUpdatedAt、引用实体和 proposal revision。
+- [x] 建库、归属、标签分类按 MongoDB transaction 执行，并保存反向操作。
+- [x] rewrite/split/merge 先创建 NoteVersion 或完整快照，再创建/更新目标笔记；任何一步失败整批回滚。
+- [x] journal 记录执行者、时间、proposal revision、前后 ID 映射和可撤销截止时间，不保存 reasoning。
+- [x] 重复提交使用 idempotency key 返回同一 execution，不重复写数据。
+- [x] 运行事务、并发、幂等和权限测试并提交：`feat(organizer): 执行已确认整理动作`。
 
 ## Task 5.2：实现整批撤销与冲突处理
 
@@ -486,19 +486,21 @@ interface RagPlan {
 - Modify: `notes-backend/src/modules/organizer/organizer-execution.service.ts`
 - Create: `notes-backend/test/organizer-undo.test.ts`
 
-- [ ] undo 只针对同一 execution 整批执行，不首版支持任意部分撤销。
-- [ ] 若执行后目标笔记又被用户编辑，undo 返回冲突清单，不覆盖新内容。
-- [ ] 新建知识库只有在无 execution 外部新增内容时才能删除，否则仅恢复归属并保留知识库。
-- [ ] undo 本身幂等并记录新的审计事件。
-- [ ] 运行冲突、幂等、版本恢复和事务测试并提交：`feat(organizer): 支持整批撤销`。
+- [x] undo 只针对同一 execution 整批执行，不首版支持任意部分撤销。
+- [x] 若执行后目标笔记又被用户编辑，undo 返回冲突清单，不覆盖新内容。
+- [x] 新建知识库只有在无 execution 外部新增内容时才能删除，否则仅恢复归属并保留知识库。
+- [x] undo 本身幂等并记录新的审计事件。
+- [x] 运行冲突、幂等、版本恢复和事务测试并提交：`feat(organizer): 支持整批撤销`。
 
 ## Task 5.3：开放一键执行与撤销 UI
 
-- [ ] 只有被勾选且未 stale 的 action 可执行。
-- [ ] 高风险动作要求二次确认，显示会创建/修改/归档哪些笔记。
-- [ ] 执行完成展示 execution 摘要和撤销截止时间。
-- [ ] 冲突时展示需要人工处理的笔记，不用模型自动覆盖。
+- [x] 只有被勾选且未 stale 的 action 可执行。
+- [x] 高风险动作要求二次确认，显示会创建/修改/归档哪些笔记。
+- [x] 执行完成展示 execution 摘要和撤销截止时间。
+- [x] 冲突时展示需要人工处理的笔记，不用模型自动覆盖。
 - [ ] 完成 E2E、窄屏、暗色和异常恢复验收。
+
+2026-09-04：P5 主体完成。后端新增 organizer_executions 与 undo journal；执行、幂等、整批撤销、冲突检测单测通过；前端开放执行与撤销入口，执行/撤销均使用公共 Dialog 二次确认。E2E 与人工视觉验收尚未完成，待发布检查点 Release D 前补齐。
 
 ---
 
