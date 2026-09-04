@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
-import { Download, PanelRight, Search } from 'lucide-react';
+import { Download, PanelRight, Search, Sparkles } from 'lucide-react';
 import {
   type AssistantSearchResult, type ConversationListItem, exportConversation, fetchConversations, renameConversation, searchAssistant, setConversationStatus,
 } from '@/lib/assistant-api';
@@ -15,6 +15,7 @@ import AssistantCompose from './AssistantCompose';
 import AssistantContextPanel, { type EvidenceTarget } from './AssistantContextPanel';
 import { ConversationList } from './ConversationList';
 import AssistantMessages from './AssistantMessages';
+import AssistantOrganizerDialog from './AssistantOrganizerDialog';
 
 const CURRENT_CONVERSATION_KEY = 'assistant_current_conversation_id';
 const SEARCH_DEBOUNCE_MS = 300;
@@ -50,6 +51,8 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<AssistantSearchResult | null>(null);
   const [searchOpen, setSearchOpen] = useState(false);
+  // 小助手整理代理入口：提案生成/确认/执行/撤销全部在工作台内完成，不必跳转整理页。
+  const [organizerOpen, setOrganizerOpen] = useState(false);
   // 搜索消息命中 / 导航快照恢复：消息行渲染后滚动定位
   const [anchorMessageId, setAnchorMessageId] = useState<string | null>(null);
   const activeRequestIdRef = useRef<string | null>(null);
@@ -478,6 +481,16 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
           <button
             type="button"
             className="assistant-context-toggle"
+            aria-label="整理提案"
+            title="整理提案"
+            data-testid="assistant-organizer-open"
+            onClick={() => setOrganizerOpen(true)}
+          >
+            <Sparkles aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            className="assistant-context-toggle"
             aria-label="查看引用"
             aria-pressed={contextPanelOpen}
             title="查看引用"
@@ -553,6 +566,7 @@ export function AssistantWorkspace({ initialConversationId }: { initialConversat
           onLocate={handleLocate}
         />
       </div>
+      <AssistantOrganizerDialog open={organizerOpen} onOpenChange={setOrganizerOpen} />
     </div>
   );
 }

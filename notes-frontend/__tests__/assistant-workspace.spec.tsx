@@ -328,6 +328,18 @@ describe('AssistantWorkspace 三栏工作台', () => {
     expect(screen.queryByRole('button', { name: '导出会话' })).not.toBeInTheDocument()
   })
 
+  test('顶栏提供小助手整理提案入口', async () => {
+    const fetchMock = jest.fn(async (url: string) => {
+      const href = String(url)
+      if (href === '/api/assistant/conversations') return json({ items: [conversation('c1', '会话一', 1)] })
+      return json({})
+    }) as any
+    global.fetch = fetchMock
+    render(<AssistantWorkspace />)
+    await screen.findByText('会话一')
+    expect(screen.getByTestId('assistant-organizer-open')).toBeInTheDocument()
+  })
+
   // ==== 合并 Task 8：失败回答重试 ====
   test('failed 消息显示重新回答，点击以 retryOfMessageId 重发且原消息不再可重复重试', async () => {
     const c1Messages = [

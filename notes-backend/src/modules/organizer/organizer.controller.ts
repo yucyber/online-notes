@@ -3,6 +3,7 @@ import { AuthGuard } from '@nestjs/passport'
 import { OrganizerPlanningService } from './organizer-planning.service'
 import { OrganizerProposalService } from './organizer-proposal.service'
 import { OrganizerExecutionService } from './organizer-execution.service'
+import { OrganizerAgentService } from './organizer-agent.service'
 
 @UseGuards(AuthGuard('jwt'))
 @Controller('organizer')
@@ -11,6 +12,7 @@ export class OrganizerController {
     private readonly proposals: OrganizerProposalService,
     private readonly planning: OrganizerPlanningService,
     private readonly execution: OrganizerExecutionService,
+    private readonly agent: OrganizerAgentService,
   ) {}
 
   @Get('proposals')
@@ -47,6 +49,12 @@ export class OrganizerController {
   @Post('proposals/:id/refresh-stale')
   refreshStale(@Param('id') id: string, @Request() req) {
     return this.proposals.refreshStale(id, req.user.id)
+  }
+
+  // 小助手手动触发：为当前用户生成全局提案（已有 pending 提案则直接返回）。
+  @Post('agent/run')
+  runAgent(@Request() req) {
+    return this.agent.runForUser(req.user.id)
   }
 
   @Post('planning/global')

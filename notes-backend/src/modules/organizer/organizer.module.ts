@@ -4,6 +4,7 @@ import { Category, CategorySchema } from '../categories/schemas/category.schema'
 import { KnowledgeBase, KnowledgeBaseSchema } from '../knowledge-bases/schemas/knowledge-base.schema'
 import { KnowledgeBaseNote, KnowledgeBaseNoteSchema } from '../knowledge-bases/schemas/knowledge-base-note.schema'
 import { NoteVersion, NoteVersionSchema } from '../versions/schemas/note-version.schema'
+import { User, UserSchema } from '../users/schemas/user.schema'
 import { Note, NoteSchema } from '../notes/schemas/note.schema'
 import { NoteChunk, NoteChunkSchema } from '../notes/schemas/note-chunk.schema'
 import { NotesModule } from '../notes/notes.module'
@@ -13,6 +14,7 @@ import { OrganizerController } from './organizer.controller'
 import { OrganizerProposalService } from './organizer-proposal.service'
 import { OrganizerPlanningService } from './organizer-planning.service'
 import { OrganizerExecutionService } from './organizer-execution.service'
+import { OrganizerAgentService } from './organizer-agent.service'
 import { OrganizerProposal, OrganizerProposalSchema } from './schemas/organizer-proposal.schema'
 import { OrganizerExecution, OrganizerExecutionSchema } from './schemas/organizer-execution.schema'
 
@@ -28,12 +30,13 @@ import { OrganizerExecution, OrganizerExecutionSchema } from './schemas/organize
       { name: KnowledgeBase.name, schema: KnowledgeBaseSchema },
       { name: KnowledgeBaseNote.name, schema: KnowledgeBaseNoteSchema },
       { name: NoteVersion.name, schema: NoteVersionSchema },
+      { name: User.name, schema: UserSchema },
     ]),
     NotesModule,
     AuditModule,
   ],
   controllers: [OrganizerController],
-  providers: [OrganizerProposalService, OrganizerPlanningService, OrganizerExecutionService],
-  exports: [OrganizerProposalService, OrganizerPlanningService, OrganizerExecutionService],
+  providers: [OrganizerProposalService, OrganizerPlanningService, OrganizerExecutionService, OrganizerAgentService],
+  exports: [OrganizerProposalService, OrganizerPlanningService, OrganizerExecutionService, OrganizerAgentService],
 })
 export class OrganizerModule {}

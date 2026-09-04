@@ -14,6 +14,11 @@ export const organizerAPI = {
   deleteProposal: (id: string) =>
     api.delete<{ ok: boolean }>(`/organizer/proposals/${id}`).then((res) => res as unknown as { ok: boolean }),
 
+  // 小助手整理代理：为当前用户生成全局提案（已有 pending 提案则直接返回）。
+  runAgent: () =>
+    api.post<{ generated: boolean; reason?: string; proposal?: OrganizerProposal }>('/organizer/agent/run')
+      .then((res) => res as unknown as { generated: boolean; reason?: string; proposal?: OrganizerProposal }),
+
   createGlobal: () =>
     api.post<{ generated: boolean; reason?: string; proposal?: OrganizerProposal }>('/organizer/planning/global')
       .then((res) => res as unknown as { generated: boolean; reason?: string; proposal?: OrganizerProposal }),

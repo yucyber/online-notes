@@ -870,3 +870,51 @@
   line-height: 1.5;
 }
 .assistant-memory-citation strong { flex: none; color: var(--product-accent); font-weight: 650; font-variant-numeric: tabular-nums; }
+
+/* ===== 小助手整理代理弹窗：提案确认/执行/撤销全部在弹窗内完成 ===== */
+.assistant-organizer-dialog {
+  display: flex;
+  flex-direction: column;
+  max-height: min(82vh, 760px);
+}
+.assistant-organizer-body {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  overflow-y: auto;
+  max-height: min(62vh, 560px);
+  padding-right: 4px;
+}
+.assistant-organizer-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.assistant-organizer-toolbar__meta {
+  color: var(--product-text-secondary);
+  font-size: 12px;
+}
+.assistant-organizer-proposal-select {
+  width: 100%;
+  padding: 6px 10px;
+  border: 1px solid var(--product-line);
+  border-radius: 8px;
+  background: var(--product-surface);
+  color: var(--product-text);
+  font-size: 12px;
+}
+.assistant-organizer-message {
+  margin: 0;
+  color: var(--product-text-secondary);
+  font-size: 12px;
+}
+.assistant-organizer-hint {
+  margin: 0;
+  color: var(--product-text-secondary);
+  font-size: 12px;
+  line-height: 1.6;
+}
+@media (max-width: 640px) {
+  .assistant-organizer-body { max-height: 64vh; }
+}
