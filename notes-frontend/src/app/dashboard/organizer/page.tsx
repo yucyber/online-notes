@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useState } from 'react'
 import OrganizerProposalPanel from '@/components/organizer/OrganizerProposalPanel'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
+import { Button } from '@/components/ui/button'
 import type { OrganizerProposal } from '@/components/organizer/organizer-types'
 import type { Note } from '@/types'
 import { notesAPI } from '@/lib/api/notes'
@@ -17,6 +19,7 @@ export default function OrganizerPage() {
   const [selectedNoteId, setSelectedNoteId] = useState('')
   const [message, setMessage] = useState('')
   const [deletingProposalId, setDeletingProposalId] = useState('')
+  const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -110,8 +113,9 @@ export default function OrganizerPage() {
     }
   }
 
-  const deleteProposal = async (id: string) => {
-    if (!window.confirm('删除后不可恢复，确定要删除该提案吗？')) return
+  const deleteProposal = async () => {
+    const id = pendingDeleteId
+    if (!id) return
     setDeletingProposalId(id)
     setMessage('')
     try {
@@ -123,6 +127,7 @@ export default function OrganizerPage() {
         setActiveProposalId(first?.id || '')
         setSelectedActionIds(first?.actions?.map((action) => action.actionId) || [])
       }
+      setPendingDeleteId(null)
       setMessage('已删除提案')
     } catch (error: any) {
       setMessage(error?.message || '删除提案失败')
@@ -223,7 +228,7 @@ export default function OrganizerPage() {
                       aria-label={`删除提案：${proposal.summary || proposal.id}`}
                       title="删除提案"
                       disabled={deletingProposalId === proposal.id}
-                      onClick={() => void deleteProposal(proposal.id)}
+                      onClick={() => setPendingDeleteId(proposal.id)}
                     >
                       ×
                     </button>
@@ -250,6 +255,21 @@ export default function OrganizerPage() {
           </main>
         </div>
       )}
+
+      <Dialog open={Boolean(pendingDeleteId)} onOpenChange={(open) => { if (!open && !deletingProposalId) setPendingDeleteId(null) }}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>删除提案</DialogTitle>
+            <DialogDescription>删除后不可恢复，确定要删除该提案吗？</DialogDescription>
+          </DialogHeader>
+          <DialogFooter className="gap-2 sm:gap-2">
+            <Button variant="outline" disabled={Boolean(deletingProposalId)} onClick={() => setPendingDeleteId(null)}>取消</Button>
+            <Button variant="destructive" disabled={Boolean(deletingProposalId)} onClick={() => void deleteProposal()}>
+              {deletingProposalId ? '删除中...' : '确认删除'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
