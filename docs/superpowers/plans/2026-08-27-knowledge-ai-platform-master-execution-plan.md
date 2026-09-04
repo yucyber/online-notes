@@ -455,11 +455,11 @@ interface RagPlan {
 
 - [x] 用户能审阅并返工 proposal，但数据库业务实体没有被 AI 自动修改。
 - [x] 所有高风险 action 有 diff、证据和 stale 检查。
-- [ ] 用户完成“U4 高风险执行策略确认”后才能进入 P5。
+- [x] 用户完成“U4 高风险执行策略确认”后才能进入 P5。
 
 2026-09-03：P4 后端 proposal schema/service/module、全局/增量规划服务与前端审阅组件已完成；后端新测试与前端组件测试通过。 U4 尚未确认，P5 不开始。
 
-2026-09-04：P4 审阅返工完成。修复增量规划未读取 `knowledge_base_notes` 导致已有归属笔记被误判为“无归属”的问题；补充删除历史 proposal 的能力，前端删除确认改用公共 Dialog。后端 organizer 单测 10 passed / 0 failed，前端全量 333 passed / 0 failed，前后端 type-check 均通过。 U4 仍未确认，P5 不开始。
+2026-09-04：P4 审阅返工完成。修复增量规划未读取 `knowledge_base_notes` 导致已有归属笔记被误判为“无归属”的问题；补充删除历史 proposal 的能力，前端删除确认改用公共 Dialog。后端 organizer 单测 10 passed / 0 failed，前端全量 333 passed / 0 failed，前后端 type-check 均通过。同日用户确认 U4 默认策略，P5 可以开始。
 
 ---
 
@@ -553,6 +553,8 @@ note_chunks.note_chunk_vector_index
 - 执行后用户又编辑笔记时，是否禁止强制 undo；建议禁止自动覆盖并提示冲突。
 
 在这些选择确认前，代理只实现 P4 的只读 proposal，不开始 P5。
+
+2026-09-04 已确认：采用上述默认策略（30 天、归档、归档并链接、允许逐条勾选但整批 execution、禁止强制覆盖冲突）。
 
 ---
 
