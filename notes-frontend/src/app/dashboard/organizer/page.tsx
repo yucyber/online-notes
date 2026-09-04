@@ -218,7 +218,7 @@ export default function OrganizerPage() {
       <header className="prototype-section-head">
         <div>
           <p className="product-eyebrow">AI ORGANIZER</p>
-          <h1 className="page-heading">只读整理提案</h1>
+          <h1 className="page-heading">知识整理提案</h1>
           <p className="page-description">审阅 AI 建议；确认后可逐条执行，并支持在 30 天内整批撤销。</p>
         </div>
       </header>
