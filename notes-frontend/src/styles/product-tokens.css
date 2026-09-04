@@ -742,6 +742,39 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
   color: var(--product-muted);
   font-size: 12px;
 }
+.organizer-execute-scope {
+  display: grid;
+  gap: 6px;
+  max-height: 220px;
+  overflow: auto;
+  margin: 4px 0;
+  padding: 10px 12px;
+  border: 1px solid var(--product-line);
+  border-radius: 10px;
+  background: var(--product-panel-soft);
+}
+.organizer-execute-scope__title {
+  color: var(--product-muted);
+  font-size: 11px;
+}
+.organizer-execute-scope ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.organizer-execute-scope li {
+  display: grid;
+  gap: 2px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--product-text-secondary);
+}
+.organizer-execute-scope li strong {
+  color: var(--product-text);
+  font-weight: 650;
+}
 
 .organizer-execution-history {
   margin-top: 18px;

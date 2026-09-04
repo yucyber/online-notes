@@ -8,6 +8,17 @@ import type { OrganizerExecution, OrganizerProposal } from '@/components/organiz
 import type { Note } from '@/types'
 import { notesAPI } from '@/lib/api/notes'
 import { organizerAPI } from '@/lib/api/organizer'
+import type { OrganizerProposalAction } from '@/components/organizer/organizer-types'
+
+const ACTION_TYPE_LABELS: Record<OrganizerProposalAction['type'], string> = {
+  create_knowledge_base: '创建知识库并归属笔记',
+  move_note: '移入知识库',
+  add_tag: '添加标签',
+  set_category: '设置分类',
+  merge_notes: '归档来源并合并',
+  split_note: '归档原笔记并拆分',
+  rewrite_note: '改写笔记内容',
+}
 
 export default function OrganizerPage() {
   const [proposals, setProposals] = useState<OrganizerProposal[]>([])
@@ -369,6 +380,20 @@ export default function OrganizerPage() {
               {selectedHasHighRisk ? '，其中包含高风险动作，执行后可在 30 天内整批撤销。' : '，执行后可在 30 天内整批撤销。'}
             </DialogDescription>
           </DialogHeader>
+          {selectedActions.length > 0 && (
+            <div className="organizer-execute-scope" data-testid="execute-scope">
+              <span className="organizer-execute-scope__title">本次会执行：</span>
+              <ul>
+                {selectedActions.map((action) => (
+                  <li key={action.actionId} data-testid={`execute-scope-${action.actionId}`}>
+                    <strong>{ACTION_TYPE_LABELS[action.type]}</strong>
+                    <span>涉及笔记：{action.noteIds.join('、') || '无'}</span>
+                    {action.targetNoteId ? <span>目标笔记：{action.targetNoteId}</span> : null}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
           <DialogFooter className="gap-2 sm:gap-2">
             <Button variant="outline" disabled={executing} onClick={() => setExecuteDialogOpen(false)}>取消</Button>
             <Button disabled={executing || selectedActions.length === 0} onClick={() => void executeSelected()}>
