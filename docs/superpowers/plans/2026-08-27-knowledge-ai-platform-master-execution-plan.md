@@ -447,6 +447,9 @@ interface RagPlan {
 - [x] 用户修改意见生成新 revision，旧 revision 保留只读，不能覆盖历史。
 - [x] P4 页面没有“一键自动执行”入口，只提供确认清单，为 P5 准备。
 - [x] 运行测试、type-check、build 和视觉验收并提交。
+- [x] 增量生成前校验 `knowledge_base_notes` 归属；已有知识库的笔记不再误报“无归属”。
+- [x] 支持删除历史 proposal（删除接口 + 前端删除入口 + 公共 Dialog 确认），可清理修复前产生的旧误报。
+- [x] 整理提案页 UI 已按 product tokens 美化，并适配暗色与窄屏。
 
 **P4 Exit Gate:**
 
@@ -455,6 +458,8 @@ interface RagPlan {
 - [ ] 用户完成“U4 高风险执行策略确认”后才能进入 P5。
 
 2026-09-03：P4 后端 proposal schema/service/module、全局/增量规划服务与前端审阅组件已完成；后端新测试与前端组件测试通过。 U4 尚未确认，P5 不开始。
+
+2026-09-04：P4 审阅返工完成。修复增量规划未读取 `knowledge_base_notes` 导致已有归属笔记被误判为“无归属”的问题；补充删除历史 proposal 的能力，前端删除确认改用公共 Dialog。后端 organizer 单测 10 passed / 0 failed，前端全量 333 passed / 0 failed，前后端 type-check 均通过。 U4 仍未确认，P5 不开始。
 
 ---
 
