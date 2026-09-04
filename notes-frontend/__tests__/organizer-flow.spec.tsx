@@ -25,6 +25,8 @@ jest.mock('@/lib/api/notes', () => ({
   notesAPI: { getAll: (...args: unknown[]) => mockGetAll(...args) },
 }))
 
+const noteTitles: Record<string, string> = { n1: '二叉树改写笔记', n2: 'MCP 总结笔记' }
+
 const proposal = {
   id: 'proposal-1',
   userId: 'u1',
@@ -60,7 +62,28 @@ describe('organizer execute and undo flow', () => {
     jest.clearAllMocks()
     mockListProposals.mockResolvedValue([proposal])
     mockListExecutions.mockResolvedValue([])
-    mockGetAll.mockResolvedValue({ items: [], total: 0 })
+    mockGetAll.mockImplementation((params: any = {}) => {
+      const ids: string[] = Array.isArray(params?.ids) ? params.ids : []
+      return Promise.resolve({
+        items: ids
+          .filter((id: string) => noteTitles[id])
+          .map((id: string) => ({
+            id,
+            title: noteTitles[id],
+            content: '',
+            categoryId: undefined,
+            category: null,
+            tags: [],
+            createdAt: '',
+            updatedAt: '',
+            userId: 'u1',
+            status: 'published',
+          })),
+        page: 1,
+        size: ids.length,
+        total: ids.length,
+      })
+    })
   })
 
   test('opens execute confirm dialog and lists affected notes', async () => {
@@ -70,8 +93,9 @@ describe('organizer execute and undo flow', () => {
     expect(await screen.findByText('确认执行所选建议')).toBeInTheDocument()
     expect(screen.getByTestId('execute-scope')).toBeInTheDocument()
     expect(screen.getByTestId('execute-scope-a1')).toHaveTextContent('改写笔记内容')
-    expect(screen.getByTestId('execute-scope-a1')).toHaveTextContent('涉及笔记：n1')
+    expect(screen.getByTestId('execute-scope-a1')).toHaveTextContent('涉及笔记：二叉树改写笔记')
     expect(screen.getByTestId('execute-scope-a2')).toHaveTextContent('创建知识库并归属笔记')
+    expect(screen.getByTestId('execute-scope-a2')).toHaveTextContent('涉及笔记：MCP 总结笔记')
   })
 
   test('confirm execute calls backend with selected action ids', async () => {
@@ -95,6 +119,21 @@ describe('organizer execute and undo flow', () => {
   })
 })
 
+test('execute failure shows backend message inside confirm dialog', async () => {
+  mockExecuteProposal.mockRejectedValue({
+    response: { data: { message: 'Note was updated after proposal generation, please refresh before executing' } },
+  })
+  render(<OrganizerPage />)
+
+  const executeButton = await screen.findByRole('button', { name: '执行所选建议' })
+  fireEvent.click(executeButton)
+  fireEvent.click(await screen.findByRole('button', { name: '确认执行' }))
+  expect(await screen.findByTestId('execute-error')).toHaveTextContent('Note was updated after proposal generation')
+  expect(screen.getByText('确认执行所选建议')).toBeInTheDocument()
+  expect(screen.getByRole('button', { name: '取消' })).toBeEnabled()
+})
+
+
 test('undo conflict keeps dialog open and shows notes requiring manual handling', async () => {
   mockListExecutions.mockResolvedValue([{
     id: 'exec-1',
@@ -114,7 +153,7 @@ test('undo conflict keeps dialog open and shows notes requiring manual handling'
   fireEvent.click(undoButton)
   fireEvent.click(await screen.findByRole('button', { name: '确认撤销' }))
   await waitFor(() => expect(mockUndoExecution).toHaveBeenCalled())
-  expect(await screen.findByText(/笔记 n1：/)).toBeInTheDocument()
+  expect(await screen.findByText(/二叉树改写笔记/)).toBeInTheDocument()
   expect(screen.getByText(/已阻止自动覆盖/)).toBeInTheDocument()
   expect(screen.getByRole('button', { name: '确认撤销' })).toBeDisabled()
 })

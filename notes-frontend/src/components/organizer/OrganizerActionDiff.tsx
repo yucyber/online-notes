@@ -1,6 +1,7 @@
 'use client';
 
 import type { OrganizerProposalAction } from './organizer-types';
+import { noteLabel, noteListLabel, type NoteTitleMap } from './organizer-note-names';
 
 const TYPE_LABELS: Record<OrganizerProposalAction['type'], string> = {
   create_knowledge_base: '创建知识库',
@@ -16,7 +17,7 @@ function formatText(value: unknown, fallback = '') {
   return typeof value === 'string' && value.trim() ? value.trim() : fallback;
 }
 
-export default function OrganizerActionDiff({ action }: { action: OrganizerProposalAction }) {
+export default function OrganizerActionDiff({ action, noteTitles }: { action: OrganizerProposalAction; noteTitles?: NoteTitleMap }) {
   const payload = action.payload || {};
   return (
     <div className="organizer-action-diff" data-testid={`diff-${action.actionId}`}>
@@ -46,8 +47,8 @@ export default function OrganizerActionDiff({ action }: { action: OrganizerPropo
 
       {action.type === 'merge_notes' && (
         <div className="organizer-diff-content">
-          <p><strong>合并目标：</strong>{formatText(payload.targetTitle, action.targetNoteId || '待定')}</p>
-          <p><strong>来源笔记：</strong>{action.noteIds.join('、')}</p>
+          <p><strong>合并目标：</strong>{formatText(payload.targetTitle, action.targetNoteId ? noteLabel(action.targetNoteId, noteTitles) : '待定')}</p>
+          <p><strong>来源笔记：</strong>{noteListLabel(action.noteIds, noteTitles)}</p>
         </div>
       )}
 
@@ -58,7 +59,7 @@ export default function OrganizerActionDiff({ action }: { action: OrganizerPropo
           {(action.type === 'move_note' || action.type === 'create_knowledge_base') && (
             <p><strong>知识库：</strong>{action.knowledgeBaseName || action.knowledgeBaseId || '新建知识库'}</p>
           )}
-          <p><strong>涉及笔记：</strong>{action.noteIds.join('、')}</p>
+          <p><strong>涉及笔记：</strong>{noteListLabel(action.noteIds, noteTitles)}</p>
         </div>
       )}
     </div>

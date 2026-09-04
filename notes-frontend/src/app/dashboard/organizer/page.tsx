@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import OrganizerProposalPanel from '@/components/organizer/OrganizerProposalPanel'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Button } from '@/components/ui/button'
@@ -9,6 +9,11 @@ import type { Note } from '@/types'
 import { notesAPI } from '@/lib/api/notes'
 import { organizerAPI } from '@/lib/api/organizer'
 import type { OrganizerProposalAction } from '@/components/organizer/organizer-types'
+import { noteLabel, noteListLabel, type NoteTitleMap } from '@/components/organizer/organizer-note-names'
+
+function apiErrorMessage(error: any, fallback: string) {
+  return String(error?.response?.data?.message || error?.message || fallback)
+}
 
 const ACTION_TYPE_LABELS: Record<OrganizerProposalAction['type'], string> = {
   create_knowledge_base: '创建知识库并归属笔记',
@@ -37,6 +42,10 @@ export default function OrganizerPage() {
   const [pendingUndoId, setPendingUndoId] = useState<string | null>(null)
   const [undoingExecutionId, setUndoingExecutionId] = useState('')
   const [undoConflicts, setUndoConflicts] = useState<Array<{ noteId: string; message: string }>>([])
+  const [noteTitles, setNoteTitles] = useState<NoteTitleMap>({})
+  const [executeError, setExecuteError] = useState('')
+  const [undoError, setUndoError] = useState('')
+  const fetchedTitleIdsRef = useRef<Set<string>>(new Set())
 
   const reload = useCallback(async () => {
     setLoading(true)
@@ -82,6 +91,26 @@ export default function OrganizerPage() {
     void loadNotes()
     void loadExecutions()
   }, [reload, loadNotes, loadExecutions])
+
+  // 提案里只有 noteId，额外按 ids 拉一次标题，界面上显示笔记名称而不是裸 ID。
+  useEffect(() => {
+    const wanted = new Set<string>()
+    proposals.forEach((proposal) => proposal.actions.forEach((action) => {
+      action.noteIds.forEach((id) => wanted.add(id))
+      if (action.targetNoteId) wanted.add(action.targetNoteId)
+      if (action.sourceNoteId) wanted.add(action.sourceNoteId)
+    }))
+    const missing = [...wanted].filter((id) => !noteTitles[id] && !fetchedTitleIdsRef.current.has(id))
+    if (missing.length === 0) return
+    missing.forEach((id) => fetchedTitleIdsRef.current.add(id))
+    notesAPI.getAll({ ids: missing, size: Math.max(100, missing.length) }).then((data) => {
+      setNoteTitles((current) => {
+        const next = { ...current }
+        data.items.forEach((note) => { next[note.id] = note.title || note.id })
+        return next
+      })
+    }).catch(() => undefined)
+  }, [proposals, noteTitles])
 
   const activeProposal = proposals.find((item) => item.id === activeProposalId)
 
@@ -169,13 +198,16 @@ export default function OrganizerPage() {
     if (!proposal || actionIds.length === 0) return
     setExecuting(true)
     setMessage('')
+    setExecuteError('')
     try {
       await organizerAPI.executeProposal(proposal.id, actionIds, `organizer-exec-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       setExecuteDialogOpen(false)
       setMessage('执行完成，可在 30 天内整批撤销')
       await Promise.all([loadExecutions(), reload()])
     } catch (error: any) {
-      setMessage(error?.message || '执行失败')
+      const errText = apiErrorMessage(error, '执行失败')
+      setExecuteError(`${errText}。请点击“刷新过期状态”后重试，或取消本次执行。`)
+      setMessage(errText)
     } finally {
       setExecuting(false)
     }
@@ -187,6 +219,7 @@ export default function OrganizerPage() {
     setUndoingExecutionId(id)
     setMessage('')
     setUndoConflicts([])
+    setUndoError('')
     try {
       const result = await organizerAPI.undoExecution(id, `organizer-undo-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
       if (result.ok) {
@@ -198,7 +231,9 @@ export default function OrganizerPage() {
       }
       await Promise.all([loadExecutions(), reload()])
     } catch (error: any) {
-      setMessage(error?.message || '撤销失败')
+      const errText = apiErrorMessage(error, '撤销失败')
+      setUndoError(errText)
+      setMessage(errText)
     } finally {
       setUndoingExecutionId('')
     }
@@ -358,7 +393,8 @@ export default function OrganizerPage() {
                 selectedActionIds={selectedActionIds}
                 onToggleAction={toggleAction}
                 onRenameKnowledgeBase={renameAction}
-                onExecute={() => setExecuteDialogOpen(true)}
+                noteTitles={noteTitles}
+                onExecute={() => { setExecuteError(''); setExecuteDialogOpen(true) }}
                 executing={executing}
               />
             ) : (
@@ -371,7 +407,7 @@ export default function OrganizerPage() {
         </div>
       )}
 
-      <Dialog open={executeDialogOpen} onOpenChange={(open) => { if (!open && !executing) setExecuteDialogOpen(false) }}>
+      <Dialog open={executeDialogOpen} onOpenChange={(open) => { if (!open && !executing) { setExecuteDialogOpen(false); setExecuteError('') } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>确认执行所选建议</DialogTitle>
@@ -387,15 +423,18 @@ export default function OrganizerPage() {
                 {selectedActions.map((action) => (
                   <li key={action.actionId} data-testid={`execute-scope-${action.actionId}`}>
                     <strong>{ACTION_TYPE_LABELS[action.type]}</strong>
-                    <span>涉及笔记：{action.noteIds.join('、') || '无'}</span>
-                    {action.targetNoteId ? <span>目标笔记：{action.targetNoteId}</span> : null}
+                    <span>涉及笔记：{noteListLabel(action.noteIds, noteTitles) || '无'}</span>
+                    {action.targetNoteId ? <span>目标笔记：{noteLabel(action.targetNoteId, noteTitles)}</span> : null}
                   </li>
                 ))}
               </ul>
             </div>
           )}
+          {executeError && (
+            <p className="organizer-execute-error" data-testid="execute-error" role="alert">{executeError}</p>
+          )}
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="outline" disabled={executing} onClick={() => setExecuteDialogOpen(false)}>取消</Button>
+            <Button variant="outline" disabled={executing} onClick={() => { setExecuteDialogOpen(false); setExecuteError('') }}>取消</Button>
             <Button disabled={executing || selectedActions.length === 0} onClick={() => void executeSelected()}>
               {executing ? '执行中...' : '确认执行'}
             </Button>
@@ -403,7 +442,7 @@ export default function OrganizerPage() {
         </DialogContent>
       </Dialog>
 
-      <Dialog open={Boolean(pendingUndoId)} onOpenChange={(open) => { if (!open && !undoingExecutionId) setPendingUndoId(null) }}>
+      <Dialog open={Boolean(pendingUndoId)} onOpenChange={(open) => { if (!open && !undoingExecutionId) { setPendingUndoId(null); setUndoError('') } }}>
         <DialogContent className="max-w-md">
           <DialogHeader>
             <DialogTitle>确认整批撤销</DialogTitle>
@@ -412,12 +451,15 @@ export default function OrganizerPage() {
           {undoConflicts.length > 0 && (
             <div className="organizer-conflict-list">
               {undoConflicts.map((conflict) => (
-                <p key={conflict.noteId} className="organizer-conflict-item">笔记 {conflict.noteId}：{conflict.message}</p>
+                <p key={conflict.noteId} className="organizer-conflict-item">笔记 {noteLabel(conflict.noteId, noteTitles)}：{conflict.message}</p>
               ))}
             </div>
           )}
+          {undoError && (
+            <p className="organizer-execute-error" data-testid="undo-error" role="alert">{undoError}</p>
+          )}
           <DialogFooter className="gap-2 sm:gap-2">
-            <Button variant="outline" disabled={Boolean(undoingExecutionId)} onClick={() => { setPendingUndoId(null); setUndoConflicts([]) }}>取消</Button>
+            <Button variant="outline" disabled={Boolean(undoingExecutionId)} onClick={() => { setPendingUndoId(null); setUndoConflicts([]); setUndoError('') }}>取消</Button>
             <Button disabled={Boolean(undoingExecutionId) || undoConflicts.length > 0} onClick={() => void undoExecution()}>
               {undoingExecutionId ? '撤销中...' : '确认撤销'}
             </Button>

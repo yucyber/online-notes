@@ -775,6 +775,16 @@ body { font-family: -apple-system, BlinkMacSystemFont, "PingFang SC", "Microsoft
   color: var(--product-text);
   font-weight: 650;
 }
+.organizer-execute-error {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--product-danger) 35%, var(--product-line));
+  border-radius: 8px;
+  background: var(--product-danger-soft);
+  color: var(--product-danger);
+  font-size: 12px;
+  line-height: 1.6;
+}
 
 .organizer-execution-history {
   margin-top: 18px;

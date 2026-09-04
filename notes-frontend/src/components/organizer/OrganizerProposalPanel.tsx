@@ -3,6 +3,7 @@
 import { useId } from 'react';
 import type { OrganizerProposal, OrganizerProposalAction } from './organizer-types';
 import OrganizerActionDiff from './OrganizerActionDiff';
+import type { NoteTitleMap } from './organizer-note-names';
 
 const ACTION_TYPE_LABELS: Record<OrganizerProposalAction['type'], string> = {
   create_knowledge_base: '创建知识库',
@@ -23,6 +24,7 @@ const PROPOSAL_STATUS_LABELS: Record<OrganizerProposal['status'], string> = {
 export interface OrganizerProposalPanelProps {
   proposal: OrganizerProposal;
   selectedActionIds?: string[];
+  noteTitles?: NoteTitleMap;
   onToggleAction?: (actionId: string, checked: boolean) => void;
   onRenameKnowledgeBase?: (actionId: string, name: string) => void;
   onRework?: (actionId: string) => void;
@@ -33,6 +35,7 @@ export interface OrganizerProposalPanelProps {
 export default function OrganizerProposalPanel({
   proposal,
   selectedActionIds = [],
+  noteTitles,
   onToggleAction,
   onRenameKnowledgeBase,
   onRework,
@@ -64,6 +67,7 @@ export default function OrganizerProposalPanel({
             key={action.actionId}
             action={action}
             checked={selected.has(action.actionId)}
+            noteTitles={noteTitles}
             onToggle={onToggleAction}
             onRename={onRenameKnowledgeBase}
             onRework={onRework}
@@ -97,12 +101,14 @@ export default function OrganizerProposalPanel({
 function OrganizerProposalActionRow({
   action,
   checked,
+  noteTitles,
   onToggle,
   onRename,
   onRework,
 }: {
   action: OrganizerProposalAction;
   checked: boolean;
+  noteTitles?: NoteTitleMap;
   onToggle?: (actionId: string, checked: boolean) => void;
   onRename?: (actionId: string, name: string) => void;
   onRework?: (actionId: string) => void;
@@ -134,7 +140,7 @@ function OrganizerProposalActionRow({
         {onRework && <button type="button" onClick={() => onRework(action.actionId)}>返工</button>}
       </div>
 
-      <OrganizerActionDiff action={action} />
+      <OrganizerActionDiff action={action} noteTitles={noteTitles} />
 
       {action.evidenceChunkIds.length > 0 && (
         <div className="organizer-evidence">
