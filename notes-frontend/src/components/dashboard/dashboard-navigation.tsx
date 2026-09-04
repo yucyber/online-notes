@@ -5,7 +5,7 @@ import type { User } from '@/types'
 import type { BreadcrumbOverride } from '@/hooks/useBreadcrumb'
 
 export const routeNames: Record<string, string> = {
-  dashboard: '工作台', notes: '我的笔记', 'knowledge-bases': '知识库', boards: '看板', mindmaps: '思维导图', tags: '标签管理', settings: '设置', new: '新建', edit: '编辑', categories: '分类管理', activity: '活动日志', notifications: '消息中心', versions: '版本记录',
+  dashboard: '工作台', notes: '我的笔记', 'knowledge-bases': '知识库', boards: '看板', mindmaps: '思维导图', tags: '标签管理', settings: '设置', new: '新建', edit: '编辑', categories: '分类管理', activity: '活动日志', notifications: '消息中心', versions: '版本记录', organizer: '整理提案',
 }
 
 type IconName = 'dashboard' | 'notes' | 'knowledge' | 'activity' | 'categories' | 'tags' | 'settings'
@@ -17,6 +17,7 @@ export const navGroups: Array<{ label: string; items: NavigationItem[] }> = [
     { label: '仪表盘', icon: 'dashboard', href: '/dashboard' },
     { label: '我的笔记', icon: 'notes', href: '/dashboard/notes' },
     { label: '知识库', icon: 'knowledge', href: '/dashboard/knowledge-bases' },
+    { label: '整理提案', icon: 'knowledge', href: '/dashboard/organizer' },
     { label: '活动日志', icon: 'activity', href: '/dashboard/activity' },
   ] },
   { label: '管理', items: [
