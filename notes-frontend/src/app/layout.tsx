@@ -5,6 +5,7 @@ import '@xyflow/react/dist/style.css'
 import '@/styles/editor-tokens.css'
 import RUMClient from '@/components/rum/RUMClient'
 import { AIProvider } from '@/context/AIContext'
+import { QueryProvider } from '@/lib/query-provider'
 import { AppToaster } from '@/components/ui/AppToaster'
 
 export const metadata = {
@@ -38,10 +39,12 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-screen antialiased bg-white">
-        <AIProvider>
-          {children}
-          <AppToaster />
-        </AIProvider>
+        <QueryProvider>
+          <AIProvider>
+            {children}
+            <AppToaster />
+          </AIProvider>
+        </QueryProvider>
         {/* RUM 注入：在全局布局挂载轻量 Web Vitals 采集 */}
         <RUMClient />
       </body>

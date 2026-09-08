@@ -1,6 +1,7 @@
 import React from 'react'
 import { act, render, fireEvent, screen, waitFor } from '@testing-library/react'
 import '@testing-library/jest-dom'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 
 jest.mock('next/navigation', () => {
   const params = new URLSearchParams('')
@@ -16,6 +17,11 @@ jest.mock('@/lib/api', () => {
     fetchNotes: jest.fn(async () => ({ items: [], page: 1, size: 20, total: 0 })),
     fetchCategories: jest.fn(async () => []),
     fetchTags: jest.fn(async () => []),
+    fetchNoteById: jest.fn(async () => ({})),
+    createNote: jest.fn(async () => ({ id: 'new-note', title: '', content: '', tags: [], createdAt: '', updatedAt: '', userId: '' })),
+    deleteNote: jest.fn(async () => {}),
+    notesAPI: { getAll: jest.fn(async () => ({ items: [], page: 1, size: 20, total: 0 })) },
+    semanticAPI: { search: jest.fn(async () => ({ data: [], page: 1, limit: 20, total: 0, totalPages: 0, hasNext: false })) },
     categoriesAPI: { getAll: jest.fn(async () => []) },
     tagsAPI: { getAll: jest.fn(async () => []) },
     savedFiltersAPI: {
@@ -95,7 +101,8 @@ describe('搜索→控制台联动', () => {
       writable: true,
     })
 
-    render(<NotesPage />)
+    const queryClient = new QueryClient({ defaultOptions: { queries: { retry: false } } })
+    render(<QueryClientProvider client={queryClient}><NotesPage /></QueryClientProvider>)
 
     await waitFor(() => {
       expect(results.length).toBeGreaterThan(0)

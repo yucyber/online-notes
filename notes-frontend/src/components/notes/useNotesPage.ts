@@ -1,51 +1,152 @@
 'use client'
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { usePathname, useRouter, useSearchParams } from 'next/navigation'
 import axios from 'axios'
 import { toast } from 'react-hot-toast'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Note, NoteFilterParams } from '@/types'
 import {
-  clearNotesCache,
   createNote,
   deleteNote,
   fetchCategories,
   fetchNoteById,
-  fetchNotes,
   fetchTags,
+  notesAPI,
+  semanticAPI,
 } from '@/lib/api'
 import { extractId, parseNotesPagination } from './notes-page-utils'
 import { buildNotesQueryParams } from './useNotesQuery'
 import { removeNoteById, toggleIdInSet } from './useNotesBulkActions'
-import { buildNotesCacheKey } from '@/lib/api/notes'
 import type { SemanticChunkHit } from '@/lib/api/semantic'
 
 export type NoteWithSearchEvidence = Note & {
   searchEvidence?: { bestChunk?: SemanticChunkHit; additionalChunkHits: number; additionalChunks: SemanticChunkHit[] }
 }
 
+type NotesPageData = { items: NoteWithSearchEvidence[]; total: number }
+
+type NotesSearchParams = {
+  get(name: string): string | null
+  getAll(name: string): string[]
+  toString(): string
+}
+
+const readSearchId = () => {
+  try {
+    return sessionStorage.getItem('lastSearchId') || undefined
+  } catch {
+    return undefined
+  }
+}
+
+const isAbortError = (err: unknown, signal?: AbortSignal): boolean => {
+  if (signal?.aborted) return true
+  const e = err as { message?: string; code?: string; name?: string; __CANCEL__?: boolean }
+  const message = String(e?.message || '').toLowerCase()
+  const code = String(e?.code || '')
+  const name = String(e?.name || '')
+  return (
+    message.includes('aborted') ||
+    message.includes('abort') ||
+    message.includes('cancel') ||
+    code === 'ERR_CANCELED' ||
+    name === 'AbortError' ||
+    name === 'CanceledError' ||
+    Boolean(e?.__CANCEL__)
+  )
+}
+
+function dispatchLoadResult(input: { ok: boolean; query: string; total?: number; error?: string }) {
+  try {
+    performance.mark('ConsoleListLoad:end')
+    performance.measure('ConsoleListLoad', 'ConsoleListLoad:start', 'ConsoleListLoad:end')
+    const entry = performance.getEntriesByName('ConsoleListLoad').pop()
+    const duration = entry?.duration
+    const searchId = readSearchId()
+    document.dispatchEvent(
+      new CustomEvent('search:result', {
+        detail: {
+          searchId,
+          ok: input.ok,
+          count: input.ok ? Number(input.total || 0) : undefined,
+          error: input.ok ? undefined : input.error,
+          duration,
+          query: input.query,
+          time: new Date().toISOString(),
+        },
+      }),
+    )
+    document.dispatchEvent(
+      new CustomEvent('rum', {
+        detail: {
+          type: 'ui:search_results',
+          name: input.ok ? 'SearchResults' : 'SearchResultsError',
+          value: duration,
+          meta: input.ok ? { searchId, count: Number(input.total || 0) } : { searchId },
+        },
+      }),
+    )
+  } catch {}
+}
+
+async function loadNotesPageData(input: { sp: NotesSearchParams; page: number; size: number; signal?: AbortSignal }): Promise<NotesPageData> {
+  const { sp, page, size, signal } = input
+  const params: NoteFilterParams = buildNotesQueryParams(sp)
+  const isNlq = sp.get('nlq') === '1'
+
+  if (isNlq && (params.keyword || '')) {
+    const mode = (sp.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid'
+    const nlqResp = await semanticAPI.search(params.keyword!, {
+      mode,
+      page,
+      limit: size,
+      categoryId: params.categoryId,
+      tagIds: params.tagIds,
+    })
+    const mapped = (nlqResp.data || []).map((it: any) => ({
+      id: String(it.id || it._id || `nlq-${String(it.title || '')}-${String(it.updatedAt || '')}`),
+      title: String(it.title || ''),
+      content: String(it.preview || ''),
+      updatedAt: String(it.updatedAt || ''),
+      tags: [],
+      status: 'published' as const,
+      searchEvidence: {
+        bestChunk: it.bestChunk,
+        additionalChunkHits: Number(it.additionalChunkHits || 0),
+        additionalChunks: Array.isArray(it.additionalChunks) ? it.additionalChunks : [],
+      },
+    })) as unknown as NoteWithSearchEvidence[]
+    const seen = new Set<string>()
+    const unique = mapped.filter((note) => {
+      const key = String(note.id || `nlq-${String(note.title || '')}-${String(note.updatedAt || '')}`)
+      if (seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+    return { items: unique, total: Number(nlqResp.total || 0) }
+  }
+
+  const notesResp = await notesAPI.getAll({ ...params, page, size }, signal)
+  const items = Array.isArray(notesResp.items) ? notesResp.items as NoteWithSearchEvidence[] : []
+  return { items, total: Number(notesResp.total || items.length || 0) }
+}
+
 export function useNotesPage() {
   const searchParams = useSearchParams()
   const pathname = usePathname()
   const router = useRouter()
+  const queryClient = useQueryClient()
   const selectionKnowledgeBaseId = searchParams.get('select') === 'knowledge-base'
     ? searchParams.get('knowledgeBaseId') || ''
     : ''
-  const [notes, setNotes] = useState<NoteWithSearchEvidence[]>([])
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
   const [fallbackMsg, setFallbackMsg] = useState('')
+  const [actionError, setActionError] = useState('')
   const [isCreateHovered, setIsCreateHovered] = useState(false)
-  const [categoryMap, setCategoryMap] = useState<Record<string, string>>({})
-  const [tagMap, setTagMap] = useState<Record<string, string>>({})
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null)
   const initialPagination = parseNotesPagination(searchParams)
   const [page, setPage] = useState(initialPagination.page)
   const [size, setSize] = useState(initialPagination.size)
-  const [total, setTotal] = useState(0)
-  // 保存最新 total 供加载 effect 派发事件时读取，避免把 total 加入 deps 触发重复请求
-  const totalRef = useRef(total)
-  totalRef.current = total
   const [isSelectionMode, setIsSelectionMode] = useState(() => Boolean(selectionKnowledgeBaseId))
   const [selectedNoteIds, setSelectedNoteIds] = useState<Set<string>>(new Set())
   const [showSummaryDialog, setShowSummaryDialog] = useState(false)
@@ -58,199 +159,64 @@ export function useNotesPage() {
     setSize((current) => current === next.size ? current : next.size)
   }, [searchParams])
 
-  useEffect(() => {
-    // 每次筛选条件变化产生新的 AbortController；前一次未完成的请求被取消，防止慢响应覆盖最新结果。
-    const controller = new AbortController()
-    let aborted = false
-    controller.signal.addEventListener('abort', () => {
-      aborted = true
-    })
+  const isNlq = searchParams.get('nlq') === '1'
+  const notesQueryKey = ['notes', isNlq ? 'semantic' : 'list', { query: searchParams.toString(), page, size }] as const
 
-    const loadNotesFast = async () => {
+  const notesQuery = useQuery({
+    queryKey: notesQueryKey,
+    queryFn: async ({ signal }) => {
       try {
-        setLoading(true)
-        try {
-          performance.mark('ConsoleListLoad:start')
-        } catch {}
-
-        const sp = searchParams
-        const isNlq = sp.get('nlq') === '1'
-        const params: NoteFilterParams = buildNotesQueryParams(sp)
-
-        if (isNlq && (params.keyword || '')) {
-          const mode = (sp.get('mode') as 'keyword' | 'vector' | 'hybrid') || 'hybrid'
-          const nlqResp = await (await import('@/lib/api')).semanticSearchCached(params.keyword!, {
-            mode,
-            page,
-            limit: size,
-            categoryId: params.categoryId,
-            tagIds: params.tagIds,
-          })
-          const items = nlqResp.data || []
-          const mapped = items.map((it: any) => ({
-            id: it.id || it._id || `nlq-${String(it.title || '')}-${String(it.updatedAt || '')}`,
-            title: it.title,
-            content: it.preview,
-            updatedAt: it.updatedAt,
-            tags: [],
-            status: 'published',
-            searchEvidence: {
-              bestChunk: it.bestChunk,
-              additionalChunkHits: Number(it.additionalChunkHits || 0),
-              additionalChunks: Array.isArray(it.additionalChunks) ? it.additionalChunks : [],
-            },
-          })) as any
-          const seen = new Set<string>()
-          const unique = mapped.filter((n: any) => {
-            const k = String(n.id || `nlq-${String(n.title || '')}-${String(n.updatedAt || '')}`)
-            if (seen.has(k)) return false
-            seen.add(k)
-            return true
-          })
-          setNotes(unique)
-          setTotal(Number(nlqResp.total || 0))
-        } else {
-          const notesResp = await fetchNotes({ ...params, page, size }, controller.signal)
-          const items = Array.isArray(notesResp.items) ? notesResp.items : []
-          setNotes(items)
-          setTotal(Number(notesResp.total || items.length || 0))
-        }
-
-        setError('')
+        performance.mark('ConsoleListLoad:start')
+      } catch {}
+      try {
+        const data = await loadNotesPageData({ sp: searchParams, page, size, signal })
         setFallbackMsg('')
-        setLoading(false)
-
-        try {
-          performance.mark('ConsoleListLoad:end')
-          performance.measure('ConsoleListLoad', 'ConsoleListLoad:start', 'ConsoleListLoad:end')
-          const entry = performance.getEntriesByName('ConsoleListLoad').pop()
-          const duration = entry?.duration
-          const sid = (() => {
-            try {
-              return sessionStorage.getItem('lastSearchId') || undefined
-            } catch {
-              return undefined
-            }
-          })()
-          const nextQuery = sp.toString()
-          document.dispatchEvent(
-            new CustomEvent('search:result', {
-              detail: {
-                searchId: sid,
-                ok: true,
-                count: Number(totalRef.current || 0),
-                duration,
-                query: nextQuery,
-                time: new Date().toISOString(),
-              },
-            }),
-          )
-          document.dispatchEvent(
-            new CustomEvent('rum', {
-              detail: {
-                type: 'ui:search_results',
-                name: 'SearchResults',
-                value: duration,
-                meta: { searchId: sid, count: Number(totalRef.current || 0) },
-              },
-            }),
-          )
-        } catch {}
-
-        fetchCategories(controller.signal)
-          .then((categoriesData) => {
-            const mappedCategories = (categoriesData || []).reduce<Record<string, string>>((acc, category) => {
-              const categoryId = extractId(category)
-              if (categoryId) acc[categoryId] = category.name
-              return acc
-            }, {})
-            setCategoryMap(mappedCategories)
-          })
-          .catch(() => void 0)
-
-        fetchTags(controller.signal)
-          .then((tagsData) => {
-            const mappedTags = (tagsData || []).reduce<Record<string, string>>((acc, tag) => {
-              const tagId = extractId(tag)
-              if (tagId) acc[tagId] = tag.name
-              return acc
-            }, {})
-            setTagMap(mappedTags)
-          })
-          .catch(() => void 0)
-      } catch (err: any) {
-        if (aborted || controller.signal.aborted) return
-
-        const message = String(err?.message || '')
-        const code = String(err?.code || '')
-        const name = String(err?.name || '')
-        const isCanceled = Boolean(err?.__CANCEL__)
-        const lower = message.toLowerCase()
-
-        if (
-          lower.includes('err_aborted') ||
-          lower.includes('aborted') ||
-          lower.includes('abort') ||
-          lower.includes('cancel') ||
-          code === 'ERR_CANCELED' ||
-          name === 'AbortError' ||
-          name === 'CanceledError' ||
-          isCanceled
-        ) {
-          return
+        dispatchLoadResult({ ok: true, total: data.total, query: searchParams.toString() })
+        return data
+      } catch (err) {
+        if (!isAbortError(err, signal)) {
+          dispatchLoadResult({ ok: false, query: searchParams.toString(), error: String((err as any)?.message || 'error') })
         }
-
-        if (axios.isAxiosError(err)) {
-          const status = err.response?.status
-          if (!status && err.code !== 'ECONNABORTED') return
-        }
-
-        setError('加载笔记失败，请重试')
-        console.error('Failed to load notes:', err)
-        setLoading(false)
-
-        try {
-          performance.mark('ConsoleListLoad:end')
-          performance.measure('ConsoleListLoad', 'ConsoleListLoad:start', 'ConsoleListLoad:end')
-          const entry = performance.getEntriesByName('ConsoleListLoad').pop()
-          const duration = entry?.duration
-          const sid = (() => {
-            try {
-              return sessionStorage.getItem('lastSearchId') || undefined
-            } catch {
-              return undefined
-            }
-          })()
-          const nextQuery = searchParams.toString()
-          document.dispatchEvent(
-            new CustomEvent('search:result', {
-              detail: {
-                searchId: sid,
-                ok: false,
-                error: String(err?.message || 'error'),
-                duration,
-                query: nextQuery,
-                time: new Date().toISOString(),
-              },
-            }),
-          )
-          document.dispatchEvent(
-            new CustomEvent('rum', {
-              detail: {
-                type: 'ui:search_results',
-                name: 'SearchResultsError',
-                value: duration,
-                meta: { searchId: sid },
-              },
-            }),
-          )
-        } catch {}
+        throw err
       }
-    }
+    },
+    staleTime: 10_000,
+    retry: false,
+  })
 
-    void loadNotesFast()
-    return () => controller.abort()
-  }, [page, size, searchParams, pathname])
+  const categoriesQuery = useQuery({
+    queryKey: ['taxonomy', 'categories'],
+    queryFn: () => fetchCategories(),
+    staleTime: 30_000,
+    retry: false,
+  })
+  const tagsQuery = useQuery({
+    queryKey: ['taxonomy', 'tags'],
+    queryFn: () => fetchTags(),
+    staleTime: 30_000,
+    retry: false,
+  })
+
+  const categoryMap = useMemo(() => {
+    return (categoriesQuery.data || []).reduce<Record<string, string>>((acc, category) => {
+      const categoryId = extractId(category)
+      if (categoryId) acc[categoryId] = category.name
+      return acc
+    }, {})
+  }, [categoriesQuery.data])
+
+  const tagMap = useMemo(() => {
+    return (tagsQuery.data || []).reduce<Record<string, string>>((acc, tag) => {
+      const tagId = extractId(tag)
+      if (tagId) acc[tagId] = tag.name
+      return acc
+    }, {})
+  }, [tagsQuery.data])
+
+  const notes = notesQuery.data?.items ?? []
+  const total = notesQuery.data?.total ?? 0
+  const loading = notesQuery.isPending
+  const error = actionError || (notesQuery.isError ? '加载笔记失败，请重试' : '')
 
   useEffect(() => {
     let last = 0
@@ -273,21 +239,6 @@ export function useNotesPage() {
     }
     const onFocus = () => tryRefresh('focus')
     const onOnline = () => tryRefresh('online')
-    const onRevalidated = (e: Event) => {
-      try {
-        const detail = (e as CustomEvent).detail || {}
-        const currentKey = buildNotesCacheKey({
-          ...buildNotesQueryParams(searchParams),
-          page,
-          size,
-        })
-        if (detail.key === currentKey && detail.payload) {
-          const items = Array.isArray(detail.payload.items) ? detail.payload.items : []
-          setNotes(items)
-          setTotal(Number(detail.payload.total || items.length || 0))
-        }
-      } catch {}
-    }
     const onFallback = () => {
       try {
         setFallbackMsg('语义检索接口不可用，已回退关键词模式')
@@ -299,7 +250,6 @@ export function useNotesPage() {
       window.addEventListener('focus', onFocus)
       window.addEventListener('online', onOnline)
     }
-    document.addEventListener('search:revalidated', onRevalidated)
     document.addEventListener('search:fallback', onFallback)
 
     return () => {
@@ -308,10 +258,9 @@ export function useNotesPage() {
         window.removeEventListener('focus', onFocus)
         window.removeEventListener('online', onOnline)
       }
-      document.removeEventListener('search:revalidated', onRevalidated)
       document.removeEventListener('search:fallback', onFallback)
     }
-  }, [page, router, searchParams, size])
+  }, [router])
 
   const toggleSelectionMode = () => {
     setIsSelectionMode((prev) => !prev)
@@ -359,15 +308,11 @@ export function useNotesPage() {
 
       toast.success('摘要已保存为新笔记')
       setShowSummaryDialog(false)
-      clearNotesCache()
-      setNotes((prev) => [newNote, ...prev])
-      setTotal((prev) => prev + 1)
+      queryClient.setQueryData<NotesPageData>(notesQueryKey, (old) => old
+        ? { items: [newNote as NoteWithSearchEvidence, ...old.items], total: old.total + 1 }
+        : old)
+      void queryClient.invalidateQueries({ queryKey: ['notes'] })
       router.refresh()
-      document.dispatchEvent(
-        new CustomEvent('search:revalidated', {
-          detail: { key: `notes:${searchParams.toString()}`, payload: null },
-        }),
-      )
     } catch (saveError) {
       console.error('保存笔记失败:', saveError)
       toast.error('保存失败，内容已复制到剪贴板')
@@ -377,9 +322,12 @@ export function useNotesPage() {
   const handleDelete = async (id: string) => {
     try {
       await deleteNote(id)
-      setNotes((prev) => removeNoteById(prev, id))
+      queryClient.setQueryData<NotesPageData>(notesQueryKey, (old) => old
+        ? { ...old, items: removeNoteById(old.items, id), total: Math.max(0, old.total - 1) }
+        : old)
+      void queryClient.invalidateQueries({ queryKey: ['notes'] })
     } catch (err) {
-      setError('删除失败，请重试')
+      setActionError('删除失败，请重试')
       console.error('Failed to delete note:', err)
     } finally {
       setPendingDeleteId(null)
@@ -416,7 +364,7 @@ export function useNotesPage() {
   }
 
   const clearError = () => {
-    setError('')
+    setActionError('')
     router.refresh()
   }
 

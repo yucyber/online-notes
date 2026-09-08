@@ -16,6 +16,10 @@ export const clearNotesCache = () => {
     }
     keys.forEach(k => sessionStorage.removeItem(k))
   } catch { }
+  try {
+    // RQ 迁移期间的桥：写操作仍走 notesAPI，广播事件让 QueryProvider 统一 invalidate 笔记 RQ 缓存。
+    if (typeof document !== 'undefined') document.dispatchEvent(new CustomEvent('notes:cache-cleared'))
+  } catch { }
 }
 export const buildNotesCacheKey = (params?: any) => {
   const sp = new URLSearchParams()
