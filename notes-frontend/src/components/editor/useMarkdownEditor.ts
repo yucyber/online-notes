@@ -3,6 +3,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { getDraft, putDraft, removeDraft } from '@/lib/draftStore'
 
+// 超过该长度的草稿直接存 IndexedDB，避免先写入 localStorage 再因超限降级、占用站点配额。
+const LARGE_DRAFT_THRESHOLD = 100 * 1024
+
 type Props = {
   initialContent: string
   initialTitle: string
@@ -49,9 +52,16 @@ export function useMarkdownEditor({ initialContent, initialTitle, onSave, isNew,
     if (localSaveTimerRef.current) clearTimeout(localSaveTimerRef.current)
     localSaveTimerRef.current = setTimeout(() => {
       const payload = { title, content, updatedAt: Date.now() }
-      try { localStorage.setItem(storageKey, JSON.stringify(payload)) }
-      // localStorage 失败（容量或隐私模式）时降级到 IndexedDB；两者都失败则草稿丢失但不中断编辑。
-      catch (error) { console.warn('保存本地草稿到 localStorage 失败，将尝试 IndexedDB 兜底', error); putDraft({ key: storageKey, ...payload }).catch((idbError) => console.warn('保存本地草稿到 IndexedDB 也失败', idbError)); try { localStorage.removeItem(storageKey) } catch {} }
+      const serialized = JSON.stringify(payload)
+      if (serialized.length > LARGE_DRAFT_THRESHOLD) {
+        // 超长草稿从源头分流到 IndexedDB；同时清掉旧的 localStorage 副本，避免读取时被旧短稿覆盖。
+        try { localStorage.removeItem(storageKey) } catch {}
+        putDraft({ key: storageKey, ...payload }).catch((idbError) => console.warn('保存本地草稿到 IndexedDB 失败', idbError))
+      } else {
+        try { localStorage.setItem(storageKey, serialized) }
+        // localStorage 失败（容量或隐私模式）时降级到 IndexedDB；两者都失败则草稿丢失但不中断编辑。
+        catch (error) { console.warn('保存本地草稿到 localStorage 失败，将尝试 IndexedDB 兜底', error); putDraft({ key: storageKey, ...payload }).catch((idbError) => console.warn('保存本地草稿到 IndexedDB 也失败', idbError)); try { localStorage.removeItem(storageKey) } catch {} }
+      }
     }, 1000)
     return () => { if (localSaveTimerRef.current) clearTimeout(localSaveTimerRef.current) }
   }, [title, content, storageKey])
