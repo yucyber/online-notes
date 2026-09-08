@@ -62,7 +62,8 @@ export class NoteChunkIndexService {
         ].filter(Boolean).join('\n')
         embedding = await this.embeddingService.generateEmbedding(source)
         if (!embedding?.length) {
-          return { total: built.length, reused, embedded, removed: 0, failed: 1, stale: false }
+          // embedding 生成失败必须抛错：吞成返回值会让 Bull 视为成功，attempts 重试永不触发，chunk 永久缺失。
+          throw new Error(`embedding generation failed for chunk ${chunk.chunkIndex} of note ${snapshot.noteId}`)
         }
         embedded++
       }

@@ -95,17 +95,16 @@ test('正常流程：检索一轮后模型停止调用，证据按分数排序�
   assert.equal(gateway.chatToolRoundCalls[0].messages[0].role, 'system')
 })
 
-test('最大轮数护栏：模型持续调用工具时 4 轮强制收敛并给出警告', async () => {
+test('最大轮数护栏：模型持续调用工具时 3 轮强制收敛并给出警告', async () => {
   const gateway = makeGateway([
     { toolCalls: [{ id: 't1', name: 'search_vector', arguments: '{"query":"a"}' }] },
     { toolCalls: [{ id: 't2', name: 'search_keyword', arguments: '{"query":"b"}' }] },
     { toolCalls: [{ id: 't3', name: 'expand_graph', arguments: '{}' }] },
-    { toolCalls: [{ id: 't4', name: 'get_note_chunk', arguments: '{"id":"E1"}' }] },
   ])
   const service = makeService(gateway)
   const result = await service.collect({ question: '问题', userId: 'u1' }, noHooks)
 
-  assert.equal(result.rounds, 4)
+  assert.equal(result.rounds, 3)
   assert.ok(result.warnings.includes('已达最大检索轮数，使用已收集证据作答'))
   assert.ok(result.planSummary.tools.includes('graph_expand'))
 })

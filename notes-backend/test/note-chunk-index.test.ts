@@ -81,7 +81,7 @@ test('只为变化的 Chunk 生成 embedding 并替换失效位置', async () =>
   assert.equal(bulkOperations.length, 2)
 })
 
-test('任一 embedding 失败时保留上一版 Chunk', async () => {
+test('任一 embedding 失败时抛错保留上一版 Chunk 并触发重试', async () => {
   let bulkCalls = 0
   const service = new NoteChunkIndexService(
     { find: () => queryResult([]), bulkWrite: async () => { bulkCalls++ } } as any,
@@ -90,11 +90,13 @@ test('任一 embedding 失败时保留上一版 Chunk', async () => {
     { generateEmbedding: async () => [] } as any,
   )
 
-  const result = await service.refreshNoteChunks({
-    noteId: '66c1c0e0a1b2c3d4e5f6a7b8', userId: '66c1c0e0a1b2c3d4e5f6a7c9', title: 'Title', content: 'body', expectedUpdatedAt: updatedAt,
-  })
-
-  assert.equal(result.failed, 1)
+  // 新语义：embedding 失败抛错触发 Bull attempts 重试（吞成返回值会让任务被误标成功，chunk 永久缺失）
+  await assert.rejects(
+    () => service.refreshNoteChunks({
+      noteId: '66c1c0e0a1b2c3d4e5f6a7b8', userId: '66c1c0e0a1b2c3d4e5f6a7c9', title: 'Title', content: 'body', expectedUpdatedAt: updatedAt,
+    }),
+    /embedding generation failed/,
+  )
   assert.equal(bulkCalls, 0)
 })
 

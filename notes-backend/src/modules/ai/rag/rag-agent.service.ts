@@ -9,7 +9,7 @@ import { RagEvidence, RagPlanSummary, RagTool } from './rag.types'
 
 // —— loop 护栏 ——
 // 最大轮数与输入字符预算双重兜底：轮数防死循环，字符预算防 tool 结果滚雪球撑爆上下文。
-const MAX_ROUNDS = 4
+const MAX_ROUNDS = 3
 const MAX_INPUT_CHARS = 60_000 // 约 15k token，超出后强制收敛进入作答
 const MAX_EVIDENCE = 12        // 注册表容量；最终作答取分数前 10（与固定管线一致）
 const FINAL_EVIDENCE_LIMIT = 10
@@ -34,10 +34,13 @@ export type RagAgentHooks = {
 const AGENT_SYSTEM = [
   '你是笔记检索代理，只负责为用户问题收集证据，不负责回答。',
   '规则：',
-  '- 必须先调用检索工具；证据通常 3-8 条足够，够了就停止调用工具',
+  '- 必须先调用检索工具；证据通常 3-8 条足够',
+  '- 单一主题的问题：1 次检索即够，最多再换 1 次关键词，然后必须停止',
+  '- 多主题问题（如"A 和 B 分别是什么"）：每个主题各检索 1 次即可',
+  '- 证据足够后立即停止：不再调用任何工具，直接回复"检索完成"',
   '- 语义相近找内容用 search_vector；找特定词语/标题用 search_keyword；需要关联扩展用 expand_graph；要看某条证据全文用 get_note_chunk',
   '- 检索结果里 evidence 数组的 id（E1、E2…）是证据编号',
-  '- 最多 4 轮，禁止重复同样的查询',
+  '- 最多 3 轮，禁止重复同样的查询',
 ].join('\n')
 
 const TOOL_DEFINITIONS: AiToolDefinition[] = [
