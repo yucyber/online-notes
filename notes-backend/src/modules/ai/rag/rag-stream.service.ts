@@ -1,6 +1,7 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { AiGatewayClient } from '../ai-gateway.client'
-import { RagCitation, RagPlanSummary } from './rag.types'
+import { RagCitation, RagEvidence, RagPlanSummary } from './rag.types'
+import { RagAgentService } from './rag-agent.service'
 import { QueryPlannerService } from './query-planner.service'
 import { RagRetrievalService } from './rag-retrieval.service'
 import { createRagCitationSanitizer, createMemoryCitationSanitizer, MemoryCitation } from './rag-citation-sanitize'
@@ -17,20 +18,46 @@ const MEMORY_EVIDENCE_SEPARATION = 'Cite confirmed user memories using only [M1]
 
 @Injectable()
 export class RagStreamService {
-  constructor(private readonly planner: QueryPlannerService, private readonly retrieval: RagRetrievalService, private readonly gateway: AiGatewayClient) {}
+  private readonly logger = new Logger(RagStreamService.name)
+
+  constructor(private readonly planner: QueryPlannerService, private readonly retrieval: RagRetrievalService, private readonly gateway: AiGatewayClient, private readonly agent: RagAgentService) {}
 
   async streamRagAnswer(input: { question: string; knowledgeBaseId?: string; userId: string; memoryRecall?: MemoryRecallServiceLike }, hooks: RagStreamHooks): Promise<{ route: 'rag'; citations: RagCitation[]; memoryCitations: MemoryCitation[]; warnings: string[]; planSummary: RagPlanSummary; runId?: string }> {
     const { question, knowledgeBaseId, userId, memoryRecall } = input
-    await hooks.onStatus('retrieving', '正在检索笔记')
-    const plan = await this.planner.plan(question)
-    const result = await this.retrieval.retrieve(question, userId, knowledgeBaseId, plan)
-    if (result.evidence.length === 0) {
-      await hooks.onStatus('answering', '未找到相关片段')
-      return { route: 'rag', citations: [], memoryCitations: [], warnings: [...result.warnings, '未找到足够笔记证据'], planSummary: { ...plan, rerankApplied: result.rerankApplied } }
+
+    // 检索阶段：优先 agent loop（模型自主决定查什么、查几轮），任何异常降级回固定管线。
+    // 取消（CANCELLED）不是故障，直接向外传播，不能触发降级重查。
+    let allowed: RagEvidence[]
+    let planSummary: RagPlanSummary
+    let warnings: string[]
+    let runId: string | undefined
+    try {
+      const agent = await this.agent.collect(
+        { question, userId, knowledgeBaseId },
+        { onStatus: async (message) => { await hooks.onStatus('retrieving', message) } },
+      )
+      allowed = agent.evidence
+      planSummary = agent.planSummary
+      warnings = agent.warnings
+      runId = agent.runId
+    } catch (error) {
+      if ((error as any)?.message === 'CANCELLED') throw error
+      this.logger.warn(`agent 检索失败，降级固定管线: ${error?.message ?? error}`)
+      await hooks.onStatus('retrieving', '正在检索笔记')
+      const plan = await this.planner.plan(question)
+      const result = await this.retrieval.retrieve(question, userId, knowledgeBaseId, plan)
+      allowed = result.evidence
+      planSummary = { ...plan, rerankApplied: result.rerankApplied }
+      warnings = result.warnings
     }
-    await hooks.onStatus('answering', `已找到 ${result.evidence.length} 个相关片段`)
-    const allowed = result.evidence
-    const options = buildRagAnswerTaskOptions({ question, allowed, plan, userId })
+
+    if (allowed.length === 0) {
+      await hooks.onStatus('answering', '未找到相关片段')
+      return { route: 'rag', citations: [], memoryCitations: [], warnings: [...warnings, '未找到足够笔记证据'], planSummary, runId }
+    }
+    await hooks.onStatus('answering', `已找到 ${allowed.length} 个相关片段`)
+    // agent 路径没有 RagPlan；作答的 reasoningMode 由任务策略强制，这里补齐 plan 形状即可复用同一模板。
+    const options = buildRagAnswerTaskOptions({ question, allowed, plan: { ...planSummary, reasoningMode: 'off' }, userId, runId })
 
     // 认知召回属增强上下文：recall 异常降级为空认知节，不阻断笔记回答（与上下文组装失败降级同一惯例）。
     let recalled: Array<{ label: string; text: string }> = []
@@ -74,9 +101,9 @@ export class RagStreamService {
       if (safe + tail) await hooks.onDelta(safe + tail)
     }
     const memoryCitations = memorySanitizer ? memorySanitizer.memoryCitations : []
-    const warnings = [...result.warnings]
+    // 引用类告警并入检索阶段 warnings（来自 agent loop 或降级管线）
     if (sanitizer.invalidReferenceFound || memorySanitizer?.invalidReferenceFound) warnings.push('已忽略无效引用')
     if (sanitizer.citations.length === 0 && memoryCitations.length === 0) warnings.push('回答未附带可验证引用')
-    return { route: 'rag', citations: sanitizer.citations, memoryCitations, warnings, planSummary: { ...plan, rerankApplied: result.rerankApplied } }
+    return { route: 'rag', citations: sanitizer.citations, memoryCitations, warnings, planSummary, runId }
   }
 }

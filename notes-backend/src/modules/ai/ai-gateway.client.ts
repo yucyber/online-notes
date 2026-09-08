@@ -10,6 +10,8 @@ import {
   AiRerankResult,
   AiTask,
   AiTaskResult,
+  AiToolCall,
+  AiToolRoundResult,
 } from './ai-gateway.types'
 import { resolveAiModelPolicy } from './ai-model-policy'
 import { buildProviderOptions } from './ai-provider-adapter'
@@ -95,6 +97,43 @@ export class AiGatewayClient {
       if (!this.shouldUseSummaryProviderFallback(options, provider, error)) throw error
       return this.chatWithProvider(options, this.resolveSummaryProviderFallback())
     }
+  }
+
+  // agent loop 的单轮非流式 tool calling 请求：返回正文与模型发起的 tool_calls。
+  // 走任务级模型路由（与 chatTask 同款策略），容量/重试复用 postJson 链路；
+  // 不做任务级输出校验——tool 轮次 content 为空是正常态，run 级观测由 loop 调用方负责。
+  async chatToolRound(options: AiChatOptions & { task: AiTask }): Promise<AiToolRoundResult> {
+    if (!options.tools?.length) throw new Error('chatToolRound requires tools')
+    const policy = this.resolveActiveTaskPolicy(options.task)
+    const provider = this.resolveModelTarget(policy.primary)
+    const response = await this.postJson(
+      this.endpoint(provider.baseUrl, '/chat/completions'),
+      provider.apiKey,
+      this.chatBody(provider, {
+        ...options,
+        reasoningMode: options.reasoningMode ?? policy.reasoningMode,
+        maxTokens: options.maxTokens ?? policy.maxTokens,
+      }, { stream: false }),
+      `${provider.provider} tool round`,
+      provider.provider as AiCapacityProvider,
+    )
+    const data = (response as any).__aiParsedBody ?? await response.json().catch(() => ({}))
+    const message = data.choices?.[0]?.message
+    return {
+      content: String(message?.content || ''),
+      toolCalls: this.extractToolCalls(message),
+      finishReason: data.choices?.[0]?.finish_reason,
+    }
+  }
+
+  // 提取 OpenAI 兼容的 tool_calls；缺 id/name 的畸形条目直接丢弃，交给 loop 以错误结果回填让模型自纠。
+  private extractToolCalls(message: any): AiToolCall[] {
+    if (!Array.isArray(message?.tool_calls)) return []
+    return message.tool_calls.flatMap((call: any) => {
+      const name = String(call?.function?.name || '')
+      if (!name) return []
+      return [{ id: String(call?.id || ''), name, arguments: String(call?.function?.arguments ?? '{}') }]
+    })
   }
 
   private async chatWithProvider(options: AiChatOptions, provider: AiProviderConfig): Promise<string> {
@@ -728,10 +767,33 @@ export class AiGatewayClient {
     return { provider, apiKey, baseUrl, model }
   }
 
-  private buildMessages(options: AiChatOptions) {
+  // 多轮消息转 OpenAI 线格式：assistant 的 toolCalls 展开为 tool_calls 数组，tool 结果带 tool_call_id 回填。
+  private buildMessages(options: AiChatOptions): Array<Record<string, any>> {
+    if (options.messages?.length) {
+      return options.messages.map((message) => {
+        if (message.role === 'assistant') {
+          return {
+            role: 'assistant',
+            content: message.content,
+            ...(message.toolCalls?.length ? {
+              tool_calls: message.toolCalls.map((call) => ({
+                id: call.id,
+                type: 'function' as const,
+                function: { name: call.name, arguments: call.arguments },
+              })),
+            } : {}),
+          }
+        }
+        if (message.role === 'tool') {
+          return { role: 'tool', tool_call_id: message.toolCallId, content: message.content }
+        }
+        return { role: message.role, content: message.content }
+      })
+    }
+    if (!options.prompt && !options.system) throw new Error('AiChatOptions requires prompt or messages')
     const messages: Array<{ role: 'system' | 'user'; content: string }> = []
     if (options.system) messages.push({ role: 'system', content: options.system })
-    messages.push({ role: 'user', content: options.prompt })
+    messages.push({ role: 'user', content: options.prompt || '' })
     return messages
   }
 
@@ -744,6 +806,11 @@ export class AiGatewayClient {
       stream: extra.stream || undefined,
     }
     if (options.responseFormat) body.response_format = options.responseFormat
+    // 原生 tool calling：交给模型自主决定是否调用；tools 与 response_format 不同时下发的限制由调用方规避。
+    if (options.tools?.length) {
+      body.tools = options.tools
+      body.tool_choice = 'auto'
+    }
     const reasoningMode = options.reasoningMode || (options.reasoningEffort === 'none' ? 'off' : 'auto')
     Object.assign(body, buildProviderOptions({ provider: provider.provider, model: provider.model, reasoningMode }))
     return body

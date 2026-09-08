@@ -40,12 +40,43 @@ export type AiWorkflowAudit = {
   runId?: string
 }
 
+// OpenAI 兼容的 function calling 工具定义，原样透传给 provider。
+export interface AiToolDefinition {
+  type: 'function'
+  function: {
+    name: string
+    description: string
+    parameters: Record<string, any>
+  }
+}
+
+// 模型发起的一次 tool call；arguments 是原始 JSON 字符串，由调用方自行解析校验。
+export interface AiToolCall {
+  id: string
+  name: string
+  arguments: string
+}
+
+// agent loop 的多轮消息：需要回填 assistant(tool_calls) 与 tool 执行结果。
+export type AiChatMessage =
+  | { role: 'system' | 'user'; content: string }
+  | { role: 'assistant'; content: string | null; toolCalls?: AiToolCall[] }
+  | { role: 'tool'; toolCallId: string; content: string }
+
+// chatToolRound 的返回：content 与 toolCalls 可同时存在（部分实现边给正文边发起调用）。
+export interface AiToolRoundResult {
+  content: string
+  toolCalls: AiToolCall[]
+  finishReason?: string
+}
+
 export interface AiChatOptions {
   task?: AiTask
   reasoningMode?: AiReasoningMode
   route?: AiChatRoute
   system?: string
-  prompt: string
+  // 多轮消息路径（messages）下可省略；单轮路径必填，缺失时 chatBody 直接抛错。
+  prompt?: string
   temperature?: number
   maxTokens?: number
   reasoningEffort?: 'none' | 'low' | 'medium' | 'high'
@@ -55,6 +86,10 @@ export interface AiChatOptions {
   // 允许 content 为空且 finish_reason=length 时，以更高的 maxTokens 有限重试一次。
   // 用于推理型模型：默认小预算可能被思考过程耗尽导致正文为空。
   retryOnLengthOverflow?: boolean
+  // 原生 tool calling：带 tools 的请求模型可在响应中返回 tool_calls（配合 chatToolRound 使用）。
+  tools?: AiToolDefinition[]
+  // 多轮消息（agent loop 回填 tool 结果）；提供时忽略 system/prompt 的单轮组装。
+  messages?: AiChatMessage[]
 }
 
 export type AiFallbackType = 'quality' | 'provider'

@@ -1,4 +1,4 @@
-export type RagIntent = 'lookup' | 'explain' | 'compare' | 'user_history' | 'organize'
+export type RagIntent = 'lookup' | 'explain' | 'compare' | 'user_history' | 'organize' | 'agent'
 export type RagTool = 'keyword' | 'chunk_vector' | 'graph_expand' | 'rerank'
 
 export interface RagPlan {

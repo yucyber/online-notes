@@ -69,6 +69,7 @@ test('streamRagAnswer 带 memoryRecall 时 prompt 注入认知节、双 sanitize
     { plan: async () => ({ intent: 'explain', tools: ['chunk_vector', 'rerank'], reasoningMode: 'off', graphHops: 0 }) } as any,
     { retrieve: async () => ({ evidence, warnings: [], rerankApplied: true, candidateCount: 1 }) } as any,
     { streamTask: async (options: any) => { capturedOptions = options; return sseStream(['按 [M1] 的结论完成，另见 [M999]']) } } as any,
+    { collect: async () => { throw new Error('agent unavailable') } } as any,
   )
   const result = await service.streamRagAnswer(
     { question: '界面怎么改', knowledgeBaseId: 'kb1', userId: 'u1', memoryRecall: memoryRecallStub as any },
@@ -90,6 +91,7 @@ test('streamRagAnswer 不带 memoryRecall 时 memoryCitations 缺省为空且 pr
     { plan: async () => ({ intent: 'explain', tools: ['chunk_vector', 'rerank'], reasoningMode: 'off', graphHops: 0 }) } as any,
     { retrieve: async () => ({ evidence, warnings: [], rerankApplied: true, candidateCount: 1 }) } as any,
     { streamTask: async (options: any) => { capturedOptions = options; return sseStream(['这是答案 [E1]']) } } as any,
+    { collect: async () => { throw new Error('agent unavailable') } } as any,
   )
   const result = await service.streamRagAnswer(
     { question: 'React 是什么', userId: 'u1' },
@@ -107,6 +109,7 @@ test('streamRagAnswer 无证据降级时 memoryCitations 也为空', async () =>
     { plan: async () => ({ intent: 'user_history', tools: ['keyword'], reasoningMode: 'off', graphHops: 0 }) } as any,
     { retrieve: async () => ({ evidence: [], warnings: [], rerankApplied: false, candidateCount: 0 }) } as any,
     { streamTask: async () => { modelCalled = true; return sseStream([]) } } as any,
+    { collect: async () => { throw new Error('agent unavailable') } } as any,
   )
   const result = await service.streamRagAnswer(
     { question: '我踩了什么坑', userId: 'u1', memoryRecall: memoryRecallStub as any },

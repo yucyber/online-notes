@@ -10,6 +10,7 @@ test('流式回答逐段下发正文并剔除伪造引用', async () => {
     { plan: async () => ({ intent: 'explain', tools: ['chunk_vector', 'rerank'], reasoningMode: 'off', graphHops: 0 }) } as any,
     { retrieve: async () => ({ evidence, warnings: [], rerankApplied: true, candidateCount: 1 }) } as any,
     { streamTask: async () => sseStream(['这是答案 [E', '1] 另见 [E999]']) } as any,
+    { collect: async () => { throw new Error('agent unavailable') } } as any,
   )
   const result = await service.streamRagAnswer({ question: 'React 是什么', userId: 'u1' }, {
     onStatus: async () => undefined,
@@ -26,6 +27,7 @@ test('无证据时不调用模型并返回降级提示', async () => {
     { plan: async () => ({ intent: 'user_history', tools: ['keyword'], reasoningMode: 'off', graphHops: 0 }) } as any,
     { retrieve: async () => ({ evidence: [], warnings: [], rerankApplied: false, candidateCount: 0 }) } as any,
     { streamTask: async () => { modelCalled = true; return sseStream([]) } } as any,
+    { collect: async () => { throw new Error('agent unavailable') } } as any,
   )
   const result = await service.streamRagAnswer({ question: '我踩了什么坑', userId: 'u1' }, { onStatus: async () => undefined, onDelta: async () => undefined })
   assert.equal(modelCalled, false)
@@ -39,6 +41,7 @@ test('多 chunk 中文正文经解码器尾部冲刷后仍完整下发', async (
     { plan: async () => ({ intent: 'explain', tools: ['chunk_vector', 'rerank'], reasoningMode: 'off', graphHops: 0 }) } as any,
     { retrieve: async () => ({ evidence, warnings: [], rerankApplied: true, candidateCount: 1 }) } as any,
     { streamTask: async () => sseStream(['这是答', '案']) } as any,
+    { collect: async () => { throw new Error('agent unavailable') } } as any,
   )
   await service.streamRagAnswer({ question: 'React 是什么', userId: 'u1' }, {
     onStatus: async () => undefined,

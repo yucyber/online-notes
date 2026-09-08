@@ -95,6 +95,26 @@ export class ChunkRetrievalService {
     }))
   }
 
+  // agent loop 的 get_note_chunk 底层：按 chunkId 取单个片段全文，权限边界与搜索路径一致（可读笔记才返回）。
+  async getChunkById(chunkId: string, userId: string): Promise<ChunkSearchResult | null> {
+    const chunk = await this.chunkModel.findById(String(chunkId || '')).select('_id noteId headingPath content').lean().exec()
+    if (!chunk) return null
+    const note = await this.noteModel
+      .findOne({ $and: [{ _id: chunk.noteId }, this.noteAccess.readableFilter(userId)] })
+      .select('_id title')
+      .lean()
+      .exec()
+    if (!note) return null
+    return {
+      chunkId: String(chunk._id),
+      noteId: String(chunk.noteId),
+      title: String(note.title || ''),
+      headingPath: Array.isArray(chunk.headingPath) ? chunk.headingPath.map(String) : [],
+      content: String(chunk.content || ''),
+      score: 1,
+    }
+  }
+
   async searchKeywordChunks(input: ChunkSearchInput, userId: string): Promise<ChunkSearchResult[]> {
     const query = String(input.query || '').trim()
     const limit = Math.max(1, Math.min(50, Number(input.limit || 8)))
