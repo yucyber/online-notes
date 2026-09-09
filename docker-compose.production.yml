@@ -1,0 +1,86 @@
+name: online-notes
+x-app: &app
+  restart: unless-stopped
+  networks: [notes]
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+x-node-health: &node-health
+  interval: 15s
+  timeout: 5s
+  retries: 20
+  start_period: 30s
+services:
+  redis:
+    <<: *app
+    image: m.daocloud.io/docker.io/library/redis:7.4-alpine
+    command: ["redis-server", "--appendonly", "yes"]
+    volumes: [redis-data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+  backend:
+    <<: *app
+    build: ./notes-backend
+    env_file: .env.production
+    environment:
+      NODE_ENV: production
+      PORT: "3001"
+      MONGODB_URI: ${MONGODB_URI:?MONGODB_URI required}
+      REDIS_URL: redis://redis:6379
+      CLIENT_URL: https://${PUBLIC_HOST:?PUBLIC_HOST required}
+      COOKIE_SECURE: "true"
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+    depends_on:
+      redis: {condition: service_healthy}
+    healthcheck:
+      <<: *node-health
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3001/api/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  y-websocket:
+    <<: *app
+    build: ./y-websocket
+    environment:
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      YWS_AUTH_DISABLED: "0"
+    healthcheck:
+      <<: *node-health
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:1234/').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  frontend:
+    <<: *app
+    build:
+      context: ./notes-frontend
+      args:
+        NEXT_PUBLIC_API_URL: /api
+        NEXT_PUBLIC_YWS_URL: wss://${PUBLIC_HOST:?PUBLIC_HOST required}/ws/yjs
+    environment:
+      SERVER_API_URL: http://backend:3001/api
+    depends_on:
+      backend: {condition: service_healthy}
+    healthcheck:
+      <<: *node-health
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000/login').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+  nginx:
+    <<: *app
+    image: m.daocloud.io/docker.io/library/nginx:1.28-alpine
+    ports: ["80:80", "443:443"]
+    volumes:
+      - ./deploy/nginx.conf:/etc/nginx/nginx.conf:ro
+      - /etc/letsencrypt:/etc/letsencrypt:ro
+    depends_on:
+      frontend: {condition: service_healthy}
+      backend: {condition: service_healthy}
+      y-websocket: {condition: service_healthy}
+    healthcheck:
+      test: ["CMD", "wget", "-q", "--no-check-certificate", "-O", "/dev/null", "https://127.0.0.1/gateway-health"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+networks:
+  notes:
+    driver: bridge
+volumes:
+  redis-data:

@@ -12,7 +12,8 @@ export class AuthController {
     const isProduction = process.env.NODE_ENV === 'production';
     res.cookie('notes_token', token, {
       httpOnly: true,
-      secure: isProduction,
+      // 公网 IP 的临时 HTTP 验证需显式关闭；其他生产部署仍默认要求 HTTPS。
+      secure: process.env.COOKIE_SECURE === 'false' ? false : isProduction || process.env.COOKIE_SECURE === 'true',
       sameSite: 'lax',
       path: '/',
       maxAge: 7 * 24 * 60 * 60 * 1000,

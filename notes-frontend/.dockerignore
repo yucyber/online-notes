@@ -1,10 +1,10 @@
 node_modules
+.next
 dist
 .env
 .env.*
 *.log
 coverage
-*.tsbuildinfo
 .git
-npm-debug.log
-Dockerfile
+*.tsbuildinfo
+*.report.*

@@ -1,5 +1,6 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: process.env.DOCKER_BUILD === '1' ? 'standalone' : undefined,
   // eslint: { ignoreDuringBuilds: true },
   // 使用的 Next.js 版本是 14.2.33，它还不认识 experimental.allowedDevOrigins 这个键。运行 next dev 时会提示 “Invalid next.config.js options… Unrecognized key(s): 'allowedDevOrigins'”，说明这段配置不会生效，只是被忽略了。该选项预计在 Next 15 才会真正启用，所以 14.x 里不能依靠它解决跨域提示。
   // experimental: {
@@ -31,11 +32,9 @@ const nextConfig = {
     NEXT_PUBLIC_YWS_URL: process.env.NEXT_PUBLIC_YWS_URL,
   },
   async rewrites() {
-    // Next 重写：将前端域名下的 /api/* 代理到后端 3001，统一同源请求，减少 CORS/OPTIONS 负担。
-    // 代理目标硬编码 127.0.0.1：这里是 Node 进程解析，用 localhost 会优先 IPv6 的 ::1，
-    // 而后端只监听 IPv4 的 0.0.0.0:3001，导致 ECONNREFUSED ::1:3001。
-    // 注意不要复用 NEXT_PUBLIC_API_URL（那是给浏览器的，必须是 localhost 以保持 cookie 同 site）。
-    const backendOrigin = 'http://127.0.0.1:3001'
+    // 容器构建使用内部 backend 地址；本地保留 IPv4 回退，避免 localhost 被解析到 ::1。
+    // 浏览器公开地址不能用作 Docker 内部代理目标。
+    const backendOrigin = (process.env.SERVER_API_URL || 'http://127.0.0.1:3001/api').replace(/\/api\/?$/, '')
     return [
       {
         // assistant 有独立的 app route handler（app/api/assistant/[...path]/route.ts），负责 SSE 流式透传、
