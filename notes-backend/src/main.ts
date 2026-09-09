@@ -20,6 +20,10 @@ import { json } from 'express';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
 
+  // 生产由 Nginx 反代：信任最近一跳代理，让 req.ip/req.ips 取到真实客户端 IP，
+  // 避免 CustomThrottlerGuard 把 Nginx 容器 IP 当作同一用户而全局共享限流额度。
+  app.getHttpAdapter().getInstance().set('trust proxy', process.env.NODE_ENV === 'production' ? 1 : false);
+
   // Align all HTTP endpoints under the /api prefix so that the Next.js frontend
   // can rely on a predictable baseURL (see src/lib/api.ts).
   app.setGlobalPrefix('api');
