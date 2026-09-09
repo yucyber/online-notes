@@ -1,11 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useRouter } from 'next/navigation'
-import { register } from '@/lib/api'
+import { register, sendEmailCode } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { isValidEmail, isStrongPassword } from '@/utils'
@@ -24,6 +24,9 @@ const registerSchema = z.object({
   confirmPassword: z
     .string()
     .min(6, '确认密码至少6个字符'),
+  verificationCode: z
+    .string()
+    .regex(/^\d{6}$/, '请输入6位数字验证码'),
 }).refine((data) => data.password === data.confirmPassword, {
   message: '两次输入的密码不一致',
   path: ['confirmPassword'],
@@ -35,6 +38,8 @@ export default function RegisterPage() {
   const router = useRouter()
   const [error, setError] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [isSendingCode, setIsSendingCode] = useState(false)
+  const [remainingSeconds, setRemainingSeconds] = useState(0)
 
   const form = useForm<RegisterFormValues>({
     resolver: zodResolver(registerSchema),
@@ -42,8 +47,35 @@ export default function RegisterPage() {
       email: '',
       password: '',
       confirmPassword: '',
+      verificationCode: '',
     },
   })
+
+  useEffect(() => {
+    if (remainingSeconds <= 0) return
+
+    const timer = window.setTimeout(() => {
+      setRemainingSeconds((seconds) => Math.max(0, seconds - 1))
+    }, 1000)
+
+    return () => window.clearTimeout(timer)
+  }, [remainingSeconds])
+
+  const handleSendEmailCode = async () => {
+    const isEmailValid = await form.trigger('email')
+    if (!isEmailValid) return
+
+    try {
+      setIsSendingCode(true)
+      setError('')
+      await sendEmailCode(form.getValues('email'))
+      setRemainingSeconds(60)
+    } catch (err: any) {
+      setError(err.response?.data?.message || '验证码发送失败，请稍后重试')
+    } finally {
+      setIsSendingCode(false)
+    }
+  }
 
   const onSubmit = async (values: RegisterFormValues) => {
     try {
@@ -152,6 +184,43 @@ export default function RegisterPage() {
               {form.formState.errors.password && (
                 <p className="mt-2 text-sm text-red-600 font-medium">
                   {form.formState.errors.password.message}
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label htmlFor="verificationCode" className="block text-sm font-bold text-gray-700 mb-2">
+                验证码
+              </label>
+              <div className="flex gap-3">
+                <Input
+                  id="verificationCode"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  placeholder="请输入6位验证码"
+                  disabled={isLoading}
+                  {...form.register('verificationCode')}
+                  className={`h-12 text-base ${form.formState.errors.verificationCode ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                />
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="h-12 shrink-0"
+                  disabled={isSendingCode || isLoading || remainingSeconds > 0}
+                  onClick={handleSendEmailCode}
+                >
+                  {remainingSeconds > 0
+                    ? `${remainingSeconds}秒后重试`
+                    : isSendingCode
+                      ? '发送中...'
+                      : '获取验证码'}
+                </Button>
+              </div>
+              {form.formState.errors.verificationCode && (
+                <p className="mt-2 text-sm text-red-600 font-medium">
+                  {form.formState.errors.verificationCode.message}
                 </p>
               )}
             </div>

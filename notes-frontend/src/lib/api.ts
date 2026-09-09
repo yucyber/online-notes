@@ -34,6 +34,7 @@ import { dashboardAPI } from './api/dashboard'
 
 export const login = authAPI.login
 export const register = authAPI.register
+export const sendEmailCode = authAPI.sendEmailCode
 export const fetchNotes = notesAPI.getAllCached
 export const semanticSearch = semanticAPI.search
 export const semanticSearchCached = semanticAPI.searchCached

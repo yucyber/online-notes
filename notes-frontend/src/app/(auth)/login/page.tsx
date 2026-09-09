@@ -5,7 +5,7 @@ import { useForm } from 'react-hook-form'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { z } from 'zod'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { login, register } from '@/lib/api'
+import { login } from '@/lib/api'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { isValidEmail } from '@/utils'
@@ -24,7 +24,7 @@ const loginSchema = z.object({
 
 type LoginFormValues = z.infer<typeof loginSchema>
 
-export default function LoginPage() {
+function LoginPageContent() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const [error, setError] = useState('')
@@ -50,22 +50,7 @@ export default function LoginPage() {
       router.refresh()
     } catch (err: any) {
       const msg = String(err?.response?.data?.message || '')
-      const status = Number(err?.response?.status || 0)
-      // 仅在自动模式下进行注册回退，避免误注册
-      const isAuto = searchParams.get('auto') === '1'
-      if (isAuto && (status === 401 || /invalid|not ?found|不存在/i.test(msg))) {
-        try {
-          const reg = await register({ email: values.email, password: values.password })
-          persistAuthSession(reg.user)
-          router.push('/dashboard/notes')
-          router.refresh()
-          return
-        } catch (e: any) {
-          setError(e?.response?.data?.message || '登录失败，请检查邮箱和密码')
-        }
-      } else {
-        setError(msg || '登录失败，请检查邮箱和密码')
-      }
+      setError(msg || '登录失败，请检查邮箱和密码')
     } finally {
       setIsLoading(false)
     }
@@ -90,7 +75,6 @@ export default function LoginPage() {
   }, [])
 
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">加载中...</div>}>
     <div className="flex min-h-screen items-center justify-center bg-[var(--product-bg)] px-4 py-12 sm:px-6 lg:px-8">
       <div className="w-full max-w-md space-y-8 animate-fade-in">
         <div className="text-center">
@@ -208,6 +192,13 @@ export default function LoginPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center">加载中...</div>}>
+      <LoginPageContent />
     </Suspense>
   )
 }

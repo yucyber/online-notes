@@ -1,10 +1,13 @@
 import { postTyped } from './client'
-import type { User, LoginCredentials } from '@/types'
+import type { User, LoginCredentials, RegisterCredentials } from '@/types'
 
 export const authAPI = {
   login: (credentials: LoginCredentials) =>
     postTyped<{ user: User }>('/auth/login', credentials),
 
-  register: (data: LoginCredentials) =>
+  register: (data: RegisterCredentials) =>
     postTyped<{ user: User }>('/auth/register', data),
+
+  sendEmailCode: (email: string) =>
+    postTyped<{ message: string }>('/auth/email-code', { email }),
 }
