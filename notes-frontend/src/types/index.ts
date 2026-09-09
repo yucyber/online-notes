@@ -13,6 +13,10 @@ export interface LoginCredentials {
   password: string
 }
 
+export interface RegisterCredentials extends LoginCredentials {
+  verificationCode: string
+}
+
 // 笔记相关类型
 export interface NoteCategoryRef {
   id: string

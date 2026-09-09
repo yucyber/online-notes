@@ -21,6 +21,7 @@ Thumbs.db
 **/.env
 **/.env.*
 !**/.env.example
+!.env.production.example
 
 # TypeScript
 **/*.tsbuildinfo
@@ -56,6 +57,10 @@ notes-backend/tsconfig.tsbuildinfo
 
 # Next.js dev console log
 **/.next-dev-console.log
+
+# 本地部署打包与 smoke 日志（保留文件但禁止提交）
+deploy/*.tar.gz
+notes-backend/smoke-*.log
 
 # superpowers runtime process state (not docs/plans)
 .superpowers/**/state/

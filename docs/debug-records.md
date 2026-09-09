@@ -257,3 +257,18 @@
 - **修复方案**：pet_chat 策略与 chatPet 显式值同步提到 1800（与 rag_answer 对齐），小助手可覆盖 ~3000 字长文。
 - **验证**：真实 API 长文输出由 ~700 字截断变为 ~1900 字自然收尾；浏览器"生成中连续刷新两次"场景内容正常续接到结尾。
 - **经验教训**：①「回答停在半截不再增长」先查**输出长度上限**（task 的 maxTokens），别只盯刷新/续接链路——截断是 `finish_reason=length` 正常收尾，消息 completed 无失败标记，极易伪装成断流。② 同一问题在浮窗/全屏表现不同时，先确认两者是否同 route：上限绑定 route（task）而非 UI 入口。③ 修截断类问题时对照 DB 中多条回复的长度是否都恰好卡在同一量级，能快速定位是上限截断还是偶发异常。
+
+---
+
+## ECS Docker 部署失败（误用本地 MongoDB、Compose 未读环境变量及前端 public 目录缺失）
+
+- **日期**：2026-09-09
+- **现象**：生产 Compose 首先报告 `JWT_SECRET required`，随后自建 `mongo:7.0` 与 Docker Hub 镜像拉取失败；切换国内镜像后，前端镜像又因 `COPY /app/public` 不存在而构建失败。
+- **根因**：Compose 插值不会从服务级 `env_file` 读取变量，命令缺少 `--env-file .env.production`；部署文件把依赖 Atlas `$vectorSearch` 的应用错误连接到本地 MongoDB；前端仓库没有 `public/` 目录，但 Dockerfile 无条件复制该目录；杭州 ECS 直连 Docker Hub 超时且阿里云加速器未缓存所需标签。
+- **相关文件**：
+  - `docker-compose.production.yml`
+  - `.env.production.example`
+  - `notes-frontend/Dockerfile`
+- **修复方案**：生产 Compose 改为强制使用外部 `MONGODB_URI` 并移除本地 MongoDB 服务；所有 Compose 命令显式传入 `--env-file .env.production`；删除不存在的 `public/` 复制步骤；ECS 构建时使用可访问的镜像代理并限制串行构建。Atlas IP Access List 仅放行 ECS 公网 IP `/32`。
+- **验证**：`redis`、`backend`、`frontend`、`y-websocket`、`nginx` 五个容器全部为 `healthy`；`/gateway-health` 与 `/api/health` 均经 Nginx 返回 HTTP 200。
+- **经验教训**：生产基座必须根据代码实际数据库能力选择部署形态；使用 `$vectorSearch` 时不能用普通自建 MongoDB 冒充 Atlas。Compose 的变量插值与容器 `env_file` 是两个阶段，应在部署脚本中统一显式传入环境文件。Dockerfile 不应假定可选静态目录必然存在。

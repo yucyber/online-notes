@@ -1,4 +1,4 @@
-import axios from 'axios'
+import axios, { type AxiosRequestConfig } from 'axios'
 import { removeStoredUser } from '../auth'
 
 const api = axios.create({
@@ -139,8 +139,8 @@ export async function getTyped<T>(url: string, params?: any): Promise<T> {
   return api.get(url, { params }) as unknown as Promise<T>
 }
 
-export async function postTyped<T>(url: string, body?: any): Promise<T> {
-  return api.post(url, body) as unknown as Promise<T>
+export async function postTyped<T>(url: string, body?: any, config?: AxiosRequestConfig): Promise<T> {
+  return api.post(url, body, config) as unknown as Promise<T>
 }
 
 export async function patchTyped<T>(url: string, body?: any): Promise<T> {

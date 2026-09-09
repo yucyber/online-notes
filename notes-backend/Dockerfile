@@ -1,21 +1,18 @@
-# Multi-stage build to emulate Zeabur/managed container platforms
-FROM node:20-alpine AS build
+FROM m.daocloud.io/docker.io/library/node:22-bookworm-slim AS build
 WORKDIR /app
 COPY package*.json ./
-# Ensure devDependencies are installed even if platform sets production flags
-ENV npm_config_production=false
-# Install full deps for build (includes TypeScript)
 RUN npm ci
 COPY . .
 RUN npm run build
+RUN npm prune --omit=dev
 
-FROM node:20-alpine AS runtime
+FROM m.daocloud.io/docker.io/library/node:22-bookworm-slim
 WORKDIR /app
-ENV NODE_ENV=production
-COPY package*.json ./
-# Install production deps only
-RUN npm ci --omit=dev
-COPY --from=build /app/dist ./dist
-EXPOSE 8080
-ENV PORT=8080 HOST=0.0.0.0
-CMD ["node","dist/main.js"]
+ENV NODE_ENV=production PORT=3001 HOST=0.0.0.0
+COPY --from=build --chown=node:node /app/node_modules ./node_modules
+COPY --from=build --chown=node:node /app/dist ./dist
+COPY --from=build /app/package.json ./
+COPY --from=build /app/config ./config
+USER node
+EXPOSE 3001
+CMD ["node", "dist/main.js"]

@@ -8,19 +8,29 @@ import { CreateUserDto, UpdateProfileDto } from './dto';
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    // 检查邮箱是否已存在
-    const existingUser = await this.userModel.findOne({ email: createUserDto.email });
+  async create({ email, password }: Pick<CreateUserDto, 'email' | 'password'>): Promise<User> {
+    const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
       throw new ConflictException('该邮箱已被注册');
     }
 
-    const createdUser = new this.userModel(createUserDto);
+    const createdUser = new this.userModel({ email, password });
     return createdUser.save();
   }
 
+  async existsByEmail(email: string): Promise<boolean> {
+    const normalizedEmail = email.trim().toLowerCase();
+    return Boolean(await this.userModel.findOne({ email: normalizedEmail }));
+  }
+
   async findByEmail(email: string): Promise<UserDocument> {
-    const user = await this.userModel.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+    let user = await this.userModel.findOne({ email: normalizedEmail });
+    // 新注册邮箱已统一小写；仅在精确查询缺失时兼容历史大小写，且不让邮箱字符改变匹配范围。
+    if (!user) {
+      const escapedEmail = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      user = await this.userModel.findOne({ email: new RegExp(`^${escapedEmail}$`, 'i') });
+    }
     if (!user) {
       throw new NotFoundException('用户不存在');
     }
