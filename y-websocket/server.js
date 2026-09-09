@@ -82,7 +82,22 @@ wss.on('connection', (conn, req) => {
         console.error('Error setting up WS connection:', e)
     }
 
+    // y-websocket 浏览器端每 30 秒检查“是否收到过任何业务消息”，
+    // 只发 ping/pong 控制帧不会刷新它，会导致单人或少量协作者时连接被客户端主动断开（1005）。
+    // 这里每 20 秒向客户端发一条 awareness query（type=3），客户端会回 awareness，
+    // 从而让 wsLastMessageReceived 持续刷新，连接不再被误判为假死。
+    const collabKeepAlive = setInterval(() => {
+        if (conn.readyState === WebSocket.OPEN) {
+            try {
+                conn.send(new Uint8Array([3]))
+            } catch (e) {
+                // 连接可能刚关闭，忽略
+            }
+        }
+    }, 20000)
+
     conn.on('close', (code, reason) => {
+        clearInterval(collabKeepAlive)
         console.log('Connection closed', code, reason ? reason.toString() : '')
     })
     conn.on('error', (err) => {
