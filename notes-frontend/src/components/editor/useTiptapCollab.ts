@@ -104,7 +104,8 @@ export function useTiptapCollab(opts: {
     setProvider(p)
     setConnStatus('connecting')
     let offlineToastVisible = false
-    let authFailureTerminal = false
+    let reconnectFailures = 0
+    let reconnectInFlight = false
 
     const requestReconnect = () => {
       setConnStatus('connecting')
@@ -113,8 +114,6 @@ export function useTiptapCollab(opts: {
     }
 
     const markUnavailable = () => {
-      // 鉴权失败是终态，provider 随后的通用 disconnected 事件不能降级成可重连网络错误。
-      if (authFailureTerminal) return
       setConnStatus('disconnected')
       setLocalMode(true)
       setWsDebug((previous) => ({ ...previous, connecting: false, connected: false, synced: false }))
@@ -130,36 +129,61 @@ export function useTiptapCollab(opts: {
       })
     }
 
-    const markAuthFailure = (status: CollabStatus) => {
-      authFailureTerminal = true
-      setConnStatus(status)
-      setLocalMode(true)
-      setCollabEnabled(false)
-      try { p?.disconnect() } catch { }
+    const refreshProviderTicket = async () => {
+      try {
+        const data = await notesAPI.getRoomTicket(noteId)
+        if (!data?.ticket) return false
+        const base = (yws || '').replace(/\/+$/, '')
+        p!.url = `${base}/${room}?access_token=${encodeURIComponent(data.ticket)}`
+        return true
+      } catch (err) {
+        console.error('[Collab] Failed to refresh room ticket:', err)
+        return false
+      }
+    }
+
+    const reconnectWithFreshTicket = () => {
+      if (reconnectInFlight) return
+      reconnectInFlight = true
+      reconnectFailures += 1
+      if (reconnectFailures > 3) {
+        reconnectInFlight = false
+        console.warn('[Collab] Too many reconnect failures; switching to offline editing')
+        markUnavailable()
+        return
+      }
+      void refreshProviderTicket().then((ok) => {
+        reconnectInFlight = false
+        if (!ok) {
+          markUnavailable()
+          return
+        }
+        try { p?.connect() } catch { }
+      })
     }
 
     p.on('connection-error', (e: any) => {
       console.error('[Collab] Connection error:', e)
       const message = String(e?.message || e || '')
       if (message.includes('401') || message.toLowerCase().includes('unauthorized')) {
-        markAuthFailure('auth-failed')
-        return
+        console.warn('[Collab] Auth error; waiting for close to refresh ticket')
       }
-      markUnavailable()
     })
     p.on('connection-close', (e: any) => {
       console.warn('[Collab] Connection closed:', e?.code, e?.reason)
       if (e?.code === 1008 || e?.code === 4401 || String(e?.reason || '').includes('401')) {
-        markAuthFailure('auth-failed')
+        console.warn('[Collab] Auth failure on close; refreshing room ticket and reconnecting')
+        reconnectWithFreshTicket()
         return
       }
-      markUnavailable()
+      reconnectWithFreshTicket()
     })
 
     const statusHandler = (status: any) => {
       const s = (typeof status === 'object' ? status.status : status) as 'connecting' | 'connected' | 'disconnected'
       if (s === 'disconnected') {
-        markUnavailable()
+        setConnStatus('disconnected')
+        setWsDebug((prev) => ({ ...prev, connecting: false, connected: false }))
         return
       }
       setConnStatus(s)
@@ -170,6 +194,7 @@ export function useTiptapCollab(opts: {
       }))
 
       if (s === 'connected') {
+        reconnectFailures = 0
         setLocalMode(false)
         setCollabEnabled(true)
         if (offlineToastVisible) {
@@ -292,10 +317,17 @@ export function useTiptapCollab(opts: {
       }
     }, 15000)
 
+    // room-ticket 有效期 5 分钟；每 4 分钟静默换新，避免断线重连时使用过期票据。
+    const ticketRefreshTimer = setInterval(() => {
+      if (!(p as any)?.wsconnected) return
+      void refreshProviderTicket()
+    }, 240000)
+
     return () => {
       console.log('[Collab] Disconnecting provider')
       clearInterval(degradeTimer)
       clearInterval(appHeartbeat)
+      clearInterval(ticketRefreshTimer)
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
       }
