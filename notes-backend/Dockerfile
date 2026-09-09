@@ -12,6 +12,7 @@ ENV NODE_ENV=production PORT=3001 HOST=0.0.0.0
 COPY --from=build --chown=node:node /app/node_modules ./node_modules
 COPY --from=build --chown=node:node /app/dist ./dist
 COPY --from=build /app/package.json ./
+COPY --from=build /app/config ./config
 USER node
 EXPOSE 3001
 CMD ["node", "dist/main.js"]
