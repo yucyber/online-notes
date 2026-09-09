@@ -13,6 +13,16 @@ if (services.nginx.ports.join() !== '80:80,443:443') throw new Error('Nginx must
 if (Object.keys(config.volumes || {}).join() !== 'redis-data') throw new Error('Redis must be the only local persistent volume')
 if (!services.redis.volumes?.includes('redis-data:/data') || !Object.hasOwn(config.volumes || {}, 'redis-data')) throw new Error('Redis persistent volume required')
 if (services.backend.environment.MONGODB_URI !== '${MONGODB_URI:?MONGODB_URI required}') throw new Error('Backend must require external MONGODB_URI')
+for (const [key, expected] of Object.entries({
+  SMTP_HOST: '${SMTP_HOST:?SMTP_HOST required}',
+  SMTP_PORT: '${SMTP_PORT:-465}',
+  SMTP_SECURE: '${SMTP_SECURE:-true}',
+  SMTP_USER: '${SMTP_USER:?SMTP_USER required}',
+  SMTP_PASSWORD: '${SMTP_PASSWORD:?SMTP_PASSWORD required}',
+})) {
+  if (services.backend.environment[key] !== expected) throw new Error('Backend SMTP setting is missing or unsafe: ' + key)
+}
+if (services.backend.env_file !== '.env.production') throw new Error('Backend must load MAIL_FROM from .env.production')
 if (services.backend.environment.CLIENT_URL !== 'https://${PUBLIC_HOST:?PUBLIC_HOST required}') throw new Error('CLIENT_URL must use HTTPS PUBLIC_HOST')
 if (services.backend.environment.COOKIE_SECURE !== 'true') throw new Error('Production cookies must be Secure')
 if (services.frontend.build.args.NEXT_PUBLIC_YWS_URL !== 'wss://${PUBLIC_HOST:?PUBLIC_HOST required}/ws/yjs') throw new Error('Browser Yjs URL must use WSS')
@@ -46,6 +56,13 @@ const templateValues = Object.fromEntries(template.split(/\r?\n/).filter(line =>
 }))
 if (templateValues.PUBLIC_HOST !== '47.97.243.59') throw new Error('PUBLIC_HOST template must match the ECS public IP')
 if (!/^mongodb\+srv:\/\/USERNAME:PASSWORD@CLUSTER\/notes\?/.test(templateValues.MONGODB_URI || '')) throw new Error('MONGODB_URI template must use external Atlas')
+for (const [key, expected] of Object.entries({SMTP_HOST: 'smtp.qq.com', SMTP_PORT: '465', SMTP_SECURE: 'true'})) {
+  if (templateValues[key] !== expected) throw new Error(key + ' template value is missing or invalid')
+}
+for (const key of ['SMTP_USER', 'SMTP_PASSWORD', 'MAIL_FROM']) {
+  if (!template.split(/\r?\n/).includes(key + '=')) throw new Error(key + ' must be empty in template')
+}
+if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(template)) throw new Error('Email addresses must not appear in the production env template')
 for (const key of ['SILICONFLOW_API_KEY', 'BAI_API_KEY', 'AR_API_KEY']) {
   if (!template.split(/\r?\n/).includes(key + '=')) throw new Error(key + ' must be empty in template')
 }

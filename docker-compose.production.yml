@@ -35,6 +35,11 @@ services:
       CLIENT_URL: https://${PUBLIC_HOST:?PUBLIC_HOST required}
       COOKIE_SECURE: "true"
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET required}
+      SMTP_HOST: ${SMTP_HOST:?SMTP_HOST required}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_SECURE: ${SMTP_SECURE:-true}
+      SMTP_USER: ${SMTP_USER:?SMTP_USER required}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:?SMTP_PASSWORD required}
     depends_on:
       redis: {condition: service_healthy}
     healthcheck:

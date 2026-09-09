@@ -22,6 +22,20 @@ nano .env.production
 
 `PUBLIC_HOST` 保持为 `47.97.243.59`，不带协议、端口或路径；`MONGODB_URI` 填写 Atlas `mongodb+srv://` 连接串。两次随机输出分别填入 `JWT_SECRET` 和 `BULL_BOARD_PASSWORD`，`BULL_BOARD_USERNAME` 可用 `admin`。模板使用不加引号、等号两侧无空格的格式；AI Key 保持空值。真实连接串和密钥只保存在权限为 600 的 `.env.production`，不要提交。
 
+### 配置 QQ 邮箱验证码
+
+QQ SMTP 配置只写入 ECS 的 `/opt/online-notes/.env.production`。`SMTP_USER` 填写 QQ 邮箱，`SMTP_PASSWORD` 填写 QQ 邮箱生成的 SMTP 授权码（不是 QQ 密码），`MAIL_FROM` 填写 `在线笔记验证码 <你的QQ邮箱>`。不要在 Git、日志或聊天中粘贴邮箱和授权码，修改后重新限制文件权限：
+
+```bash
+cd /opt/online-notes
+chmod 600 .env.production
+docker compose --env-file .env.production -f docker-compose.production.yml up -d --build backend frontend nginx
+docker compose --env-file .env.production -f docker-compose.production.yml ps -a
+docker compose --env-file .env.production -f docker-compose.production.yml logs --tail=100 backend
+```
+
+验收时使用可接收邮件的真实 QQ 邮箱发起注册，确认验证码邮件送达且发件人正确；输入验证码后完成注册并登录。再分别验证错误验证码被拒绝、已使用验证码不能复用，并检查 backend 日志没有输出邮箱、验证码或 SMTP 授权码。后端 health 通过不代表邮件链路验收完成。
+
 首次启动前确认 Certbot 已签发公网 IP 短有效期证书，且宿主机存在以下文件：
 
 - `/etc/letsencrypt/live/47.97.243.59/fullchain.pem`
