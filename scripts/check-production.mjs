@@ -50,17 +50,22 @@ for (const file of ['notes-backend/Dockerfile', 'notes-frontend/Dockerfile', 'y-
 }
 
 const template = readFileSync(resolve(root, '.env.production.example'), 'utf8')
-const templateValues = Object.fromEntries(template.split(/\r?\n/).filter(line => /^[A-Z_]+=/.test(line)).map(line => {
+const templateLines = template.split(/\r?\n/)
+const templateEntries = templateLines.filter(line => /^[A-Z_]+=/.test(line)).map(line => {
   const index = line.indexOf('=')
   return [line.slice(0, index), line.slice(index + 1).trim()]
-}))
+})
+const templateValues = Object.fromEntries(templateEntries)
 if (templateValues.PUBLIC_HOST !== '47.97.243.59') throw new Error('PUBLIC_HOST template must match the ECS public IP')
 if (!/^mongodb\+srv:\/\/USERNAME:PASSWORD@CLUSTER\/notes\?/.test(templateValues.MONGODB_URI || '')) throw new Error('MONGODB_URI template must use external Atlas')
 for (const [key, expected] of Object.entries({SMTP_HOST: 'smtp.qq.com', SMTP_PORT: '465', SMTP_SECURE: 'true'})) {
   if (templateValues[key] !== expected) throw new Error(key + ' template value is missing or invalid')
 }
 for (const key of ['SMTP_USER', 'SMTP_PASSWORD', 'MAIL_FROM']) {
-  if (!template.split(/\r?\n/).includes(key + '=')) throw new Error(key + ' must be empty in template')
+  const assignments = templateEntries.filter(([name]) => name === key)
+  if (assignments.length !== 1 || assignments[0][1] !== '' || !templateLines.includes(key + '=')) {
+    throw new Error(key + ' must appear exactly once and be empty in template')
+  }
 }
 if (/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/i.test(template)) throw new Error('Email addresses must not appear in the production env template')
 for (const key of ['SILICONFLOW_API_KEY', 'BAI_API_KEY', 'AR_API_KEY']) {
