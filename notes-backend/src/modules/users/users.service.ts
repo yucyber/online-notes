@@ -24,7 +24,13 @@ export class UsersService {
   }
 
   async findByEmail(email: string): Promise<UserDocument> {
-    const user = await this.userModel.findOne({ email });
+    const normalizedEmail = email.trim().toLowerCase();
+    let user = await this.userModel.findOne({ email: normalizedEmail });
+    // 新注册邮箱已统一小写；仅在精确查询缺失时兼容历史大小写，且不让邮箱字符改变匹配范围。
+    if (!user) {
+      const escapedEmail = normalizedEmail.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      user = await this.userModel.findOne({ email: new RegExp(`^${escapedEmail}$`, 'i') });
+    }
     if (!user) {
       throw new NotFoundException('用户不存在');
     }

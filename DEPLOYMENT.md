@@ -30,6 +30,7 @@ QQ SMTP 配置只写入 ECS 的 `/opt/online-notes/.env.production`。`SMTP_USER
 cd /opt/online-notes
 chmod 600 .env.production
 docker compose --env-file .env.production -f docker-compose.production.yml up -d --build backend frontend nginx
+docker compose --env-file .env.production -f docker-compose.production.yml exec nginx nginx -s reload
 docker compose --env-file .env.production -f docker-compose.production.yml ps -a
 docker compose --env-file .env.production -f docker-compose.production.yml logs --tail=100 backend
 ```

@@ -9,5 +9,5 @@ export const authAPI = {
     postTyped<{ user: User }>('/auth/register', data),
 
   sendEmailCode: (email: string) =>
-    postTyped<{ message: string }>('/auth/email-code', { email }),
+    postTyped<{ message: string }>('/auth/email-code', { email }, { timeout: 15_000 }),
 }

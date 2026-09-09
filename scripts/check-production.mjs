@@ -4,6 +4,14 @@ import { fileURLToPath } from 'node:url'
 import { parse } from 'yaml'
 
 const root = fileURLToPath(new URL('../', import.meta.url))
+const deployment = readFileSync(resolve(root, 'DEPLOYMENT.md'), 'utf8')
+const smtpDeployment = deployment.split('### 配置 QQ 邮箱验证码')[1]?.split(/\r?\n#{1,3} /)[0] || ''
+const smtpCommands = smtpDeployment.match(/```bash\r?\n([\s\S]*?)```/)?.[1] || ''
+const compose = 'docker compose --env-file .env.production -f docker-compose.production.yml '
+const upIndex = smtpCommands.indexOf(compose + 'up -d --build backend frontend nginx')
+const reloadIndex = smtpCommands.indexOf(compose + 'exec nginx nginx -s reload')
+const psIndex = smtpCommands.indexOf(compose + 'ps -a')
+if (upIndex < 0 || reloadIndex <= upIndex || psIndex <= reloadIndex) throw new Error('SMTP deployment must reload Nginx after rebuilding upstreams and before checking status')
 const config = parse(readFileSync(resolve(root, 'docker-compose.production.yml'), 'utf8'))
 const services = config.services || {}
 if (Object.keys(services).sort().join() !== 'backend,frontend,nginx,redis,y-websocket') throw new Error('Compose must contain exactly the five production containers')

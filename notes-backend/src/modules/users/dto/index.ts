@@ -16,6 +16,7 @@ export class CreateUserDto {
 }
 
 export class LoginUserDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
   @IsEmail({}, { message: '请输入有效的邮箱地址' })
   email: string;
 
