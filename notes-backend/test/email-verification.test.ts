@@ -163,7 +163,7 @@ test('内部注册调用缺少验证码时返回 400 且不创建用户', async 
   const service = new AuthService(users as any, { sign: () => 'token' } as any, verification as any)
 
   await assert.rejects(
-    service.register({ email: 'user@example.com', password: 'secret1' }),
+    service.register({ email: 'user@example.com', password: 'secret1', verificationCode: undefined }),
     (error: unknown) => {
       assert.ok(error instanceof BadRequestException)
       assert.equal(error.getStatus(), 400)

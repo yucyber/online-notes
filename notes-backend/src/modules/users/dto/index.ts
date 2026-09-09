@@ -12,7 +12,7 @@ export class CreateUserDto {
   password: string;
 
   @Matches(/^\d{6}$/, { message: '请输入6位数字验证码' })
-  verificationCode?: string;
+  verificationCode: string;
 }
 
 export class LoginUserDto {
