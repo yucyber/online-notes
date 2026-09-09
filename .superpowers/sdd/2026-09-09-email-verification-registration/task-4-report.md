@@ -49,3 +49,12 @@ npm exec -- jest __tests__/email-verification-registration.spec.tsx --runInBand
 
 - 无功能阻塞项。
 - Jest 输出既存的 `ts-jest isolatedModules` 弃用警告；本 Task 未调整测试基础设施。
+
+## Fix Round 1：窄屏验证码横排溢出
+
+- Open Important：验证码 Input 与 `shrink-0` 按钮横排时缺少可收缩约束，窄屏可能溢出。
+- RED：先新增 DOM class 回归测试；目标 Jest 结果为 1/6 失败，Input 实际 class 缺少 `min-w-0 flex-1`。
+- GREEN：仅为验证码 Input 增加 `min-w-0 flex-1`，保留按钮 `shrink-0`；目标 Jest 6/6 通过。
+- `npm --prefix notes-frontend run type-check`：通过，exit 0。
+- Scope：未处理最终审查保留的 Minor（异步校验重入、pending 覆盖）。
+- 提交信息：`fix(frontend): 修复验证码窄屏溢出`

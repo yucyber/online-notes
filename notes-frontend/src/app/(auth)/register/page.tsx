@@ -202,7 +202,7 @@ export default function RegisterPage() {
                   placeholder="请输入6位验证码"
                   disabled={isLoading}
                   {...form.register('verificationCode')}
-                  className={`h-12 text-base ${form.formState.errors.verificationCode ? 'border-red-500 ring-2 ring-red-200' : ''}`}
+                  className={`h-12 min-w-0 flex-1 text-base ${form.formState.errors.verificationCode ? 'border-red-500 ring-2 ring-red-200' : ''}`}
                 />
                 <Button
                   type="button"

@@ -43,6 +43,13 @@ describe('邮箱验证码注册', () => {
     expect(screen.getByRole('button', { name: '获取验证码' })).toBeInTheDocument()
   })
 
+  it('验证码横排在窄屏允许输入框收缩且保持按钮不收缩', () => {
+    render(<RegisterPage />)
+
+    expect(screen.getByLabelText('验证码')).toHaveClass('min-w-0', 'flex-1')
+    expect(screen.getByRole('button', { name: '获取验证码' })).toHaveClass('shrink-0')
+  })
+
   it('邮箱非法时不请求验证码', async () => {
     render(<RegisterPage />)
 
