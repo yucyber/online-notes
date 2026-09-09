@@ -106,7 +106,7 @@ Expected: PASS；TypeScript 无错误。
 
 - [ ] **Step 1: 为安全行为写失败测试**
 
-使用实现 `get/set/eval/del` 的内存 Redis fake 和 MailService spy，覆盖：生成恰好 6 位数字；Redis value 不含明文；TTL 为 600 秒；冷却 key 为 60 秒；同邮箱大小写/空格归一；错误 4 次仍可重试，第 5 次后失效；成功后第二次消费失败。
+使用实现 `get/set/eval/del` 的内存 Redis fake 和 MailService spy，覆盖：生成恰好 6 位数字；Redis value 不含明文；TTL 为 600 秒；冷却 key 为 60 秒；同邮箱大小写/空格归一；错误 4 次仍可重试，第 5 次后失效；成功后第二次消费失败；旧邮件跨越 60 秒冷却后失败，仍保留新请求的验证码与冷却。用真实 Redis 验证 Lua 对两个 key 分别按 owner 判断并原子清理。
 
 - [ ] **Step 2: 运行单测确认失败**
 
@@ -123,7 +123,7 @@ auth:email-code:${normalizedEmail}
 auth:email-code-cooldown:${normalizedEmail}
 ```
 
-验证码 value 为 JSON `{ "digest": string, "attempts": number }`。先以 `SET key 1 EX 60 NX` 抢占冷却，再写 600 秒验证码并发邮件；发送失败时删除两类 key，允许用户重试。
+每次发送使用 `randomBytes(32).toString('hex')` 生成不可预测的 owner token，以 `SET key owner EX 60 NX` 抢占冷却；验证码 value 为 JSON `{ "digest": string, "attempts": number, "owner": string }`，与本次冷却关联同一个 owner。抢占成功后写 600 秒验证码并发邮件；发送失败时通过单次 Lua EVAL 分别核对验证码 JSON 的 owner 和冷却 value，仅删除当前 owner 仍属于本次请求的对应 key，允许重试且不影响后续发送的新验证码或冷却。
 
 - [ ] **Step 4: 用 Lua 实现原子消费**
 

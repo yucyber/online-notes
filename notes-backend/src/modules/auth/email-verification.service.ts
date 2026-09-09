@@ -1,6 +1,6 @@
 import { BadRequestException, HttpException, HttpStatus, Inject, Injectable } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { createHmac, randomInt } from 'node:crypto'
+import { createHmac, randomBytes, randomInt } from 'node:crypto'
 import Redis from 'ioredis'
 import { REDIS_CLIENT } from '../../common/redis/redis.constants'
 import { MailService } from './mail.service'
@@ -38,6 +38,18 @@ end
 return 0
 `
 
+// SMTP 可能跨越冷却窗口；旧请求失败只能清理自己仍拥有的 key，不能误删后续请求。
+const CLEANUP_FAILED_SEND_SCRIPT = `
+local value = redis.call('GET', KEYS[1])
+if value and cjson.decode(value).owner == ARGV[1] then
+  redis.call('DEL', KEYS[1])
+end
+if redis.call('GET', KEYS[2]) == ARGV[1] then
+  redis.call('DEL', KEYS[2])
+end
+return 0
+`
+
 @Injectable()
 export class EmailVerificationService {
   constructor(
@@ -50,7 +62,8 @@ export class EmailVerificationService {
     const normalizedEmail = email.trim().toLowerCase()
     const key = `auth:email-code:${normalizedEmail}`
     const cooldownKey = `auth:email-code-cooldown:${normalizedEmail}`
-    const acquired = await this.redis.set(cooldownKey, '1', 'EX', 60, 'NX')
+    const owner = randomBytes(32).toString('hex')
+    const acquired = await this.redis.set(cooldownKey, owner, 'EX', 60, 'NX')
     if (acquired !== 'OK') {
       throw new HttpException('验证码发送过于频繁，请稍后重试', HttpStatus.TOO_MANY_REQUESTS)
     }
@@ -58,11 +71,10 @@ export class EmailVerificationService {
     try {
       const code = randomInt(0, 1_000_000).toString().padStart(6, '0')
       const digest = this.digest(normalizedEmail, code)
-      await this.redis.set(key, JSON.stringify({ digest, attempts: 0 }), 'EX', 600)
+      await this.redis.set(key, JSON.stringify({ digest, attempts: 0, owner }), 'EX', 600)
       await this.mailService.sendVerificationCode(normalizedEmail, code)
     } catch (error) {
-      // 发送失败时用户拿不到验证码，释放冷却与验证码，允许立即重试。
-      await this.redis.del(key, cooldownKey)
+      await this.redis.eval(CLEANUP_FAILED_SEND_SCRIPT, 2, key, cooldownKey, owner)
       throw error
     }
   }

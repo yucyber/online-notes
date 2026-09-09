@@ -151,13 +151,19 @@ class EmailCodeRedisFake {
   }
 
   // fake 验证服务与 Redis 的调用契约；下方真实 Redis 用例执行 Lua，避免把 fake 的行为当作脚本证明。
-  async eval(_script: string, keyCount: number, key: string, digest: string) {
+  async eval(_script: string, keyCount: number, key: string, digestOrCooldownKey: string, owner?: string) {
     this.evalCalls++
+    if (keyCount === 2) {
+      const entry = this.entry(key)
+      if (entry && JSON.parse(entry.value).owner === owner) this.entries.delete(key)
+      if (this.entry(digestOrCooldownKey)?.value === owner) this.entries.delete(digestOrCooldownKey)
+      return 0
+    }
     assert.equal(keyCount, 1)
     const entry = this.entry(key)
     if (!entry) return 0
     const state = JSON.parse(entry.value)
-    if (state.digest === digest) {
+    if (state.digest === digestOrCooldownKey) {
       this.entries.delete(key)
       return 1
     }
@@ -199,16 +205,19 @@ function wrongCode(code: string) {
   return code === '000000' ? '000001' : '000000'
 }
 
-test('验证码恰好为 6 位数字，Redis 仅存邮箱绑定的 HMAC 与尝试次数，TTL 为 600 秒', async () => {
+test('验证码恰好为 6 位数字，Redis 保存 HMAC、尝试次数和请求 owner，TTL 为 600 秒', async () => {
   const redis = new EmailCodeRedisFake()
   const { service, sent } = verificationFixture(redis)
   await service.sendCode('  User@Example.COM  ')
   assert.equal(sent[0].email, 'user@example.com')
   assert.match(sent[0].code, /^\d{6}$/)
   const raw = await redis.get(codeKey('user@example.com'))
+  const owner = await redis.get(cooldownKey('user@example.com'))
+  assert.match(owner!, /^[a-f0-9]{64}$/)
   assert.deepEqual(JSON.parse(raw!), {
     digest: createHmac('sha256', jwtSecret).update(`user@example.com:${sent[0].code}`).digest('hex'),
     attempts: 0,
+    owner,
   })
   assert.ok(!raw!.includes(JSON.stringify(sent[0].code)))
   assert.ok(!raw!.includes(jwtSecret))
@@ -282,6 +291,67 @@ test('邮件发送失败清理验证码和冷却，允许立即重试', async ()
   await service.sendCode('user@example.com')
   assert.equal(sent.length, 1)
 })
+
+async function assertLateSendFailure(
+  redis: EmailCodeRedisFake | Redis,
+  email: string,
+  expireCooldown: () => Promise<unknown>,
+  keepNew: 'both' | 'code' | 'cooldown' = 'both',
+) {
+  const first = verificationFixture(redis)
+  const second = verificationFixture(redis)
+  let rejectDelivery!: (reason: Error) => void
+  let markStarted!: () => void
+  const deliveryStarted = new Promise<void>(resolve => { markStarted = resolve })
+  const delivery = new Promise<void>((_, reject) => { rejectDelivery = reject })
+  first.mail.sendVerificationCode = async () => {
+    markStarted()
+    await delivery
+  }
+  const firstOutcome = assert.rejects(first.service.sendCode(email), ServiceUnavailableException)
+  await deliveryStarted
+  const oldCode = await redis.get(codeKey(email))
+  const oldCooldown = await redis.get(cooldownKey(email))
+  await expireCooldown()
+  await second.service.sendCode(email)
+  const newCode = await redis.get(codeKey(email))
+  const newCooldown = await redis.get(cooldownKey(email))
+
+  // 两个 key 可处于不同请求的生命周期中，清理必须分别判断所有权。
+  if (keepNew === 'cooldown') await redis.set(codeKey(email), oldCode!, 'EX', 600)
+  if (keepNew === 'code') await redis.set(cooldownKey(email), oldCooldown!, 'EX', 60)
+  rejectDelivery(new ServiceUnavailableException('验证码邮件暂时无法发送，请稍后重试'))
+  await firstOutcome
+
+  assert.equal(await redis.get(codeKey(email)), keepNew === 'cooldown' ? null : newCode)
+  assert.equal(await redis.get(cooldownKey(email)), keepNew === 'code' ? null : newCooldown)
+  if (keepNew === 'both') {
+    await assert.rejects(second.service.sendCode(email), (error: any) => error.getStatus() === 429)
+    await second.service.consumeCode(email, second.sent[0].code)
+  }
+}
+
+test('旧邮件跨 60 秒冷却后失败，不删除新请求的验证码或冷却', async () => {
+  const redis = new EmailCodeRedisFake()
+  await assertLateSendFailure(redis, 'user@example.com', async () => { redis.now = 60_000 })
+})
+
+for (const keepNew of ['both', 'code', 'cooldown'] as const) {
+  test(`真实 Redis 原子清理仅删除本次请求所有的 key（保留新 ${keepNew}）`, async () => {
+    const redis = new Redis(process.env.REDIS_URL || 'redis://127.0.0.1:6379', {
+      connectTimeout: 1000,
+      retryStrategy: () => null,
+    })
+    const email = `email-owner-test-${process.pid}-${Date.now()}-${keepNew}@example.com`
+    try {
+      // 直接推进该测试 key 的到期状态，复现冷却到期而 SMTP 仍挂起的时序。
+      await assertLateSendFailure(redis, email, () => redis.pexpire(cooldownKey(email), -1), keepNew)
+    } finally {
+      await redis.del(codeKey(email), cooldownKey(email))
+      await redis.quit()
+    }
+  })
+}
 
 test('并发发送只发出一封邮件，并发成功消费只有一次', async () => {
   const redis = new EmailCodeRedisFake()
