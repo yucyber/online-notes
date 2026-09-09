@@ -8,15 +8,19 @@ import { CreateUserDto, UpdateProfileDto } from './dto';
 export class UsersService {
   constructor(@InjectModel(User.name) private userModel: Model<UserDocument>) {}
 
-  async create(createUserDto: CreateUserDto): Promise<User> {
-    // 检查邮箱是否已存在
-    const existingUser = await this.userModel.findOne({ email: createUserDto.email });
+  async create({ email, password }: Pick<CreateUserDto, 'email' | 'password'>): Promise<User> {
+    const existingUser = await this.userModel.findOne({ email });
     if (existingUser) {
       throw new ConflictException('该邮箱已被注册');
     }
 
-    const createdUser = new this.userModel(createUserDto);
+    const createdUser = new this.userModel({ email, password });
     return createdUser.save();
+  }
+
+  async existsByEmail(email: string): Promise<boolean> {
+    const normalizedEmail = email.trim().toLowerCase();
+    return Boolean(await this.userModel.findOne({ email: normalizedEmail }));
   }
 
   async findByEmail(email: string): Promise<UserDocument> {

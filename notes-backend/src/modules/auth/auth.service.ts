@@ -1,13 +1,15 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import { BadRequestException, Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service';
 import { CreateUserDto, LoginUserDto } from '../users/dto';
+import { EmailVerificationService } from './email-verification.service';
 
 @Injectable()
 export class AuthService {
   constructor(
     private usersService: UsersService,
     private jwtService: JwtService,
+    private emailVerificationService: EmailVerificationService,
   ) {}
 
   private toAuthResponse(user: any) {
@@ -24,8 +26,21 @@ export class AuthService {
   }
 
   async register(createUserDto: CreateUserDto) {
-    const user = await this.usersService.create(createUserDto);
+    const { verificationCode, ...userInput } = createUserDto;
+    if (!verificationCode) {
+      throw new BadRequestException('验证码无效或已过期');
+    }
+
+    await this.emailVerificationService.consumeCode(userInput.email, verificationCode);
+    const user = await this.usersService.create(userInput);
     return this.toAuthResponse(user);
+  }
+
+  async sendEmailCode(email: string): Promise<void> {
+    if (await this.usersService.existsByEmail(email)) {
+      return;
+    }
+    await this.emailVerificationService.sendCode(email);
   }
 
   async login(loginUserDto: LoginUserDto) {

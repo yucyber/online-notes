@@ -55,6 +55,21 @@ test('UsersService.updateProfile saves the current user and returns it without a
   assert.equal('password' in result, false)
 })
 
+test('UsersService.existsByEmail normalizes the email and returns whether the user exists', async () => {
+  const queriedEmails: string[] = []
+  const model = {
+    async findOne(query: { email: string }) {
+      queriedEmails.push(query.email)
+      return query.email === 'registered@example.com' ? { id: 'user-1' } : null
+    },
+  }
+  const service = new UsersService(model as any)
+
+  assert.equal(await service.existsByEmail('  Registered@Example.COM  '), true)
+  assert.equal(await service.existsByEmail('new@example.com'), false)
+  assert.deepEqual(queriedEmails, ['registered@example.com', 'new@example.com'])
+})
+
 test('UsersController.updateProfile derives the target user from the JWT request', async () => {
   const service = {
     updateProfile: async (userId: string, dto: UpdateProfileDto) => ({ userId, ...dto }),
@@ -82,9 +97,14 @@ test('AuthService includes displayName in register and login responses', async (
     validateUser: async () => user,
   }
   const jwt = { sign: () => 'token' }
-  const service = new AuthService(users as any, jwt as any)
+  const verification = { consumeCode: async () => undefined }
+  const service = new AuthService(users as any, jwt as any, verification as any)
 
-  const registered = await service.register({ email: user.email, password: 'password' })
+  const registered = await service.register({
+    email: user.email,
+    password: 'password',
+    verificationCode: '012345',
+  })
   const loggedIn = await service.login({ email: user.email, password: 'password' })
 
   assert.equal(registered.user.displayName, '林默')

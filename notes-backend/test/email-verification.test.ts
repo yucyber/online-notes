@@ -8,6 +8,8 @@ import { CreateUserDto } from '../src/modules/users/dto'
 import { createHmac } from 'node:crypto'
 import Redis from 'ioredis'
 import { EmailVerificationService } from '../src/modules/auth/email-verification.service'
+import { AuthController } from '../src/modules/auth/auth.controller'
+import { AuthService } from '../src/modules/auth/auth.service'
 
 Logger.overrideLogger(false)
 
@@ -73,6 +75,126 @@ test('注册验证码只接受 6 位数字', async () => {
       },
     )
   }
+})
+
+test('发送验证码接口把规范化邮箱交给发送流程并返回通用消息', async () => {
+  const sentEmails: string[] = []
+  const users = {
+    async existsByEmail() { return false },
+  }
+  const verification = {
+    async sendCode(email: string) { sentEmails.push(email) },
+  }
+  const service = new AuthService(users as any, { sign: () => 'token' } as any, verification as any)
+  const controller = new AuthController(service)
+  const dto = await validate(SendEmailCodeDto, { email: '  User@Example.COM  ' })
+
+  const response = await controller.sendEmailCode(dto)
+
+  assert.deepEqual(sentEmails, ['user@example.com'])
+  assert.deepEqual(response, { message: '如果该邮箱可用于注册，验证码邮件将很快送达' })
+})
+
+test('已注册邮箱不发送验证码且接口返回相同通用消息', async () => {
+  let sendCalls = 0
+  const users = {
+    async existsByEmail(email: string) {
+      assert.equal(email, 'registered@example.com')
+      return true
+    },
+  }
+  const verification = {
+    async sendCode() { sendCalls++ },
+  }
+  const service = new AuthService(users as any, { sign: () => 'token' } as any, verification as any)
+  const controller = new AuthController(service)
+  const dto = await validate(SendEmailCodeDto, { email: 'registered@example.com' })
+
+  const response = await controller.sendEmailCode(dto)
+
+  assert.equal(sendCalls, 0)
+  assert.deepEqual(response, { message: '如果该邮箱可用于注册，验证码邮件将很快送达' })
+})
+
+test('注册先消费验证码再创建用户，且持久化参数不含验证码', async () => {
+  const calls: string[] = []
+  const user = {
+    id: 'user-1',
+    email: 'user@example.com',
+    displayName: '林默',
+  }
+  const users = {
+    async create(input: Record<string, unknown>) {
+      calls.push('create')
+      assert.deepEqual(input, { email: 'user@example.com', password: 'secret1' })
+      return user
+    },
+  }
+  const verification = {
+    async consumeCode(email: string, code: string) {
+      calls.push('consume')
+      assert.equal(email, 'user@example.com')
+      assert.equal(code, '012345')
+    },
+  }
+  const service = new AuthService(users as any, { sign: () => 'token' } as any, verification as any)
+
+  const result = await service.register({
+    email: 'user@example.com',
+    password: 'secret1',
+    verificationCode: '012345',
+  })
+
+  assert.deepEqual(calls, ['consume', 'create'])
+  assert.equal(result.user.displayName, '林默')
+})
+
+test('内部注册调用缺少验证码时返回 400 且不创建用户', async () => {
+  let createCalls = 0
+  const users = {
+    async create() {
+      createCalls++
+      return { id: 'user-1', email: 'user@example.com' }
+    },
+  }
+  const verification = {
+    async consumeCode() { throw new Error('不应调用验证码消费') },
+  }
+  const service = new AuthService(users as any, { sign: () => 'token' } as any, verification as any)
+
+  await assert.rejects(
+    service.register({ email: 'user@example.com', password: 'secret1' }),
+    (error: unknown) => {
+      assert.ok(error instanceof BadRequestException)
+      assert.equal(error.getStatus(), 400)
+      return true
+    },
+  )
+  assert.equal(createCalls, 0)
+})
+
+test('验证码消费失败时不创建用户', async () => {
+  let createCalls = 0
+  const users = {
+    async create() {
+      createCalls++
+      return { id: 'user-1', email: 'user@example.com' }
+    },
+  }
+  const verification = {
+    async consumeCode() { throw new BadRequestException('验证码无效或已过期') },
+  }
+  const service = new AuthService(users as any, { sign: () => 'token' } as any, verification as any)
+
+  await assert.rejects(
+    service.register({
+      email: 'user@example.com',
+      password: 'secret1',
+      verificationCode: '999999',
+    }),
+    BadRequestException,
+  )
+  assert.equal(createCalls, 0)
 })
 
 test('验证码邮件包含固定收件人、主题和正文', async () => {
