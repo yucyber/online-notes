@@ -36,6 +36,16 @@ test('发送验证码邮箱会去除首尾空白并转为小写', async () => {
   assert.equal(dto.email, 'user@example.com')
 })
 
+test('注册邮箱会去除首尾空白并转为小写', async () => {
+  const dto = await validate(CreateUserDto, {
+    email: '  User@Example.COM  ',
+    password: 'secret1',
+    verificationCode: '012345',
+  })
+
+  assert.equal(dto.email, 'user@example.com')
+})
+
 test('注册验证码只接受 6 位数字', async () => {
   const valid = await validate(CreateUserDto, {
     email: 'user@example.com',

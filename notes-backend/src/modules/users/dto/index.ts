@@ -1,6 +1,8 @@
+import { Transform } from 'class-transformer';
 import { IsEmail, IsString, Matches, MinLength, MaxLength } from 'class-validator';
 
 export class CreateUserDto {
+  @Transform(({ value }) => typeof value === 'string' ? value.trim().toLowerCase() : value)
   @IsEmail({}, { message: '请输入有效的邮箱地址' })
   email: string;
 
