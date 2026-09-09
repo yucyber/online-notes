@@ -55,6 +55,10 @@ const templateEntries = templateLines.filter(line => /^[A-Z_]+=/.test(line)).map
   const index = line.indexOf('=')
   return [line.slice(0, index), line.slice(index + 1).trim()]
 })
+const sensitiveTemplateEntries = templateLines.flatMap(line => {
+  const match = line.match(/^\s*(SMTP_USER|SMTP_PASSWORD|MAIL_FROM)\s*(?:=|:)\s*(.*?)\s*$/)
+  return match ? [[match[1], match[2]]] : []
+})
 const templateValues = Object.fromEntries(templateEntries)
 if (templateValues.PUBLIC_HOST !== '47.97.243.59') throw new Error('PUBLIC_HOST template must match the ECS public IP')
 if (!/^mongodb\+srv:\/\/USERNAME:PASSWORD@CLUSTER\/notes\?/.test(templateValues.MONGODB_URI || '')) throw new Error('MONGODB_URI template must use external Atlas')
@@ -62,7 +66,7 @@ for (const [key, expected] of Object.entries({SMTP_HOST: 'smtp.qq.com', SMTP_POR
   if (templateValues[key] !== expected) throw new Error(key + ' template value is missing or invalid')
 }
 for (const key of ['SMTP_USER', 'SMTP_PASSWORD', 'MAIL_FROM']) {
-  const assignments = templateEntries.filter(([name]) => name === key)
+  const assignments = sensitiveTemplateEntries.filter(([name]) => name === key)
   if (assignments.length !== 1 || assignments[0][1] !== '' || !templateLines.includes(key + '=')) {
     throw new Error(key + ' must appear exactly once and be empty in template')
   }
