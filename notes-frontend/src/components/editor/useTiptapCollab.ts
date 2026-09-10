@@ -347,12 +347,15 @@ export function useTiptapCollab(opts: {
       }
     }, 5000)
 
-    // 心跳每 15s 更新 awareness，防止服务端因闲置关闭 WebSocket 连接。
+    // awareness 心跳每 8s 更新一次：
+    // y-protocols 客户端每 3s 检查对方 awareness.meta.lastUpdated，超过 30s 自动 GC；
+    // 心跳固定 15s 最坏情况下对方收到我方更新的间隔可达 29s+，刚好触发 GC；
+    // 改为 8s 可确保安全裕量内发一次，绝不触发 GC。
     const appHeartbeat = setInterval(() => {
       if (p && (p as any).wsconnected) {
         p.awareness.setLocalStateField('lastPing', Date.now())
       }
-    }, 15000)
+    }, 8000)
 
     // room-ticket 有效期 5 分钟；每 4 分钟静默换新，避免断线重连时使用过期票据。
     const ticketRefreshTimer = setInterval(() => {
