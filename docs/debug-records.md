@@ -260,6 +260,32 @@
 
 ---
 
+## 多人协作头像/光标始终不显示（ydoc 被提前 destroy 导致 awareness 清零）
+
+- **日期**：2026-09-10
+- **现象**：两个不同账号同时打开同一篇笔记，右上角看不到对方头像，编辑时看不到对方彩色光标。控制台日志显示 `[Collab] Awareness update: 1 entries` 紧接着变为 `0 entries`，之后再无更新，协作者永久消失。连接本身健康（WebSocket 稳定，type=1 心跳持续）。
+- **根因**：`useTiptapCollab.ts` 中有一个额外的 cleanup effect：
+  ```js
+  useEffect(() => {
+    return () => { provider?.destroy(); ydoc?.destroy() }
+  }, [provider, ydoc])
+  ```
+  `provider` 从 `null` 初始化为 WebsocketProvider 实例时，React 检测到 deps 变化触发旧 cleanup，此时 `provider=null`（无害），但 **`ydoc` 已是真实的 Y.Doc 实例，被错误 destroy**。y-protocols 在 Awareness 构造函数里注册了 `doc.on('destroy', () => this.destroy())`，所以：`ydoc.destroy()` → `awareness.destroy()` → `setLocalState(null)` → 服务器广播 null awareness 给对方 → 对方本地 map 删除该 clientId → `updateAwareness()` 得到 0 entries → 头像/光标永久消失。
+- **排查过程**：
+  1. 怀疑 y-protocols 30 秒 awareness GC → 否定，0 entries 在连接后 2 秒内出现。
+  2. 怀疑 roomTicket state 变化触发 provider 重建 → 将 `roomTicket` 改为 ref，问题仍存。
+  3. 在 `updateAwareness` 里加 `new Error('awareness-zero').stack` 打印调用栈 → 直接定位到 `ydoc.destroy()`，调用链：`useEffect cleanup → ydoc.destroy() → awareness.destroy() → setLocalState(null) → emit('update') → updateAwareness → 0 entries`。
+- **修复方案**：cleanup effect 的 deps 从 `[provider, ydoc]` 改为 `[ydoc]`，移除其中对 `provider.destroy()` 的重复调用（主 effect cleanup 已正确处理）。同步删除之前引入的"0 entries 时 re-announce"逻辑——该逻辑在单人场景下（自己被过滤后 newParticipants 永远为 0）形成无限递归，导致 `Maximum call stack size exceeded`。
+- **相关文件**：`notes-frontend/src/components/editor/useTiptapCollab.ts`（提交 `420da52`、`1251701`）
+- **验证**：两账号同时进入同一笔记，右上角头像正常，编辑时彩色光标可见，`Awareness update` 日志稳定在 1 entries，无 0 entries。
+- **经验教训**：
+  1. React useEffect cleanup 在 **deps 变化时**就会执行，不只是 unmount；deps 里有会变化的值（如 state 从 null → 实例），cleanup 必须对中间态安全。
+  2. y-protocols Awareness 与 Y.Doc 生命周期强绑定，`ydoc.destroy()` 是高危操作，须确认时机。
+  3. 调用栈（`new Error().stack`）是定位"哪段代码触发了某个回调"的最直接手段。
+  4. 在 awareness update 回调里调用 `setLocalStateField` 会同步触发新一轮 update，必须有明确终止条件，否则立即无限递归。
+
+---
+
 ## ECS Docker 部署失败（误用本地 MongoDB、Compose 未读环境变量及前端 public 目录缺失）
 
 - **日期**：2026-09-09
