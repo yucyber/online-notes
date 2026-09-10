@@ -22,7 +22,10 @@ export function useTiptapCollab(opts: {
   userRef.current = user
   const [provider, setProvider] = useState<WebsocketProvider | null>(null)
   const [connStatus, setConnStatus] = useState<CollabStatus>('connecting')
-  const [roomTicket, setRoomTicket] = useState<string | null>(null)
+  // roomTicket 用 ref 而不是 state：ticket 变更只需更新 provider URL，不得触发 provider 重建；
+  // provider 重建会 destroy 旧 awareness → 广播 null state → 对方协作者头像/光标消失。
+  const roomTicketRef = useRef<string | null>(null)
+  const [hasTicket, setHasTicket] = useState(false)
   const [roomRole, setRoomRole] = useState<'writer' | 'reader' | null>(localOnly ? 'writer' : null)
   const [ticketError, setTicketError] = useState<string | null>(null)
   const [participants, setParticipants] = useState<Array<{ id: string; name?: string }>>([])
@@ -43,9 +46,12 @@ export function useTiptapCollab(opts: {
     notesAPI.getRoomTicket(noteId)
       .then((data) => {
         if (!cancelled && data?.ticket) {
-          setRoomTicket(data.ticket)
+          const isFirst = !roomTicketRef.current
+          roomTicketRef.current = data.ticket
           setRoomRole(data.role)
           setTicketError(null)
+          // 第一次拿到 ticket 时触发 provider 创建；后续刷新只更新 URL，不重建 provider。
+          if (isFirst) setHasTicket(true)
         }
       })
       .catch((err: any) => {
@@ -76,7 +82,7 @@ export function useTiptapCollab(opts: {
       return
     }
 
-    if (!roomTicket) {
+    if (!hasTicket) {
       if (ticketError) {
         setLocalMode(true)
         setCollabEnabled(false)
@@ -86,6 +92,7 @@ export function useTiptapCollab(opts: {
       return
     }
 
+    const initialTicket = roomTicketRef.current!
     let p: WebsocketProvider | null = null
     try {
       console.log('[Collab] Connecting:', { url: yws, room })
@@ -93,7 +100,7 @@ export function useTiptapCollab(opts: {
         connect: true,
         maxBackoffTime: 10000,
         disableBc: true,
-        params: { access_token: roomTicket },
+        params: { access_token: initialTicket },
       })
     } catch (e) {
       console.error('[Collab] Failed to create provider:', e)
@@ -131,10 +138,11 @@ export function useTiptapCollab(opts: {
 
     const refreshProviderTicket = async () => {
       try {
-        const data = await notesAPI.getRoomTicket(noteId)
-        if (!data?.ticket) return false
+        const d = await notesAPI.getRoomTicket(noteId)
+        if (!d?.ticket) return false
         const base = (yws || '').replace(/\/+$/, '')
-        p!.url = `${base}/${room}?access_token=${encodeURIComponent(data.ticket)}`
+        roomTicketRef.current = d.ticket
+        p!.url = `${base}/${room}?access_token=${encodeURIComponent(d.ticket)}`
         return true
       } catch (err) {
         console.error('[Collab] Failed to refresh room ticket:', err)
@@ -248,9 +256,13 @@ export function useTiptapCollab(opts: {
     const updateAwareness = () => {
       const entries = Array.from(aw.getStates().entries()) as any[]
       console.log('[Collab] Awareness update:', entries.length, 'entries')
+      const myClientId = aw.clientID
+      const myUserId = userRef.current.id
       const byId = new Map<string, { id: string; name?: string }>()
       for (const [clientId, s] of entries) {
         const uid = String(s?.user?.id || s?.user?.name || clientId)
+        // 排除自己：只展示其他协作者的头像/光标，避免把自己算入协作者列表。
+        if (clientId === myClientId || uid === myUserId) continue
         const name = s?.user?.name
         if (!byId.has(uid)) byId.set(uid, { id: uid, name })
       }
@@ -266,6 +278,18 @@ export function useTiptapCollab(opts: {
 
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
+      }
+
+      // 同室其他协作者 awareness 降为 0 时，主动重播自己的 user state，
+      // 防止对方在 provider 重建后因未收到我方 announce 而永远看不到我方光标/头像。
+      if (newParticipants.length === 0 && (p as any).wsconnected) {
+        const u = userRef.current
+        aw.setLocalStateField('user', {
+          id: u.id,
+          name: u.name,
+          clientId: aw.clientID,
+          timestamp: Date.now(),
+        })
       }
     }
 
@@ -352,7 +376,7 @@ export function useTiptapCollab(opts: {
       aw.off('update', updateAwareness)
       p?.destroy()
     }
-  }, [noteId, versionKey, ydoc, roomTicket, room, ticketError, localOnly])
+  }, [noteId, versionKey, ydoc, hasTicket, room, localOnly])
 
   useEffect(() => {
     if (provider && provider.awareness) {
