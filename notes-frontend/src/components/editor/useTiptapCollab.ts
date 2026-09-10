@@ -256,8 +256,13 @@ export function useTiptapCollab(opts: {
       }
       const newParticipants = Array.from(byId.values())
 
+      // 光标移动会高频更新 awareness；只有协作者集合真正变化时才更新 React 状态，
+      // 否则每次移动光标都会因新数组引用触发编辑页整树重渲染（CLS 抖动）。
+      const previous = participantsCache.current
+      const unchanged = previous.length === newParticipants.length
+        && previous.every((item, index) => item.id === newParticipants[index].id && item.name === newParticipants[index].name)
       participantsCache.current = newParticipants
-      setParticipants(newParticipants)
+      if (!unchanged) setParticipants(newParticipants)
 
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
@@ -294,11 +299,19 @@ export function useTiptapCollab(opts: {
     let failCount = 0
     const degradeTimer = setInterval(() => {
       const disconnected = (p as any).wsconnected === false && (p as any).wsconnecting === false
-      setWsDebug({
+      const nextDebug = {
         connecting: Boolean((p as any).wsconnecting),
         connected: Boolean((p as any).wsconnected),
         synced: Boolean((p as any).synced),
-      })
+      }
+      // 状态未变化时不写 state，避免每 5 秒无意义地重渲染编辑页。
+      setWsDebug((previous) => (
+        previous.connecting === nextDebug.connecting
+        && previous.connected === nextDebug.connected
+        && previous.synced === nextDebug.synced
+          ? previous
+          : nextDebug
+      ))
       if (disconnected) {
         failCount++
         if (failCount >= 2) {
