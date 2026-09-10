@@ -255,7 +255,13 @@ export function useTiptapCollab(opts: {
 
     const updateAwareness = () => {
       const entries = Array.from(aw.getStates().entries()) as any[]
-      console.log('[Collab] Awareness update:', entries.length, 'entries')
+      // [DIAG] 打印完整 entry 内容；0 entries 时额外打印调用栈
+      console.log('[Collab] Awareness update:', entries.length, 'entries',
+        entries.map(([cid, s]: any) => ({ cid, hasUser: !!s?.user, userId: s?.user?.id }))
+      )
+      if (entries.length === 0) {
+        console.warn('[Collab] 0-entries stack:', new Error('awareness-zero').stack)
+      }
       const myClientId = aw.clientID
       const myUserId = userRef.current.id
       const byId = new Map<string, { id: string; name?: string }>()
