@@ -260,29 +260,191 @@
 
 ---
 
-## 多人协作头像/光标始终不显示（ydoc 被提前 destroy 导致 awareness 清零）
+## 多人协作完整修复链路（WebSocket 周期断开 → 头像/光标不显示）
 
-- **日期**：2026-09-10
-- **现象**：两个不同账号同时打开同一篇笔记，右上角看不到对方头像，编辑时看不到对方彩色光标。控制台日志显示 `[Collab] Awareness update: 1 entries` 紧接着变为 `0 entries`，之后再无更新，协作者永久消失。连接本身健康（WebSocket 稳定，type=1 心跳持续）。
-- **根因**：`useTiptapCollab.ts` 中有一个额外的 cleanup effect：
-  ```js
-  useEffect(() => {
-    return () => { provider?.destroy(); ydoc?.destroy() }
-  }, [provider, ydoc])
-  ```
-  `provider` 从 `null` 初始化为 WebsocketProvider 实例时，React 检测到 deps 变化触发旧 cleanup，此时 `provider=null`（无害），但 **`ydoc` 已是真实的 Y.Doc 实例，被错误 destroy**。y-protocols 在 Awareness 构造函数里注册了 `doc.on('destroy', () => this.destroy())`，所以：`ydoc.destroy()` → `awareness.destroy()` → `setLocalState(null)` → 服务器广播 null awareness 给对方 → 对方本地 map 删除该 clientId → `updateAwareness()` 得到 0 entries → 头像/光标永久消失。
-- **排查过程**：
-  1. 怀疑 y-protocols 30 秒 awareness GC → 否定，0 entries 在连接后 2 秒内出现。
-  2. 怀疑 roomTicket state 变化触发 provider 重建 → 将 `roomTicket` 改为 ref，问题仍存。
-  3. 在 `updateAwareness` 里加 `new Error('awareness-zero').stack` 打印调用栈 → 直接定位到 `ydoc.destroy()`，调用链：`useEffect cleanup → ydoc.destroy() → awareness.destroy() → setLocalState(null) → emit('update') → updateAwareness → 0 entries`。
-- **修复方案**：cleanup effect 的 deps 从 `[provider, ydoc]` 改为 `[ydoc]`，移除其中对 `provider.destroy()` 的重复调用（主 effect cleanup 已正确处理）。同步删除之前引入的"0 entries 时 re-announce"逻辑——该逻辑在单人场景下（自己被过滤后 newParticipants 永远为 0）形成无限递归，导致 `Maximum call stack size exceeded`。
-- **相关文件**：`notes-frontend/src/components/editor/useTiptapCollab.ts`（提交 `420da52`、`1251701`）
-- **验证**：两账号同时进入同一笔记，右上角头像正常，编辑时彩色光标可见，`Awareness update` 日志稳定在 1 entries，无 0 entries。
-- **经验教训**：
-  1. React useEffect cleanup 在 **deps 变化时**就会执行，不只是 unmount；deps 里有会变化的值（如 state 从 null → 实例），cleanup 必须对中间态安全。
-  2. y-protocols Awareness 与 Y.Doc 生命周期强绑定，`ydoc.destroy()` 是高危操作，须确认时机。
-  3. 调用栈（`new Error().stack`）是定位"哪段代码触发了某个回调"的最直接手段。
-  4. 在 awareness update 回调里调用 `setLocalStateField` 会同步触发新一轮 update，必须有明确终止条件，否则立即无限递归。
+- **日期**：2026-09-09 ～ 2026-09-10
+- **涉及提交**：`a353704` `bcbb6bf` `c0c84cb` `ec3f4ff` `562382f` `420da52` `1251701`
+
+### 一、现象
+
+线上两个不同账号同时打开同一篇笔记：
+
+1. **WebSocket 每隔约 30 秒自动断开再重连**，浏览器控制台反复出现：
+   ```
+   [Collab] Connection closed: 1005
+   [Collab] Connecting: ...
+   [Collab] Sync status changed: true
+   ```
+   RUM 日志里 `ws_status` 和 `ws_sync` 每 33 秒触发一次，CLS 随之累积到 0.659。
+
+2. **右上角看不到对方头像，编辑时看不到对方彩色光标**。即使 WebSocket 连接稳定后，症状依然存在。控制台日志：
+   ```
+   [Collab] Awareness update: 1 entries   ← 刚连上，短暂看到对方
+   [Collab] Awareness update: 0 entries   ← 2 秒内消失，永不恢复
+   ```
+
+---
+
+### 二、根因链路（按修复顺序）
+
+#### 问题 1：WebSocket 每 30 秒被客户端主动断开（1005）
+
+**根因**：y-websocket 浏览器端内置了一个"假死检测"：
+
+```js
+// y-websocket 源码
+const messageReconnectTimeout = 30000
+setInterval(() => {
+  if (wsconnected && messageReconnectTimeout < now - wsLastMessageReceived) {
+    ws.close()  // ← 30 秒没收到任何业务消息就主动关闭
+  }
+}, 3000)
+```
+
+`wsLastMessageReceived` 只在收到 **WebSocket 消息帧**（`onmessage`）时更新，普通的 WebSocket ping/pong 控制帧**不算**。
+
+服务器原来只依赖系统级 ping/pong 保活，没有发送任何业务消息。单人或少量协作者时，两次编辑操作之间超过 30 秒没有任何 awareness 广播，客户端就判定"假死"，主动 `ws.close()`（code=1005），然后再重连。
+
+**修复（`bcbb6bf`）**：y-websocket 服务器每 20 秒向每条连接主动发一条 type=3（awareness query）消息：
+
+```js
+const collabKeepAlive = setInterval(() => {
+  if (conn.readyState === WebSocket.OPEN) {
+    conn.send(new Uint8Array([3]))  // ← 触发客户端回 awareness，刷新 wsLastMessageReceived
+  }
+}, 20000)
+```
+
+客户端收到 type=3 后自动回复当前 awareness，`wsLastMessageReceived` 持续刷新，断线消除。
+
+---
+
+#### 问题 2：断线重连后仍连不上（401 握手失败）
+
+**根因**：room ticket 有效期 5 分钟，WebsocketProvider 的 URL 只在构造时拼接一次：
+
+```js
+p = new WebsocketProvider(yws, room, ydoc, {
+  params: { access_token: roomTicket }  // ← 构造时固定，之后不再更新
+})
+```
+
+断线重连（`p.connect()`）时继续使用初始 ticket，如果已过 5 分钟就是过期票据，服务器返回 401，握手失败，浏览器报 `Connection error`，进入离线模式。
+
+**修复（`a353704`）**：增加 `refreshProviderTicket`，每次断线重连前先换新票据再重连；另加 4 分钟定时静默刷新，确保长时间编辑时票据始终有效：
+
+```js
+const refreshProviderTicket = async () => {
+  const data = await notesAPI.getRoomTicket(noteId)
+  p!.url = `${base}/${room}?access_token=${encodeURIComponent(data.ticket)}`
+}
+// 断线时：先刷新票据，再 p.connect()
+// 定时：每 4 分钟静默换新
+```
+
+---
+
+#### 问题 3：光标移动导致编辑页整树重渲染，CLS 飙升到 1.695
+
+**根因**：`CollaborationCursor` extension 在每次光标/选区变化时都会更新 awareness 的 `cursor` 字段，触发 `updateAwareness()`，而原代码每次都调用 `setParticipants(新数组)`——新数组引用必然不等于旧数组，React 判定 state 变化，`NoteEditorShell` 整棵树重渲染，CLS 随用户每次移动光标持续累积。同时 5 秒轮询的 `wsDebug` 也无条件 setState。
+
+**修复（`c0c84cb`）**：对 participants 列表做内容去重，只有协作者的 id/name 集合真正变化时才 `setParticipants`；wsDebug 轮询也改为值相同时直接返回旧对象：
+
+```js
+const unchanged = previous.length === newParticipants.length
+  && previous.every((e, i) => e.id === newParticipants[i].id && e.name === newParticipants[i].name)
+if (!unchanged) setParticipants(newParticipants)
+```
+
+---
+
+#### 问题 4：协作者头像/光标永久消失（`Awareness update: 0 entries`）
+
+连接稳定、CLS 下降后，头像和光标依然不显示，日志稳定出现 `1 entries → 0 entries`。
+
+**排查过程（走了三条弯路）**：
+
+1. **怀疑 y-protocols 30 秒 GC**：awareness 客户端每 3 秒扫描，超过 30 秒未更新的 clientId 会被 GC。但 0 entries 在连接后 2 秒内出现，否定。→ 将心跳从 15s 改为 8s（`562382f`）作为防御性优化保留，但不是根因。
+
+2. **怀疑 roomTicket state 触发 provider 重建**：`roomTicket` 是 useState，其变化导致 provider useEffect 重跑，旧 provider 被 destroy，awareness 广播 null。→ 将 `roomTicket` 改为 useRef（`ec3f4ff`），provider 只在 `hasTicket` 首次变为 true 时创建一次。问题仍存。
+
+3. **加调用栈诊断，直接找到根因**：在 `updateAwareness` 里加 `new Error('awareness-zero').stack`，stack trace 清晰显示：
+
+   ```
+   at ydoc.destroy()
+     → awareness.destroy()
+       → setLocalState(null)
+         → emit('update')
+           → updateAwareness → 0 entries
+   ```
+
+**真正根因（`420da52`）**：`useTiptapCollab` 中有一个额外 cleanup effect：
+
+```js
+useEffect(() => {
+  return () => {
+    provider?.destroy()
+    ydoc?.destroy()   // ← 问题所在
+  }
+}, [provider, ydoc])  // ← provider 在 deps 里
+```
+
+React useEffect 的 cleanup **不只在 unmount 时执行，deps 变化时也执行**。`provider` 从 `null` 变为 WebsocketProvider 实例（正常初始化流程），触发旧 cleanup：此时 `provider = null`（无害），但 `ydoc` 已是真实 Y.Doc，被错误 destroy。
+
+y-protocols Awareness 在构造函数里注册了 `doc.on('destroy', () => this.destroy())`，因此：
+
+```
+ydoc.destroy()
+  → awareness.destroy() → setLocalState(null)
+  → 服务器广播 null awareness 给对方
+  → 对方 awareness map 删除该 clientId
+  → updateAwareness() → 0 entries → 头像/光标永久消失
+```
+
+**修复**：deps 从 `[provider, ydoc]` 改为 `[ydoc]`，移除重复的 `provider.destroy()`（主 effect cleanup 已处理）。ydoc 只在组件真正 unmount 时才销毁。
+
+---
+
+#### 附：引入的新 bug 及修复（`1251701`）
+
+修复过程中曾加入"0 entries 时主动 re-announce 自己的 user state"逻辑，逻辑本身在单人场景下形成无限递归：
+
+```
+updateAwareness()
+  newParticipants = 0（自己被过滤）
+  → setLocalStateField('user', ...) → 触发 awareness update
+  → updateAwareness() → newParticipants 仍为 0
+  → 无限递归 → Maximum call stack size exceeded
+```
+
+真正根因修复后，re-announce 逻辑无存在价值，直接删除。
+
+---
+
+### 三、验证结果
+
+| 检查项 | 修复前 | 修复后 |
+|--------|--------|--------|
+| WebSocket 稳定性 | 每 30 秒断开重连 | 长时间稳定，无 1005 断开 |
+| 断线重连成功率 | 5 分钟后必然 401 失败 | 票据自动续期，重连成功 |
+| CLS（编辑时） | 光标移动时持续涨到 1.695 | 稳定在 0.2 左右 |
+| 协作者头像/光标 | 连接后 2 秒内消失，永不恢复 | 连接后正常显示，稳定保持 |
+
+---
+
+### 四、经验教训
+
+1. **y-websocket 的"假死检测"只认业务消息，不认 ping/pong**：`wsLastMessageReceived` 只在 `onmessage` 里更新，系统级 ping/pong 不刷新它。服务端 keepalive 必须发真实的 WebSocket 消息帧。
+
+2. **Room ticket 有效期短，重连路径必须刷新票据**：鉴权票据的生命周期要和 WebSocket 重连逻辑配套设计，不能只在构造时拼一次。
+
+3. **React useEffect cleanup 在 deps 变化时就执行，不只是 unmount**：deps 里放了会变化的值，cleanup 就必须对中间态安全。把 ydoc 等"应该伴随组件整个生命周期"的对象放进有变化 deps 的 effect 是高危操作。
+
+4. **调用栈是定位"谁触发了某个回调"的最直接手段**：三条弯路（GC、roomTicket、心跳）全靠猜，一行 `new Error().stack` 直接命中真正根因，加诊断日志要比反复推理快。
+
+5. **在 awareness update 回调里调用 `setLocalStateField` 会同步触发新一轮 update**：awareness 的 update 是同步链式传播，回调里再写 awareness 必须有明确终止条件，否则立即无限递归。
+
+6. **y-protocols Awareness 与 Y.Doc 生命周期强绑定**：`ydoc.destroy()` 是高危操作，会级联销毁 awareness 并广播 null state 给所有协作者，调用时机必须严格控制。
 
 ---
 
