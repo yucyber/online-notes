@@ -87,10 +87,17 @@ export class AssistantGenerationService {
       const existing = await this.messages.getByRequestId(userId, requestId)
       if (existing) {
         emit({ event: 'started', data: { conversationId: String(existing.conversationId), userMessageId: existing.retryOfMessageId || '', assistantMessageId: existing.id, requestId } })
-        // 正常重放：assistant 消息已是终态（complete/failed/cancelled）→ 补发 complete。
-        // 非终态时此处必然已是 stale（同实例重连由上方 running.has 早退承担，重放路径只在未运行时进入）：
-        if (existing.role === 'assistant' && (existing.status === 'completed' || existing.status === 'failed' || existing.status === 'cancelled')) {
+        // 终态重放：必须按 DB 里的真实终态补发对应事件。
+        // 缺陷修复（2026-09-10）：此前 completed/failed/cancelled 一律补发 complete，导致生成失败或
+        // 被用户停止的消息在刷新/重连后渲染成"已完成"（正文只有失败占位），既无失败提示也无重试入口。
+        // 三个分支的事件形状与 runGeneration 的正常收尾路径保持一致（见下方 markCancelled/markFailed 处）。
+        if (existing.role === 'assistant' && existing.status === 'completed') {
           emit({ event: 'complete', data: { messageId: existing.id, route: existing.route, citations: existing.citations, warnings: existing.warnings } })
+        } else if (existing.role === 'assistant' && existing.status === 'cancelled') {
+          emit({ event: 'cancelled', data: { messageId: existing.id, text: existing.content || '', reason: 'user_stopped' } })
+        } else if (existing.role === 'assistant' && existing.status === 'failed') {
+          // 重放场景无法还原原始错误码（未持久化 failureCode），统一用中断码并保持可重试。
+          emit({ event: 'error', data: { code: 'GENERATION_INTERRUPTED', message: '回答生成中断，请重试。', retryable: true } })
         } else {
           // stale：服务重启后残留非终态 assistant 消息，或崩溃窗口只剩 user 提问（appendUser 与 createPlaceholder 之间）——
           // 生成已不可能到达终态，落库 failed（保留已流内容）并补发 error，避免 DB 消息永久 streaming 且客户端断流。

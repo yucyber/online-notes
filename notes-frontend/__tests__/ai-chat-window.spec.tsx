@@ -582,4 +582,43 @@ describe('ChatWindow 统一流式协议', () => {
     await waitFor(() => expect(screen.getAllByText('实时续接的完整内容尾巴').length).toBeGreaterThan(0))
     expect(screen.queryByText('旧半截')).not.toBeInTheDocument()
   })
+
+  it('重连时后端补发 error 终态：失败消息渲染为失败而非"已完成"（发现3 修复）', async () => {
+    // 后端修复（2026-09-10）：重放 failed 消息时补发 error（此前一律补发 complete）。
+    // 场景：历史接口看到该消息仍是 streaming → 自动重连；此时服务端该请求已失败 →
+    // 重放补发 error(GENERATION_INTERRUPTED)。客户端必须落到 failed 并给出重试提示。
+    localStorage.setItem('assistant_current_conversation_id', 'c1')
+    const reconnectChunks = [
+      'event: started\ndata: {"conversationId":"c1","userMessageId":"um1","assistantMessageId":"am1","requestId":"r1"}\n\n',
+      'event: error\ndata: {"code":"GENERATION_INTERRUPTED","message":"回答生成中断，请重试。","retryable":true}\n\n',
+    ]
+    let reconnectIdx = 0
+    const encoder = new TextEncoder()
+    mockFetch.mockImplementation(async (url: string) => {
+      if (String(url).includes('/messages')) {
+        return {
+          ok: true, status: 200,
+          json: async () => ({
+            items: [
+              { id: 'um1', conversationId: 'c1', seq: 1, role: 'user', route: 'pet', content: '问题', status: 'completed', citations: [], warnings: [], requestId: 'r1', createdAt: '2026-09-01T00:00:00.000Z' },
+              { id: 'am1', conversationId: 'c1', seq: 2, role: 'assistant', route: 'pet', content: '', status: 'streaming', citations: [], warnings: [], requestId: 'r1', createdAt: '2026-09-01T00:00:00.000Z' },
+            ],
+          }),
+        } as unknown as Response
+      }
+      return {
+        ok: true, status: 201, statusText: 'Created',
+        body: {
+          getReader: () => ({
+            read: async () => reconnectIdx < reconnectChunks.length
+              ? { done: false, value: encoder.encode(reconnectChunks[reconnectIdx++]) }
+              : { done: true, value: undefined },
+          }),
+        },
+      } as unknown as Response
+    })
+    render(<ChatWindow isOpen onClose={() => undefined} />)
+    // 失败终态：气泡必须给出"回答生成中断"提示（修复前会补 complete，此处不会出现该文案）
+    await waitFor(() => expect(screen.getAllByText('回答生成中断，请重试。').length).toBeGreaterThan(0))
+  })
 })

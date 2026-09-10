@@ -18,7 +18,6 @@ export function useNewNotePage() {
   const [tagInput, setTagInput] = useState('')
   const [metaLoading, setMetaLoading] = useState(true)
   const [metaError, setMetaError] = useState('')
-  const [editorMode, setEditorMode] = useState<'rich' | 'markdown'>('markdown')
   const [newTitle, setNewTitle] = useState('')
   const [currentContent, setCurrentContent] = useState('<p></p>')
   const [saving, setSaving] = useState(false)
@@ -137,5 +136,5 @@ export function useNewNotePage() {
 
   const confirmLeave = () => window.confirm('确定要放弃编辑吗？未保存的内容将丢失。')
 
-  return { categories, tags, directoryNotes, directorySearch, setDirectorySearch, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, editorMode, setEditorMode, newTitle, setNewTitle, currentContent, setCurrentContent, saving, saveError, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleOpenNote: (id: string) => { if (confirmLeave()) router.push(`/dashboard/notes/${id}/edit`) }, handleCancel: () => { if (confirmLeave()) router.back() } }
+  return { categories, tags, directoryNotes, directorySearch, setDirectorySearch, selectedCategory, setSelectedCategory, selectedTags, setSelectedTags, tagInput, setTagInput, metaLoading, metaError, newTitle, setNewTitle, currentContent, setCurrentContent, saving, saveError, selection, setSelection, isFullscreen, editorContainerRef, resolveCategoryId, resolveTagId, toggleTag, addTagsByNames, handleToggleFullscreen, handleSave: (title: string, content: string) => saveNote(title, content), handleSaveDraft: (title: string, content: string) => saveNote(title, content, 'draft'), handleOpenNote: (id: string) => { if (confirmLeave()) router.push(`/dashboard/notes/${id}/edit`) }, handleCancel: () => { if (confirmLeave()) router.back() } }
 }

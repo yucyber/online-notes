@@ -22,6 +22,25 @@ export class RagStreamService {
 
   constructor(private readonly planner: QueryPlannerService, private readonly retrieval: RagRetrievalService, private readonly gateway: AiGatewayClient, private readonly agent: RagAgentService) {}
 
+  // 固定管线（planner + retrieval）：agent 抛错、或 agent 工具异常导致空证据时的降级路径。
+  // 抽成私有方法以免两处降级点逻辑漂移。
+  private async runFixedPipeline(
+    question: string,
+    userId: string,
+    knowledgeBaseId: string | undefined,
+    hooks: RagStreamHooks,
+  ): Promise<{ evidence: RagEvidence[]; planSummary: RagPlanSummary; warnings: string[]; runId?: string }> {
+    await hooks.onStatus('retrieving', '正在检索笔记')
+    const plan = await this.planner.plan(question)
+    const result = await this.retrieval.retrieve(question, userId, knowledgeBaseId, plan)
+    return {
+      evidence: result.evidence,
+      planSummary: { ...plan, rerankApplied: result.rerankApplied },
+      warnings: result.warnings,
+      runId: undefined,
+    }
+  }
+
   async streamRagAnswer(input: { question: string; knowledgeBaseId?: string; userId: string; memoryRecall?: MemoryRecallServiceLike }, hooks: RagStreamHooks): Promise<{ route: 'rag'; citations: RagCitation[]; memoryCitations: MemoryCitation[]; warnings: string[]; planSummary: RagPlanSummary; runId?: string }> {
     const { question, knowledgeBaseId, userId, memoryRecall } = input
 
@@ -36,19 +55,32 @@ export class RagStreamService {
         { question, userId, knowledgeBaseId },
         { onStatus: async (message) => { await hooks.onStatus('retrieving', message) } },
       )
-      allowed = agent.evidence
-      planSummary = agent.planSummary
-      warnings = agent.warnings
-      runId = agent.runId
+      const degraded = agent.evidence.length === 0 && agent.toolFailures > 0
+      if (degraded) {
+        // 缺陷修复（2026-09-10）：agent 正常返回但"工具全都抛异常"时会得到空证据，
+        // 若直接走下面的空证据分支，就会把"检索后端故障"说成"用户没有相关笔记"。
+        // 此时退固定管线再试一次；只有证据确实为空且没有工具异常，才是真的没有命中。
+        this.logger.warn(`agent 工具异常 ${agent.toolFailures} 次且证据为空，降级固定管线重试`)
+        const fallback = await this.runFixedPipeline(question, userId, knowledgeBaseId, hooks)
+        allowed = fallback.evidence
+        planSummary = fallback.planSummary
+        // 保留 agent 侧告警（含"检索工具异常 N 次"），便于前端区分"检索异常"与"没有笔记"
+        warnings = [...agent.warnings, ...fallback.warnings, '检索工具异常，已改用固定管线']
+        runId = fallback.runId ?? agent.runId
+      } else {
+        allowed = agent.evidence
+        planSummary = agent.planSummary
+        warnings = agent.warnings
+        runId = agent.runId
+      }
     } catch (error) {
       if ((error as any)?.message === 'CANCELLED') throw error
       this.logger.warn(`agent 检索失败，降级固定管线: ${error?.message ?? error}`)
-      await hooks.onStatus('retrieving', '正在检索笔记')
-      const plan = await this.planner.plan(question)
-      const result = await this.retrieval.retrieve(question, userId, knowledgeBaseId, plan)
-      allowed = result.evidence
-      planSummary = { ...plan, rerankApplied: result.rerankApplied }
-      warnings = result.warnings
+      const fallback = await this.runFixedPipeline(question, userId, knowledgeBaseId, hooks)
+      allowed = fallback.evidence
+      planSummary = fallback.planSummary
+      warnings = fallback.warnings
+      runId = fallback.runId
     }
 
     if (allowed.length === 0) {

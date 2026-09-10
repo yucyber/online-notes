@@ -9,11 +9,6 @@ import { NestFactory } from '@nestjs/core';
 import { ValidationPipe } from '@nestjs/common';
 import { AppModule } from './app.module';
 import { ApiExceptionFilter } from './common/filters/api-exception.filter'
-import { JwtService } from '@nestjs/jwt';
-import Redis from 'ioredis';
-import { RateLimiterRedis } from 'rate-limiter-flexible';
-import { JwtWsAdapter } from './ws/jwt-ws.adapter';
-import { REDIS_CLIENT } from './common/redis/redis.constants';
 import * as cookieParser from 'cookie-parser';
 import { json } from 'express';
 
@@ -78,11 +73,6 @@ async function bootstrap() {
   }));
   // Global response envelope & exception handling
   app.useGlobalFilters(new ApiExceptionFilter())
-
-  const redis = app.get<Redis>(REDIS_CLIENT)
-  const msgLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:msg:user', points: 300, duration: 60 })
-  const connLimiter = new RateLimiterRedis({ storeClient: redis, keyPrefix: 'ws:conn:ip', points: 100, duration: 60 })
-  app.useWebSocketAdapter(new JwtWsAdapter(app, app.get(JwtService), msgLimiter, connLimiter, redis))
 
   const port = Number(process.env.PORT) || 3001
   const host = process.env.HOST || '0.0.0.0'

@@ -23,9 +23,7 @@
     "@nestjs/mongoose": "^10.0.2",
     "@nestjs/passport": "^10.0.3",
     "@nestjs/platform-express": "^10.3.0",
-    "@nestjs/platform-ws": "^10.4.20",
     "@nestjs/throttler": "^6.2.1",
-    "@nestjs/websockets": "^10.4.20",
     "bcryptjs": "^2.4.3",
     "bullmq": "^5.81.4",
     "class-transformer": "^0.5.1",
@@ -41,7 +39,6 @@
     "parse5": "^7.3.0",
     "passport": "^0.7.0",
     "passport-jwt": "^4.0.1",
-    "rate-limiter-flexible": "^9.0.0",
     "reflect-metadata": "^0.2.2"
   },
   "overrides": {

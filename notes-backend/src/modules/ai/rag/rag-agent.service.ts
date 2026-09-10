@@ -21,6 +21,9 @@ export type RagAgentResult = {
   warnings: string[]
   rounds: number
   toolCalls: number
+  // 工具「服务异常」次数（不含模型传错参数/未知工具这类用法错误）。
+  // 调用方据此区分"检索后端坏了"和"确实没有相关笔记"：证据为空且此值 > 0 时应降级固定管线。
+  toolFailures: number
   runId?: string
 }
 
@@ -126,6 +129,7 @@ type AgentContext = {
   warnings: string[]
   rerankApplied: boolean
   graphExpanded: boolean
+  toolFailures: number
 }
 
 @Injectable()
@@ -158,6 +162,7 @@ export class RagAgentService {
       warnings: [],
       rerankApplied: false,
       graphExpanded: false,
+      toolFailures: 0,
     }
     const messages: AiChatMessage[] = [
       { role: 'system', content: AGENT_SYSTEM },
@@ -202,6 +207,9 @@ export class RagAgentService {
 
     if (stopReason === 'max_rounds') ctx.warnings.push('已达最大检索轮数，使用已收集证据作答')
     if (stopReason === 'budget') ctx.warnings.push('检索上下文已达预算上限，使用已收集证据作答')
+    // 工具异常是可观测事实，必须在 warnings 里留痕，否则上层只能看到"证据为空"，分不清是
+    // 检索后端故障还是用户确实没有相关笔记。
+    if (ctx.toolFailures > 0) ctx.warnings.push(`检索工具异常 ${ctx.toolFailures} 次`)
 
     // 最终证据按分数排序取前 N：顺序即作答 prompt 的 E 编号（与 sanitizer 同一数组）
     const evidence = [...ctx.registry].sort((left, right) => right.score - left.score).slice(0, FINAL_EVIDENCE_LIMIT)
@@ -219,7 +227,7 @@ export class RagAgentService {
       graphHops: ctx.graphExpanded ? 1 : 0,
       rerankApplied: ctx.rerankApplied,
     }
-    return { evidence, planSummary, warnings: ctx.warnings, rounds, toolCalls, runId }
+    return { evidence, planSummary, warnings: ctx.warnings, rounds, toolCalls, toolFailures: ctx.toolFailures, runId }
   }
 
   // 执行单个 tool call：参数校验失败与服务异常都转为错误结果回填，让模型自纠而不是中断 loop。
@@ -238,6 +246,9 @@ export class RagAgentService {
         default: return this.toolError(`未知工具 ${call.name}，可用：${TOOL_DEFINITIONS.map((t) => t.function.name).join(', ')}`)
       }
     } catch (error) {
+      // 只有这里是"工具本身坏了"（检索服务异常）。上面 JSON 解析失败、未知工具名属模型用法错误，
+      // 模型可自纠，不计入 toolFailures —— 否则会把正常的自纠轮次误判成检索后端故障而触发降级。
+      ctx.toolFailures += 1
       this.logger.warn(`agent tool ${call.name} failed: ${error?.message ?? error}`)
       return this.toolError('工具执行失败，可调整参数重试或直接停止检索')
     }

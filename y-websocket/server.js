@@ -5,6 +5,7 @@ const jwt = require('jsonwebtoken')
 const utils = require('y-websocket/bin/utils')
 const { redactRequestUrl } = require('./url-utils')
 const { installReadOnlyGuard } = require('./read-only')
+const { authorizeUpgrade, isAuthDisabled, resolveJwtSecret } = require('./room-auth')
 const setupWSConnection = utils.setupWSConnection
 const docs = utils.docs
 
@@ -126,38 +127,43 @@ wss.on('close', () => {
 })
 
 
-server.on('upgrade', (request, socket, head) => {
-    // Auth: validate JWT in query param before upgrading to WebSocket
-    // Frontend passes it via WebsocketProvider({ params: { access_token } })
-    try {
-        const url = new URL(request.url, 'http://localhost')
-        const token = url.searchParams.get('access_token') || url.searchParams.get('token')
-        const authDisabled = String(process.env.YWS_AUTH_DISABLED || '').toLowerCase() === '1'
-        const secret = process.env.YWS_JWT_SECRET || process.env.JWT_SECRET
+// 启动自检：鉴权开启却没有可用 secret 时直接失败，避免每个连接都退化成 500。
+if (!isAuthDisabled() && !resolveJwtSecret()) {
+    console.error('[Auth] Missing JWT secret (YWS_JWT_SECRET or JWT_SECRET). Refusing to start.')
+    process.exit(1)
+}
 
-        if (!authDisabled) {
-            if (!token) {
-                socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
-                socket.destroy()
-                return
-            }
-            if (!secret) {
-                console.error('[Auth] Missing JWT secret. Set YWS_JWT_SECRET or JWT_SECRET.')
-                socket.write('HTTP/1.1 500 Internal Server Error\r\n\r\n')
-                socket.destroy()
-                return
-            }
-            const payload = jwt.verify(token, secret)
-            request.user = payload
-        }
-    } catch (e) {
+let authDisabledWarned = false
+
+server.on('upgrade', (request, socket, head) => {
+    // Auth: 校验 query 参数里的 room-ticket JWT，并把票据绑定到房间后再放行升级。
+    // 判定逻辑集中在 room-auth.js（纯函数，有单测覆盖）。
+    const decision = authorizeUpgrade({
+        rawUrl: request.url,
+        secret: resolveJwtSecret(),
+        authDisabled: isAuthDisabled(),
+    })
+
+    if (!decision.ok) {
+        console.warn(
+            `[Auth] rejected (${decision.reason}) room=${decision.room || '-'} url=${redactRequestUrl(request.url)}`,
+        )
+        const statusText = decision.status === 500 ? 'Internal Server Error' : 'Unauthorized'
         try {
-            console.warn('[Auth] JWT verify failed:', e && e.message ? e.message : e)
-            socket.write('HTTP/1.1 401 Unauthorized\r\n\r\n')
+            const crlf = String.fromCharCode(13, 10)
+            socket.write(`HTTP/1.1 ${decision.status} ${statusText}${crlf}${crlf}`)
             socket.destroy()
         } catch { }
         return
     }
+
+    if (decision.reason === 'auth-disabled' && !authDisabledWarned) {
+        authDisabledWarned = true
+        console.warn('[Auth] YWS_AUTH_DISABLED=1 — 已跳过全部鉴权（仅非生产环境可用，请勿用于线上）')
+    }
+
+    // read-only 守卫按 req.user.role 判定，因此必须把票据 payload 挂到 request 上
+    if (decision.user) request.user = decision.user
 
     wss.handleUpgrade(request, socket, head, (ws) => {
         wss.emit('connection', ws, request)

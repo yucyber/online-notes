@@ -420,3 +420,50 @@ test('complete 已广播但 finish 未执行时 attach 补发终态，不因错�
   await done
   assert.equal(emitted1.filter((e) => e.event === 'complete').length, 1, '原订阅者只收一次 complete')
 })
+
+test('重放 status=failed 的消息补发 error 而非 complete（缺陷修复回归）', async () => {
+  // 修复前：failed/cancelled/completed 一律补发 complete，失败消息刷新后被渲染成"已完成但空白"。
+  const store = fakeStore()
+  store.byRequest.set(requestId, {
+    id: 'am1', userId, role: 'assistant', status: 'failed', content: '回答生成中断',
+    conversationId: 'c1', route: 'rag', citations: [], warnings: [],
+  })
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted.push(e))
+
+  assert.equal(emitted.some((e) => e.event === 'complete'), false, 'failed 重放不得补发 complete')
+  const error = emitted.find((e) => e.event === 'error')
+  assert.ok(error, 'failed 重放必须补发 error')
+  assert.equal(error.data.retryable, true, '失败终态应可重试')
+  // 不重新生成、不改写已落库内容
+  assert.equal(store.events.some((e) => e.type === 'failed'), false, '终态重放不应重复 markFailed')
+})
+
+test('重放 status=cancelled 的消息补发 cancelled 并带回已流内容（缺陷修复回归）', async () => {
+  const store = fakeStore()
+  store.byRequest.set(requestId, {
+    id: 'am1', userId, role: 'assistant', status: 'cancelled', content: '已经流出的半截内容',
+    conversationId: 'c1', route: 'rag', citations: [], warnings: [],
+  })
+  const service = new AssistantGenerationService(
+    store.conversations as any, store.messages as any,
+    { streamRagAnswer: async () => ({ route: 'rag', citations: [], warnings: [], planSummary: { intent: 'explain', tools: [], graphHops: 0, rerankApplied: false } }) } as any,
+    { chatPet: async () => new ReadableStream({ start(c) { c.close() } }) } as any,
+    undefined as any,
+  )
+  const emitted: any[] = []
+  await service.start({ userId, requestId, question: 'q', forceRoute: 'rag' }, (e) => emitted.push(e))
+
+  assert.equal(emitted.some((e) => e.event === 'complete'), false, 'cancelled 重放不得补发 complete')
+  const cancelled = emitted.find((e) => e.event === 'cancelled')
+  assert.ok(cancelled, 'cancelled 重放必须补发 cancelled')
+  assert.equal(cancelled.data.messageId, 'am1')
+  assert.equal(cancelled.data.text, '已经流出的半截内容', '必须带回已流内容，避免客户端丢失已生成部分')
+  assert.equal(cancelled.data.reason, 'user_stopped')
+})
