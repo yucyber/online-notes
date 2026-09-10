@@ -279,18 +279,6 @@ export function useTiptapCollab(opts: {
       if (cacheTimeout.current) {
         clearTimeout(cacheTimeout.current)
       }
-
-      // 同室其他协作者 awareness 降为 0 时，主动重播自己的 user state，
-      // 防止对方在 provider 重建后因未收到我方 announce 而永远看不到我方光标/头像。
-      if (newParticipants.length === 0 && (p as any).wsconnected) {
-        const u = userRef.current
-        aw.setLocalStateField('user', {
-          id: u.id,
-          name: u.name,
-          clientId: aw.clientID,
-          timestamp: Date.now(),
-        })
-      }
     }
 
     {
