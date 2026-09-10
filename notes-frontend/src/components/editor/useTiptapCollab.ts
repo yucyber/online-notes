@@ -255,13 +255,7 @@ export function useTiptapCollab(opts: {
 
     const updateAwareness = () => {
       const entries = Array.from(aw.getStates().entries()) as any[]
-      // [DIAG] 打印完整 entry 内容；0 entries 时额外打印调用栈
-      console.log('[Collab] Awareness update:', entries.length, 'entries',
-        entries.map(([cid, s]: any) => ({ cid, hasUser: !!s?.user, userId: s?.user?.id }))
-      )
-      if (entries.length === 0) {
-        console.warn('[Collab] 0-entries stack:', new Error('awareness-zero').stack)
-      }
+      console.log('[Collab] Awareness update:', entries.length, 'entries')
       const myClientId = aw.clientID
       const myUserId = userRef.current.id
       const byId = new Map<string, { id: string; name?: string }>()
@@ -398,18 +392,18 @@ export function useTiptapCollab(opts: {
     }
   }, [user.id, user.name, provider])
 
+  // 组件真正 unmount 时才销毁 ydoc；不能把 provider 加入 deps，
+  // 否则 provider null→实例的正常初始化就会触发 cleanup 销毁 ydoc，
+  // 导致 awareness 被 destroy → setLocalState(null) → 对方看到 0 entries。
   useEffect(() => {
     return () => {
       try {
         if (process.env.NODE_ENV === 'production') {
-          provider?.destroy()
           ydoc?.destroy()
-        } else {
-          ;(provider as any)?.disconnect?.()
         }
       } catch { }
     }
-  }, [provider, ydoc])
+  }, [ydoc])
 
   const reconnect = () => {
     try { provider?.connect() } catch { }
